@@ -1,0 +1,66 @@
+35
+Q:I am about to implement C2DM for my application, but I find the documentation a bit confusing regarding how to write the manifest.
+
+The manifest code example contains this:
+
+<!-- Only this application can receive the messages and registration result --> 
+<permission android:name="com.example.myapp.permission.C2D_MESSAGE" android:protectionLevel="signature" />
+<uses-permission android:name="com.example.myapp.permission.C2D_MESSAGE" />
+
+
+This is explained as follows:
+
+
+  applicationPackage + ".permission.C2D_MESSAGE prevents other applications from registering and receiving the application's messages.
+
+
+But how exactly does this work? As I understand, this declares a permission and then gets that permission for my app. But where exactly is that permission enforced?
+
+The code given for registration is:
+
+Intent registrationIntent = new Intent("com.google.android.c2dm.intent.REGISTER");
+registrationIntent.putExtra("app", PendingIntent.getBroadcast(this, 0, new Intent(), 0)); // boilerplate
+registrationIntent.putExtra("sender", emailOfSender);
+startService(registrationIntent);
+
+
+How can the Service that receives the registrationIntent know what permission to check for? As I understand (and correct me if I am wrong here), when declaring the permission, I could have chosen any permission name within my namespace, e.g. com.example.myapp.permission.WHATEVER.
+
+Or is C2D_MESSAGE some magic constant that I have to use?
+
+
+
+Also, the documentation says that I have to implement receivers for com.google.android.c2dm.intent.C2D_MESSAGE and com.google.android.c2dm.intent.REGISTRATION Intents. But In the code example, the receiver's filters only contain .intent.RECEIVE and .intent.REGISTRATION Intents. Where did C2D_MESSAGE go, and does it have something todo with my the question above?
+
+I hope this is not something obvious, but I just don't get it... please help.
+    
+===============================================================================================
+24
+A:The receivers they claim you need at the top in the summary appears to be a mistake in the documentation, as it does not match the manifest example.
+
+
+  "Receivers for com.google.android.c2dm.intent.C2D_MESSAGE and com.google.android.c2dm.intent.REGISTRATION.") 
+
+
+I got the examples they give to work using simply the example manifest entries tweaked to match my particular application's package name.
+
+When the C2DM code in Android sends the broadcast out (or, rather, when it looks for potential receivers to send the broadcast to), it looks for:
+
+
+  Find broadcast receivers for Intent: com.google.android.c2dm.intent.REGISTRATION
+  That have the permission: .permission.C2D_MESSAGE
+
+
+All C2DM messages sent to your application by the Android C2DM code will be looking for that particular permission. It's specific to your application, and simply needs to be in that structure (your application's package + ".permission.C2D_MESSAGE"). 
+
+Regarding how the registration request gets the package name to use for the permissions, that is handled when you first register with the "app" extra - from the documentation:
+
+
+  "app is the application's ID, set with a PendingIntent to allow the registration service to extract application information."
+
+
+the line in question:
+
+registrationIntent.putExtra("app", PendingIntent.getBroadcast(this, 0, new Intent(), 0)); // boilerplate
+
+    

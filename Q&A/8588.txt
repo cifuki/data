@@ -1,0 +1,109 @@
+31
+Q:During this weeks Android Design in Action episode, Adam Koch talked about an app called Etsy, which featured this very cool blur effect applying to the main layout when the Navigation Drawer is pulled out. 
+
+Does anyone know how the devs behind Etsy might have implemented this?
+
+Watch it here: http://youtu.be/GjUxEddmjFw?t=22m48s
+
+
+
+    
+===============================================================================================
+67
+A:There's a few parts to this:
+
+1. Creating the blurred bitmap:
+
+We create a downscaled bitmap from the content view behind the drawer when the drawer is first opened (the downscaling makes the blur fast). Then we apply the blur to the downscaled image using RenderScript where available (even faster). For this you should read the blog already mentioned http://nicolaspomepuy.fr/?p=18 and checkout the GlassActionBar project for reference code https://github.com/ManuelPeinado/GlassActionBar. 
+
+
+Note: RenderScript is now available in the support library... but it can't be built using Gradle (for now). Also there are issues with ScriptIntrinsicBlur on some devices notably the Nexus 10 - see Roman Nurik's explanation
+
+2. Showing & Animating the Blur:
+
+Our nav drawer layout contains a hidden ImageView that sits on top of the content.
+
+<FrameLayout
+    android:id="@+id/nav_content_frame"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" />
+
+<!-- our blur image -->
+<ImageView
+    android:id="@+id/blur_image"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:scaleType="centerCrop"
+    android:visibility="gone" />
+
+
+In the Activities onCreate() you'll want to grab a reference to this ImageView and setup a custom drawer listener:
+
+mBlurImage = (ImageView) findViewById(R.id.blur_image);
+mDrawerLayout = (DrawerLayout) findViewById(R.id.nav_drawer_layout);
+
+mDrawerToggle = new EtsyNavActionBarDrawerToggle(
+            this, 
+            mDrawerLayout,
+            R.drawable.ic_drawer, 
+            R.string.nav_drawer_open, 
+            R.string.nav_drawer_closed);
+
+mDrawerLayout.setDrawerListener(mDrawerToggle);
+
+
+Our drawer has custom scrim color (that's the overlay color) instead of the default transparent black. This also hides the fact that the blurred image is on a downscaled image.
+
+mDrawerLayout.setScrimColor(getResources().getColor(R.color.background_main_v2_glass));
+
+
+The drawer listener which sets, clears and animates the blurred image:
+
+private class EtsyNavActionBarDrawerToggle extends ActionBarDrawerToggle {
+
+    public EtsyNavActionBarDrawerToggle(Activity activity, DrawerLayout drawerLayout, 
+            int drawerImageRes, int openDrawerContentDescRes, int closeDrawerContentDescRes) {
+        super(activity, drawerLayout, drawerImageRes, openDrawerContentDescRes, closeDrawerContentDescRes);
+    }
+
+    @Override
+    public void onDrawerSlide(final View drawerView, final float slideOffset) {
+        super.onDrawerSlide(drawerView, slideOffset);
+        if (slideOffset > 0.0f) {
+            setBlurAlpha(slideOffset);
+        }
+        else {
+            clearBlurImage();
+        }
+    }
+
+    @Override
+    public void onDrawerClosed(View view) {
+        clearBlurImage();
+    }
+
+}
+
+private void setBlurAlpha(float slideOffset) {
+    if (mBlurImage.getVisibility() != View.VISIBLE) {
+        setBlurImage();
+    }
+    ViewHelper.setAlpha(mBlurImage, slideOffset);
+}
+
+public void setBlurImage() {
+    mBlurImage.setImageBitmap(null);
+    mBlurImage.setVisibility(View.VISIBLE);
+    Bitmap downScaled = ... // do the downscaling
+    Bitmap blurred = ... // apply the blur
+    mBlurImage.setImageBitmap(blurred);
+}
+
+public void clearBlurImage() {
+    mBlurImage.setVisibility(View.GONE);
+    mBlurImage.setImageBitmap(null);
+}
+
+
+Lastly the ViewHelper is from NineOldAndroids so we can setAlpha() pre-honeycomb.
+    

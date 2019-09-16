@@ -1,0 +1,86 @@
+31
+Q:Following the last section in the GCM: Getting Started guide, there's some book-keeping to be done after receiving the results.
+
+Quoting from the guide:
+
+
+  It's now necessary to parse the result and take the proper action in the following cases:
+  
+  
+  If the message was created but the result returned a canonical    registration ID, it's necessary to replace the current registration
+  ID with the canonical one.
+  If the returned error is NotRegistered, it's necessary to remove that    registration ID, because the application was uninstalled from
+  the    device.
+  
+  
+  Here's a code snippet that handles these 2 conditions:
+
+if (result.getMessageId() != null) {
+ String canonicalRegId = result.getCanonicalRegistrationId();
+ if (canonicalRegId != null) {
+   // same device has more than on registration ID: update database
+ }
+} else {
+ String error = result.getErrorCodeName();
+ if (error.equals(Constants.ERROR_NOT_REGISTERED)) {
+   // application has been removed from device - unregister database
+ }
+}
+
+
+
+The guide above refers to a single result, and not to the multicast case.
+I'm not sure how to handle the multicast case:
+
+    ArrayList<String> devices = new ArrayList<String>();
+
+    for (String d : relevantDevices) {
+        devices.add(d);
+    }
+
+    Sender sender = new Sender(myApiKey);
+    Message message = new Message.Builder().addData("hello", "world").build();
+    try {
+        MulticastResult result = sender.send(message, devices, 5);
+
+        for (Result r : result.getResults()) {
+            if (r.getMessageId() != null) {
+                String canonicalRegId = r.getCanonicalRegistrationId();
+                if (canonicalRegId != null) {
+                    // same device has more than on registration ID: update database
+                    // BUT WHICH DEVICE IS IT?
+                }
+            } else {
+                String error = r.getErrorCodeName();
+                if (error.equals(Constants.ERROR_NOT_REGISTERED)) {
+                    // application has been removed from device - unregister database
+                    // BUT WHICH DEVICE IS IT?
+                }
+            }
+        }
+    } catch (IOException ex) {
+        Log.err(TAG, "sending message failed", ex);
+    }
+
+
+I submit a list of devices, and receive back a list of results.
+The Result object doesn't contain the registration id, but only a canonical id if the first is obsolete.
+It is undocumented if the two lists are co-related (ie. preserves order and size).
+
+How can I be sure which result refer to which device?
+
+-- UPDATE
+
+I've pasted a snippet of the solution in a separate answer below
+    
+===============================================================================================
+21
+A:The results are in the order of your registration_id array that you sent to GCM server. e.g. if your registration_ids are:
+
+[id1, id4, id7, id8]
+
+
+Then the results array you get will have same order for id1, id4, id7, and id8.
+
+You just need to parse each result accordingly, e.g. if the 2nd result has 'message_id' and 'registration_id' of 'id9', you know 'id4' is now obsolete and should be replaced by id9.
+    

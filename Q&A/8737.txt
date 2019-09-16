@@ -1,0 +1,136 @@
+31
+Q:I'm trying to run my Robolectric tests together with the new Gradle Android build system, but I'm stuck at accessing the resources of my main project.
+
+I split the build into two separate projects to avoid conflicts between the java and the android gradle plugins, so the directory structure looks roughly like this:
+
+.
+\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 build.gradle
+\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 settings.gradle
+\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 mainproject
+\xe2\x94\x82\xc2\xa0\xc2\xa0 \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 build
+\xe2\x94\x82\xc2\xa0\xc2\xa0 \xe2\x94\x82\xc2\xa0\xc2\xa0 \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 classes
+\xe2\x94\x82\xc2\xa0\xc2\xa0 \xe2\x94\x82\xc2\xa0\xc2\xa0 \xe2\x94\x82\xc2\xa0\xc2\xa0 \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 debug
+\xe2\x94\x82\xc2\xa0\xc2\xa0 \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 build.gradle
+\xe2\x94\x82\xc2\xa0\xc2\xa0 \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 src
+\xe2\x94\x82\xc2\xa0\xc2\xa0     \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 main
+\xe2\x94\x82\xc2\xa0\xc2\xa0         \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 AndroidManifest.xml
+\xe2\x94\x82\xc2\xa0\xc2\xa0         \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 ...
+\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 test
+    \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 build.gradle
+    \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 src
+     \xc2\xa0\xc2\xa0 \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 test
+     \xc2\xa0\xc2\xa0     \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 java
+     \xc2\xa0\xc2\xa0         \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 ...
+\xc2\xa0\xc2\xa0                  \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 test
+\xc2\xa0\xc2\xa0                      \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 MainActivityTest.java
+\xc2\xa0\xc2\xa0                      \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 Runner.java
+\xc2\xa0\xc2\xa0                      \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 ServerTestCase.java
+\xc2\xa0\xc2\xa0                      \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 StatusFetcherTest.java
+
+
+My build.gradle in test/ currently looks like this:
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.stanfy.android:gradle-plugin-java-robolectric:2.0'
+    }
+}
+
+apply plugin: 'java-robolectric'
+
+repositories {...}
+
+javarob {
+    packageName = 'com.example.mainproject'
+}
+
+test {
+    dependsOn ':mainproject:build'
+    scanForTestClasses = false
+    include "**/*Test.class"
+    // Oh, the humanity!
+    def srcDir = project(':mainproject').android.sourceSets.main.java.srcDirs.toArray()[0].getAbsolutePath()
+    workingDir srcDir.substring(0, srcDir.lastIndexOf('/'))
+}
+
+project(':mainproject').android.sourceSets.main.java.srcDirs.each {dir ->
+    def buildDir = dir.getAbsolutePath().split('/')
+    buildDir =  (buildDir[0..(buildDir.length - 4)] + ['build', 'classes', 'debug']).join('/')
+
+    sourceSets.test.compileClasspath += files(buildDir)
+    sourceSets.test.runtimeClasspath += files(buildDir)
+}
+
+dependencies {    
+    testCompile group: 'com.google.android', name: 'android', version: '4.1.1.4'
+    testCompile group: 'org.robolectric', name: 'robolectric', version: '2.0-alpha-3'
+    ...
+}
+
+
+The evil classpath hackery allows me to access all classes of my main project, except for R, which exists as .class file in the build directory, but raises this error during the compileTestJava task:
+
+/.../MainActivityTest.java:16: error: cannot find symbol
+                final String appName = activity.getResources().getString(R.string.app_name);
+                                                                          ^
+  symbol:   variable string
+  location: class R
+1 error
+:test:compileTestJava FAILED
+
+
+There must be a better way to execute Robolectric tests with the new build system, right?
+
+(Full source of the app)
+    
+===============================================================================================
+27
+A:I was running across this same issue and this is what I came up with.  Instead of creating a separate project for the tests, I created a source set for the Robolectric tests and added a new task that "check" would depend on.  Using some of the code from your question, here are the relevant bits of the (working) build file:
+
+apply plugin: 'android'
+
+sourceSets {
+    testLocal {
+        java.srcDir file('src/test/java')
+        resources.srcDir file('src/test/resources')
+    }
+}
+
+dependencies {
+    compile 'org.roboguice:roboguice:2.0'
+    compile 'com.google.android:support-v4:r6'
+
+    testLocalCompile 'junit:junit:4.8.2'
+    testLocalCompile 'org.robolectric:robolectric:2.1'
+    testLocalCompile 'com.google.android:android:4.0.1.2'
+    testLocalCompile 'com.google.android:support-v4:r6'
+    testLocalCompile 'org.roboguice:roboguice:2.0'
+}
+
+task localTest(type: Test, dependsOn: assemble) {
+    testClassesDir = sourceSets.testLocal.output.classesDir
+
+    android.sourceSets.main.java.srcDirs.each { dir ->
+        def buildDir = dir.getAbsolutePath().split('/')
+        buildDir =  (buildDir[0..(buildDir.length - 4)] + ['build', 'classes', 'debug']).join('/')
+
+        sourceSets.testLocal.compileClasspath += files(buildDir)
+        sourceSets.testLocal.runtimeClasspath += files(buildDir)
+    }
+
+    classpath = sourceSets.testLocal.runtimeClasspath
+}
+
+check.dependsOn localTest
+
+
+I've included my dependencies block to point out that in order for me to get this up and going, I had to repeat all of my compile dependencies in my custom testLocal source set.
+
+Running gradle testLocal builds and runs just the tests inside of src/test/java, while running gradle check runs these tests in addition to those in the default android instrumentTest source set.
+
+Hope this helps!
+    

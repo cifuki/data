@@ -1,0 +1,83 @@
+38
+Q:Methods like ActivityCompat.requestPermissions require that I pass them a requestcode that I can later test in a callback (in this case onRequestPermissionsResult). Is there some best practice sort of value I'm supposed to pass in the requestcode? I've noticed that if I just enter a random int I sometimes get an error like this:
+
+java.lang.IllegalArgumentException: Can only use lower 8 bits for requestCode
+
+
+
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime: FATAL EXCEPTION: main
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime: Process: my package, PID: 8315
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime: java.lang.RuntimeException: Unable to start activity ComponentInfo{mypackage.myactivity}: java.lang.IllegalArgumentException: Can only use lower 8 bits for requestCode
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2416)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2476)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.ActivityThread.-wrap11(ActivityThread.java)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1344)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.os.Handler.dispatchMessage(Handler.java:102)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.os.Looper.loop(Looper.java:148)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.ActivityThread.main(ActivityThread.java:5417)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at java.lang.reflect.Method.invoke(Native Method)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:726)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:616)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:  Caused by: java.lang.IllegalArgumentException: Can only use lower 8 bits for requestCode
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.support.v4.app.FragmentActivity.validateRequestPermissionsRequestCode(FragmentActivity.java:799)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.support.v4.app.ActivityCompatApi23.requestPermissions(ActivityCompat23.java:29)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.support.v4.app.ActivityCompat.requestPermissions(ActivityCompat.java:316)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at mypackage.myactivity.checkReadPhoneState(PermissionsGatewayActivity.java:48)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at mypackage.myactivity.onCreate(PermissionsGatewayActivity.java:36)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.Activity.performCreate(Activity.java:6237)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1107)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2369)
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2476)\xc2\xa0
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.ActivityThread.-wrap11(ActivityThread.java)\xc2\xa0
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1344)\xc2\xa0
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.os.Handler.dispatchMessage(Handler.java:102)\xc2\xa0
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.os.Looper.loop(Looper.java:148)\xc2\xa0
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at android.app.ActivityThread.main(ActivityThread.java:5417)\xc2\xa0
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at java.lang.reflect.Method.invoke(Native Method)\xc2\xa0
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:726)\xc2\xa0
+10-25 16:47:43.652 8315-8315/? E/AndroidRuntime:     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:616)\xc2\xa0
+
+    
+===============================================================================================
+84
+A:Documenting the findings for future reference:
+
+The following are code from android.support.v4.app.FragmentActivity
+
+ /**
+ * Modifies the standard behavior to allow results to be delivered to fragments.
+ * This imposes a restriction that requestCode be <= 0xffff.
+ */
+@Override
+public void startActivityForResult(Intent intent, int requestCode) {
+    if (requestCode != -1 && (requestCode&0xffff0000) != 0) {
+        throw new IllegalArgumentException("Can only use lower 16 bits for requestCode");
+    }
+    super.startActivityForResult(intent, requestCode);
+}
+
+
+
+
+@Override
+public final void validateRequestPermissionsRequestCode(int requestCode) {
+    // We use 16 bits of the request code to encode the fragment id when
+    // requesting permissions from a fragment. Hence, requestPermissions()
+    // should validate the code against that but we cannot override it as
+    // we can not then call super and also the ActivityCompat would call
+    // back to this override. To handle this we use dependency inversion
+    // where we are the validator of request codes when requesting
+    // permissions in ActivityCompat.
+    if (!mRequestedPermissionsFromFragment
+            && requestCode != -1 && (requestCode & 0xffff0000) != 0) {
+        throw new IllegalArgumentException("Can only use lower 16 bits for requestCode");
+    }
+}
+
+
+
+RANGE
+startActivityForResult() in FragmentActivity requires the requestCode to be of 16 bits, meaning the range is from 0 to 65535.
+
+Also, validateRequestPermissionsRequestCode in FragmentActivity requires requestCode to be of 16 bits, meaning the range is from 0 to 65535.
+    

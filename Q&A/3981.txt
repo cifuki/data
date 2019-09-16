@@ -1,0 +1,190 @@
+58
+Q:I've got a few classes that implement Parcelable and some of these classes contain each other as properties. I'm marshalling the classes into a Parcel to pass them between activities. Marshalling them TO the Parcel works fine, but when I try to unmarshall them I get the following error:
+
+...
+AndroidRuntime  E  Caused by: android.os.BadParcelableException: ClassNotFoundException when unmarshalling: schemas.Arrivals.LocationType
+AndroidRuntime  E   at android.os.Parcel.readParcelable(Parcel.java:1822)
+AndroidRuntime  E   at schemas.Arrivals.LayoverType.<init>(LayoverType.java:121)
+AndroidRuntime  E   at schemas.Arrivals.LayoverType.<init>(LayoverType.java:120)
+AndroidRuntime  E   at schemas.Arrivals.LayoverType$1.createFromParcel(LayoverType.java:112)
+AndroidRuntime  E   at schemas.Arrivals.LayoverType$1.createFromParcel(LayoverType.java:1)
+AndroidRuntime  E   at android.os.Parcel.readTypedList(Parcel.java:1509)
+AndroidRuntime  E   at schemas.Arrivals.BlockPositionType.<init>(BlockPositionType.java:244)
+AndroidRuntime  E   at schemas.Arrivals.BlockPositionType.<init>(BlockPositionType.java:242)
+AndroidRuntime  E   at schemas.Arrivals.BlockPositionType$1.createFromParcel(BlockPositionType.java:234)
+AndroidRuntime  E   at schemas.Arrivals.BlockPositionType$1.createFromParcel(BlockPositionType.java:1)
+...
+
+
+The LayoverType class (where it's failing):
+
+public class LayoverType implements Parcelable {    
+    protected LocationType location;
+    protected long start;
+    protected long end;
+
+    public LayoverType() {}
+
+    public LocationType getLocation() {
+        return location;
+    }
+
+    public void setLocation(LocationType value) {
+        this.location = value;
+    }
+
+    public long getStart() {
+        return start;
+    }
+
+    public void setStart(long value) {
+        this.start = value;
+    }
+
+    public long getEnd() {
+        return end;
+    }
+
+    public void setEnd(long value) {
+        this.end = value;
+    }
+
+
+    // **********************************************
+    //  for implementing Parcelable
+    // **********************************************
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        dest.writeParcelable(location, flags);
+        dest.writeLong(start);
+        dest.writeLong(end  );
+    }
+
+    public static final Parcelable.Creator<LayoverType> CREATOR = new Parcelable.Creator<LayoverType>() {
+        public LayoverType createFromParcel(Parcel in) {
+            return new LayoverType(in);
+        }
+
+        public LayoverType[] newArray(int size) {
+            return new LayoverType[size];
+        }
+    };
+
+    private LayoverType(Parcel dest) {
+        location = (LocationType) dest.readParcelable(null);    // it's failing here
+        start = dest.readLong();
+        end   = dest.readLong();
+    }
+}
+
+
+Here's the LocationType class:
+
+public class LocationType implements Parcelable {
+    protected int locid;
+    protected String desc;
+    protected String dir;
+    protected double lat;
+    protected double lng;
+
+    public LocationType() {}
+
+    public int getLocid() {
+        return locid;
+    }
+
+    public void setLocid(int value) {
+        this.locid = value;
+    }
+
+    public String getDesc() {
+        return desc;
+    }
+
+    public void setDesc(String value) {
+        this.desc = value;
+    }
+
+    public String getDir() {
+        return dir;
+    }
+
+    public void setDir(String value) {
+        this.dir = value;
+    }
+
+    public double getLat() {
+        return lat;
+    }
+
+    public void setLat(double value) {
+        this.lat = value;
+    }
+
+    public double getLng() {
+        return lng;
+    }
+
+    public void setLng(double value) {
+        this.lng = value;
+    }
+
+    // **********************************************
+    //  for implementing Parcelable
+    // **********************************************
+
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        dest.writeInt   (locid);
+        dest.writeString(desc );
+        dest.writeString(dir  );
+        dest.writeDouble(lat  );
+        dest.writeDouble(lng  );
+    }
+
+    public static final Parcelable.Creator<LocationType> CREATOR = new Parcelable.Creator<LocationType>() {
+        public LocationType createFromParcel(Parcel in) {
+            return new LocationType(in);
+        }
+
+        public LocationType[] newArray(int size) {
+            return new LocationType[size];
+        }
+    };
+
+    private LocationType(Parcel dest) {
+        locid = dest.readInt   ();
+        desc  = dest.readString();
+        dir   = dest.readString();
+        lat   = dest.readDouble();
+        lng   = dest.readDouble();
+    }
+}
+
+
+Update 2: As far as I can tell it's failing at the following bit of code (from Parcel's source):
+
+Class c = loader == null ? Class.forName(name) : Class.forName(name, true, loader);
+
+
+Why is it not able to find the class? It both exists and implements Parcelable.
+    
+===============================================================================================
+82
+A:Because this was not answered in "answer" but in comment I will post an answer:
+As @Max-Gontar pointed you should use LocationType.class.getClassLoader() to get the correct ClassLoader and get rid of ClassNotFound exception, i.e.:
+
+in.readParceleable(LocationType.class.getClassLoader());
+    

@@ -1,0 +1,139 @@
+43
+Q:I have seen many posts in SO regarding this but could not get the exact and most easy way to call an activity method from service class. Is broadcast receiver only the option? No easy way out ? I just need to call the following method in Activity class after the media player is prepared in Service class .
+
+Activity class:
+
+    public void updateProgress() {
+    // set Progress bar values
+    songProgressBar.setProgress(0);
+    songProgressBar.setMax(100);
+    // Updating progress bar
+    updateProgressBar();
+}
+
+
+Service class:
+
+   @Override
+public IBinder onBind(Intent intent) {
+    Log.d(this.getClass().getName(), "BIND");
+    return musicBind;
+}
+
+@Override
+public boolean onUnbind(Intent intent) {
+    return false;
+}
+    @Override
+public void onPrepared(MediaPlayer mp) {
+    try {
+        mp.start();
+    } catch (IllegalStateException e) {
+        e.printStackTrace();
+    }
+
+           // updateProgress();// Need to call the Activity method here 
+  }
+
+    
+===============================================================================================
+89
+A:Define an interface your Service will use to communicate events:
+
+public interface ServiceCallbacks {
+    void doSomething();
+} 
+
+
+Write your Service class. Your Activity will bind to this service, so follow the sample shown here. In addition, we will add a method to set the ServiceCallbacks.
+
+public class MyService extends Service {
+    // Binder given to clients
+    private final IBinder binder = new LocalBinder();
+    // Registered callbacks
+    private ServiceCallbacks serviceCallbacks;
+
+
+    // Class used for the client Binder.
+    public class LocalBinder extends Binder {
+        MyService getService() {
+            // Return this instance of MyService so clients can call public methods
+            return MyService.this;
+        }
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return binder;
+    }
+
+    public void setCallbacks(ServiceCallbacks callbacks) {
+        serviceCallbacks = callbacks;
+    }
+}
+
+
+Write your Activity class following the same guide, but also make it implement your ServiceCallbacks interface. When you bind/unbind from the Service, you will register/unregister it by calling setCallbacks on the Service.
+
+public class MyActivity extends Activity implements ServiceCallbacks {
+    private MyService myService;
+    private boolean bound = false;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(...);
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // bind to Service
+        Intent intent = new Intent(this, MyService.class);
+        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // Unbind from service
+        if (bound) {
+            myService.setCallbacks(null); // unregister
+            unbindService(serviceConnection);
+            bound = false;
+        }
+    }
+
+    /** Callbacks for service binding, passed to bindService() */
+    private ServiceConnection serviceConnection = new ServiceConnection() {
+
+        @Override
+        public void onServiceConnected(ComponentName className, IBinder service) {
+            // cast the IBinder and get MyService instance
+            LocalBinder binder = (LocalBinder) service;
+            myService = binder.getService();
+            bound = true;
+            myService.setCallbacks(MyActivity.this); // register
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName arg0) {
+            bound = false;
+        }
+    };
+
+    /* Defined by ServiceCallbacks interface */
+    @Override
+    public void doSomething() {
+        ...
+    }
+}
+
+
+Now when your service wants to communicate back to the activity, just call one of the interface methods from earlier. Inside your service:
+
+if (serviceCallbacks != null) { 
+    serviceCallbacks.doSomething();
+}
+
+    

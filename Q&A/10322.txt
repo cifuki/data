@@ -1,0 +1,411 @@
+27
+Q:Note: as it turns out, the original question was incorrect in its assumptions. See more details on its edits at the bottom.
+
+It's now about the battery-saver, and not battery-saver&doze-mode. It's also not about Service&BroadcastReceiver, but just BroadcastReceiver alone.
+
+Background
+
+Starting from Android Lollipop, Google introduced new, manual and automatic ways to help with battery saving:
+
+"Doze" mode, and "Battery-saver".
+
+On some cases, apps might not be able to access the Internet due to those techniques.
+
+The problem
+
+I work on an app that needs to access the Internet using a background service that triggers on specific cases, and if something important is being received, it shows some UI.
+
+I've noticed, as a user, that on some cases, it fails to access the Internet.
+
+The check of whether the app can access the Internet is as such:
+
+public static boolean isInternetOn(Context context) {
+    final NetworkInfo info = ((ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE)).getActiveNetworkInfo();
+    return !(info == null || !info.isConnectedOrConnecting());
+}
+
+
+Problem is that I'm required to check why this sometimes returns false, so that if it fails, we should tell the user (via notification, probably) that the data cannot be accessed because the device restricted the app, and offer the user to white-list the app from battery optimization. 
+
+I'm not sure which ones affect this: Doze, battery saver, or both, and if it's always this way, for all devices, in all cases.
+
+What I've tried
+
+What I did find is how to query of Doze mode and Battery-saver (power saver) mode:
+
+public class PowerSaverHelper {
+    public enum PowerSaveState {
+        ON, OFF, ERROR_GETTING_STATE, IRRELEVANT_OLD_ANDROID_API
+    }
+
+    public enum WhiteListedInBatteryOptimizations {
+        WHITE_LISTED, NOT_WHITE_LISTED, ERROR_GETTING_STATE, IRRELEVANT_OLD_ANDROID_API
+    }
+
+    public enum DozeState {
+        NORMAL_INTERACTIVE, DOZE_TURNED_ON_IDLE, NORMAL_NON_INTERACTIVE, ERROR_GETTING_STATE, IRRELEVANT_OLD_ANDROID_API
+    }
+
+    @NonNull
+    public static DozeState getDozeState(@NonNull Context context) {
+        if (VERSION.SDK_INT < VERSION_CODES.M)
+            return DozeState.IRRELEVANT_OLD_ANDROID_API;
+        final PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        if (pm == null)
+            return DozeState.ERROR_GETTING_STATE;
+        return pm.isDeviceIdleMode() ? DozeState.DOZE_TURNED_ON_IDLE : pm.isInteractive() ? DozeState.NORMAL_INTERACTIVE : DozeState.NORMAL_NON_INTERACTIVE;
+    }
+
+    @NonNull
+    public static PowerSaveState getPowerSaveState(@NonNull Context context) {
+        if (VERSION.SDK_INT < VERSION_CODES.LOLLIPOP)
+            return PowerSaveState.IRRELEVANT_OLD_ANDROID_API;
+        final PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        if (pm == null)
+            return PowerSaveState.ERROR_GETTING_STATE;
+        return pm.isPowerSaveMode() ? PowerSaveState.ON : PowerSaveState.OFF;
+    }
+
+
+    @NonNull
+    public static WhiteListedInBatteryOptimizations getIfAppIsWhiteListedFromBatteryOptimizations(@NonNull Context context, @NonNull String packageName) {
+        if (VERSION.SDK_INT < VERSION_CODES.M)
+            return WhiteListedInBatteryOptimizations.IRRELEVANT_OLD_ANDROID_API;
+        final PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        if (pm == null)
+            return WhiteListedInBatteryOptimizations.ERROR_GETTING_STATE;
+        return pm.isIgnoringBatteryOptimizations(packageName) ? WhiteListedInBatteryOptimizations.WHITE_LISTED : WhiteListedInBatteryOptimizations.NOT_WHITE_LISTED;
+    }
+
+    //@TargetApi(VERSION_CODES.M)
+    @SuppressLint("BatteryLife")
+    @RequiresPermission(permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+    @Nullable
+    public static Intent prepareIntentForWhiteListingOfBatteryOptimization(@NonNull Context context, @NonNull String packageName, boolean alsoWhenWhiteListed) {
+        if (VERSION.SDK_INT < VERSION_CODES.M)
+            return null;
+        if (ContextCompat.checkSelfPermission(context, permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS) == PackageManager.PERMISSION_DENIED)
+            return null;
+        final WhiteListedInBatteryOptimizations appIsWhiteListedFromPowerSave = getIfAppIsWhiteListedFromBatteryOptimizations(context, packageName);
+        Intent intent = null;
+        switch (appIsWhiteListedFromPowerSave) {
+            case WHITE_LISTED:
+                if (alsoWhenWhiteListed)
+                    intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                break;
+            case NOT_WHITE_LISTED:
+                intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).setData(Uri.parse("package:" + packageName));
+                break;
+            case ERROR_GETTING_STATE:
+            case IRRELEVANT_OLD_ANDROID_API:
+            default:
+                break;
+        }
+        return intent;
+    }
+
+    /**
+     * registers a receiver to listen to power-save events. returns true iff succeeded to register the broadcastReceiver.
+     */
+    @TargetApi(VERSION_CODES.M)
+    public static boolean registerPowerSaveReceiver(@NonNull Context context, @NonNull BroadcastReceiver receiver) {
+        if (VERSION.SDK_INT < VERSION_CODES.M)
+            return false;
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED);
+        context.registerReceiver(receiver, filter);
+        return true;
+    }
+
+}
+
+
+I think I also found a way to check them out while being connected to the device:
+
+battery saver:
+
+./adb shell settings put global low_power [1|0]
+
+
+Doze state:
+
+./adb shell dumpsys deviceidle step [light|deep]
+
+
+And :
+
+./adb shell dumpsys deviceidle force-idle
+
+
+The questions
+
+In short I just want to know if the reason for not being able to access the Internet, is indeed because there is no Internet connection, or if the app just got currently restricted due to certain battery optimizations. 
+
+Only for the case of being restricted, I could warn the user that if it's ok with him, the app would be white listed so that it could still work the same.
+
+Here are my questions regarding it:
+
+
+Which of the above prevent background services of apps to access the Internet? Do all of them cause it? Is it device-specific? Does "Interactive" affect it?
+What's "force-idle" for, if there is already a way to go to "light" and "deep" doze states? Is there also a way to reset doze mode back to normal? I tried multiple commands, but only restarting of the device really got it to reset back to normal...
+Does the BroadcastReceiver I created allow to check it correctly? Will it trigger in all cases that access to the Internet is denied due to all of the special cases? Is it true that I can't register to it in manifest?
+Is it possible to check if the reason for not being able to access the Internet, is indeed because there is no Internet connection, or if the app just got currently restricted due to certain battery optimizations?
+Have the restrictions of Internet connection for background services on special cases changed on Android O ? Maybe even more cases I should check?
+Suppose I change the service to run in foreground (with a notification), will this cover all cases, and always have access to the Internet, no matter what special state the device is in? 
+
+
+
+
+EDIT: it seems that it's not the service's fault at all, and that it occurs in battery saver mode too, without Doze mode.
+
+The trigger to the service is a BroadcastReceiver that listens to phone calls events, and even if I check for Internet connection on its onReceive function, I see that it returns false. Same goes for the service that is started from it, even if it's a foreground service. Looking at the NetworkInfo result, it's "BLOCKED", and its state is indeed "DISCONNECTED".
+
+Question now, is why this occurs.
+
+Here's a new sample POC to check this out. To reproduce, you need to turn on battery saver mode (using ./adb shell settings put global low_power 1 command, or as a user), then launch it, accept the permissions, close activity, and call from another phone to this one. You will notice that on the activity, it shows there is Internet connection, and on the BroadcastReceiver, it says it doesn't.
+
+Note that battery saver mode might be turned off automatically when connecting to USB cable, so you might need to try it when the device is not connected. Using the adb command prevents it, as opposed to the user-method of enabling it.
+
+The sample project can also be found here, even though it was originally meant to be about Doze mode. Just use battery-saver mode instead, to see that the issue occurs. 
+
+PhoneBroadcastReceiver 
+
+public class PhoneBroadcastReceiver extends BroadcastReceiver {
+    @Override
+    public void onReceive(final Context context, final Intent intent) {
+        Log.d("AppLog", "PhoneBroadcastReceiver:isInternetOn:" + isInternetOn(context));
+    }
+
+    public static boolean isInternetOn(Context context) {
+        final NetworkInfo info = ((ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE)).getActiveNetworkInfo();
+        return !(info == null || !info.isConnectedOrConnecting());
+    }
+}
+
+
+manifest
+
+<manifest package="com.example.user.myapplication" xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+
+    <application
+        android:allowBackup="true" android:icon="@mipmap/ic_launcher" android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round" android:supportsRtl="true" android:theme="@style/AppTheme">
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <receiver android:name=".PhoneBroadcastReceiver">
+            <intent-filter >
+                <action android:name="android.intent.action.PHONE_STATE"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.NEW_OUTGOING_CALL"/>
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>
+
+
+MainActivity.java
+
+public class MainActivity extends AppCompatActivity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        Log.d("AppLog", "MainActivity: isInternetOn:" + PhoneBroadcastReceiver.isInternetOn(this));
+        if (VERSION.SDK_INT >= VERSION_CODES.M) {
+            requestPermissions(new String[]{permission.READ_PHONE_STATE, permission.PROCESS_OUTGOING_CALLS}, 1);
+        }
+    }
+}
+
+    
+===============================================================================================
+2
+A:So I downloaded your example app from the issue tracker, tested it the way you described, and found these results on a Nexus 5 running Android 6.0.1:
+
+
+
+Conditions for test 1:
+
+
+App not whitelisted
+Battery saver mode set using adb shell settings put global low_power 1
+Device connected via wireless using adb tcpip <port> and adb connect <ip>:<port>
+BroadcastReceiver only, no Service
+
+
+In this test, app functioned as you had mentioned:
+
+App in background -
+
+D/AppLog: PhoneBroadcastReceiver:isInternetOn:false
+D/AppLog: PhoneBroadcastReceiver:isInternetOn:false
+
+
+
+
+Conditions for test 2:
+
+
+Same as test 1 with changes below
+BroadcastReceiver starts Service (example below)
+
+public class PhoneService extends Service {
+
+    public void onCreate() {
+        super.onCreate();
+        startForeground(1, new Notification.Builder(this)
+                .setSmallIcon(R.mipmap.ic_launcher_foreground)
+                .setContentTitle("Test title")
+                .setContentText("Test text")
+                .getNotification());
+    }
+
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        final String msg = "PhoneService:isInternetOn:" + isInternetOn(this);
+        Log.d("AppLog", msg);
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+        return START_STICKY;
+    }
+
+    public static boolean isInternetOn(Context context) {
+        final NetworkInfo info = ((ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE)).getActiveNetworkInfo();
+        return !(info == null || !info.isConnectedOrConnecting());
+    }
+
+    @Nullable
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+}
+
+
+
+This test gave me the same results as above.
+
+
+
+Conditions for test 3:
+
+
+Same as test 2 with changes below
+App is whitelisted from battery optimizations
+
+
+App in background - 
+
+D/AppLog: PhoneService:isInternetOn:false
+D/AppLog: PhoneService:isInternetOn:true
+
+
+This test was interesting in that the first log didn't give me internet connection, but the second log did, which was about 4 seconds after the first, and well after it established the foreground service. When I ran the test the second time, both logs were true. This seems to indicate a delay between the startForeground function being called and the system putting the app into the foreground.
+
+
+
+I even ran test 2 and 3 by using adb shell dumpsys deviceidle force-idle, and got similar results to test 3, where the first log wasn't connected, but all subsequent logs showed internet connection.
+
+I believe this all functions as intended, since battery saver on the device states:
+
+
+  To help improve battery life, battery saver reduces your device's performance and limits vibration, location services, and most background data. Email, messaging, and other apps that rely on syncing may not update unless you open them.
+
+
+So unless you are currently using the app, or you whitelisted the app and have a foreground service running, you can expect no internet connection to be available for your app to use if it is in battery saver or Doze mode.
+
+
+
+Edit #1
+
+This may work as a different workaround vs using some timer to recheck for internet connection:
+
+MyService.java
+
+@Override
+public void onCreate() {
+    super.onCreate();
+    Log.d("AppLog", "MyService:onCreate isInternetOn:" + PhoneBroadcastReceiver.isInternetOn(this));
+    if (!PhoneBroadcastReceiver.isInternetOn(this)) {
+        if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
+            final ConnectivityManager connectivityManager = (ConnectivityManager) getApplicationContext().getSystemService(CONNECTIVITY_SERVICE);
+            connectivityManager.registerNetworkCallback(new NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build(), new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    //Use this network object to perform network operations
+                    connectivityManager.unregisterNetworkCallback(this);
+                }
+            });
+        }
+    }
+}
+
+
+This will either return immediately if there is a network connection you can use, or wait until there is a connection. From here you can probably just use a Handler to unregister if you don't receive any result after some time, although I'd probably just leave it active.
+
+
+
+Edit #2
+
+So this is what I was recommending. This is based off the answer you gave in the comments earlier (Android check internet connection):
+
+@Override
+public void onCreate() {
+    super.onCreate();
+    Log.d("AppLog", "MyService:onCreate isInternetOn:" + PhoneBroadcastReceiver.isInternetOn(this));
+    if (!PhoneBroadcastReceiver.isInternetOn(this)) {
+        if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
+            final ConnectivityManager connectivityManager = (ConnectivityManager) getApplicationContext().getSystemService(CONNECTIVITY_SERVICE);
+            connectivityManager.registerNetworkCallback(new NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build(), new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    isConnected(network); //Probably add this to a log output to verify this actually works for you
+                    connectivityManager.unregisterNetworkCallback(this);
+                }
+            });
+        }
+    }
+}
+
+public static boolean isConnected(Network network) {
+
+    if (network != null) {
+        try {
+            URL url = new URL("http://www.google.com/");
+            HttpURLConnection urlc = (HttpURLConnection)network.openConnection(url);
+            urlc.setRequestProperty("User-Agent", "test");
+            urlc.setRequestProperty("Connection", "close");
+            urlc.setConnectTimeout(1000); // mTimeout is in seconds
+            urlc.connect();
+            if (urlc.getResponseCode() == 200) {
+                return true;
+            } else {
+                return false;
+            }
+        } catch (IOException e) {
+            Log.i("warning", "Error checking internet connection", e);
+            return false;
+        }
+    }
+
+    return false;
+
+}
+
+    

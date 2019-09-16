@@ -1,0 +1,103 @@
+268
+Q:I'm trying to animate the transition between fragments. I got the answer from the following
+Android Fragments and animation  
+
+FragmentTransaction ft = getFragmentManager().beginTransaction();
+ft.setCustomAnimations(R.anim.slide_in_left, R.anim.slide_out_right);
+
+DetailsFragment newFragment = DetailsFragment.newInstance();
+
+ft.replace(R.id.details_fragment_container, newFragment, "detailFragment");
+
+// Start the animated transition.
+ft.commit();
+
+
+And my R.anim.slide_in_left 
+
+<?xml version="1.0" encoding="utf-8"?>
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+        <translate android:fromXDelta="50%p" android:toXDelta="0"
+            android:duration="@android:integer/config_mediumAnimTime"/>
+       <alpha android:fromAlpha="0.0" android:toAlpha="1.0"
+            android:duration="@android:integer/config_mediumAnimTime" />
+</set>
+
+
+But when I tried this it showed  
+
+02-08 16:27:37.961: ERROR/AndroidRuntime(1717): FATAL EXCEPTION: main
+02-08 16:27:37.961: ERROR/AndroidRuntime(1717): java.lang.RuntimeException: Unknown animator name: translate
+02-08 16:27:37.961: ERROR/AndroidRuntime(1717):     at android.animation.AnimatorInflater.createAnimatorFromXml(AnimatorInflater.java:129)
+02-08 16:27:37.961: ERROR/AndroidRuntime(1717):     at android.animation.AnimatorInflater.createAnimatorFromXml(AnimatorInflater.java:126)
+02-08 16:27:37.961: ERROR/AndroidRuntime(1717):     at android.animation.AnimatorInflater.createAnimatorFromXml(AnimatorInflater.java:93)
+02-08 16:27:37.961: ERROR/AndroidRuntime(1717):     at android.animation.AnimatorInflater.loadAnimator(AnimatorInflater.java:72)
+02-08 16:27:37.961: ERROR/AndroidRuntime(1717):     at android.app.FragmentManagerImpl.loadAnimator(FragmentManager.java:621)
+02-08 16:27:37.961: ERROR/AndroidRuntime(1717):     at android.app.FragmentManagerImpl.moveToState(FragmentManager.java:733)
+02-08 16:27:37.961: ERROR/AndroidRuntime(1717):     at android.app.FragmentManagerImpl.moveToState(FragmentManager.java:919)
+02-08 16:27:37.961: ERROR/AndroidRuntime(1717):     at android.app.BackStackRecord.run(BackStackRecord.java:578)
+02-08 16:27:37.961: ERROR/AndroidRuntime(1717):     at android.app.FragmentManagerImpl.execPendingActions(FragmentManager.java:1217)
+
+
+Any ideas? When I checked Honeycomb API reference translate is there. What did I miss?
+Is there any other way to animate the transition between fragments?
+Thank you 
+    
+===============================================================================================
+338
+A:You need to use the new android.animation framework (object animators) with FragmentTransaction.setCustomAnimations as well as FragmentTransaction.setTransition.
+
+Here's an example on using setCustomAnimations from ApiDemos' FragmentHideShow.java:
+
+ft.setCustomAnimations(android.R.animator.fade_in, android.R.animator.fade_out);
+
+
+and here's the relevant animator XML from res/animator/fade_in.xml:
+
+<objectAnimator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/accelerate_quad"
+    android:valueFrom="0"
+    android:valueTo="1"
+    android:propertyName="alpha"
+    android:duration="@android:integer/config_mediumAnimTime" />
+
+
+Note that you can combine multiple animators using <set>, just as you could with the older animation framework.
+
+
+
+EDIT: Since folks are asking about slide-in/slide-out, I'll comment on that here.
+
+Slide-in and slide-out
+
+You can of course animate the translationX, translationY, x, and y properties, but generally slides involve animating content to and from off-screen. As far as I know there aren't any transition properties that use relative values. However, this doesn't prevent you from writing them yourself. Remember that property animations simply require getter and setter methods on the objects you're animating (in this case views), so you can just create your own getXFraction and setXFraction methods on your view subclass, like this:
+
+public class MyFrameLayout extends FrameLayout {
+    ...
+    public float getXFraction() {
+        return getX() / getWidth(); // TODO: guard divide-by-zero
+    }
+
+    public void setXFraction(float xFraction) {
+        // TODO: cache width
+        final int width = getWidth();
+        setX((width > 0) ? (xFraction * width) : -9999);
+    }
+    ...
+}
+
+
+Now you can animate the 'xFraction' property, like this:
+
+res/animator/slide_in.xml:
+
+<objectAnimator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/linear_interpolator"
+    android:valueFrom="-1.0"
+    android:valueTo="0"
+    android:propertyName="xFraction"
+    android:duration="@android:integer/config_mediumAnimTime" />
+
+
+Note that if the object you're animating in isn't the same width as its parent, things won't look quite right, so you may need to tweak your property implementation to suit your use case.
+    

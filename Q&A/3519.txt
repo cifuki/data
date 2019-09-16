@@ -1,0 +1,184 @@
+64
+Q:This question already has an answer here:
+    
+        
+            Is it possible to detect Android app uninstall?
+                
+                    7 answers
+                
+        
+        
+            Perform a task on uninstall in android [duplicate]
+                
+                    4 answers
+                
+        
+    
+    
+All we know that usual (in practice any) antivirus application before uninstall used to fire simple dialog like: "You're going to uninstall app, are you sure?" - "yes/no".
+
+Yes, I know that I can intercept package delete intent using intent-filter like:
+
+<activity
+    android:name=".UninstallIntentActivity"
+    android:label="@string/app_name" >
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <action android:name="android.intent.action.DELETE" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:scheme="package"  />
+    </intent-filter>
+</activity>
+
+
+But problem is in simple fact that this intercepts any delete requests and moreover this will fire chooser dialog between my app and stock installer. So if user will select stock installer - I won't be able to do anything.
+
+My goal is not to prevent user from uninstalling of my app, but just rollback changes made by my app.
+
+Learning from those antivirus apps I see that this kind of operation is possible, so please help me and explain how it is possible?
+
+Update
+
+Since there are some guys who doesn't believe that it's real - I would refer to Avast Mobile Security:
+
+
+  Anti-Theft protects itself from uninstall by disguising its components
+  with various self-preservation techniques.
+
+
+Another example: Kaspersky Internet Security for Android - here's special procedure for uninstalling it, which requires entering of secret code. 
+
+Anyway it means that there's way to intercept uninstallation procedure in order to either prevent uninstall or do some finalizing job.
+    
+===============================================================================================
+135
+A:Okay. I have been investigating a lot on this problem since 2 days and finally found a "wild way" to solve it without rooting the device :)
+
+First, here are the highlights to achieve the solution:
+
+1. Whenever user goes to Settings -> Manage Apps -> Selects a particular application
+we receive a broadcast android.intent.action.QUERY_PACKAGE_RESTART with name of the application's package as extras.
+
+2. After that when we click on the Uninstall button (with package installer), it opens an activity named - com.android.packageinstaller.UninstallerActivity
+
+Control flow will be like:
+
+Under App Settings the User Clicks on Uninstall button ---> We get control to show a dialogue / start another activity / etc ---> We finish our Pre-Uninstallation task ---> User is Returned back to Uninstallation confirmation screen ---> User confirms and uninstalls the app 
+
+Used Method: 
+
+We will implement a BroadcastReceiver in our application for listening the action "android.intent.action.QUERY_PACKAGE_RESTART" and match our package name inside onReceive() method. If the broadcast was received for selection of our desired application package, then we'll initiate a background thread that will keep monitoring the foreground running activities using the ActivityManager.
+
+Once we find the foreground activity to be "com.android.packageinstaller.UninstallerActivity", it'll be confirm that user wants to uninstall our application. At this point we'll perform the desired tasks (either display a dialogue, or start another activity overlapping the uninstallation window, etc..) that are to be performed before uninstallation. After performing our task, we'll allow the user to continue with confirming the uninstallation process.
+
+Implementation / Source Code:
+
+In manifest.xml
+
+add permission:
+
+<uses-permission android:name="android.permission.GET_TASKS"/>
+
+
+and broadcast receiver:
+
+<receiver android:name=".UninstallIntentReceiver">
+      <intent-filter android:priority="0">
+            <action android:name="android.intent.action.QUERY_PACKAGE_RESTART" />
+            <data android:scheme="package" />
+      </intent-filter>
+ </receiver>
+
+
+UninstallIntentReceiver.java  (broadcast receiver class)
+
+public class UninstallIntentReceiver extends BroadcastReceiver{
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        // fetching package names from extras
+        String[] packageNames = intent.getStringArrayExtra("android.intent.extra.PACKAGES"); 
+
+        if(packageNames!=null){
+            for(String packageName: packageNames){
+                if(packageName!=null && packageName.equals("YOUR_APPLICATION_PACKAGE_NAME")){
+                    // User has selected our application under the Manage Apps settings
+                    // now initiating background thread to watch for activity
+                    new ListenActivities(context).start();
+
+                }
+            }
+        }
+    }
+
+}
+
+
+ListenActivities class - for monitoring the foreground activities
+
+class ListenActivities extends Thread{
+    boolean exit = false;
+    ActivityManager am = null;
+    Context context = null;
+
+    public ListenActivities(Context con){
+        context = con;
+        am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+    }
+
+    public void run(){
+
+        Looper.prepare();
+
+        while(!exit){
+
+             // get the info from the currently running task
+             List< ActivityManager.RunningTaskInfo > taskInfo = am.getRunningTasks(MAX_PRIORITY); 
+
+             String activityName = taskInfo.get(0).topActivity.getClassName();
+
+
+             Log.d("topActivity", "CURRENT Activity ::"
+                     + activityName);
+
+             if (activityName.equals("com.android.packageinstaller.UninstallerActivity")) {
+                // User has clicked on the Uninstall button under the Manage Apps settings
+
+                 //do whatever pre-uninstallation task you want to perform here
+                 // show dialogue or start another activity or database operations etc..etc..
+
+                // context.startActivity(new Intent(context, MyPreUninstallationMsgActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                 exit = true;
+                 Toast.makeText(context, "Done with preuninstallation tasks... Exiting Now", Toast.LENGTH_SHORT).show();
+            } else if(activityName.equals("com.android.settings.ManageApplications")) {
+                // back button was pressed and the user has been taken back to Manage Applications window
+                          // we should close the activity monitoring now
+                exit=true;
+            }
+        }
+        Looper.loop();
+    }
+}
+
+
+Known Limitations:
+
+When the user clicks on the Uninstall button under Manage Apps settings, we'll perform our pre-uninstallation tasks and then promt the user to the Confirmation window where user can either confirm to uninstall or can Cancel the operation.
+
+The approach described above is as of now not covering the case if user clicks on Cancel button after we have performed our task. But this could be tackled easily with some ammendments.
+
+E.g.: We can implement a logic to revert the changes we made if the broadcast "android.intent.action.PACKAGE_REMOVED" was not received in the end.
+
+I hope this approach will be helpful to you :) As this is the only way in my opinion we can solve your problem without rooting the device!
+
+[Update 1]:
+Suggested Approach to check if the Uninstallation task was Canceled:
+
+Its kind of funny that I had entirely different and much complex idea earlier(involving broadcasts, ActivityManager, etc.. etc..), but while writing it here just another idea struck into my mind which is comparatively very simple :)
+
+When the User clicks on Uninstall button under Manage Apps settings and after you have performed your pre-uninstallation tasks, you just set some SharedPreference in your app that you have performed the pre-uninstall tasks and are ready for uninstallation. After this you need not to care about anything.
+
+If the user continues to uninstall -> its well and good as you have already performed required tasks.
+
+While if user finally clicks on Cancel button and goes away -> don't bother. Until the user goes and run your application again. Now inside "onStart()" / "onResume()" of your application's main activity, you can check the SharedPreference's value and if it was set for uninstallation, that will mean that user didn't finally proceeded with the uninstallation. And now you could revert the changes made earlier(reversing the pre-uninstall tasks performed) to ensure that your application runs perfectly!
+    

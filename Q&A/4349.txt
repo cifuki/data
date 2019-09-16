@@ -1,0 +1,127 @@
+54
+Q:I am trying to add token based authentication via Retrofit 2.0-beta3 and OkHttpClient in Android using interceptors. But I get   UnsupportedOperationException when I add my interceptor in OkHttpClient.
+Here is my code:
+In ApiClient.java 
+
+public static TrequantApiInterface getClient(final String token) {
+        if( sTreqantApiInterface == null) {
+
+            Log.v(RETROFIT_LOG, "Creating api client for the first time");
+            OkHttpClient okClient = new OkHttpClient();
+
+            okClient.interceptors().add(new Interceptor() {
+                @Override
+                public Response intercept(Interceptor.Chain chain) throws IOException {
+                    Request original = chain.request();
+
+                    // Request customization: add request headers
+                    Request.Builder requestBuilder = original.newBuilder()
+                            .header("Authorization", token)
+                            .method(original.method(), original.body());
+
+                    Request request = requestBuilder.build();
+                    return chain.proceed(request);
+                }
+            });
+
+            Retrofit client = new Retrofit.Builder()
+                    .baseUrl(baseUrl)
+                    .client(okClient)
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build();
+            sTreqantApiInterface = client.create(TrequantApiInterface.class);
+        }
+        return sTreqantApiInterface;
+    }
+
+
+And I use it like: 
+
+private void ampFreqTest(){
+    String token = getSharedPreferences(getString(R.string.preference_file_key), Context.MODE_PRIVATE)
+                        .getString(getString(R.string.key_token), "");
+
+    service = ApiClient.getClient(token);
+    //I get an exception on this line:
+    Call<List<AmpFreq>> call = service.getUserAmpFreq("1");
+    call.enqueue(new Callback<List<AmpFreq>>() {
+        @Override
+        public void onResponse(Response<List<AmpFreq>> response) {
+            Toast.makeText(HomeScreen.this, "Got result", Toast.LENGTH_LONG);
+
+            Log.v(ApiClient.RETROFIT_LOG, "Success api client." + response.message());
+            Log.v(ApiClient.RETROFIT_LOG, "Success api client.");
+        }
+        @Override
+        public void onFailure(Throwable t) {
+            Toast.makeText(HomeScreen.this, t.getMessage() , Toast.LENGTH_LONG);
+            Log.v(ApiClient.RETROFIT_LOG, "Fail api client." + t.getMessage() );
+        }
+    });
+}
+
+
+But I get this error:
+
+Process: com.trequant.usman.trequant_android, PID: 14400
+java.lang.UnsupportedOperationException at java.util.Collections$UnmodifiableCollection.add(Collections.java:932)
+ at com.trequant.usman.trequant_android.api.ApiClient.getClient(ApiClient.java:41)
+
+
+It gives me error on adding a new interceptor saying that it is not modifiableCollection but the documentation for interceptors() function says: /**
+
+   * Returns a modifiable list of interceptors that observe the full span of each call: from before
+   * the connection is established (if any) until after the response source is selected (either the
+   * origin server, cache, or both).
+   */
+
+
+What am I doing wrong? Could it be a bug? 
+    
+===============================================================================================
+132
+A:This issue occurs when you change  Retrofit 2.0-beta2 to  Retrofit 2.0-beta3. You have to use builder if you want to create OkHttpClient object.
+
+Change :
+
+ OkHttpClient okClient = new OkHttpClient();
+
+ okClient.interceptors().add(new Interceptor() {
+       @Override
+       public Response intercept(Interceptor.Chain chain) throws IOException {
+            Request original = chain.request();
+
+            // Request customization: add request headers
+            Request.Builder requestBuilder = original.newBuilder()
+                    .header("Authorization", token)
+                    .method(original.method(), original.body());
+
+            Request request = requestBuilder.build();
+            return chain.proceed(request);
+        }
+ });
+
+
+to :
+
+ OkHttpClient okClient = new OkHttpClient.Builder()
+           .addInterceptor(
+               new Interceptor() {
+                 @Override
+                 public Response intercept(Interceptor.Chain chain) throws IOException {
+                       Request original = chain.request();
+
+                       // Request customization: add request headers
+                       Request.Builder requestBuilder = original.newBuilder()
+                               .header("Authorization", token)
+                               .method(original.method(), original.body());
+
+                       Request request = requestBuilder.build();
+                       return chain.proceed(request);
+                   }
+               })
+           .build();
+
+
+It should resolve your problem.
+    

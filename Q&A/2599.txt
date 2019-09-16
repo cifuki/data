@@ -1,0 +1,118 @@
+81
+Q:Update 3: I have partnered with another developer and we seem to found somebody who can do this for a large sum of money. They have sent us a test apk and it seems to work. We will go ahead and purchase the source. I hope we are not going to be scammed. I'll update once I find out
+
+Update 2: Still working on it. After more painful days I now think there is nothing fancy going on but they are simply using AudioFlinger (See the link) on the native side to call AudioFlinger::setParameters
+
+I am now looking to find how I can write a simple JNI to call AudioFlinger::setParameters with 
+audio_io_handle_t ioHandle, const String8& keyValuePairs
+
+I know what can keyValuePairs be but not a clue about audio_io_handle_t 
+
+Update: I now believe other apps might be using QCOM audio with CAF. See audio_extn_utils_send_audio_calibration at link for same
+
+and voice_get_incall_rec_snd_device at link for same
+
+I have no C/++ knowledge. How can I find out if I can call these methods from native side? 
+Since other apps can, there must be a way.
+
+
+
+I've been struggling with this over 40 days for at least 5-6 hours a day. I am not sure if it is permitted by SO but I am happy to make donation for the correct answer too.
+
+I have a call recording app that uses VOICE_CALL audio source. Although ASOP does not implement/mandate it, most manufacturers have implemented VOICE_CALL and apps that use VOICE_CALL audio source worked fine on many devices. That is until Android 6.
+
+Google changed this behavior with Android 6. Opening VOICE_CALL audio source now require android.permission.CAPTURE_AUDIO_OUTPUT which is only granted to system applications.
+
+This essentially stops call recording, or it should have. Well, it does for mine and 200+ other call recording apps apart from 3 who have found a way to get around this limitation.
+
+I have been trying those apps on many different phones with Android 6 and found out certain characteristics in the way they manage to record.
+
+They all use Android AudioRecord class and open MIC audio source. I do too; but on my app, I only get audio from MIC, not the other party. What I've found out is telling me that they are issuing some sort of system call just after or before starting recording. 
+
+Have a look at the following log form one of the apps that successfully record VOICE_CALL, even though it uses MIC to record. It looks like app is some how managing to mix/route/stream/merge VOICE_CALL audio source in to MIC.
+
+- D/audio_hw_primary: in_set_parameters: enter: kvpairs=input_source=1;routing=-2147483644
+- D/PermissionCache: checking android.permission.MODIFY_AUDIO_SETTINGS for uid=10286 => granted (432 us)
+- D/audio_hw_primary: in_set_parameters: enter: kvpairs=input_source=4;routing=-2147483584;format=1
+- D/audio_hw_primary: select_devices: out_snd_device(0: ) in_snd_device(283: voice-dmic-ef)
+- D/hardware_info: hw_info_append_hw_type : device_name = voice-dmic-ef
+- D/voice: voice_get_incall_rec_snd_device: in_snd_device(283: voice-dmic-ef) incall_record_device(283: voice-dmic-ef)
+
+
+As you can see in the first line it is starting with MIC audio source  input_source=1;routing=-2147483644. 
+
+Then, on the second line it does something and get granted android.permission.MODIFY_AUDIO_SETTINGS which is normal permission and my app has it too. This seems to be the most important part and it looks like all 3 are using JNI to do what ever they do to trigger streaming/merging of VOICE_CALL audio source to MIC and record with standart AudioRecorder API
+
+On the next line you see that audio hardware starting to mixing VOICE_CALL (input_source=4) even though they have opened MIC(1) audio source.
+
+I have assumed they used
+
+AudioManager.setParameters("key=value")
+
+
+and tried many variations such as
+
+AudioManager.setParameters("input_source=4;routing=-2147483584;format=1")
+
+
+without any luck.
+
+Then, I've found Android, NDK, Audio routing, forcing audio through the headset and thought they might be some how mix/route/stream/merge VOICE_CALL in to current AudioRecord session and (since have no C knowledge) tried to use reflation to achieve same thing with below code (again) without luck.
+
+private static void setForceUseOn() {
+
+/*
+setForceUse(int usage, int config);
+
+----usage for setForceUse, must match AudioSystem::force_use
+public static final int FOR_COMMUNICATION = 0;
+public static final int FOR_MEDIA = 1;
+public static final int FOR_RECORD = 2;
+public static final int FOR_DOCK = 3;
+public static final int FOR_SYSTEM = 4;
+public static final int FOR_HDMI_SYSTEM_AUDIO = 5;
+
+----device categories config for setForceUse, must match AudioSystem::forced_config
+public static final int FORCE_NONE = 0;
+public static final int FORCE_SPEAKER = 1;
+public static final int FORCE_HEADPHONES = 2;
+public static final int FORCE_BT_SCO = 3;
+public static final int FORCE_BT_A2DP = 4;
+public static final int FORCE_WIRED_ACCESSORY = 5;
+public static final int FORCE_BT_CAR_DOCK = 6;
+public static final int FORCE_BT_DESK_DOCK = 7;
+public static final int FORCE_ANALOG_DOCK = 8;
+public static final int FORCE_DIGITAL_DOCK = 9;
+public static final int FORCE_NO_BT_A2DP = 10;
+public static final int FORCE_SYSTEM_ENFORCED = 11;
+public static final int FORCE_HDMI_SYSTEM_AUDIO_ENFORCED = 12;
+public static final int FORCE_DEFAULT = FORCE_NONE;
+
+
+ */
+
+    try {
+        Class audioSystemClass = Class.forName("android.media.AudioSystem");
+        Method setForceUse = audioSystemClass.getMethod("setForceUse", int.class, int.class);
+        setForceUse.invoke(null, 0, 0);      // setForceUse(FOR_RECORD, FORCE_NONE)
+
+
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+
+}
+
+
+Obviously there is something I am missing that makes recording possible.
+
+I even offered to pay to get this information, all refused. Fair enough I've said. I will be publishing it once/if I find it! 
+
+Do you have any idea as to what they might be doing? 
+    
+===============================================================================================
+10
+A:Me and my partner were able to purchase what we were looking for. We were on right path, you set keyValuePairs on the native side. 
+
+Unfortunately I cannot publish the source because of the licensing restrictions from the company we had it written for us
+    

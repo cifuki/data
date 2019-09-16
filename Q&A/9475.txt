@@ -1,0 +1,67 @@
+29
+Q:I have an gradle-based Android project with 4 submodules - two libraries and two applications. I was trying to simplify the build.gradle files of each submodule by moving some of of the shared code/configurations to the top level build.gradle file and use subprojects {} to make that code available to each submodule.
+
+The file system structure looks like this:
+
+Root
+ |- App1/
+ |- App2/
+ |- Lib1/
+ |- Lib2/
+ |- build.gradle
+ |- settings.gradle
+
+
+The problem is that if I add an android {} section to the subprojects then gradle tasks fail. For example, this is my top-level build.gradle file:
+
+subprojects { project ->
+  android {
+    buildToolsVersion "20.0.0"
+  }
+}
+
+
+Running gradle returns this:
+
+
+  What went wrong:
+  A problem occurred evaluating root project 'android'.
+  Could not find method android() for arguments [build_7dngpra6ldok366maq0on77r7e$_run_closure3_closure5@43d95624] on root project 'android'.
+
+
+I searched for similar posts and some people suggest adding the line apply plugin: 'android' to each subproject in order to expose the missing android() method that gradle is complaining about. However, that solution doesn't work for me because it would effectively add that line to library project, which require apply plugin: 'android-library' instead.
+
+Is there a way to use android {} inside of subprojects {} when you have apps and libraries in the same project?
+    
+===============================================================================================
+31
+A:This is actually a limitation on the way that the android-gradle plugin is structured and there is a workaround documented at the android tools website.
+
+
+  If you have a lot of Android modules, you may want to avoid manually setting the same values in all of them. Because you probably have a mix of android and android-library project you can't apply these plugins through a subprojects closure.
+
+
+The proposed solution is:
+
+
+  ...in the root project's build.gradle:
+
+ext {
+  compileSdkVersion = 19
+  buildToolsVersion = "19.0.1"
+}
+
+  
+  in all the android modules:
+
+android {
+  compileSdkVersion rootProject.ext.compileSdkVersion
+  buildToolsVersion rootProject.ext.buildToolsVersion
+}
+
+  
+  ...
+
+
+One think I noticed was that this doesn't work on older versions of gradle (I was trying with 1.10 and got an error). With Gradle 2.1 this seems to work correctly though.
+    

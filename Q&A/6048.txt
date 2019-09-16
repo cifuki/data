@@ -1,0 +1,64 @@
+42
+Q:Background
+
+I have an app (here) that, among other features, allows to share APK files.
+
+In order to do so, it reaches the file by accessing the path of packageInfo.applicationInfo.sourceDir (docs link here), and just shares the file (using ContentProvider when needed, as I've used here).
+
+The problem
+
+This works fine in most cases, especially when installing APK files from either the Play Store or from a standalone APK file, but when I install an app using Android-Studio itself, I see multiple APK files on this path, and none of them are valid ones that can be installed and run without any issues.
+
+Here's a screenshot of the content of this folder, after trying out a sample from "Alerter" github repo  :
+
+
+
+I'm not sure when this issue has started, but it does occur at least on my Nexus 5x with Android 7.1.2. Maybe even before.
+
+What I've found
+
+This seems to be caused only from the fact that instant run is enabled on the IDE, so that it could help updating the app without the need to re-build it all together :
+
+
+
+After disabling it, I can see that there is a single APK, just as it used to be in the past:
+
+
+
+You can see the difference in file size between the correct APK and the split one.
+
+Also, it seems that there is an API to get the paths to all of the splited APKs:
+
+https://developer.android.com/reference/android/content/pm/ApplicationInfo.html#splitPublicSourceDirs
+
+The question
+
+What should be the easiest way to share an APK that got to be split into multiple ones ?
+
+Is it really needed to somehow merge them? 
+
+It seems it is possible according to the docs :
+
+
+  Full paths to zero or more split APKs that, when combined with the
+  base APK defined in sourceDir, form a complete application.
+
+
+But what's the correct way to do it, and is there a fast and efficient way to do it? Maybe without really creating a file?
+
+Is there maybe an API to get a merged APK out of all the split ones? Or maybe such an APK already exist anyway in some other path, and there is no need for merging?
+
+EDIT: just noticed that all third party apps that I've tried are supposed to share an installed app's APK fail to do so in this case. 
+    
+===============================================================================================
+18
+A:I am the tech lead @Google for the Android Gradle Plugin, let me try to answer your question assuming I understand your use case. 
+
+First, some users mentioned you should not share your InstantRun enabled build and they are correct. The Instant Run builds on an application is highly customized for the current device/emulator image you are deploying to. So basically, say you generate an IR enabled build of your app for a particular device running 21, it will fail miserably if you try to use those exact same APKs on say a device running 23. I can go into much deeper explanation if necessary but suffice to say that we generate byte codes customized on the APIs found in android.jar (which is of course version specific). 
+
+So I do not think that sharing those APKs make sense, you should either use a IR disabled build or a release build. 
+
+Now for some details, each slice APK contains 1+ dex file(s), so in theory, nothing prevents you from unziping all those slice APKs, take all the dex files and stuff them back into the base.apk/rezip/resign and it should just work. However, it will still be an IR enabled application so it will start the small server to listen to IDE requests, etc, etc... I cannot imagine a good reason for doing this. 
+
+Hope this helps.
+    

@@ -1,0 +1,76 @@
+33
+Q:I cannot run run-as (or ndk-gdb) for the Galaxy S4 running Jellybean 4.2.2. 
+
+~  $ adb shell
+shell@android:/ $ run-as a.b.c ls
+run-as: Package 'a.b.c' is unknown
+
+
+There are multiple answers for this issue for pre-ICS devices, but those seem to have been fixed in ICS.
+
+Update - Aug 2013: After initially appearing on the Galaxy S4 with Jellybean 4.2.2, the run-as issue now seems to be on all 4.3 devices. See this Android bug.
+
+See the acknowledged Android issue here. 
+
+Update - Nov 2013: Google posted the patches that fix run-as in Android 4.4.
+    
+===============================================================================================
+13
+A:Found success by adding this to the activity:
+
+private void startGdbServer() {   
+    try {
+        new ProcessBuilder()
+        .command(getFilesDir().getParent() + "/lib/gdbserver", "tcp:5039", "--attach" ,"" + android.os.Process.myPid())
+        .redirectErrorStream(true)
+        .start();
+    } catch (IOException e) {
+        Log.e(TAG, "IOException failed to start gdbserver");
+    }
+}
+
+
+Then I wrapped startGdbServer in an Android service and updating the ndk-gdb script to start the server instead of the run-as command. 
+
+Here's the manifest addition:
+
+<service android:enabled="true" android:name="com.apportable.activity.GdbServerService"
+    android:label="@string/app_name" android:icon="@drawable/icon">
+    <intent-filter >
+        <action android:name="apportable.FoundationTests.GdbServerService" />
+    </intent-filter>
+</service>
+
+
+Here are the relevant ndk-gdb changes (in python):
+
+    remote_gdbserver = '/data/data/' + env['APPLICATION_IDENTIFIER'] + '/lib/gdbserver'
+
+    print "Attaching to pid " + pid
+    # Android 4.2 requires the --user 0 option. Earlier versions cannot have it
+
+    results = env.Execute([env['ADB'], 'shell', 'am'])
+    if "--user" in results:
+        user_option = "--user 0"
+    else:
+        user_option = ""
+
+    adb.AsyncShell(env, 'am startservice ' + user_option + ' -a ' + env['APPLICATION_IDENTIFIER'] + '.GdbServerService --es gdbserver_name ' + remote_gdbserver + ' --ei gdbserver_port ' + str(env['ANDROID_REMOTE_DEBUG_PORT']))
+
+    # HACK: magic number. ensure the gdb server is actually up and running
+    time.sleep(2)  # 1 is usually enough, but not always, like after reboot or with heavy system load
+
+    adb.Forward(env, env['ANDROID_LOCAL_DEBUG_PORT'], env['ANDROID_REMOTE_DEBUG_PORT'])
+
+    adb.Pull(env, process_path, '/system/bin/app_process')
+
+    setup_path = '"' + setup_path + '"'
+
+    if env['CGDB'] is not None:
+        cmd = [env['CGDB'], '-d', env['GDB'], '--', '-x', setup_path]
+    else:
+        cmd = [env['GDB'], '-x', setup_path]
+
+    env.RunCommand(cmd)
+
+    

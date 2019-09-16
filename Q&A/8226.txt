@@ -1,0 +1,122 @@
+32
+Q:I'm attempting to detect when my application has been upgraded using a BroadcastReceiver and set a boolean in my Application Class.  This boolean will be used in conjunction with a few other booleans to determine whether or not to show the EULA dialog box to the user.
+
+I belive I've got it all setup correctly, but the EULA is still showing up when it shouldn't.  Specifically when the user has already accepted the EULA in a previous version, the EULA hasn't changed in the version being upgraded to(Manually set by me), and the app is being upgraded.
+
+I believe the reason this isn't working is because my Application isn't running and therefore the isAppUpgrade() method isn't being called and setting the correct boolean flag.  Can somebody confirm this is the case, or is there something wrong in my code?
+
+FYI - The EULA.show(Activity, boolean, boolean) static method is being called first thing in my Main activity.
+
+Here's some code
+
+Application Class
+
+public class MFCApplication extends Application {
+
+    private boolean isUpgrade = false;
+
+    /**
+     * Returns a manually set value of whether the EULA has changed in this version of the App
+     * @return true/false
+     */
+    public boolean hasEULAChanged() {
+        return false;
+    }
+
+    /**
+     * Returns whether or not the application has been upgraded.  Set by the UpgradeBroadcastReceiver
+     * @return true/false
+     */
+    public boolean isAppUpgrade() {
+        return isUpgrade;
+    }
+
+    /**
+     * Method called by UpgradeBroadcastReceiver if the App has been upgraded
+     */
+    public void setAppIsUpgrade() {
+        this.isUpgrade = true;
+    }
+}
+
+
+BroadcastReceiver
+
+public class UpgradeBroadcastReceiver extends BroadcastReceiver {
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        if (intent == null)
+            return;
+        if (context == null)
+            return;
+
+        String action = intent.getAction();
+        if (action == null)
+            return;
+
+        if (action.equals(Intent.ACTION_PACKAGE_REPLACED)) {
+            MFCApplication myApp = ((MFCApplication)((Activity)context).getApplication());
+
+            myApp.setAppIsUpgrade();
+        }
+    }
+}
+
+
+EULA Class
+
+public class EULA {
+
+    private static final String EULA_ASSET = "EULA";
+    private static final String EULA_PREFERENCES = "eula";
+    private static Activity mActivity;
+
+    private static PackageInfo getPackageInfo() {
+        PackageInfo pi = null;
+        try {
+            pi = mActivity.getPackageManager().getPackageInfo(mActivity.getPackageName(), PackageManager.GET_ACTIVITIES);
+        } catch (PackageManager.NameNotFoundException ex) {
+            ex.printStackTrace();
+        }
+        return pi;
+    }
+
+    public static boolean show(Activity activity, boolean hasEULAChanged, boolean isAppUpgrade) {
+        mActivity = activity;
+        final SharedPreferences preferences = activity.getSharedPreferences(EULA_PREFERENCES, Activity.MODE_PRIVATE);
+        final PackageInfo packageInfo = getPackageInfo();
+        String eulaPref = preferences.getString(EULA_PREFERENCES, "0");
+        boolean eulaVersionAccepted = packageInfo.versionName.equals(eulaPref);
+        if (!eulaVersionAccepted && (hasEULAChanged || !isAppUpgrade)) {
+            //The EULA should be shown here, but it isn't
+            return false;
+        }
+        return true;
+    }
+}
+
+
+Application Manifest
+
+<receiver android:name=".helpers.UpgradeBroadcastReceiver">
+    <intent-filter>
+        <action android:name="android.intent.action.PACKAGE_REPLACED" />
+        <data android:scheme="package" android:path="com.hookedroid.fishingcompanion" />
+    </intent-filter>
+</receiver>
+
+    
+===============================================================================================
+62
+A:It's much easier to just check your current app version.
+
+PackageInfo packageInfo = activity.getPackageManager()
+    .getPackageInfo(activity.getPackageName(), 0);
+int versionCode = packageInfo.versionCode;
+
+
+When your app starts, you check your SharedPreferences for an integer value with the version code. If there is none, or if it doesn't match, display the EULA. After the user accepts the EULA, write the versionCode value to the SharedPreferences.
+
+versionCode will match the version number you store in the Manifest.
+    

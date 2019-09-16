@@ -1,0 +1,232 @@
+28
+Q:I'm having trouble getting my Android app to connect to a socket.io chat server. I'm using socket.io-java-client created by Gottox which can be found here: https://github.com/Gottox/socket.io-java-client
+
+The server runs locally over port 7000. I'm using the android emulator, so I'm using 10.0.2.2:7000 to access the server.
+
+Any help would be appreciated, I don't have much experience at all with SSL. If I find a working solution I'll also post it.
+
+Node.js Server
+
+var express = require('express');
+var app = express();
+var server = require('http').createServer(app).listen(7000);
+var io = require('socket.io').listen(server);
+io.sockets.on('connection', function(client){
+    client.on('message', function(err, msg){
+        client.broadcast.emit('message', msg);
+    });
+ });
+
+
+package.json
+
+{
+  "name": "simplechat",
+  "version": "0.0.1",
+  "main": "app.js",
+  "dependencies": {
+    "express" : "~4.0.0",
+    "socket.io" : "~0.9.13"
+  }
+}
+
+
+Android: SendMessageActivity
+
+public class SendMessageActivity extends Activity {
+
+    private static final String SERVER_ADDRESS = "https://10.0.2.2:7000";
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_send_message);
+
+        System.out.println("Sever: " + SERVER_ADDRESS);
+
+        try {
+            SocketIO socket = new SocketIO(new URL(SERVER_ADDRESS), new IOCallback() {
+                @Override
+                public void onDisconnect() {
+                    System.out.println("disconnected");
+                }
+
+                @Override
+                public void onConnect() {
+                    System.out.println("connected");
+                }
+
+                @Override
+                public void onMessage(String s, IOAcknowledge ioAcknowledge) {
+                }
+
+                @Override
+                public void onMessage(JSONObject jsonObject, IOAcknowledge ioAcknowledge) {
+                }
+
+                @Override
+                public void on(String event, IOAcknowledge ioAcknowledge, Object... objects) {
+                }
+
+                @Override
+                public void onError(SocketIOException e) {
+                    e.printStackTrace();
+                }
+            });
+
+        } catch (MalformedURLException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+
+Android Permissions
+
+<uses-permission
+    android:name="android.permission.INTERNET">
+</uses-permission>
+
+
+Error Code
+
+08-09 16:07:28.224    8411-8441/com.example.puma.chatexample W/System.err\xef\xb9\x95 io.socket.SocketIOException: Error while handshaking
+08-09 16:07:28.225    8411-8441/com.example.puma.chatexample W/System.err\xef\xb9\x95 at io.socket.IOConnection.handshake(IOConnection.java:322)
+08-09 16:07:28.225    8411-8441/com.example.puma.chatexample W/System.err\xef\xb9\x95 at io.socket.IOConnection.access$600(IOConnection.java:39)
+08-09 16:07:28.225    8411-8441/com.example.puma.chatexample W/System.err\xef\xb9\x95 at io.socket.IOConnection$ConnectThread.run(IOConnection.java:199)
+08-09 16:07:28.226    8411-8441/com.example.puma.chatexample W/System.err\xef\xb9\x95 Caused by: java.lang.NullPointerException: Attempt to invoke virtual method 'javax.net.ssl.SSLSocketFactory javax.net.ssl.SSLContext.getSocketFactory()' on a null object reference
+08-09 16:07:28.226    8411-8441/com.example.puma.chatexample W/System.err\xef\xb9\x95 at io.socket.IOConnection.handshake(IOConnection.java:302)
+08-09 16:07:28.227    8411-8441/com.example.puma.chatexample W/System.err\xef\xb9\x95 ... 2 more
+
+    
+===============================================================================================
+35
+A:I actually solved the problem. I used my PC's local IP http://192.168.0.xxx:7000 and the app was able to connect to the chat server from the emulator. I don't know why this works, but it might help out someone in the future :)
+
+Update:
+
+This is how I ended up structuring the project. I created a singleton class to handle socket connections Android side (you could also do it as a service). When receiving a message, the singleton class broadcasts an intent to the rest of the app. The intent is then picked up by a broadcast receiver in the relevant activity.
+
+Android Side (singleton):
+
+public class SocketSingleton {
+
+    private static SocketSingleton instance;
+    private static final String SERVER_ADDRESS = "http://1.2.3.4:1234";
+    private SocketIO socket;
+    private Context context;
+
+    public static SocketSingleton get(Context context){
+        if(instance == null){
+            instance = getSync(context);
+        }
+        instance.context = context;
+        return instance;
+    }
+
+    public static synchronized SocketSingleton getSync(Context context){
+        if (instance == null) {
+            instance = new SocketSingleton(context);
+        }
+        return instance;
+    }
+
+    public SocketIO getSocket(){
+        return this.socket;
+    }
+
+    private SocketSingleton(Context context){
+        this.context = context;
+        this.socket = getChatServerSocket();
+        this.friends = new ArrayList<Friend>();
+    }
+
+    private SocketIO getChatServerSocket(){
+        try {
+            SocketIO socket = new SocketIO(new URL(SERVER_ADDRESS), new IOCallback() {
+                @Override
+                public void onDisconnect() {
+                    System.out.println("disconnected");
+                }
+
+                @Override
+                public void onConnect() {
+                    System.out.println("connected");
+                }
+
+                @Override
+                public void on(String event, IOAcknowledge ioAcknowledge, Object... objects) {
+                    if (event.equals("chatMessage")) {
+                        JSONObject json = (JSONObject) objects[0];
+                        ChatMessage chatMessage = new ChatMessage(json);
+
+                        Intent intent = new Intent();
+                        intent.setAction("newChatMessage");
+                        intent.putExtra("chatMessage", chatMessage);
+                        context.sendBroadcast(intent);
+                    }
+                }
+                @Override
+                public void onError(SocketIOException e) {
+                    e.printStackTrace();
+                }
+            });
+            return socket;
+        } catch (MalformedURLException ex) {
+            ex.printStackTrace();
+        }
+        return null;
+    }
+}
+
+
+Android Side (activity):
+
+public class ChatActivity extends Activity {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_chat);
+    IntentFilter newChatMessageFilter = new IntentFilter("newChatMessage");
+    this.registerReceiver(new MessageReceiver(), newChatMessageFilter);
+
+    ...
+
+    public class MessageReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent){
+            final ChatMessage chatMessage =(ChatMessage) intent.getExtras().get("chatMessage");
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    mAdapter.add(chatMessage);
+                    mAdapter.notifyDataSetChanged();
+                }
+            });
+        }
+    }
+} 
+
+
+Server Side:
+
+var express = require('express');
+var app = express();
+var server = require('http').createServer(app).listen(1234);
+var io = require('socket.io').listen(server);
+
+io.sockets.on('connection', function(client){
+
+    console.log("client connected: " + client.id);
+
+    client.on("sendTo", function(chatMessage){
+        console.log("Message From: " + chatMessage.fromName);
+        console.log("Message To: " + chatMessage.toName);
+
+
+        io.sockets.socket(chatMessage.toClientID).emit("chatMessage", {"fromName" : chatMessage.fromName,
+                                                                    "toName" : chatMessage.toName,
+                                                                    "toClientID" : chatMessage.toClientID,
+                                                                    "msg" : chatMessage.msg});
+
+    });
+});
+
+    

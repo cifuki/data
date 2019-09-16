@@ -1,0 +1,63 @@
+78
+Q:The title says it all. I'm using a custom button to fetch the user's facebook information (for "sign up" purposes). Yet, I don't want the app to remember the last registered user, neither the currently logged in person via the Facebook native app. I want the Facebook login activity to pop up each time. That is why I want to log out any previous users programmatically.
+
+How can I do that? This is how I do the login:
+
+private void signInWithFacebook() {
+
+    SessionTracker sessionTracker = new SessionTracker(getBaseContext(), new StatusCallback() 
+    {
+        @Override
+        public void call(Session session, SessionState state, Exception exception) { 
+        }
+    }, null, false);
+
+    String applicationId = Utility.getMetadataApplicationId(getBaseContext());
+    mCurrentSession = sessionTracker.getSession();
+
+    if (mCurrentSession == null || mCurrentSession.getState().isClosed()) {
+        sessionTracker.setSession(null);
+        Session session = new Session.Builder(getBaseContext()).setApplicationId(applicationId).build();
+        Session.setActiveSession(session);
+        mCurrentSession = session;
+    }
+
+    if (!mCurrentSession.isOpened()) {
+        Session.OpenRequest openRequest = null;
+        openRequest = new Session.OpenRequest(RegisterActivity.this);
+
+        if (openRequest != null) {
+            openRequest.setPermissions(null);
+            openRequest.setLoginBehavior(SessionLoginBehavior.SSO_WITH_FALLBACK);
+
+            mCurrentSession.openForRead(openRequest);
+        }
+    }else {
+        Request.executeMeRequestAsync(mCurrentSession, new Request.GraphUserCallback() {
+              @Override
+              public void onCompleted(GraphUser user, Response response) {
+                  fillProfileWithFacebook( user );
+              }
+            });
+    }
+}
+
+
+Ideally, I would make a call at the beginning of this method to log out any previous users.
+    
+===============================================================================================
+157
+A:Update for latest SDK:
+
+Now @zeuter's answer is correct for Facebook SDK v4.7+:
+
+
+  LoginManager.getInstance().logOut();
+
+
+Original answer:
+
+Please do not use SessionTracker. It is an internal (package private) class, and is not meant to be consumed as part of the public API. As such, its API may change at any time without any backwards compatibility guarantees. You should be able to get rid of all instances of SessionTracker in your code, and just use the active session instead.
+
+To answer your question, if you don't want to keep any session data, simply call closeAndClearTokenInformation when your app closes.
+    

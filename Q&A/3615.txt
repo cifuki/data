@@ -1,0 +1,71 @@
+63
+Q:I know there are a lot of similar questions out here
+but I couldn't get any of the provided solutions working in a simple sample app.
+
+The problem occurs when the softkeyboard is shown for the first time. As soon as it is shown, only by pressing the editText again makes it editable.
+
+Tried the following:
+
+ android:windowSoftInputMode="adjustPan|adjustResize"
+
+
+This is not solving any issues. It seems that this line is mandatory to have the activity resized after the softkeyboard is popping up. Unfortunately, it's also causing any EditTexts to lose focus. This is probably to the ListView itself gaining focus after the resizing process. So I tried the following workaround:
+
+ listView.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+
+
+This always causes the first visible EditText that the ListView contains to gain focus, which is undesirable. The second EditText in the second row should instead gain focus when pressed, which is not happening. Also, if I eventually managed to focus another EditText other then the first one shown (e.g. by pressing 'Next' on the softkeyboard), the first visible one will receive focus after the keyboard is dismissed and the ListView being resized to its full size again.
+
+I tried several other things like intercepting onFocusChange() events for the ListView, while knowing which EditText was pressed by its TouchListener. Requesting the focus for that certain EditText again did not lead to any success either.
+
+Using a ScrollView instead of a ListView as suggested by other users is not an option either for the concerned project.
+    
+===============================================================================================
+42
+A:A classic hack for situations like this is to use a handler and postDelayed(). In your adapter:
+
+private int lastFocussedPosition = -1;
+private Handler handler = new Handler();
+
+public View getView(final int position, View convertView, ViewGroup parent) {
+
+    // ...
+
+    edittext.setOnFocusChangeListener(new OnFocusChangeListener() {
+
+        @Override
+        public void onFocusChange(View v, boolean hasFocus) {
+            if (hasFocus) {
+                handler.postDelayed(new Runnable() {
+
+                    @Override
+                    public void run() {
+                        if (lastFocussedPosition == -1 || lastFocussedPosition == position) {
+                            lastFocussedPosition = position;
+                            edittext.requestFocus();
+                        }
+                    }
+                }, 200);
+
+            } else {
+                lastFocussedPosition = -1;
+            }
+        }
+    });
+
+    return convertView;
+}
+
+
+This works on my device, but keep this code out of production. I also wouldn't be surprised if the focus bug manifests itself differently in different android versions or roms.
+
+There are also many other problems with embedding an EditText within a ListView that have solutions that feel like a hack. See all of the other people struggling.
+
+It's also very easy to have something like this happen:
+
+.
+
+After having gone down similar paths many times myself, I've mostly given up on trying to override any of the default keyboard behaviours or quirks. I would recommend trying to find alternative solution in your app if possible.
+
+Have you considered having the ListView rows be just a styled TextView and then displaying a Dialog with an EditText when a row is clicked, updating the TextView as necessary?
+    

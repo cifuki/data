@@ -1,0 +1,231 @@
+84
+Q:As we all know, many Android apps display a white screen very briefly before their first Activity comes into focus. This problem is observed in the following cases:
+
+
+Android apps that extend the global Application class and
+perform major initializations therein. The Application
+object is always created before the first Activity (a fact that can
+be observed in the debugger), so this makes sense. This is the cause of the delay in my case.
+Android apps that display the default preview window before the splash screen.
+
+
+Setting android:windowDisablePreview = "true" obviously does not work here. Nor can I set the parent theme of the splash screen to Theme.Holo.NoActionBar as described here, because [unfortunately] my splash screen makes use of an ActionBar.
+
+Meanwhile, apps that do not extend the Application class do not show the white screen at startup.
+
+The thing is, ideally the initializations performed in the Application object need to occur before the first Activity is shown. So my question is, how can I perform these initializations on app startup without using an Application object? Possibly using a Thread or Service, I suppose?
+
+This is an interesting problem to think about. I can't bypass it the usual way (by setting the NoActionBar theme), as tragically my Splash screen actually has an ActionBar due to some unrelated reasons.
+
+Note:
+
+I have already referred to the following questions:
+
+
+How To fix white screen on app Start
+up?
+Android splash screen is white in the
+beginning?
+White screen before
+splashscreen
+White background when Android app start up
+Why there is a white screen appears for 1sec when starting to run the apps in Android?
+
+
+References:
+
+
+Patterns \xe2\x80\x93 Launch screens.
+Branded launch screen: the new splash for Android.
+Splash Screens the Right Way.
+
+    
+===============================================================================================
+68
+A:The problem with white background is caused because of android's cold start while the app loads to memory, and it can be avoided with this:
+
+public class OnboardingWithCenterAnimationActivity extends AppCompatActivity {
+public static final int STARTUP_DELAY = 300;
+public static final int ANIM_ITEM_DURATION = 1000;
+public static final int ITEM_DELAY = 300;
+
+private boolean animationStarted = false;
+
+@Override
+protected void onCreate(@Nullable Bundle savedInstanceState) {
+    setTheme(R.style.AppTheme);
+    getWindow().getDecorView().setSystemUiVisibility(
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_onboarding_center);
+}
+
+@Override
+public void onWindowFocusChanged(boolean hasFocus) {
+
+    if (!hasFocus || animationStarted) {
+        return;
+    }
+
+    animate();
+
+    super.onWindowFocusChanged(hasFocus);
+}
+
+private void animate() {
+    ImageView logoImageView = (ImageView) findViewById(R.id.img_logo);
+    ViewGroup container = (ViewGroup) findViewById(R.id.container);
+
+    ViewCompat.animate(logoImageView)
+        .translationY(-250)
+        .setStartDelay(STARTUP_DELAY)
+        .setDuration(ANIM_ITEM_DURATION).setInterpolator(
+            new DecelerateInterpolator(1.2f)).start();
+
+    for (int i = 0; i < container.getChildCount(); i++) {
+        View v = container.getChildAt(i);
+        ViewPropertyAnimatorCompat viewAnimator;
+
+        if (!(v instanceof Button)) {
+            viewAnimator = ViewCompat.animate(v)
+                    .translationY(50).alpha(1)
+                    .setStartDelay((ITEM_DELAY * i) + 500)
+                    .setDuration(1000);
+        } else {
+            viewAnimator = ViewCompat.animate(v)
+                    .scaleY(1).scaleX(1)
+                    .setStartDelay((ITEM_DELAY * i) + 500)
+                    .setDuration(500);
+        }
+
+        viewAnimator.setInterpolator(new DecelerateInterpolator()).start();
+    }
+}
+}
+
+
+layout
+
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:tools="http://schemas.android.com/tools"
+android:layout_width="match_parent"
+android:layout_height="match_parent"
+android:background="?colorPrimary"
+android:orientation="vertical"
+>
+
+<LinearLayout
+    android:id="@+id/container"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="center"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:paddingTop="144dp"
+    tools:ignore="HardcodedText"
+    >
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="16dp"
+        android:alpha="0"
+        android:text="Hello world"         android:textAppearance="@style/TextAppearance.AppCompat.Widget.ActionBar.Title.Inverse"
+        android:textColor="@android:color/white"
+        android:textSize="22sp"
+        tools:alpha="1"
+        />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="8dp"
+        android:alpha="0"
+        android:gravity="center"
+        android:text="This a nice text"
+      android:textAppearance="@style/TextAppearance.AppCompat.Widget.ActionBar.Subtitle.Inverse"
+        android:textSize="20sp"
+        tools:alpha="1"
+        />
+
+    <Button
+        android:id="@+id/btn_choice1"
+        android:layout_width="200dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="48dp"
+        android:scaleX="0"
+        android:scaleY="0"
+        android:text="A nice choice"
+        android:theme="@style/Button"
+        />
+
+    <Button
+        android:id="@+id/btn_choice2"
+        android:layout_width="200dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:scaleX="0"
+        android:scaleY="0"
+        android:text="Far better!"
+        android:theme="@style/Button"
+        />
+
+</LinearLayout>
+
+<ImageView
+    android:id="@+id/img_logo"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_gravity="center"
+    android:src="@drawable/img_face"
+    tools:visibility="gone"
+    />
+</FrameLayout>
+
+
+img face
+
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"
+        android:opacity="opaque">
+
+<item android:drawable="?colorPrimary"/>
+<item>
+    <bitmap
+        android:gravity="center"
+        android:src="@drawable/img_face"/>
+</item>
+
+
+
+
+Add this theme to your splashscreen in the manifest
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+<style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+    <!-- Customize your theme here. -->
+    <item name="colorPrimary">@color/colorPrimary</item>
+    <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+    <item name="colorAccent">@color/colorAccent</item>
+    <item name="android:windowBackground">@null</item>
+</style>
+
+<style name="AppTheme.CenterAnimation">
+    <item name="android:windowBackground">@drawable/ll_face_logo</item>
+</style>
+
+
+
+
+which will produce efect like this
+
+
+
+for more details and more solutions you can check this
+BlogPost
+    

@@ -1,0 +1,48 @@
+148
+Q:I'm trying to make HTTPS connections, using HttpClient lib, but the problem is that, since the certificate isn't signed by a recognized Certificate Authority (CA) like Verisign,GlobalSIgn, etc., listed on the set of Android Trusted Certificates, I keep getting javax.net.ssl.SSLException: Not trusted server certificate.
+
+I've seen  solutions where you simply accept all certificates, but what if I want to ask the user? 
+
+I want to get a dialog similar to that of the browser, letting the user decide to continue or not. Preferably I'd like to use the same certificatestore as the browser. Any ideas?
+    
+===============================================================================================
+170
+A:The first thing you need to do is to set the level of verification.
+Such levels is not so much:
+
+
+ALLOW_ALL_HOSTNAME_VERIFIER
+BROWSER_COMPATIBLE_HOSTNAME_VERIFIER
+STRICT_HOSTNAME_VERIFIER
+
+
+Although the method setHostnameVerifier() is obsolete for new library apache, but for version in Android SDK is normal.
+And so we take ALLOW_ALL_HOSTNAME_VERIFIER and set it in the method factory SSLSocketFactory.setHostnameVerifier().
+
+Next, You need set our factory for the protocol to https. To do this, simply call the SchemeRegistry.register() method.
+
+Then you need to create a DefaultHttpClient with SingleClientConnManager.
+Also in the code below you can see that on default will also use our flag (ALLOW_ALL_HOSTNAME_VERIFIER) by the method HttpsURLConnection.setDefaultHostnameVerifier()
+
+Below code works for me:
+
+HostnameVerifier hostnameVerifier = org.apache.http.conn.ssl.SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER;
+
+DefaultHttpClient client = new DefaultHttpClient();
+
+SchemeRegistry registry = new SchemeRegistry();
+SSLSocketFactory socketFactory = SSLSocketFactory.getSocketFactory();
+socketFactory.setHostnameVerifier((X509HostnameVerifier) hostnameVerifier);
+registry.register(new Scheme("https", socketFactory, 443));
+SingleClientConnManager mgr = new SingleClientConnManager(client.getParams(), registry);
+DefaultHttpClient httpClient = new DefaultHttpClient(mgr, client.getParams());
+
+// Set verifier     
+HttpsURLConnection.setDefaultHostnameVerifier(hostnameVerifier);
+
+// Example send http request
+final String url = "https://encrypted.google.com/";
+HttpPost httpPost = new HttpPost(url);
+HttpResponse response = httpClient.execute(httpPost);
+
+    

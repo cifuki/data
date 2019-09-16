@@ -1,0 +1,77 @@
+29
+Q:I have a question regarding how to unsubscribe an observable. I have two codes and I'm not really sure about which one is better.
+
+Example 1 -> Unsubscribe the subscriber once the stream has finished:
+
+Subscriber<String> subscriber = new Subscriber<String>() {
+        @Override
+        public void onCompleted() {
+            progressdialog.dissmiss();
+            unsubscribe();
+        }
+
+        @Override
+        public void onError(Throwable e) {
+            progressdialog.dissmiss();
+        }
+
+        @Override
+        public void onNext(String s) {
+            // do something with data
+        }
+    }
+
+
+Example 2 -> Unsubscribe the subscription once the activity is destroyed:
+
+private void test(){
+    Subscriber<String> subscriber = new Subscriber<String>() {
+        @Override
+        public void onCompleted() {
+            progressdialog.dissmiss();
+        }
+
+        @Override
+        public void onError(Throwable e) {
+            progressdialog.dissmiss();
+        }
+
+        @Override
+        public void onNext(String s) {
+            // do something with data
+        }
+    };
+
+    subscription = BackendRequest.login(loginRequest)
+            .subscribeOn(Schedulers.newThread())
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe(subscriber);
+
+    compositeSubscription.add(subscription);
+}
+
+@Override
+protected void onDestroy() {
+    super.onDestroy();
+    this.subscription.unsubscribe();
+}
+
+
+I have to mention that my observables only will emit once, the activity should not wait for more calls from the Observable.
+
+Which one is better?
+
+Thanks in advance
+    
+===============================================================================================
+28
+A:From the two options the second one is better.
+
+In your first example you're unsubscribing in the onComplete() method which is not needed. If you reach the onComplete() of a Subscription you don't have the responsibility of unsubscribing from it anymore.
+
+Your second example is the correct one. The idea behind the CompositeSubscription is that you can add multiple Subscriptions to it and then clean up (unsubscribe) at once. In other words this just saves you from the need of keeping a list of Subscriptions that you need to unsubscribe from.
+
+One tricky part using CompositeSubscription is that if you once unsubscribe it, you can NOT use it again. You can check the documentation for the compositeSubscription.add() method for details why. In short - it will directly unsubscribe the Subscription you're trying to add. That's been a deliberate decision (you can read more about it HERE). 
+
+Coming back to your example, calling unsubscribe() in onDestroy() of the Activity is fine and will save you from memory leaks. Regarding your comment that problems occur when you call your test() method multiple times - I'd say your problem is somewhere else. Maybe your use-case shouldn't allow to call it multiple times, maybe you should cleanup old data before using the newly received one, etc. Perhaps if you have explained in details what kind of problems you face we could help more. But as far as the CompositeSubscription is concerned - you're using it and unsubscribing from it correctly!
+    

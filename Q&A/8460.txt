@@ -1,0 +1,84 @@
+32
+Q:What is the correct way to handle an orientation change when using Fragments?
+
+I have a landscape layout that contains 2 fragments (instantiated in code into FrameLayouts). When I switch to portrait mode (the layout of which contains only one FrameLayout that holds the left pane only), the right hand fragment is no longer required.
+
+I am receiving an error:
+
+E/AndroidRuntime(4519): Caused by: java.lang.IllegalArgumentException: No view found for id 0x7f060085 for fragment myFragment{418a2200 #2 id=0x7f060085}
+
+
+which is assume is my activity trying to re-attach the fragment where it was before the orientation change but as the view that contains the fragment does not exist in portrait mode the error is thrown.
+
+I have tried the following hide/remove/detach methods but still get the error. What is the correct way to tell a fragment it is not needed any more and do not try to display?
+
+@Override
+public void onCreate(Bundle b) {
+    super.onCreate(b);
+    Fragment f = getSupportFragmentManager().findFragmentById(R.id.fragholder2);
+
+    //rightPane is a framelayout that holds my fragment.
+    if (rightPane == null && f != null) {
+         FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
+         ft.hide(f);     // This doesnt work
+         ft.remove(f);   // neither does this
+         ft.detach(f);   // or this
+         ft.commit;
+    }
+}
+
+    
+===============================================================================================
+13
+A:I ran into the same problem and I think I figured out another solution. This solution may be better because you don't have to add the fragment to the back stack.
+
+Remove the right hand side fragment from your activity in Activity.onSaveInstanceState() before calling super.onSaveInstanceState(). This works for me:
+
+public MyActivity extends Activity
+{   
+    @Override
+    public onCreate(Bundle state)
+    {
+        super.onCreate(state);
+
+        // Set content view
+        setContentView(R.layout.my_activity);
+
+        // Store whether this is a dual pane layout
+        mDualPane = findViewById(R.id.rightFragHolder) != null;
+
+        // Other stuff, populate the left fragment, etc.
+        .
+        .
+        .
+        if (mDualPane)
+        {
+            mRightFragment = new RightFragment();
+            FragmentManager fm = getFragmentManager();
+            FragmentTransaction ft = fm.beginTransaction();
+            ft.replace(R.id.rightFragHolder, mRightFragment);
+            ft.commit()
+        }
+    }
+
+
+    @Override
+    public void onSaveInstanceState(Bundle state)
+    {
+        if (mDualPane)
+        {
+            FragmentManager fm = getFragmentManager();
+            FragmentTransaction ft = fm.beginTransaction();
+            ft.remove(mRightFragment);
+            ft.commit()
+        }
+
+        super.onSaveInstanceState(state);
+    }
+
+
+    private boolean mDualPane;
+    private Fragment mRightFragment;
+}
+
+    

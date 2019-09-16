@@ -1,0 +1,123 @@
+33
+Q:Unfortunately, there's a multitude of cookie managers for Android. The cookies for HttpURLConnection are maintained by java.net.CookieManager and the cookies for WebView are maintained by android.webkit.CookieManager. These cookie repositories are separate and require manual synchronization.
+
+My app uses both HttpURLConnections and shows WebViews (it's a native-HTML hybrid). Naturally, I want both to share all cookies - so I will have a transparent session all across.
+
+More Specifically: 
+
+
+When a cookie is set/changed in an HttpURLConnection, I want the WebViews to see this change as well. 
+When a cookie is set/changed in a WebView, I want the next HttpURLConnections to see this change as well.
+
+
+Simply put - I'm looking for a two-way sync. Or even better, to have them both use the same cookie repository. You can assume both are active in the same time (like on different tabs).
+
+Questions:
+
+
+Is there a way to make both use the same cookie repository?
+If not, what is the recommended practice to do the manual sync? When exactly should I sync and how?
+
+
+Related Question: This question tackles a similar issue, but only implements one-way sync (HttpURLConnection -> WebView).
+
+My Best Idea So Far: I really want to avoid a manual sync, so I tried to think how to make both use the same repository. Maybe I can create my own core handler which extends java.net.CookieManager. I will set it as the core cookie handler using java.net.CookieHandler.setDefault(). Its implementation will be a proxy to the android.webkit.CookieManager handler instance (for every function I'll simply access the webkit manager). 
+    
+===============================================================================================
+62
+A:I've implemented my own idea. It's actually pretty cool. I've created my own implementation of java.net.CookieManager which forwards all requests to the WebViews' webkit android.webkit.CookieManager. This means no sync is required and HttpURLConnection uses the same cookie storage as the WebViews.
+
+Class WebkitCookieManagerProxy:
+
+import java.io.IOException;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
+import java.net.CookieStore;
+import java.net.URI;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
+public class WebkitCookieManagerProxy extends CookieManager 
+{
+    private android.webkit.CookieManager webkitCookieManager;
+
+    public WebkitCookieManagerProxy()
+    {
+        this(null, null);
+    }
+
+    public WebkitCookieManagerProxy(CookieStore store, CookiePolicy cookiePolicy)
+    {
+        super(null, cookiePolicy);
+
+        this.webkitCookieManager = android.webkit.CookieManager.getInstance();
+    }
+
+    @Override
+    public void put(URI uri, Map<String, List<String>> responseHeaders) throws IOException 
+    {
+        // make sure our args are valid
+        if ((uri == null) || (responseHeaders == null)) return;
+
+        // save our url once
+        String url = uri.toString();
+
+        // go over the headers
+        for (String headerKey : responseHeaders.keySet()) 
+        {
+            // ignore headers which aren't cookie related
+            if ((headerKey == null) || !(headerKey.equalsIgnoreCase("Set-Cookie2") || headerKey.equalsIgnoreCase("Set-Cookie"))) continue;
+
+            // process each of the headers
+            for (String headerValue : responseHeaders.get(headerKey))
+            {
+                this.webkitCookieManager.setCookie(url, headerValue);
+            }
+        }
+    }
+
+    @Override
+    public Map<String, List<String>> get(URI uri, Map<String, List<String>> requestHeaders) throws IOException 
+    {
+        // make sure our args are valid
+        if ((uri == null) || (requestHeaders == null)) throw new IllegalArgumentException("Argument is null");
+
+        // save our url once
+        String url = uri.toString();
+
+        // prepare our response
+        Map<String, List<String>> res = new java.util.HashMap<String, List<String>>();
+
+        // get the cookie
+        String cookie = this.webkitCookieManager.getCookie(url);
+
+        // return it
+        if (cookie != null) res.put("Cookie", Arrays.asList(cookie));
+        return res;
+    }
+
+    @Override
+    public CookieStore getCookieStore() 
+    {
+        // we don't want anyone to work with this cookie store directly
+        throw new UnsupportedOperationException();
+    }
+}
+
+
+And use it by doing this on your application initialization:
+
+android.webkit.CookieSyncManager.createInstance(appContext);
+// unrelated, just make sure cookies are generally allowed
+android.webkit.CookieManager.getInstance().setAcceptCookie(true);
+
+// magic starts here
+WebkitCookieManagerProxy coreCookieManager = new WebkitCookieManagerProxy(null, java.net.CookiePolicy.ACCEPT_ALL);
+java.net.CookieHandler.setDefault(coreCookieManager);
+
+
+Testing
+
+My initial testing show this is working well. I see cookies shared between the WebViews and HttpURLConnection. I hope I'll not run into any issues. If you try this out and discover any problem, please comment.
+    

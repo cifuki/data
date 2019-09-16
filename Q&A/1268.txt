@@ -1,0 +1,63 @@
+133
+Q:I am trying to setup signing process so that keystore password and key password are not stored in the project's build.gradle file.
+
+Currently I have the following in the build.gradle:
+
+android {
+    ...
+    signingConfigs {
+        release {
+            storeFile file("my.keystore")
+            storePassword "store_password"
+            keyAlias "my_key_alias"
+            keyPassword "key_password"
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release            
+        }
+    }
+}
+
+
+It works perfectly fine but I must not put the values for the storePassword, and keyPassword in my repository. I would prefer to not put storeFile and keyAlias there either.
+
+Is there a way to alter the build.gradle so that it will obtain passwords from some external source (like a file that resides on my computer only)? 
+
+And of course, the altered build.gradle should be usable on any other computer (even if the computer doesn't have access to passwords). 
+
+I am using Android Studio and in Mac OS X Maverics if it does matter.
+    
+===============================================================================================
+109
+A:The nice thing about Groovy is that you can freely mix Java code, and it's pretty easy to read in a key/value file using java.util.Properties. Perhaps there's an even easier way using idiomatic Groovy, but Java is still pretty simple.
+
+Create a keystore.properties file (in this example, in the root directory of your project next to settings.gradle, though you can put it wherever you like:
+
+storePassword=...
+keyPassword=...
+keyAlias=...
+storeFile=...
+
+
+Add this to your build.gradle:
+
+allprojects {
+    afterEvaluate { project ->
+        def propsFile = rootProject.file('keystore.properties')
+        def configName = 'release'
+
+        if (propsFile.exists() && android.signingConfigs.hasProperty(configName)) {
+            def props = new Properties()
+            props.load(new FileInputStream(propsFile))
+            android.signingConfigs[configName].storeFile = file(props['storeFile'])
+            android.signingConfigs[configName].storePassword = props['storePassword']
+            android.signingConfigs[configName].keyAlias = props['keyAlias']
+            android.signingConfigs[configName].keyPassword = props['keyPassword']
+        }
+    }
+}
+
+    

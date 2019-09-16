@@ -1,0 +1,56 @@
+29
+Q:I am starting a service (or re-starting the running service) when an activity is launched, using :
+
+Intent intent = new Intent(this, MyService.class);
+ startService(intent); 
+
+Later on based on certain actions, the same activity binds to the service using
+
+bindService(new Intent(this, MyService.class), mConnection, Context.BIND_AUTO_CREATE);
+
+
+And when the activity is destroyed, I call 
+
+unbindService(mConnection);
+
+
+Earlier, the service used to restart when I killed the same activity/application from the application tray and showed the "message 1 process 1 service running" under running apps. 
+
+Now, the service does not restart on killing the same activity/application.
+
+And I get the message "0 process 1 service running", which means the service is actually not running.
+
+The service does not restart on application being closed. My application consists of one activity. Also the service is successfully started when launched after a system boot.
+
+Why does the process of the service gets killed when I start it using startService() ??
+
+edit
+
+The service used to re-start earlier after i closed the app from the application tray. But now suddenly with the SAME code, it doesn't. It happens with other apps too when i close them. eg. 
+
+
+    
+===============================================================================================
+52
+A:Here is a workaround I came across and works well for re-starting a service if its process is killed on closing the application. In your service, add the following code.
+
+I came across this workaround in this thread. 
+
+@Override
+public void onTaskRemoved(Intent rootIntent){
+    Intent restartServiceIntent = new Intent(getApplicationContext(), this.getClass());
+    restartServiceIntent.setPackage(getPackageName());
+
+    PendingIntent restartServicePendingIntent = PendingIntent.getService(getApplicationContext(), 1, restartServiceIntent, PendingIntent.FLAG_ONE_SHOT);
+    AlarmManager alarmService = (AlarmManager) getApplicationContext().getSystemService(Context.ALARM_SERVICE);
+    alarmService.set(
+    AlarmManager.ELAPSED_REALTIME,
+    SystemClock.elapsedRealtime() + 1000,
+    restartServicePendingIntent);
+
+    super.onTaskRemoved(rootIntent);
+ }
+
+
+Seems to be a bug that the process of the application is killed. There is no point for a service to run if its process is killed.
+    

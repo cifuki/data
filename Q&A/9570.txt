@@ -1,0 +1,294 @@
+28
+Q:I'm a little bit confused because I don't know how I should interpret the tutorial here: http://developer.android.com/training/basics/data-storage/databases.html#DbHelper
+
+My code until now looks like this:
+
+public final class DatabaseContract {
+// To prevent someone from accidentally instantiating the contract class,
+// give it an empty constructor.
+public DatabaseContract() {}
+
+public static abstract class Table1 implements BaseColumns {
+    public static final String TABLE_NAME       = "nameOfTable";
+    public static final String COLUMN_NAME_COL1 = "column1";
+    public static final String COLUMN_NAME_COL2 = "column2";
+    public static final String COLUMN_NAME_COL3 = "column3";
+}
+
+public class DatabaseHelper extends SQLiteOpenHelper {
+    // If you change the database schema, you must increment the database version.
+    public static final  int    DATABASE_VERSION   = 1;
+    public static final  String DATABASE_NAME      = "database.db";
+    private static final String TEXT_TYPE          = " TEXT";
+    private static final String COMMA_SEP          = ",";
+    private static final String SQL_CREATE_ENTRIES = "CREATE TABLE " +
+            Table1.TABLE_NAME + " (" +
+            Table1._ID + " INTEGER PRIMARY KEY," +
+            Table1.COLUMN_NAME_COL1 + TEXT_TYPE + COMMA_SEP +
+            Table1.COLUMN_NAME_COL2 + TEXT_TYPE + COMMA_SEP +
+            Table1.COLUMN_NAME_COL3 + TEXT_TYPE + COMMA_SEP + " )";
+    private static final String SQL_DELETE_ALL_ENTRIES = "DROP TABLE IF EXISTS " + Table1.TABLE_NAME;
+
+    public DatabaseHelper(Context context) {
+        super(context, DATABASE_NAME, null, DATABASE_VERSION);
+    }
+
+    // Method is called during creation of the database
+    @Override
+    public void onCreate(SQLiteDatabase db) {
+        db.execSQL(SQL_CREATE_ENTRIES);
+    }
+
+    // Method is called during an upgrade of the database
+    @Override
+    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        Log.w(DatabaseHelper.class.getName(), "Upgrading database from version " + oldVersion + " to " + newVersion + ", which will destroy all old data");
+
+        db.execSQL(SQL_DELETE_ALL_ENTRIES);
+        onCreate(db);
+    }
+}
+}
+
+
+Did I interpreted it right or have the first 6 variables in the Helper class to be outside in the Contract class?
+Or should the Helper Class not be a inner class of the contract class? 
+
+Hope you can help me
+    
+===============================================================================================
+96
+A:Your contract basically defines your database and how people should interact with it through the Content Provider. 
+
+
+  A contract class defines constants that help applications work with
+  the content URIs, column names, intent actions, and other features of
+  a content provider. Contract classes are not included automatically
+  with a provider; the provider's developer has to define them and then
+  make them available to other developers.
+
+
+Having said that, you do not necessarily need a Content Provider to use a Contract class. My example contains constants that are used by the Content Provider (The MIME and URI parts). If you are not using a Content Provider, you do not need these sections. 
+
+I like to think of the contract class as a database schema, or in other words something that defines how your database is set up. You might notice that everything within the contract class is declared as static. That is because you will never be instantiating a Contract class, but only referring to the constants defined in it. You can see in my example that my Contract class just has a bunch of static final variables declared. This Contract class can be its own file, e.g. my file is called TransitContract.java.
+
+Say for example you wanted to change the name of one of your columns. Rather than making changes to multiple files, all you have to do is change the value for the column in the contract class.
+You are not doing any kind of computation work inside of the contract class. 
+
+The SQLLiteOpenhelper class on the other hand is something that was provided by Google to make working with databases easier. This is where you implement methods that create and set up the initial database. See http://developer.android.com/reference/android/database/sqlite/SQLiteOpenHelper.html. After you implement these methods, all you have to do is instantiate an instance of your helper class, and then call helperClassInstance.getWriteableDatabase() (or getReadableDataBase()) and then your helper class automatically takes care of creating a new database if necessary, or returning the one that already exists, etc.
+
+This helper is generally implemented as an inner class but could be its own standalone class. It's however you want to implement it. 
+
+I highly recommend looking at the Notepad example that Google provides as it has a pretty good example of how you could possibly set a contract class up. Please note that they also use a Content Provider. If you are interested in learning about Content Providers I recommend you read up some more at http://developer.android.com/guide/topics/providers/content-provider-basics.html. It goes into much more depth about Content Providers and Contract classes.
+
+Here is an example using your code. I did not actually test this code so it might have errors. As you can see, you can instantiate your db helper anywhere you deem necessary. In this example I do it in the main activity's onCreate, but in reality this is bad practice.
+
+DatabaseContract.java
+
+public final class DatabaseContract {
+
+    public static final  int    DATABASE_VERSION   = 1;
+    public static final  String DATABASE_NAME      = "database.db";
+    private static final String TEXT_TYPE          = " TEXT";
+    private static final String COMMA_SEP          = ",";
+
+    // To prevent someone from accidentally instantiating the contract class,
+    // give it an empty constructor.
+    private DatabaseContract() {}
+
+    public static abstract class Table1 implements BaseColumns {
+        public static final String TABLE_NAME       = "nameOfTable";
+        public static final String COLUMN_NAME_COL1 = "column1";
+        public static final String COLUMN_NAME_COL2 = "column2";
+        public static final String COLUMN_NAME_COL3 = "column3";
+
+
+        public static final String CREATE_TABLE = "CREATE TABLE " +
+                TABLE_NAME + " (" +
+                _ID + " INTEGER PRIMARY KEY," +
+                COLUMN_NAME_COL1 + TEXT_TYPE + COMMA_SEP +
+                COLUMN_NAME_COL2 + TEXT_TYPE + COMMA_SEP +
+                COLUMN_NAME_COL3 + TEXT_TYPE + " )";
+        public static final String DELETE_TABLE = "DROP TABLE IF EXISTS " + TABLE_NAME;
+    }
+}
+
+
+DatabaseHelper.java
+
+public class DatabaseHelper extends SQLiteOpenHelper {    
+    public DatabaseHelper(Context context) {
+        super(context, DatabaseContract.DATABASE_NAME, null, DatabaseContract.DATABASE_VERSION);
+    }
+
+    // Method is called during creation of the database
+    @Override
+    public void onCreate(SQLiteDatabase db) {
+        db.execSQL(DatabaseContract.Table1.CREATE_TABLE);
+    }
+
+    // Method is called during an upgrade of the database
+    @Override
+    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        db.execSQL(DatabaseContract.Table1.DELETE_TABLE);
+        onCreate(db);
+    }
+}
+
+
+MainActivity.java
+
+public class MainActivity extends Activity {
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main); 
+
+        // Create new helper
+        DatabaseHelper dbHelper = new DatabaseHelper(getContext());
+        // Get the database. If it does not exist, this is where it will
+        // also be created.
+        SQLiteDatabase db = dbHelper.getWriteableDatabase();
+
+        // Create insert entries
+        ContentValues values = new ContentValues();
+        values.put(DatabaseContract.Table1.COLUMN_NAME_COL1, "value1");
+        values.put(DatabaseContract.Table1.COLUMN_NAME_COL2, "value2");
+        values.put(DatabaseContract.Table1.COLUMN_NAME_COL3, "value3");
+
+        // Insert the new row, returning the primary key value of the new row
+        long newRowId;
+        newRowId = db.insert(
+                 DatabaseContract.Table1.TABLE_NAME,
+                 null,
+                 values);
+    }
+}
+
+
+And my example
+
+public final class TransitContract {
+    public static final String AUTHORITY = "com.example.TransitProvider";
+    public static final String SCHEME = "content://";
+    public static final String SLASH = "/";
+    public static final String DATABASE_NAME = "transit.db"; 
+
+    /* An array list of all the SQL create table statements */
+    public static final String[] SQL_CREATE_TABLE_ARRAY = {
+        Agency.CREATE_TABLE,
+        CalendarDates.CREATE_TABLE,
+        Calendar.CREATE_TABLE,
+        Routes.CREATE_TABLE,
+        Shapes.CREATE_TABLE,
+        Stops.CREATE_TABLE,
+        StopTimes.CREATE_TABLE,
+        Trips.CREATE_TABLE
+    };
+
+    /**
+     * Array of resource ids for each GTFS data file that will be loaded into 
+     * database
+     */
+    public static final int[] RAW_IDS = {
+        R.raw.agency,
+        R.raw.calendar_dates,
+        R.raw.calendar,
+        R.raw.routes,
+        R.raw.shapes,
+        R.raw.stops,
+        R.raw.stop_times,
+        R.raw.trips,
+    };
+
+    /* Do not allow this class to be instantiated */
+    private TransitContract() {}
+
+    public static final class Agency implements BaseColumns {
+        /* Do not allow this class to be instantiated */
+        private Agency() {}
+
+        public static final String TABLE_NAME = "Agency";
+
+        public static final String KEY_AGENCY_ID = "AgencyId";
+
+        public static final String KEY_NAME = "Name";
+
+        public static final String KEY_URL = "Url";
+
+        public static final String KEY_TIMEZONE = "Timezone";
+
+        public static final String KEY_LANG = "Language";
+
+        public static final String KEY_PHONE = "PhoneNumber";
+
+        public static final String KEY_FARE_URL = "FareUrl";
+
+        /*
+         * URI definitions
+         */
+
+        /**
+         * The content style URI
+         */
+        public static final Uri CONTENT_URI = Uri.parse(SCHEME + AUTHORITY + SLASH + TABLE_NAME);
+
+        /**
+         * The content URI base for a single row. An ID must be appended.
+         */
+        public static final Uri CONTENT_ID_URI_BASE = Uri.parse(SCHEME + AUTHORITY + SLASH + TABLE_NAME + SLASH);
+
+        /**
+         * The default sort order for this table
+         */
+        public static final String DEFAULT_SORT_ORDER = KEY_AGENCY_ID + " ASC";
+
+        /*
+         * MIME type definitions
+         */
+
+        /**
+         * The MIME type of {@link #CONTENT_URI} providing rows
+         */
+        public static final String CONTENT_TYPE = ContentResolver.CURSOR_DIR_BASE_TYPE + 
+                                                "/vnd.com.marylandtransitcommuters.agency";
+
+        /**
+         * The MIME type of a {@link #CONTENT_URI} single row
+         */
+        public static final String CONTENT_ITEM_TYPE = ContentResolver.CURSOR_ITEM_BASE_TYPE + 
+                                                "/vnd.com.marylandtransitcommuters.agency";
+
+        /**
+         * SQL Statement to create the routes table
+         */
+        public static final String CREATE_TABLE = "CREATE TABLE " + TABLE_NAME + " ("
+                                                  + _ID + " INTEGER PRIMARY KEY,"
+                                                  + KEY_AGENCY_ID + " TEXT,"
+                                                  + KEY_NAME + " TEXT,"
+                                                  + KEY_URL + " TEXT,"
+                                                  + KEY_TIMEZONE + " TEXT,"
+                                                  + KEY_LANG + " TEXT," 
+                                                  + KEY_PHONE + " TEXT,"
+                                                  + KEY_FARE_URL + " TEXT"
+                                                  + ");";
+
+        /**
+         * SQL statement to delete the table
+         */
+        public static final String DELETE_TABLE = "DROP TABLE IF EXISTS " + TABLE_NAME;
+
+        /**
+         * Array of all the columns. Makes for cleaner code
+         */
+        public static final String[] KEY_ARRAY = {
+            KEY_AGENCY_ID,
+            KEY_NAME,
+            KEY_URL,
+            KEY_TIMEZONE,
+            KEY_LANG,
+            KEY_PHONE,
+            KEY_FARE_URL
+        };
+    } 
+
+    

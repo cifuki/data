@@ -1,0 +1,69 @@
+53
+Q:I have a question regarding this simple frequently occurring situation in android . 
+
+We have a main activity , we invoke an AsyncTask alongwith the reference of the mainactivity , so that that the AsyncTask can update the views on the MainActivity.
+
+I will break down the event into steps
+
+
+MainActivity creates an AyncTask , passes its reference to it .
+AysncTask , starts it's work , downloading ten files for example
+The user changed the orientation of the device. This results in an orphan pointer in the AsyncTask 
+When the AsyncTask completes , and tries to access the activity to update the status , it crashes ,   because of the null pointer . 
+
+
+The solution for the above is to keep a WeakReference in the AsyncTask as recommended by the book "Pro Android 4" 
+
+WeakReference<Activity> weakActivity;
+
+in method onPostExecute
+
+Activity activity = weakActivity.get();
+if (activity != null) {
+   // do your stuff with activity here
+}
+
+
+How does this resolve the situation ?
+
+My question it , if my asynctask is downloading ten files , and upon completion of 5 the activity is restarted (because of an orientation change) then would my FileDownloadingTask be invoked once again ?. 
+
+What would happen to the previous AsyncTask that was initially invoked ? 
+
+Thank you  , and I apologize for the length of the question .  
+    
+===============================================================================================
+34
+A:How does this resolve the situation ?
+
+
+The WeakReference allows the Activity to be garbage collected, so you don't have a memory leak. 
+
+A null reference means that the AsyncTask cannot blindly try to update a user-interface that is no longer attached, which would throw exceptions (e.g. view not attached to window manager). Of course you have to check for null to avoid NPE.
+
+
+  if my asynctask is downloading ten files , and upon completion of 5 the activity is restarted (because of an orientation change) then would my FileDownloadingTask be invoked once again ?.
+
+
+Depends on your implementation, but probably yes - if you don't deliberately do something to make a repeat download unnecessary, such as caching the results somewhere.
+
+
+  What would happen to the previous AsyncTask that was initially invoked ?
+
+
+In earlier versions of Android it would run to completion, downloading all of the files only to throw them away (or perhaps cache them, depending on your implementation).
+
+In newer Android's I am suspicious that AsyncTask's are being killed along with the Activity that started them, but my basis for suspicion is only that the memory-leak demo's for RoboSpice (see below) do not actually leak on my JellyBean devices.
+
+If I may offer some advice: AsyncTask is not suitable for performing potentially long running tasks such as networking. 
+
+IntentService is a better (and still relatively simple) approach, if a single worker thread is acceptable to you. Use a (local) Service if you want control over the thread-pool - and be careful not to do work on the main thread!
+
+RoboSpice seems good if you are looking for a way to reliably perform networking in the background (disclaimer: I have not tried it; I am not affiliated). There is a RoboSpice Motivations demo app in the play store which explains why you should use it by demo-ing all the things that can go wrong with AsyncTask - including the WeakReference workaround.
+
+See also this thread: Is AsyncTask really conceptually flawed or am I just missing something?
+
+Update: 
+
+I created a github project with an example of downloading using IntentService for another SO question (How to fix android.os.NetworkOnMainThreadException?), but it is also relevant here, I think. It has the added advantage that, by returning the result via onActivityResult, a download that is in flight when you rotate the device will deliver to the restarted Activity.
+    

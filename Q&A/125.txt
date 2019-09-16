@@ -1,0 +1,90 @@
+501
+Q:I have ViewPager and below it I have 10 buttons. By clicking on button, for example #4, the pager goes immediately to page #4 by mPager.setCurrentItem(3);. But, I want to disable the paging by swiping with finger horizontally. Thus, the paging is done ONLY by clicking on the buttons. 
+So, how I can disable the swiping with finger?
+    
+===============================================================================================
+846
+A:You need to subclass ViewPager.  onTouchEvent has a lot of good things in it that you don't want to change like allowing child views to get touches.  onInterceptTouchEvent is what you want to change.  If you look at the code for ViewPager, you'll see the comment:
+
+    /*
+     * This method JUST determines whether we want to intercept the motion.
+     * If we return true, onMotionEvent will be called and we do the actual
+     * scrolling there.
+     */
+
+
+Here's a complete solution:
+
+First, add this class to your src folder:
+
+import android.content.Context;
+import android.support.v4.view.ViewPager;
+import android.util.AttributeSet;
+import android.view.MotionEvent;
+import android.view.animation.DecelerateInterpolator;
+import android.widget.Scroller;
+import java.lang.reflect.Field;
+
+public class NonSwipeableViewPager extends ViewPager {
+
+    public NonSwipeableViewPager(Context context) {
+        super(context);
+        setMyScroller();
+    }
+
+    public NonSwipeableViewPager(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        setMyScroller();
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent event) {
+        // Never allow swiping to switch between pages
+        return false;
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        // Never allow swiping to switch between pages
+        return false;
+    }
+
+    //down one is added for smooth scrolling
+
+    private void setMyScroller() {
+        try {
+            Class<?> viewpager = ViewPager.class;
+            Field scroller = viewpager.getDeclaredField("mScroller");
+            scroller.setAccessible(true);
+            scroller.set(this, new MyScroller(getContext()));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public class MyScroller extends Scroller {
+        public MyScroller(Context context) {
+            super(context, new DecelerateInterpolator());
+        }
+
+        @Override
+        public void startScroll(int startX, int startY, int dx, int dy, int duration) {
+            super.startScroll(startX, startY, dx, dy, 350 /*1 secs*/);
+        }
+    }
+}
+
+
+Next, make sure to use this class instead of the regular ViewPager, which you probably specified as android.support.v4.view.ViewPager.  In your layout file, you'll want to specify it with something like:
+
+<com.yourcompany.NonSwipeableViewPager
+    android:id="@+id/view_pager"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1" />
+
+
+This particular example is in a LinearLayout and is meant to take up the entire screen, which is why layout_weight is 1 and layout_height is 0dp.
+
+And setMyScroller(); method is for smooth transition
+    

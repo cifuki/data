@@ -1,0 +1,258 @@
+64
+Q:I know this has been asked in many different ways but I still can not seem to delete the gallery image from the default folder. I'm saving the file to the SD card correctly and I can delete that file fine, but the default gallery image file that shows under the folder Camera will not delete.
+
+I would like the image to delete once the activity is returned since the file is already stored on the SD card under /Coupon2. 
+
+Any suggestions?
+
+public void startCamera() {
+    Log.d("ANDRO_CAMERA", "Starting camera on the phone...");
+
+    mManufacturerText = (EditText) findViewById(R.id.manufacturer);
+    String ManufacturerText = mManufacturerText.getText().toString();
+    String currentDateTimeString = new Date().toString();
+
+    Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+    File filedir = new File(Environment.getExternalStorageDirectory()+"/Coupon2");
+    filedir.mkdirs();
+
+    File file = new File(Environment.getExternalStorageDirectory()+"/Coupon2", ManufacturerText+"-test.png");
+    outputFileUri = Uri.fromFile(file);
+    intent.putExtra(MediaStore.EXTRA_OUTPUT, outputFileUri);
+
+    startActivityForResult(intent, CAMERA_PIC_REQUEST);
+}
+
+protected void onActivityResult(int requestCode, int resultCode, Intent data) {  
+    super.onActivityResult(requestCode, resultCode, data);
+    if (requestCode == CAMERA_PIC_REQUEST && resultCode == -1) {  
+        Intent intent = new Intent("com.android.camera.action.CROP");
+        intent.putExtra("crop", "true");
+        intent.putExtra("scale", "true");
+
+        intent.putExtra("return-data", false);
+        intent.setDataAndType(outputFileUri, "image/*");
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, outputFileUri);
+        startActivityForResult(intent, CAMERA_CROP_REQUEST);
+    }else { 
+        SetImage();
+        saveState();
+    }
+}
+
+    
+===============================================================================================
+70
+A:My application requires me to call an intent to take a photo.  The photo cannot be in the gallery but instead must be in a specific directory on the SD card.
+
+Originally I just used the EXTRA_OUTPUT, but I soon discovered the following:
+  - Some devices use it completely and skip the gallery.
+  - Some devices ignore it completely and ONLY use the gallery.
+  - Some devices really suck and save a full sized image to the gallery, and save a thumbnail only to the location I wanted.  (HTC you know who you are...)
+
+So, I can't blindly delete a gallery file when I'm done.  The last added photo may or may not be the one I want to remove.  Also, I may have to copy that file replacing my own afterwards.  Because my activity is 2000 lines, and my company wouldn't want all of our code being posted, I'm posting only the methods involved in doing this.  Hopefully this helps.
+
+Also, I'll state, this is my first Android application.  I wouldn't be surprised if there was a better way to do this that I just don't know about, but this is what's working for me!
+
+So, here is my solution:
+
+First, in my application context I define a variable as follows:
+
+public ArrayList<String> GalleryList = new ArrayList<String>();
+
+
+Next, in my activity, I define a method to get a list of all photos in the gallery:
+
+private void FillPhotoList()
+{
+   // initialize the list!
+   app.GalleryList.clear();
+   String[] projection = { MediaStore.Images.ImageColumns.DISPLAY_NAME };
+   // intialize the Uri and the Cursor, and the current expected size.
+   Cursor c = null; 
+   Uri u = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+   //
+   // Query the Uri to get the data path.  Only if the Uri is valid.
+   if (u != null)
+   {
+      c = managedQuery(u, projection, null, null, null);
+   }
+
+   // If we found the cursor and found a record in it (we also have the id).
+   if ((c != null) && (c.moveToFirst())) 
+   {
+      do 
+      {
+        // Loop each and add to the list.
+        app.GalleryList.add(c.getString(0));
+      }     
+      while (c.moveToNext());
+   }
+}
+
+
+Here's a method to return a unique file name for my new image:
+
+private String getTempFileString()
+{
+   // Only one time will we grab this location.
+   final File path = new File(Environment.getExternalStorageDirectory(), 
+         getString(getApplicationInfo().labelRes));
+   //
+   // If this does not exist, we can create it here.
+   if (!path.exists())
+   {
+      path.mkdir();
+   }
+   //
+   return new File(path, String.valueOf(System.currentTimeMillis()) + ".jpg").getPath();
+}
+
+
+I have three variables in my Activity that store information for me about a current file.  A string (path), a File variable, and a URI to that file:
+
+public static String sFilePath = ""; 
+public static File CurrentFile = null;
+public static Uri CurrentUri = null;
+
+
+I never set these directly, I only call a setter on the file path:
+
+public void setsFilePath(String value)
+{
+   // We just updated this value. Set the property first.
+   sFilePath = value;
+   //
+   // initialize these two
+   CurrentFile = null;
+   CurrentUri = null;
+   //
+   // If we have something real, setup the file and the Uri.
+   if (!sFilePath.equalsIgnoreCase(""))
+   {
+      CurrentFile = new File(sFilePath);
+      CurrentUri = Uri.fromFile(CurrentFile);
+   }
+}
+
+
+Now I call an intent to take a photo.
+
+public void startCamera()
+{
+   Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+   // Specify the output. This will be unique.
+   setsFilePath(getTempFileString());
+   //
+   intent.putExtra(MediaStore.EXTRA_OUTPUT, CurrentUri);
+   //
+   // Keep a list for afterwards
+   FillPhotoList();
+   //
+   // finally start the intent and wait for a result.
+   startActivityForResult(intent, IMAGE_CAPTURE);
+}
+
+
+Once this is done, and the activity comes back, here is my code:
+
+protected void onActivityResult(int requestCode, int resultCode, Intent data)
+{
+   if (requestCode == IMAGE_CAPTURE)
+   {
+      // based on the result we either set the preview or show a quick toast splash.
+      if (resultCode == RESULT_OK)
+      {
+         // This is ##### ridiculous.  Some versions of Android save
+         // to the MediaStore as well.  Not sure why!  We don't know what
+         // name Android will give either, so we get to search for this
+         // manually and remove it.  
+         String[] projection = { MediaStore.Images.ImageColumns.SIZE,
+                                 MediaStore.Images.ImageColumns.DISPLAY_NAME,
+                                 MediaStore.Images.ImageColumns.DATA,
+                                 BaseColumns._ID,};
+         //    
+         // intialize the Uri and the Cursor, and the current expected size.
+         Cursor c = null; 
+         Uri u = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+         //
+         if (CurrentFile != null)
+         {               
+            // Query the Uri to get the data path.  Only if the Uri is valid,
+            // and we had a valid size to be searching for.
+            if ((u != null) && (CurrentFile.length() > 0))
+            {
+               c = managedQuery(u, projection, null, null, null);
+            }
+            //   
+            // If we found the cursor and found a record in it (we also have the size).
+            if ((c != null) && (c.moveToFirst())) 
+            {
+               do 
+               {
+                  // Check each area in the gallary we built before.
+                  boolean bFound = false;
+                  for (String sGallery : app.GalleryList)
+                  {
+                     if (sGallery.equalsIgnoreCase(c.getString(1)))
+                     {
+                        bFound = true;
+                        break;
+                     }
+                  }
+                  //       
+                  // To here we looped the full gallery.
+                  if (!bFound)
+                  {
+                     // This is the NEW image.  If the size is bigger, copy it.
+                     // Then delete it!
+                     File f = new File(c.getString(2));
+
+                     // Ensure it's there, check size, and delete!
+                     if ((f.exists()) && (CurrentFile.length() < c.getLong(0)) && (CurrentFile.delete()))
+                     {
+                        // Finally we can stop the copy.
+                        try
+                        {
+                           CurrentFile.createNewFile();
+                           FileChannel source = null;
+                           FileChannel destination = null;
+                           try 
+                           {
+                              source = new FileInputStream(f).getChannel();
+                              destination = new FileOutputStream(CurrentFile).getChannel();
+                              destination.transferFrom(source, 0, source.size());
+                           }
+                           finally 
+                           {
+                              if (source != null) 
+                              {
+                                 source.close();
+                              }
+                              if (destination != null) 
+                              {
+                                 destination.close();
+                              }
+                           }
+                        }
+                        catch (IOException e)
+                        {
+                           // Could not copy the file over.
+                           app.CallToast(PhotosActivity.this, getString(R.string.ErrorOccured), 0);
+                        }
+                     }
+                     //       
+                     ContentResolver cr = getContentResolver();
+                     cr.delete(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 
+                        BaseColumns._ID + "=" + c.getString(3), null);
+                     break;                        
+                  }
+               } 
+               while (c.moveToNext());
+            }
+         }
+      }
+   }      
+}
+
+    

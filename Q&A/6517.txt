@@ -1,0 +1,78 @@
+39
+Q:I am trying to convert an Android app from Java to Kotlin. There are a few singletons in the app. I used a companion object for the singletons without constructor parameters. There is another singleton that takes a constructor parameter.
+
+Java code:
+
+public class TasksLocalDataSource implements TasksDataSource {
+
+    private static TasksLocalDataSource INSTANCE;
+
+    private TasksDbHelper mDbHelper;
+
+    // Prevent direct instantiation.
+    private TasksLocalDataSource(@NonNull Context context) {
+        checkNotNull(context);
+        mDbHelper = new TasksDbHelper(context);
+    }
+
+    public static TasksLocalDataSource getInstance(@NonNull Context context) {
+        if (INSTANCE == null) {
+            INSTANCE = new TasksLocalDataSource(context);
+        }
+        return INSTANCE;
+    }
+}
+
+
+My solution in kotlin:
+
+class TasksLocalDataSource private constructor(context: Context) : TasksDataSource {
+
+    private val mDbHelper: TasksDbHelper
+
+    init {
+        checkNotNull(context)
+        mDbHelper = TasksDbHelper(context)
+    }
+
+    companion object {
+        lateinit var INSTANCE: TasksLocalDataSource
+        private val initialized = AtomicBoolean()
+
+        fun getInstance(context: Context) : TasksLocalDataSource {
+            if(initialized.getAndSet(true)) {
+                INSTANCE = TasksLocalDataSource(context)
+            }
+            return INSTANCE
+        }
+    }
+}
+
+
+Am I missing anything? Thread safety? Laziness ? 
+
+There were a few similar questions but I don't like the answers :)
+    
+===============================================================================================
+73
+A:Here's a neat alternative from Google's architecture components sample code, which uses the also function:
+
+class UsersDatabase : RoomDatabase() {
+
+    companion object {
+
+        @Volatile private var INSTANCE: UsersDatabase? = null
+
+        fun getInstance(context: Context): UsersDatabase =
+            INSTANCE ?: synchronized(this) {
+                INSTANCE ?: buildDatabase(context).also { INSTANCE = it }
+            }
+
+        private fun buildDatabase(context: Context) =
+            Room.databaseBuilder(context.applicationContext,
+                    UsersDatabase::class.java, "Sample.db")
+                    .build()
+    }
+}
+
+    

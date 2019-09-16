@@ -1,0 +1,179 @@
+41
+Q:I'm wrote a custom Android View that need to draw outside its clipping Bounds.
+
+This is what I have:
+
+
+
+This is what happens when I click a button, say the right button:
+
+
+
+How do I prevent the View below to draw on top of my "handle"?
+
+Some related pseudo-code from my project follow.
+
+My custom view MyHandleView draw like this:
+
+@Override
+protected void onDraw(Canvas canvas) {
+    super.onDraw(canvas);
+    Path p = mPath;
+    int handleWidth = mHandleWidth;
+    int handleHeight = mHandleHeight;
+    int left = (getWidth() >> 1) - handleWidth;
+
+    canvas.save();
+
+    // allow drawing out of bounds vertically
+    Rect clipBounds = canvas.getClipBounds();
+    clipBounds.inset(0, -handleHeight);
+    canvas.clipRect(clipBounds, Region.Op.REPLACE);
+
+    // translate up to draw the handle
+    canvas.translate(left, -handleHeight);
+
+    // draw my background shape
+    canvas.drawPath(p, mPaint);
+
+    canvas.restore();
+}
+
+
+The layout is something like this (I simplified a little):
+
+<RelativeLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Main content of the SlidingUpPanel -->
+    <fragment
+        android:above=@+id/panel"
+        class="com.neosperience.projects.percassi.android.home.HomeFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="?android:attr/actionBarSize"
+        tools:layout="@layout/fragment_home" />
+
+    <!-- The Sliding Panel -->
+    <LinearLayout
+        android:id="@id/panel"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/myFixedSize"
+        android:alignParentBottom="true"
+        android:orientation="vertical"
+        android:clipChildren="false">
+
+        <MyHandleView  xmlns:custom="http://schemas.android.com/apk/res-auto.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            custom:handleHeight="@dimen/card_panel_handle_height"
+            custom:handleWidthRatio="@dimen/card_panel_handle_width_ratio"
+            custom:handleBackgroundColor="#000"/>
+
+        <TextView
+            android:id="@+id/loyaltyCardPanelTitle"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/card_panel_height"
+            android:background="#000"
+            android:gravity="center"
+            android:textStyle="bold"
+            android:textSize="24sp"
+            android:textColor="#fff"
+            android:text="My TEXT"/>
+    </LinearLayout>
+
+</RelativeLayout>
+
+
+You can think of the fragment as a view containing two button at the bottom, in a LinearLayout.
+
+In place of the external RelativeLayout I'm really using a view from a library: SlidingUpPanelLayout (https://github.com/umano/AndroidSlidingUpPanel). But I tested the behavior with this RelativeLayout: same thing, meaning the library is not related.
+
+I say this just to let you know that I can't just place there a FrameLayout and avoid drawing outside the clipping bounds.
+
+I suspect this has something to do with the fact that when I touch the button it redraw itself but my other view (which is somewhere else in the hierarchy) doesn't get re-drawed (this is an optimization and I doubt it can be disabled).
+
+I'd like to be able to invalidate my custom view whenever any other "near" (or any) view get's invalidated, thus I need some kind of listener on view invalidation but I'm not aware of any.
+
+Can someone help?
+    
+===============================================================================================
+86
+A:I found the solution myself, even if this is not optimal for performances.
+
+Just add:
+
+android:clipChildren="false"
+
+
+to the RelativeLayout (or whatever layout you have).
+
+This has 2 effects (may be more, this are the two that interested me):
+- the ViewGroup doesn't clip the drawing of his children (obvious)
+- the ViewGroup doesn't check for intersection with dirty regions (invalidated) when considering which children to redraw
+
+I digged the View code about invalidating.
+
+The process goes, more or like, like this:
+
+
+a View invalidate itself, the region it usually draw (a rectangular) become a "dirty region" to be redrawed
+the View tell its parent (a ViewGroup of some kind) it need to redraw itself
+the parents do the same with it's parent to the root
+each parent in the hierarchy loop for every children and check if the dirty region intersect some of them
+if it does it also redraw them
+
+
+In step 4 clipping is involved: the ViewGroup check view bounds of his child only if clipChildren is true: meaning that if you place it to false it always redraw all its children when any of them is invalidated.
+
+So, my View hierarchy was like this:
+
+ViewGroup A
+|
+|----- fragment subtree (containing buttons, map,
+|       whatever element that I don't want to draw
+|       on top of my handle)
+|
+|----- ViewGroup B
+       |
+       |---- my handle (which draw outside its clip bounds)
+
+
+In my case the "handle" draw ouf of it's bound, on top of something that is usually drawed by some element of the fragment subtree.
+
+When any view inside the fragment is invalidated it pass its "dirty region" up in the view tree and each view group check if there are some other children to be redraw in that region.
+
+ViewGroup B would clip what I draw outside the clip bounds if I do not set clipBounds="false" on it.
+
+If anything get's invalidated in the fragment subtree the ViewGroup A will see that ViewGroup B dirty region is not intersecting the fragment subtree region and will skip redrawing of ViewGroup B.
+
+But if I also tell ViewGroup A to not clip children it will still give ViewGroup B an invalidate command which will then cause a redraw of my handle.
+
+So the solution is to make sure to set
+
+android:clipChildren="false"
+
+
+on any ViewGroup in the hierarchy above the View that draw out of it's bounds on which the content may fall "under" the out-of-bound region you are drawing.
+
+The obvious side effect of this is that whenever I invalidate any of the view inside ViewGroup A an invalidate call will be forwarded, with the invalid region, to all the view in it.
+
+However any view that doesn't intersect the dirty region which is inside a ViewGroup with clipChildren="true" (default) will be skipped.
+
+So to avoid performance issues when doing this make sure your view groups with clipChildren="true" have not many "standard" direct children. And with "standard" I mean that they do not draw outside their view bounds.
+
+So for example if in my example ViewGroup B contains many view consider wrapping all those in a ViewGroup with clipChildren="true" and only leave this view group and the one view that draw outside its region as direct children of ViewGroup B. The same goes for ViewGroup A.
+
+This simple fact will make sure no other View will get a redraw if they aren't in the invalidated dirty region minimizing the redraws needed.
+
+I'm still open to hear any more consideration if someone has one ;)
+
+So I'll wait a little bit before marking this as accepted answer.
+
+
+  EDIT: Many devices do something different in handling clipChildren="false". I discovered that I had to set clipChildren="false" on all the parent views of my custom widget that may contains elements in their hierarchy which should draw over of the "out of bound region" of the widget or you may see your custom drawing showing ON TOP of another view that was supposed to cover it. For example in my layout I had a Navigation Drawer that was supposed to cover my "handle". If I didn't set clipChildren="false" on the NavigationDrawer layout I may sometimes see my handle pop up in front of the opened drawer.
+  
+  EDIT2: My custom widget had 0 height and drawed "on top" of itself. Worked fine on Nexus devices but many of the others had some "optimization" in place that completely skip drawing of views that have 0 height or 0 width. So be aware of this if you want to write a component that draw out of it's bound: you have to assign it at least 1 pixel height / width.
+
+    

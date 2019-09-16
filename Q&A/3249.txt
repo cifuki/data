@@ -1,0 +1,80 @@
+68
+Q:I am trying to add spacing below the last element row in RecyclerView with GridLayoutManager. I used custom ItemDecoration for this purpose with bottom padding when its last element as follows:
+
+public class SpaceItemDecoration extends RecyclerView.ItemDecoration {
+private int space;
+private int bottomSpace = 0;
+
+public SpaceItemDecoration(int space, int bottomSpace) {
+    this.space = space;
+    this.bottomSpace = bottomSpace;
+}
+
+public SpaceItemDecoration(int space) {
+    this.space = space;
+    this.bottomSpace = 0;
+}
+
+@Override
+public void getItemOffsets(Rect outRect, View view,
+                           RecyclerView parent, RecyclerView.State state) {
+
+    int childCount = parent.getChildCount();
+    final int itemPosition = parent.getChildAdapterPosition(view);
+    final int itemCount = state.getItemCount();
+
+    outRect.left = space;
+    outRect.right = space;
+    outRect.bottom = space;
+    outRect.top = space;
+
+    if (itemCount > 0 && itemPosition == itemCount - 1) {
+        outRect.bottom = bottomSpace;
+    }
+}
+}
+
+
+But the problem with this method is that it messed up the element heights in the grid in last row. I am guessing that GridLayoutManager changes the heights for elements based on spacing left. What is the correct way to achieve this?
+
+This will work correctly for a LinearLayoutManager. Just in case of a GridLayoutManager its problematic.
+
+Its very useful in case you have a FAB in bottom and need items in last row to scroll above FAB so that they can be visible.
+    
+===============================================================================================
+10
+A:The solution to this problem lies in overrinding the SpanSizeLookup of GridLayoutManager.
+
+You have to make changes to the GridlayoutManager in the Activity or Fragment where you are inflating the RecylerView.
+
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    //your code 
+    recyclerView.addItemDecoration(new PhotoGridMarginDecoration(context));
+
+    // SPAN_COUNT is the number of columns in the Grid View
+    GridLayoutManager gridLayoutManager = new GridLayoutManager(context, SPAN_COUNT);
+
+    // With the help of this method you can set span for every type of view
+    gridLayoutManager.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
+        @Override
+        public int getSpanSize(int position) {
+            if (list.get(position).getType() == TYPE_HEADER) {
+                // Will consume the whole width
+                return gridLayoutManager.getSpanCount();
+            } else if (list.get(position).getType() == TYPE_CONTENT) {
+                // will consume only one part of the SPAN_COUNT
+                return 1;
+            } else if(list.get(position).getType() == TYPE_FOOTER) {
+                // Will consume the whole width
+                // Will take care of spaces to be left,
+                // if the number of views in a row is not equal to 4
+                return gridLayoutManager.getSpanCount();
+            }
+            return gridLayoutManager.getSpanCount();
+        }
+    });
+    recyclerView.setLayoutManager(gridLayoutManager);
+}
+
+    

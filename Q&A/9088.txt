@@ -1,0 +1,122 @@
+30
+Q:I am using this given below code to get locations:
+
+public Location getLocation() {
+        try {
+            mLocationManager = (LocationManager) context.getSystemService(LOCATION_SERVICE);
+
+            // getting GPS status
+            boolean isGPSEnabled = mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
+
+            // getting network status
+            boolean isNetworkEnabled = mLocationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+
+            if (!isGPSEnabled && !isNetworkEnabled) {
+                // no network provider is enabled
+            } else {
+                // First get location from Network Provider
+                if (isNetworkEnabled) {
+                    mLocationManager.requestLocationUpdates( LocationManager.NETWORK_PROVIDER,  MIN_TIME_BW_UPDATES,  MIN_DISTANCE_CHANGE_FOR_UPDATES, this);
+                    Log.d("Network", "Network");
+                    if (mLocationManager != null) {
+                        location = mLocationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                        if (location != null) {
+                            lat = location.getLatitude();
+                            lng = location.getLongitude();
+                        }
+                    }
+                }
+                //get the location by gps
+                if (isGPSEnabled) {
+                    if (location == null) {
+                        mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,MIN_TIME_BW_UPDATES,MIN_DISTANCE_CHANGE_FOR_UPDATES, this);
+                        Log.d("GPS Enabled", "GPS Enabled");
+                        if (mLocationManager != null) {location = mLocationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                            if (location != null) {
+                                lat = location.getLatitude();
+                                lng = location.getLongitude();
+                            }
+                        }
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return location;
+    }
+
+
+It is working properly, but I would like to get GPS location first, and in case if it is unavailable , location manager should query for Network provider, in which I am getting trouble.
+
+Please, recommend me the good way to do this.
+    
+===============================================================================================
+19
+A:You're saying that you need GPS location first if its available, but what you did is first you're getting location from network provider and then from GPS. This will get location from Network and GPS as well if both are available. What you can do is, write these cases in if..else if block. Similar to-
+
+if( !isGPSEnabled && !isNetworkEnabled) {
+
+// Can't get location by any way
+
+} else {
+
+    if(isGPSEnabled) {
+
+    // get location from GPS
+
+    } else if(isNetworkEnabled) {
+
+    // get location from Network Provider
+
+    }
+}
+
+
+So this will fetch location from GPS first (if available), else it will try to fetch location from Network Provider.
+
+EDIT:
+
+To make it better, I'll post a snippet. Consider it is in try-catch:
+
+boolean gps_enabled = false;
+boolean network_enabled = false;
+
+LocationManager lm = (LocationManager) mCtx
+                .getSystemService(Context.LOCATION_SERVICE);
+
+gps_enabled = lm.isProviderEnabled(LocationManager.GPS_PROVIDER);
+network_enabled = lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+
+Location net_loc = null, gps_loc = null, finalLoc = null;
+
+if (gps_enabled)
+    gps_loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+if (network_enabled)
+    net_loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+
+if (gps_loc != null && net_loc != null) {
+
+    //smaller the number more accurate result will
+    if (gps_loc.getAccuracy() > net_loc.getAccuracy()) 
+        finalLoc = net_loc;
+    else
+        finalLoc = gps_loc;
+
+        // I used this just to get an idea (if both avail, its upto you which you want to take as I've taken location with more accuracy)
+
+} else {
+
+    if (gps_loc != null) {
+        finalLoc = gps_loc;
+    } else if (net_loc != null) {
+        finalLoc = net_loc;
+    }
+}
+
+
+Now you check finalLoc for null, if not then return it.
+You can write above code in a function which returns the desired (finalLoc) location. I think this might help.
+    

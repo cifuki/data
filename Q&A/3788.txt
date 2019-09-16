@@ -1,0 +1,125 @@
+60
+Q:I am using OKHTTP client for networking in my android application. 
+
+This example shows how to upload binary file. I would like to know how to get inputstream of binary file downloading with OKHTTP client.
+
+Here is the listing of the example :
+
+public class InputStreamRequestBody extends RequestBody {
+
+    private InputStream inputStream;
+    private MediaType mediaType;
+
+    public static RequestBody create(final MediaType mediaType, 
+            final InputStream inputStream) {
+        return new InputStreamRequestBody(inputStream, mediaType);
+    }
+
+    private InputStreamRequestBody(InputStream inputStream, MediaType mediaType) {
+        this.inputStream = inputStream;
+        this.mediaType = mediaType;
+    }
+
+    @Override
+    public MediaType contentType() {
+        return mediaType;
+    }
+
+    @Override
+    public long contentLength() {
+        try {
+            return inputStream.available();
+        } catch (IOException e) {
+            return 0;
+        }
+    }
+
+    @Override
+    public void writeTo(BufferedSink sink) throws IOException {
+        Source source = null;
+        try {
+            source = Okio.source(inputStream);
+            sink.writeAll(source);
+        } finally {
+            Util.closeQuietly(source);
+        }
+    }
+}
+
+
+Current code for simple get request is:
+
+OkHttpClient client = new OkHttpClient();
+request = new Request.Builder().url("URL string here")
+                    .addHeader("X-CSRFToken", csrftoken)
+                    .addHeader("Content-Type", "application/json")
+                    .build();
+response = getClient().newCall(request).execute();
+
+
+Now how do I convert the response to InputStream. Something similar to response from Apache HTTP Client like this for OkHttp response:
+
+InputStream is = response.getEntity().getContent();
+
+
+
+
+EDIT
+
+Accepted answer from below.
+My modified code:
+
+request = new Request.Builder().url(urlString).build();
+response = getClient().newCall(request).execute();
+
+InputStream is = response.body().byteStream();
+
+BufferedInputStream input = new BufferedInputStream(is);
+OutputStream output = new FileOutputStream(file);
+
+byte[] data = new byte[1024];
+
+long total = 0;
+
+while ((count = input.read(data)) != -1) {
+    total += count;
+    output.write(data, 0, count);
+}
+
+output.flush();
+output.close();
+input.close();
+
+    
+===============================================================================================
+30
+A:Getting ByteStream from OKHTTP
+
+I've been digging around in the Documentation of OkHttp you need to go this way
+
+use this method :
+
+
+  response.body().byteStream() wich will return an InputStream
+
+
+so you can simply use a BufferedReader or any other alternative
+
+OkHttpClient client = new OkHttpClient();
+request = new Request.Builder().url("URL string here")
+                     .addHeader("X-CSRFToken", csrftoken)
+                     .addHeader("Content-Type", "application/json")
+                     .build();
+response = getClient().newCall(request).execute();
+
+InputStream in = response.body().byteStream();
+BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+String result, line = reader.readLine();
+result = line;
+while((line = reader.readLine()) != null) {
+    result += line;
+}
+System.out.println(result);
+response.body().close();
+
+    

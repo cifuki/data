@@ -1,0 +1,19 @@
+40
+Q:I have been stuck on this problem for quite some time.  I am working on an app that uses location quite extensively in several different Activities.  Every example I have found uses a separate LocationListener in every Activity.  This is not feasible in my situation.
+
+I am wondering what is the most efficient way to keep track of the user's location across several activities.  Right now I have created a service that implements LocationListener and uses a broadcast to update static lat and long fields in an Activity base class.  This means that the service is always running, which isn't ideal.  But if I shut down the service and restart it only when I need it, it takes time to get a good location.  I need the location data in the Activity's onCreate().  It's the same if I try to implement it in the activity base class.  If I constantly register the listener in onResume/onCreate and unregister it in onPause(), it takes too much time to start receiving updates.  I also tried to create a service that I could bind to, so it only starts when I need a location.  But I have the same problem, it takes too long to bind to the service and start getting updates.
+
+The service that I am using now works but from everything I've read, I shouldn't be using a constantly running service for trivial things like this.  But the whole point of the app is to provide relevant data based on the user's current location.  So I have a service that just runs in the background and provides updates periodically.  The one major problem that has caused me to reexamine the design at this point is that I recently discovered that onProviderEnabled() doesn't get called if the user starts the app without GPS turned on and then subsequently enables it.  In this scenario the app has no way of recognizing that GPS was enabled so it can start listening for updates.
+
+I thought I understood LocationManager and LocationListener from looking at the examples but I can't seem to apply it to this situation where I need location data in multiple Activities.  Any help or advice would be greatly appreciated.
+    
+===============================================================================================
+43
+A:The way that I would typically implement this requirement is using a bound Service implementation, like the one in the Local Service Sample in the SDK Documentation.  Obviously you're familiar with the advantage of the Service allowing you to create all the location code only once.
+
+Accessing the Service through Bindings allows the Service to start and stop itself so it isn't running when your application isn't in the foreground (it will die as soon as no more Activities are bound).  The key, IMO, to making this work well is to BIND the service in onStart() and UNBIND in onStop(), because those two calls overlap as you move from one Activity to another (Second Activity Starts before the First one Stops).  This keeps the Service from dying when moving around inside the app, and only lets the service die when the entire application (or at least any part interested in location) leaves the foreground.
+
+With Bindings, you don't have to pass the Location data in a Broadcast, because the Activity can call methods directly on the Service to get the latest location.  However, a Broadcast would still be advantageous as a method of indicating WHEN a new update is available...but this would just become a notifier to the listening Activity to call the getLocation() method on the Service.
+
+My $0.02.  Hope that Helps!
+    

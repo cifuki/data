@@ -1,0 +1,90 @@
+26
+Q:I've added Robolectric to an Android project. I'm using Android Studio with Build Tools in 19.0.1.
+
+I can run the tests with:
+
+$./gradlew test
+
+
+Which execute fine.
+
+If I try:
+
+$ gradle installDebug
+
+
+It executes fine as well:
+
+$ ./gradlew installDebug
+WARNING: Dependency commons-logging:commons-logging:1.1.1 is ignored for debugTest as it may be conflicting with the internal version provided by Android.
+         In case of problem, please repackage it with jarjar to change the class packages
+WARNING: Dependency org.apache.httpcomponents:httpclient:4.0.3 is ignored for debugTest as it may be conflicting with the internal version provided by Android.
+         In case of problem, please repackage it with jarjar to change the class packages
+The Test.testReportDir property has been deprecated and is scheduled to be removed in Gradle 2.0. Please use the Test.getReports().getHtml().getDestination() property instead.
+:app:compileDebugNdk
+:app:preBuild
+:app:preDebugBuild
+:app:checkDebugManifest
+:app:prepareDebugDependencies
+:app:compileDebugAidl
+:app:compileDebugRenderscript
+:app:generateDebugBuildConfig
+:app:mergeDebugAssets
+:app:generateDebugResValues UP-TO-DATE
+:app:generateDebugResources
+:app:mergeDebugResources
+:app:processDebugManifest
+:app:processDebugResources
+:app:generateDebugSources
+:app:compileDebugJava
+:app:preDexDebug
+:app:dexDebug
+:app:processDebugJavaRes UP-TO-DATE
+:app:validateDebugSigning
+:app:packageDebug
+:app:installDebug
+8266 KB/s (46166 bytes in 0.005s)
+ pkg: /data/local/tmp/app-debug-unaligned.apk
+Success
+
+BUILD SUCCESSFUL
+
+Total time: 4.291 secs
+
+
+However when I'm trying to run my project on a device or emulator from Android Studio, I get the following:
+
+Execution failed for task ':app:dexDebug'.
+> com.android.ide.common.internal.LoggedErrorException: Failed to run command:
+/Applications/Android Studio.app/sdk/build-tools/19.0.1/dx --dex --output /Users/fstephany/Code/android/RoboElectricTestingProject/app/build/dex/debug /Users/fstephany/Code/android/RoboElectricTestingProject/app/build/classes/debug /Users/fstephany/Code/android/RoboElectricTestingProject/app/build/dependency-cache/debug
+Error Code:
+  1
+Output:
+  Unable to locate a Java Runtime to invoke.
+
+
+Any hint on where to look for this issue? I can always installDebug then start the app from CLI or Studio but it's getting in the way.
+    
+===============================================================================================
+110
+A:An expired gradle daemon may be causing some performance issues in the background. I thought gradle would clean it up after 3 hours of being idle, but that seems to not be the case. Go to your terminal, go to your project's root folder where the gradle files are, and type in the command 
+
+./gradlew --stop
+
+
+and try running your build again. Hopefully that resolves your issue like it did mine.
+
+I'm trying to understand why this caused an issue, but I haven't found a good enough reason yet. I'll edit the answer if I find anything.
+
+UPDATE
+
+From the Gradle Design Github page:
+
+
+  Currently, the daemon has serious problems when memory pressure occurs. When under     pressure, the daemon process exhibits GC thrash.
+  
+  One hypothesis for this is the use of weak reference caches, particularly in the Groovy metaclass system where meta class instances are held in a weak reference cache. Note that this is not necessarily a problem with the daemon, as it would also apply to the non daemon case. However, it is exacerbated by the daemon leaking memory, thereby increasing the chance of a memory pressure situation occurring.
+
+
+This doesn't give any definitive answer, but it does give the hunch that the daemon may be the culprit for what you are seeing (along with other things). I've seen some gradle tasks take 10x as long as they usually do, and running --stop alleviates those issues as well. 
+    

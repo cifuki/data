@@ -1,0 +1,140 @@
+35
+Q:I found many stuff like close the connection and close the cursor, but I do all this stuff. Still the SQLite connection leaks and I get a warning like this:
+
+A SQLiteConnection object for database was leaked!
+
+
+I have a database manager this, which I call in my activities with the following code:
+
+DatabaseManager dbm = new DatabaseManager(this);
+
+
+The code of my database manager class follows now:
+
+public class DatabaseManager {
+
+    private static final int DATABASE_VERSION = 9;
+    private static final String DATABASE_NAME = "MyApp";
+    private Context context = null;
+    private DatabaseHelper dbHelper = null;
+    private SQLiteDatabase db = null;
+
+
+    public static class DatabaseHelper extends SQLiteOpenHelper {
+
+         public DatabaseHelper(Context context) {
+             super(context, DATABASE_NAME, null, DATABASE_VERSION);
+         }
+
+         @Override
+         public void onCreate(SQLiteDatabase db) {
+
+                   //create database tables
+         }
+
+         @Override
+         public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+                      //destroy and recreate them
+         }
+
+     }
+
+     public DatabaseManager(Context ctx) {
+         this.context = ctx;
+     }
+
+    private DatabaseManager open() throws SQLException {
+        dbHelper = new DatabaseHelper(context);
+        db = dbHelper.getWritableDatabase();
+
+        if (!db.isReadOnly()) {
+            db.execSQL("PRAGMA foreign_keys = ON;");
+        }
+
+        return this;
+    }
+
+    private void close() {
+        dbHelper.close();
+    }
+}
+
+
+When I call a database method, I do the following thing:
+
+public Object getData() {
+
+    open();
+
+            //... database operations take place ...
+
+    close();
+
+    return data;
+}
+
+
+But as I said, I still get this SQLite connection leaked warning. 
+
+What am I doing wrong?
+    
+===============================================================================================
+130
+A:The bolded font in the citation corresponds to this part in your code:
+
+private DatabaseManager open() throws SQLException {
+    dbHelper = new DatabaseHelper(context);
+    db = dbHelper.getWritableDatabase();
+
+
+from: http://www.androiddesignpatterns.com/2012/05/correctly-managing-your-sqlite-database.html
+
+
+  Approach #1: Use an Abstract Factory to Instantiate the
+  SQLiteOpenHelper
+  
+  Declare your database helper as a static instance variable and use the
+  Abstract Factory pattern to guarantee the singleton property. The
+  sample code below should give you a good idea on how to go about
+  designing the DatabaseHelper class correctly.
+  
+  The static factory getInstance method ensures that only one
+  DatabaseHelper will ever exist at any given time. If the mInstance
+  object has not been initialized, one will be created. If one has
+  already been created then it will simply be returned. 
+  You should
+  not initialize your helper object using with new DatabaseHelper(context). 
+  Instead, always use
+  DatabaseHelper.getInstance(context), as it guarantees that only one
+  database helper will exist across the entire application's lifecycle.
+
+
+public static class DatabaseHelper extends SQLiteOpenHelper { 
+
+  private static DatabaseHelper mInstance = null;
+
+  private static final String DATABASE_NAME = "database_name";
+  private static final String DATABASE_TABLE = "table_name";
+  private static final int DATABASE_VERSION = 1;
+
+  public static DatabaseHelper getInstance(Context ctx) {
+
+    // Use the application context, which will ensure that you 
+    // don't accidentally leak an Activity's context.
+    // See this article for more information: http://bit.ly/6LRzfx
+    if (mInstance == null) {
+      mInstance = new DatabaseHelper(ctx.getApplicationContext());
+    }
+    return mInstance;
+  }
+
+  /**
+   * Constructor should be private to prevent direct instantiation.
+   * make call to static factory method "getInstance()" instead.
+   */
+  private DatabaseHelper(Context ctx) {
+    super(ctx, DATABASE_NAME, null, DATABASE_VERSION);
+  }
+}
+
+    

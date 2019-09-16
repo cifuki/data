@@ -1,0 +1,166 @@
+36
+Q:I'm receiving java.io.EOFException's when using Spring REST template on Android.
+
+The stacktrace cause reads like this:
+
+Caused by: java.io.EOFException
+at libcore.io.Streams.readAsciiLine(Streams.java:203)
+at libcore.net.http.HttpEngine.readResponseHeaders(HttpEngine.java:560)
+at libcore.net.http.HttpEngine.readResponse(HttpEngine.java:813)
+at libcore.net.http.HttpURLConnectionImpl.getResponse(HttpURLConnectionImpl.java:274)
+at libcore.net.http.HttpURLConnectionImpl.getResponseCode(HttpURLConnectionImpl.java:486)
+at org.springframework.http.client.SimpleClientHttpResponse.getRawStatusCode(SimpleClientHttpResponse.java:49)
+at org.springframework.http.client.SimpleClientHttpResponse.getStatusCode(SimpleClientHttpResponse.java:55)
+at org.springframework.http.client.BufferingClientHttpResponseWrapper.getStatusCode(BufferingClientHttpResponseWrapper.java:47)
+at com.company.util.LoggingClientHttpRequestInterceptor.intercept(LoggingClientHttpRequestInterceptor.java:33)
+at org.springframework.http.client.InterceptingClientHttpRequest$RequestExecution.execute(InterceptingClientHttpRequest.java:81)
+at com.company.api.interceptor.AuthTokenInterceptor.intercept(AuthTokenInterceptor.java:51)
+at org.springframework.http.client.InterceptingClientHttpRequest$RequestExecution.execute(InterceptingClientHttpRequest.java:81)
+at org.springframework.http.client.InterceptingClientHttpRequest.executeInternal(InterceptingClientHttpRequest.java:67)
+at org.springframework.http.client.AbstractBufferingClientHttpRequest.executeInternal(AbstractBufferingClientHttpRequest.java:46)
+at org.springframework.http.client.AbstractClientHttpRequest.execute(AbstractClientHttpRequest.java:63)
+at org.springframework.web.client.RestTemplate.doExecute(RestTemplate.java:475)
+... 14 more
+
+
+Another similar stacktrace:
+
+org.springframework.web.client.ResourceAccessException: I/O error: null; nested exception is java.io.EOFException
+at org.springframework.web.client.RestTemplate.doExecute(RestTemplate.java:490)
+at org.springframework.web.client.RestTemplate.execute(RestTemplate.java:438)
+at org.springframework.web.client.RestTemplate.exchange(RestTemplate.java:414)
+at com.company.api.ApiClient_.logLoginAttempt(ApiClient_.java:299)
+at com.company.security.CompanyAuthenticationService$2.onCreateCall(CompanyAuthenticationService.java:206)
+at com.company.api.SafeApiCall.doInBackground(SafeApiCall.java:49)
+at com.company.api.SafeApiCall.doInBackground(SafeApiCall.java:22)
+at android.os.AsyncTask$2.call(AsyncTask.java:287)
+at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:305)
+at java.util.concurrent.FutureTask.run(FutureTask.java:137)
+at android.os.AsyncTask$SerialExecutor$1.run(AsyncTask.java:230)
+at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1076)
+at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:569)
+at java.lang.Thread.run(Thread.java:856)
+Caused by: java.io.EOFException
+at libcore.io.Streams.readAsciiLine(Streams.java:203)
+at libcore.net.http.HttpEngine.readResponseHeaders(HttpEngine.java:560)
+at libcore.net.http.HttpEngine.readResponse(HttpEngine.java:813)
+at libcore.net.http.HttpURLConnectionImpl.getResponse(HttpURLConnectionImpl.java:274)
+at libcore.net.http.HttpURLConnectionImpl.getResponseCode(HttpURLConnectionImpl.java:486)
+at org.springframework.http.client.SimpleClientHttpResponse.getRawStatusCode(SimpleClientHttpResponse.java:49)
+at org.springframework.http.client.SimpleClientHttpResponse.getStatusCode(SimpleClientHttpResponse.java:55)
+at org.springframework.http.client.BufferingClientHttpResponseWrapper.getStatusCode(BufferingClientHttpResponseWrapper.java:47)
+at org.springframework.web.client.DefaultResponseErrorHandler.hasError(DefaultResponseErrorHandler.java:46)
+at org.springframework.web.client.RestTemplate.doExecute(RestTemplate.java:476)
+... 13 more
+
+
+This is all happening on Android 4.1.2, installed on my Xoom tablet.
+
+The problem appears and disappears. It's not triggered by long requests either. The server part is running on a machine within the local network. When I try to run the API Calls through curl, it works just fine.
+
+AuthTokenInterceptor:
+
+@Override
+public ClientHttpResponse intercept(HttpRequest request, byte[] data, ClientHttpRequestExecution execution) throws IOException {
+    HttpHeaders headers = request.getHeaders();
+    if (!StringUtils.isEmpty(mAuthToken)) {
+        headers.add((mIsOAuth ? "Authorization" : "authToken"), (mIsOAuth ? "Bearer " : "") + mAuthToken);
+    }
+    return execution.execute(request, data);
+}
+
+
+LoggingClientHttpRequestInterceptor:
+
+/** {@inheritDoc} */
+@Override
+public ClientHttpResponse intercept(HttpRequest httpRequest, byte[] bytes, ClientHttpRequestExecution clientHttpRequestExecution) throws IOException {
+    Log.d(TAG, "To     : " + httpRequest.getURI());
+    Log.d(TAG, "Method : " + httpRequest.getMethod().name());
+    Log.d(TAG, "Data   : " + new String(bytes));
+
+    for (Object key : httpRequest.getHeaders().keySet()) {
+        Log.d(TAG, "Header <" + key + ">: " + httpRequest.getHeaders().get(key));
+    }
+
+    final ClientHttpResponse response = clientHttpRequestExecution.execute(httpRequest, bytes);
+
+    if (response != null) {
+        Log.d(TAG, "Response: " + response.getStatusCode());
+        if (response.getBody() != null) {
+            Log.d(TAG, "Response: " + convertStreamToString(response.getBody()));
+        }
+    } else {
+        Log.d(TAG, "Response: " + response);
+    }
+
+    return response;
+}
+
+
+The Rest Template is configured like this:
+
+final RestTemplate template = new RestTemplate(false);
+template.getMessageConverters().add(new MappingJacksonHttpMessageConverter());
+template.setRequestFactory(new BufferingClientHttpRequestFactory(template.getRequestFactory()));
+ApiUtils.addAuthTokenHeaderToRestTemplate(template, mAuthToken, false);
+ApiUtils.addRequestLoggingToRestTemplate(template);
+
+
+The API call in question that crashed here is described in the Android annotations based interface:
+
+@Post("/user/memberships")
+@Accept(MediaType.APPLICATION_JSON)
+CompanyApiResponse saveGroupMembership(UserGroupMembership membership) throws RestClientException;
+
+
+Things I've tried:
+
+
+Removed LoggingInterceptor
+Called all API calls by CURL
+Removed call BufferingClientHttpRequestFactory - Helped a little but the error still occurs.
+Tested it on Android 2.3 - the error cannot be reproduced
+
+
+I've been reading various forums posts, the EOF exception seems to appear if URLs are incorrect, which I double checked in this case.
+
+Also of note, once the EOF Exception occurs, the call not even reaches the server side.
+
+Where would be a good point to continue the search for a fix? Is this a Android 4.1 inconvenience?
+
+While debugging this issue, I also found https://jira.springsource.org/browse/ANDROID-102 which prevented me from seeing the real error (EOF) before.
+
+
+
+Update: Just found http://code.google.com/p/google-http-java-client/issues/detail?id=116 -  it might be related.
+
+The fix is also outlined in https://codereview.appspot.com/6225045/ - so it might've been merged for 4.1.
+    
+===============================================================================================
+59
+A:This one bit me as well, running Jelly Bean 4.2. After researching, it seems that it's happening because of a combination of Keep-Alive being set and using the standard J2SE HTTP Client, which I believe is HttpURLConnection.
+
+There are 2 solutions that I can confirm are correct.
+
+1) Switch off Keep-Alive.
+For me, the solution given in Sebastian's answer, System.setProperty("http.keepAlive", "false"); didn't work. I had to use
+
+HttpHeaders headers = new HttpHeaders();
+headers.set("Connection", "Close");
+
+
+and send those headers in an HttpEntity in the RestTemplate.
+As mentioned, this solution could have an impact on performance
+
+2) Change the HTTP Client.
+In Spring for Android (tested on 1.0.1.RELEASE, but could be in earlier releases too) the default HTTP Client for a RestTemplate instance is determined by the version of Android on the device. API 9 or newer uses HttpURLConnection, older uses HTTPClient. To explicitly set the client to the old one, use
+
+restTemplate.setRequestFactory(new HttpComponentsClientHttpRequestFactory());
+
+
+More info can be found here: http://static.springsource.org/spring-android/docs/1.0.1.RELEASE/reference/htmlsingle/#d4e34
+I'm not sure what impact this will have on performance, but I guess it's more performant than an app that doesn't work.
+
+Anyway, hope that helps someone. I just wasted a week wild-goose-chasing this one down.
+    

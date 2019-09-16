@@ -1,0 +1,123 @@
+32
+Q:A set of six generalized densities:
+
+ldpi (low) ~120dpi
+mdpi (medium) ~160dpi
+hdpi (high) ~240dpi
+xhdpi (extra-high) ~320dpi
+xxhdpi (extra-extra-high) ~480dpi
+xxxhdpi (extra-extra-extra-high) ~640dpi
+
+
+From the wiki pages of each phone display
+
+Scaling down into the buckets i.e if the ppi is 300 that would go into the hdpi bucket as it less then 320?
+
+Galaxy S3 306ppi -> bucket hdpi
+Nexus 4  318ppi -> bucket hdpi
+Nexus 5  445ppi -> bucket xhdpi
+Nexus 5X 432ppi -> bucket xhdpi
+Nexus 6  493ppi -> bucket xxhdpi 
+Nexus 6P 518ppi -> bucket xxhdpi
+
+
+Is this the correct way to work out buckets for screen sizes.
+
+The reason I asked is because I have created the following value directory resources:
+
+values-hdpi/dimens
+values-xhdpi/dimens
+values-xxhdpi/dimens
+values-xxxhdpi/dimens
+
+
+In the dimens.xml I have different margins and set the dp depending on the bucket size i.e.
+
+<dimen name="network_quantity_margin_top">100dp</dimen>
+
+
+I am interested to know if this is the correct way to do this. 
+    
+===============================================================================================
+41
+A:The reason I asked is because I have created the following value directory resources. (...)
+  In the dimens.xml I have different margins and set the dp depending on the bucket size. (...)
+  I am interested to know if this is the correct way to do this.
+
+
+I'm not sure why you want different margins specified in dp depending on the density. Specifying the margin as dp once, for the baseline density, already handles all other densities for you, meaning that the physical size of the margin will be the same when displayed on any device.
+
+If you used px instead of dp (but don't), then you would have to do the scaling for different screens yourself.
+
+
+  Scaling down into the buckets i.e if the ppi is 300 that would go into the hdpi bucket as it less then 320?
+
+
+Yes, but not because it is less than 320. If there was a rule of thumb I would say it is rounding to the nearest generalized density. See this illustration of how Android roughly maps actual densities to generalized densities (figure is not exact):
+
+
+
+Relevant part of the documentation is this:
+
+
+  Each generalized size and density spans a range of actual screen sizes and densities. For example, two devices that both report a screen size of normal might have actual screen sizes and aspect ratios that are slightly different when measured by hand. Similarly, two devices that report a screen density of hdpi might have real pixel densities that are slightly different. Android makes these differences abstract to applications, so you can provide UI designed for the generalized sizes and densities and let the system handle any final adjustments as necessary.
+
+
+So again, you shouldn't really care how Android does this if you are just writing an app. What you should care about is:
+
+
+specify all layout dimension values in dp or with wrap_content/match_parent, as appropriate (text can be in sp to additionally match the user preference, but nothing other than text),
+think about different layouts depending on physical size and orientation of the screen,
+provide bitmap resources for different densities, just to avoid blurry or pixelated artifacts (because Android will scale them to have the right physical size if you use dp or wrap_content).
+
+
+Android will lookup the best matching resource, and then transparently handle any scaling of the dp units, as necessary, based on the actual density of the screen in use. The conversion of dp units to screen pixels is simple: px = dp * (dpi / 160).
+
+Note the actual density as opposed to generalized density. The latter is only a convenience for the developers, since it would be impossible to provide drawables for every screen out there. This way developers need to provide only 3 or 4 sets of graphics, while Android picks the closest fit and adjusts it further for the needs of that particular device. (Nowadays it's possible to use one vector drawable instead of many pre-scaled raster graphics, meaning better quality and less size.)
+
+
+  Is this the correct way to work out buckets for screen sizes.
+
+
+No, it is not. According to Google device metrics all devices you listed fall into buckets higher than you expected:
+
+
+
+Galaxy S3    NA        NA
+Nexus 4     318     xhdpi
+Nexus 5X    424    xxhdpi
+Nexus 5     445    xxhdpi
+Nexus 6     493   xxxhdpi
+Nexus 6P    515   xxxhdpi
+
+
+I took some other devices from that list, and plotted how different devices are falling into density buckets depending on their actual physical density.
+
+
+
+Chromebox 30            101      mdpi
+Chromebook 11           135      mdpi
+Samsung Galaxy Tab 10   149      mdpi
+Nexus 7 '12             216     tvdpi
+Android One             218      hdpi
+Chromebook Pixel        239     xhdpi
+Nexus 9                 288     xhdpi
+Nexus 10                299     xhdpi
+Moto X                  312     xhdpi
+Nexus 4                 318     xhdpi
+Nexus 7 '13             323     xhdpi 
+Moto G                  326     xhdpi
+Dell Venue 8            359     xhdpi
+LG G2                   424    xxhdpi
+Nexus 5X                424    xxhdpi
+HTC One M8              441    xxhdpi
+Nexus 5                 445    xxhdpi
+Nexus 6                 493   xxxhdpi
+Nexus 6P                515   xxxhdpi
+LG G3                   534    xxhdpi
+
+
+You can see, that with some notable exceptions, the rule that the closest generalized density is selected, holds.
+
+The exceptions being Nexus 6 and 6P, that are listed as xxxhdpi, even though LG G3 has a higher physical density and still is far from 640px/in. Android One is hdpi but it is only slightly denser than Nexus 7 '12 which is tvdpi. Chromebox 30 and Chromebook Pixel (admittedly, not Android) are assigned to buckets mdpi and xhdpi even though they are physically lower than ldpi and hdpi, respectively.
+    

@@ -1,0 +1,92 @@
+75
+Q:I am having trouble making my class Parcelable.  The trouble is, I am trying to write to the parcel a member in the class which is an ArrayList<Parcelable> object. The ArrayList is Serializable, and the objects (ZigBeeDev) in the list are Parcelable.  
+
+Here is the relevant code:
+
+package com.gnychis.coexisyst;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+
+import android.os.Parcel;
+import android.os.Parcelable;
+
+public class ZigBeeNetwork implements Parcelable {
+
+    public String _mac;             // the source address (of the coordinator?)
+    public String _pan;             // the network address
+    public int _band;               // the channel
+    ArrayList<Integer> _lqis;       // link quality indicators (to all devices?)
+    ArrayList<ZigBeeDev> _devices;  // the devices in the network
+
+    public void writeToParcel(Parcel out, int flags) {
+        out.writeString(_mac);
+        out.writeString(_pan);
+        out.writeInt(_band);
+        out.writeSerializable(_lqis);
+        out.writeParcelable(_devices, 0);  // help here
+    }
+
+    private ZigBeeNetwork(Parcel in) {
+        _mac = in.readString();
+        _pan = in.readString();
+        _band = in.readInt();
+        _lqis = (ArrayList<Integer>) in.readSerializable();
+        _devices = in.readParcelable(ZigBeeDev.class.getClassLoader());  // help here
+    }
+
+    public int describeContents() {
+        return this.hashCode();
+    }
+
+    public static final Parcelable.Creator<ZigBeeNetwork> CREATOR = 
+            new Parcelable.Creator<ZigBeeNetwork>() {
+        public ZigBeeNetwork createFromParcel(Parcel in) {
+            return new ZigBeeNetwork(in);
+        }
+
+        public ZigBeeNetwork[] newArray(int size) {
+            return new ZigBeeNetwork[size];
+        }
+    };
+
+    //...
+}
+
+
+I have marked two spots "// help here" to understand how to properly write to the parcel and how to reconstruct it.  If ZigBeeDev is Parcelable (properly tested), how do I do this properly?
+    
+===============================================================================================
+141
+A:You almost got it !
+
+You just need to do :
+
+public void writeToParcel(Parcel out, int flags) {
+    out.writeString(_mac);
+    out.writeString(_pan);
+    out.writeInt(_band);
+    out.writeSerializable(_lqis);
+    out.writeTypedList(_devices);
+}
+
+private ZigBeeNetwork(Parcel in) {
+    _mac = in.readString();
+    _pan = in.readString();
+    _band = in.readInt();
+    _lqis = (ArrayList<Integer>) in.readSerializable();
+    in.readTypedList(_devices, ZigBeeDev.CREATOR);
+}
+
+
+That's all!
+
+For your list of Integer, you can also do : 
+
+out.writeList(_lqis);
+_lqis = new ArrayList<>();
+in.readList(_lqis Integer.class.getClassLoader());
+
+
+It should work.
+    

@@ -1,0 +1,49 @@
+36
+Q:According to the documentation, setRotation(90) should rotate the captured JPEG picture (takePicture in landscape mode.
+
+This works fine on a HTC phone, but does not work on Samsung Google Nexus S and Samsung Galaxy S3. Is this a bug?
+
+I know that I can use the matrix transform rotation, but wish the OS can do this more efficiently, and don't want to risk over-rotating on some other devices.
+
+edit
+
+Setting camera.setDisplayOrientation(90); made the preview to be in portrait mode, however it did not have any affect on the picture taken.
+
+Further, Besides setRotation, I have also tried to set the picture size - where I flip h with w: parameters.setPictureSize(1200, 1600);. This also did not have any affect.
+
+solution
+
+Apparently Samsung phones set the EXIF orientation tag, rather than rotating individual pixels. As ariefbayu suggested, reading the Bitmap using BitmapFactory does not support this tag. His code sample is the solution, and this solution is also compatible with using inSampleSize.
+    
+===============================================================================================
+34
+A:I try to answer this in relation to the Exif tag. This is what I did:
+
+Bitmap realImage = BitmapFactory.decodeStream(stream);
+
+ExifInterface exif=new ExifInterface(getRealPathFromURI(imagePath));
+
+Log.d("EXIF value", exif.getAttribute(ExifInterface.TAG_ORIENTATION));
+if(exif.getAttribute(ExifInterface.TAG_ORIENTATION).equalsIgnoreCase("6")){
+
+    realImage=ImageUtil.rotate(realImage, 90);
+}else if(exif.getAttribute(ExifInterface.TAG_ORIENTATION).equalsIgnoreCase("8")){
+    realImage=ImageUtil.rotate(realImage, 270);
+}else if(exif.getAttribute(ExifInterface.TAG_ORIENTATION).equalsIgnoreCase("3")){
+    realImage=ImageUtil.rotate(realImage, 180);
+}
+
+
+The ImageUtil.rotate():
+
+public static Bitmap rotate(Bitmap bitmap, int degree) {
+    int w = bitmap.getWidth();
+    int h = bitmap.getHeight();
+
+    Matrix mtx = new Matrix();
+    mtx.postRotate(degree);
+
+    return Bitmap.createBitmap(bitmap, 0, 0, w, h, mtx, true);
+}
+
+    

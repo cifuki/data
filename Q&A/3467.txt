@@ -1,0 +1,99 @@
+65
+Q:My app is hitting an OOM error at the following line in the source:
+
+image = BitmapFactory.decodeStream(assetManager.open(imgFilename));
+
+
+Just before the allocation that causes the app to be killed with an OOM error:
+
+(...)
+08-05 21:22:12.443: I/dalvikvm-heap(2319): Clamp target GC heap from 25.056MB to 24.000MB
+08-05 21:22:12.443: D/dalvikvm(2319): GC_FOR_MALLOC freed <1K, 50% free 2709K/5379K, external 18296K/19336K, paused 58ms
+08-05 21:22:14.513: D/dalvikvm(2319): GC_EXTERNAL_ALLOC freed <1K, 50% free 2709K/5379K, external 18296K/19336K, paused 101ms
+08-05 21:22:14.903: I/dalvikvm-heap(2319): Clamp target GC heap from 25.073MB to 24.000MB
+08-05 21:22:14.903: D/dalvikvm(2319): GC_FOR_MALLOC freed 0K, 50% free 2709K/5379K, external 18312K/19336K, paused 53ms
+08-05 21:22:22.843: D/ddm-heap(2319): Heap GC request
+08-05 21:22:22.963: I/dalvikvm-heap(2319): Clamp target GC heap from 25.073MB to 24.000MB
+08-05 21:22:22.963: D/dalvikvm(2319): threadid=1: still suspended after undo (sc=1 dc=1)
+08-05 21:22:22.963: D/dalvikvm(2319): GC_EXPLICIT freed 1K, 50% free 2710K/5379K, external 18312K/19336K, paused 116ms
+
+
+DDMS reports a similar picture about the state of the heap:
+
+Heap Size:  5.254 MB
+Allocated:  2.647 MB
+Free:   2.607 MB
+%Used:  50.38%
+#Objects    49,028  
+
+
+Single stepping over this line results in an OOM error:
+
+08-05 21:26:04.783: D/dalvikvm(2319): GC_EXTERNAL_ALLOC freed <1K, 50% free 2710K/5379K, external 18312K/19336K, paused 57ms
+08-05 21:26:05.023: E/dalvikvm-heap(2319): 2097152-byte external allocation too large for this process.
+08-05 21:26:05.163: I/dalvikvm-heap(2319): Clamp target GC heap from 25.073MB to 24.000MB
+08-05 21:26:05.163: E/GraphicsJNI(2319): VM won't let us allocate 2097152 bytes
+08-05 21:26:05.163: D/dalvikvm(2319): GC_FOR_MALLOC freed 0K, 50% free 2710K/5379K, external 18312K/19336K, paused 30ms
+08-05 21:26:05.283: D/skia(2319): --- decoder->decode returned false
+
+
+
+The size of the file referenced by "imgFileName" is reported to be < 400K on Windows. So why does BitmapFactory.decodeStream try to allocate 2MB?
+Why is there an OOM error when there seems to be enough free space?
+
+
+This app is targeting Android 2.2 and up.
+
+Thanks in advance!
+    
+===============================================================================================
+85
+A:Android library is not so smart for loading images, so you have to create workarounds for this.
+
+In my tests, Drawable.createFromStream uses more memory than BitmapFactory.decodeStream.
+
+You may change the Color scheme to reduce memory (RGB_565), but the image will lose quality too:
+
+BitmapFactory.Options options = new BitmapFactory.Options();
+options.inPreferredConfig = Config.RGB_565;
+Bitmap bitmap = BitmapFactory.decodeStream(stream, null, options);
+
+
+Reference: http://developer.android.com/reference/android/graphics/Bitmap.Config.html
+
+You can also load a scaled image, which will decrease a lot the memory usage, but you have to know your images to not lose too much quality of it.
+
+BitmapFactory.Options options = new BitmapFactory.Options();
+options.inSampleSize = 2;
+Bitmap bitmap = BitmapFactory.decodeStream(stream, null, options);
+
+
+Reference: http://developer.android.com/reference/android/graphics/BitmapFactory.Options.html
+
+To define the inSampleSize dynamically, you may want to know the image size to take your decision:
+
+BitmapFactory.Options options = new BitmapFactory.Options();
+options.inJustDecodeBounds = true;
+bitmap = BitmapFactory.decodeStream(stream, null, options);
+int imageHeight = options.outHeight;
+int imageWidth = options.outWidth;
+
+options.inJustDecodeBounds = false;
+// recreate the stream
+// make some calculation to define inSampleSize
+options.inSampleSize = ?;
+Bitmap bitmap = BitmapFactory.decodeStream(stream, null, options);
+
+
+You can customize the inSampleSize according to the screen size of the device. To get the screen size, you can do:
+
+DisplayMetrics metrics = new DisplayMetrics();
+((Activity) activity).getWindowManager().getDefaultDisplay().getMetrics(metrics);
+int screenWidth = metrics.widthPixels;
+int screenHeight =metrics.heightPixels;
+
+
+Other tutorials:
+- http://developer.android.com/training/displaying-bitmaps/load-bitmap.html
+- http://developer.android.com/training/displaying-bitmaps/index.html
+    

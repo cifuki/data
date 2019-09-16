@@ -1,0 +1,115 @@
+127
+Q:This is a part of my manifest:
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.asd"
+    android:versionCode="118"
+    android:versionName="118" >
+
+    <uses-sdk
+        android:minSdkVersion="14"
+        android:targetSdkVersion="19" />
+
+
+    <application
+        android:name="com.example.asd.AsdApplication"
+        android:allowBackup="true"
+        android:allowTaskReparenting="true"
+        android:theme="@style/AsdTheme" >
+        ...
+
+        <provider
+            android:name="com.example.asd.database.hq.ContentProviderDB"
+            android:authorities="ourContentProviderAuthorities" >
+        </provider>
+        <provider
+            android:name="android.support.v4.content.FileProvider"
+            android:authorities="com.example.asd.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/filepaths" />
+        </provider>
+
+       ...
+    </application>
+
+</manifest>
+
+
+This is the filepaths file in raw/xml/filepaths.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="media"/>
+</paths>
+
+
+I download a video from internet and save it to internal storage this way:
+
+public static boolean saveInputStreamToInternalStorageFile(Context context, String filename, byte[] dataToWrite, Context ctx) {
+    FileOutputStream fos;
+    try {
+        fos = new FileOutputStream(context.getFilesDir() + File.separator + filename);
+
+        ObjectOutputStream oos = new ObjectOutputStream(fos);
+        oos.writeObject(dataToWrite);
+        oos.close();
+        return true;
+    } catch (FileNotFoundException e) {
+        e.printStackTrace();
+        return false;
+    } catch (IOException e) {
+        e.printStackTrace();
+        return false;
+    }
+}
+
+
+I try to use it like so:
+
+private void playVideoFromDeviceWithWorkaround(String fileName) {
+
+    File newFile = new File(getFilesDir(), fileName);
+    Uri contentUri = FileProvider.getUriForFile(getApplicationContext(), "com.example.asd", newFile);
+
+    try {
+        vvVideoFullscreen.setVideoURI(contentUri);
+        showMediaControls = true;
+        playVideo();
+    } catch (Exception e) {
+        playVideoFromNetwork();
+    }
+
+}
+
+
+At this line:
+
+Uri contentUri = FileProvider.getUriForFile(getApplicationContext(), "com.example.asd", newFile); 
+
+
+I get the following error:
+
+java.lang.NullPointerException: Attempt to invoke virtual method 'android.content.res.XmlResourceParser android.content.pm.ProviderInfo.loadXmlMetaData(android.content.pm.PackageManager, java.lang.String)' on a null object reference
+at android.support.v4.content.FileProvider.parsePathStrategy(FileProvider.java:560)
+at android.support.v4.content.FileProvider.getPathStrategy(FileProvider.java:534)
+at android.support.v4.content.FileProvider.getUriForFile(FileProvider.java:376)
+
+    
+===============================================================================================
+246
+A:The problem was that in Manifest I had this line:
+
+android:authorities="com.example.asd.fileprovider"
+
+
+and when calling getUriForFile I was passing:
+
+Uri contentUri = FileProvider.getUriForFile(getApplicationContext(), "com.example.asd", newFile); 
+
+
+So changed from "com.example.asd" to "com.example.asd.fileprovider" and it worked
+    

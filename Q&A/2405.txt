@@ -1,0 +1,40 @@
+85
+Q:My layout contains ListView, SurfaceView and EditText. When I click on the EditText, it receives focus and the on-screen keyboard pops up. When I click somewhere outside of the EditText, it still has the focus (it shouldn't).
+I guess I could set up OnTouchListener's on the other views in layout and manually clear the EditText's focus. But seems too hackish...
+
+I also have the same situation in the other layout - list view with different types of items, some of which have EditText's inside. They act just like I wrote above.
+
+The task is to make EditText lose focus when user touches something outside of it.
+
+I've seen similar questions here, but haven't found any solution...
+    
+===============================================================================================
+64
+A:I tried all these solutions. edc598's was the closest to working, but touch events did not trigger on other Views contained in the layout. In case anyone needs this behavior, this is what I ended up doing:
+
+I created an (invisible) FrameLayout called touchInterceptor as the last View in the layout so that it overlays everything (edit: you also have to use a RelativeLayout as the parent layout and give the touchInterceptor fill_parent attributes). Then I used it to intercept touches and determine if the touch was on top of the EditText or not:
+
+FrameLayout touchInterceptor = (FrameLayout)findViewById(R.id.touchInterceptor);
+touchInterceptor.setOnTouchListener(new OnTouchListener() {
+    @Override
+    public boolean onTouch(View v, MotionEvent event) {
+        if (event.getAction() == MotionEvent.ACTION_DOWN) {
+            if (mEditText.isFocused()) {
+                Rect outRect = new Rect();
+                mEditText.getGlobalVisibleRect(outRect);
+                if (!outRect.contains((int)event.getRawX(), (int)event.getRawY())) {
+                    mEditText.clearFocus();
+                    InputMethodManager imm = (InputMethodManager) v.getContext().getSystemService(Context.INPUT_METHOD_SERVICE); 
+                    imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+                }
+            }
+        }
+        return false;
+    }
+});
+
+
+Return false to let the touch handling fall through.
+
+It's hacky, but it's the only thing that worked for me.
+    

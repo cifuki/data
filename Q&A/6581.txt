@@ -1,0 +1,117 @@
+39
+Q:I'm working on an android application, that uses a navigation drawer to switch between two fragments.  However, each time I switch, the fragment is completely recreated.
+
+Here is the code from my main activity.
+
+/* The click listener for ListView in the navigation drawer */
+private class DrawerItemClickListener implements ListView.OnItemClickListener {
+    @Override
+    public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+        selectItem(position);
+    }
+}
+
+private void selectItem(int position) {
+    android.support.v4.app.Fragment fragment;
+    String tag;
+    android.support.v4.app.FragmentManager; fragmentManager = getSupportFragmentManager();
+
+    switch(position) {
+        case 0:
+            if(fragmentManager.findFragmentByTag("one") != null) {
+                fragment = fragmentManager.findFragmentByTag("one");
+            } else {
+                fragment = new OneFragment();
+            }
+            tag = "one";
+            break;
+        case 1:
+            if(fragmentManager.findFragmentByTag("two") != null) {
+                fragment = fragmentManager.findFragmentByTag("two");
+            } else {
+                fragment = new TwoFragment();
+            }
+            tag = "two";
+            break;
+    }
+
+    fragment.setRetainInstance(true);
+    fragmentManager.beginTransaction().replace(R.id.container, fragment, tag).commit();
+
+    // update selected item and title, then close the drawer
+    mDrawerList.setItemChecked(position, true);
+    setTitle(mNavTitles[position]);
+    mDrawerLayout.closeDrawer(mDrawerList);
+}
+
+
+I've set up some debug logging, and every time selectItem is called, one fragment is destroyed, while the other is created.
+
+Is there any way to prevent the fragments from being recreated, and just reuse them instead?
+    
+===============================================================================================
+47
+A:After @meredrica pointed out that replace() destroys the fragments, I went back through the FragmentManager documentation.  This is the solution I've come up with, that seems to be working.
+
+/* The click listener for ListView in the navigation drawer */
+private class DrawerItemClickListener implements ListView.OnItemClickListener {
+    @Override
+    public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+        selectItem(position);
+    }
+}
+
+private void selectItem(int position) {
+    android.support.v4.app.FragmentManager; fragmentManager = getSupportFragmentManager();
+
+    switch(position) {
+        case 0:
+            if(fragmentManager.findFragmentByTag("one") != null) {
+                //if the fragment exists, show it.
+                fragmentManager.beginTransaction().show(fragmentManager.findFragmentByTag("one")).commit();
+            } else {
+                //if the fragment does not exist, add it to fragment manager.
+                fragmentManager.beginTransaction().add(R.id.container, new OneFragment(), "one").commit();
+            }
+            if(fragmentManager.findFragmentByTag("two") != null){
+                //if the other fragment is visible, hide it.
+                fragmentManager.beginTransaction().hide(fragmentManager.findFragmentByTag("two")).commit();
+            }
+            break;
+        case 1:
+            if(fragmentManager.findFragmentByTag("two") != null) {
+                //if the fragment exists, show it.
+                fragmentManager.beginTransaction().show(fragmentManager.findFragmentByTag("two")).commit();
+            } else {
+                //if the fragment does not exist, add it to fragment manager.
+                fragmentManager.beginTransaction().add(R.id.container, new TwoFragment(), "two").commit();
+            }
+            if(fragmentManager.findFragmentByTag("one") != null){
+                //if the other fragment is visible, hide it.
+                fragmentManager.beginTransaction().hide(fragmentManager.findFragmentByTag("one")).commit();
+            }
+            break;
+    }
+
+    // update selected item and title, then close the drawer
+    mDrawerList.setItemChecked(position, true);
+    setTitle(mNavTitles[position]);
+    mDrawerLayout.closeDrawer(mDrawerList);
+}
+
+
+I also added this bit, but I'm not sure if it's necessary or not.
+
+@Override
+public void onDestroy() {
+    super.onDestroy();
+    FragmentManager fragmentManager = getSupportFragmentManager();
+    if(fragmentManager.findFragmentByTag("one") != null){
+        fragmentManager.beginTransaction().remove(fragmentManager.findFragmentByTag("one")).commit();
+    }
+    if(fragmentManager.findFragmentByTag("two") != null){
+        fragmentManager.beginTransaction().remove(fragmentManager.findFragmentByTag("two")).commit();
+    }
+}
+
+    

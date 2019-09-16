@@ -1,0 +1,64 @@
+29
+Q:I'm intending to display very large Images in Android. My first solution - to supply them as pdf - fails because not every handheld got a pdf-viewer preinstalled, and I don't want to require the users to install one.  
+
+So I have a png now (width = 3998px height=2827px) that I want to display. I downloaded this image to test how it would be displayed the gallery. It was quite painful. It seems that the galery renders this picture only once, and if I Zoom in, I cannot read the text at all.
+So I wrote a testActivity which simply has an ImageView nested in a LinearLayout. I put the image into the drawable and set it as ImageView's image-source.
+Unforunately the app crashes immediatly, due to an "
+
+ ERROR/AndroidRuntime(8906): Caused by: java.lang.OutOfMemoryError: bitmap size exceeds VM budget"  
+
+
+I didn't expect that ONE single Image can be too large forVM's memory. I played a little bit around, set ImageViews size to 3998 & 2827px , put the Image to sdCard and read it manually with a fileInputStream.
+To my big surprise it now shows my image, but if I turn my Nexus S horizontal I get the same OutOfMemoryError as before.
+Can somewone point me the main difference between recieving a Bitmap through a FileInputStream or to set it as ImageView's source.   
+Also I'm not able to scroll comfortable with two parent scrollViews
+I searching for a simple solution to display ONE large image at a time with the ability to scroll horizontal and vertical while able to zoom in and out.
+
+here is a sample of the image I want to display
+
+    
+===============================================================================================
+29
+A:I know it's an old post but I spent a lot of time on this problem, so here's my solution.
+
+I wanted to display a 2000\xc3\x973000 picture but I got out of memory or the image was too large to be displayed.
+
+To begin, I get the dimensions of the picture:
+
+o = new BitmapFactory.Options();
+o.inJustDecodeBounds=true;
+pictures = BitmapFactory.decodeStream(new FileInputStream(f), null, o);
+
+
+Then I cut it up into four parts and displayed them with four ImageViews.
+I tried to load the full picture and cut it into four (using BitmapFactory.create(bitmap,int,int,int,int)) but got out of memory again. 
+
+So I decided to use some BitMapRegionDecoder: 
+
+for (int i = 0; i < 2; i++) {
+    for (int j = 0; j < 2; j++) {
+        ImageView iv = new ImageView(this);         
+        InputStream istream =   null;
+        try {
+         istream = this.getContentResolver().openInputStream(Uri.fromFile(f));
+        } catch (FileNotFoundException e1) {
+         e1.printStackTrace();
+        }
+        BitmapRegionDecoder decoder     =   null;
+        try {
+        decoder = BitmapRegionDecoder.newInstance(istream, false);
+        } catch (IOException e) {
+                    e.printStackTrace();
+        }
+    int nw = (j*width/k);
+    int nh = (i*height/k);
+
+    Bitmap bMap = decoder.decodeRegion(new Rect(nw,nh, (nw+width/k),(nh+height/k)), null);    
+    iv.setImageBitmap(bMap);
+
+    }
+}
+
+
+This worked.
+    

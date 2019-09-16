@@ -1,0 +1,61 @@
+54
+Q:In my projects I am using BroadcastReceivers as a callback from a long running thread (eg. notify the activity that a download was finished and send some response data from a Worker Thread so that the activity can display the appropriate message to the user..). 
+To use BroadcastReceivers I have to be careful to register and unregister the broadcast receiver each time I am using it and also have to care of what messages to send esspecialy when I am using this method for more different actions(like downloading, making WebService calls etc..). And also to send custom Objects through Broadcast's intent I need also to make the objects Parcelable. 
+
+Unlike this approach, I have seen also the callback methods approach which appears to be simpler than the method I use. Callback methods are simple Interface methods implementation that can be used to achieve the same effect like the BroadcastRecaiver's in app messaging.
+This approach doesn't need Parcelable implementation to return complex objects and it doesn't use keys like BroadcastReceiver.. I think the bad part is that I need to check the callback object for null value before I want to call a callback method.. and also to make sure I am running the code from the implementation on the UI thread so I can update the UI without errors. 
+
+Ok, I hope you understood what I meant to say :). 
+
+Now the question is do you think that the callback method is better (lighter, cleaner, faster..) than the BroadcastReceiver approach when are used just inside of a single application? (Note that I am not using Android Service for background work.. just AsyncTask and Threads)
+
+Thank you!                       
+    
+===============================================================================================
+82
+A:This is a very interesting question and I ran into the same problem. In my opinion both mechanisms can be used altogether and the right approach to use depends on your use case. Here are some points to be taken into account before deciding.
+
+Using the callback-mechanism has some benefits, but there are also limitations:
+
+PRO
+
+
+It is simple and straight forward to implement.
+You get type-safety between the components that interact with each other.
+You can return arbitrary objects.
+It simplifies testing as you only have to inject a mock-callback (e.g. generated through mockito or something similar) in unit tests.
+
+
+CONTRA
+
+
+You have to switch to the main thread in order to do UI manipulations.
+You can only have a 1-to-1 relationship. A 1-to-n relationship (observer pattern) is not realizable without further work. In this case I would prefer Android's Observer / Observable mechanism.
+As you already said, you always have to check for null before invoking callback functions if the callback may be optional.
+If your component should offer a kind of service API with different service functions and you do not want to have a callback interface with only a few generic callback functions, you have to decide whether you provide a special callback interface for each service function or whether you provide a single callback interface with a lot of callback functions. In the later case all callback clients used for service calls to your API have to implement the complete callback interface although the majority of the method bodies will be empty. You can work around this by implementing a stub with empty bodies and make your callback client inherit from that stub, but this is not possible if already inheriting from another base class. Maybe you can use some kind of dynamic proxy callback (see http://developer.android.com/reference/java/lang/reflect/Proxy.html), but then it gets really complex and I would think of using another mechanism.
+The client for the callback calls has to be propagated through various methods/components if it is not directly accessible by the caller of the service.
+
+
+Some points regarding the BroadcastReceiver-approach:
+
+PRO
+
+
+You achieve a loose coupling between your components.
+You can have a 1-to-n relationship (including 1-to-0).
+The onReceive() method is always executed on the main thread.
+You can notify components in your entire application, so the communicating components do not have to "see" eachother.
+
+
+CONTRA
+
+
+This is a very generic approach, so marshalling and unmarshalling of data transported by the Intent is an additional error source.
+You have to make your Intent's actions unique (e.g. by prepending the package name) if you want to eliminate correlations with other apps, as their original purpose is to do broadcasts between applications.
+You have to manage the BroadcastReceiver-registration and unregistration. If you want to do this in a more comfortable way, you can implement a custom annotation to annotate your Activity with the actions that should be registered and implement a base Activityclass that does registration and unregistration with IntentFilters in its onResume() resp. onPause()methods.
+As you already said, the data that is sent with the Intent has to implement the Parcelable interface, but furthermore there is a strict size limitation and it will cause performance issues if you transport a large amount of data with your Intent. See http://code.google.com/p/android/issues/detail?id=5878 for a discussion on that. So if you want to send images for example you have to store them temporary in a repository and send a corresponding ID or URL to access the image from the receiver of your Intent that deletes it from the repository after usage. This leads to further problems if there are several receivers (when should the image be removed from the repository and who should do that?).
+If you overuse this kind of notification mechanism the control flow of your application may get hidden and when debugging you end up drawing graphs with sequences of Intents to understand what has triggered a specific error or why this notification chain is broken at some point.
+
+
+In my opinion, even a mobile app should have an architecture base on at least 2 layers: the UI-layer and the core layer (with business logic, etc.). In general, long running tasks are executed in an own thread (maybe via AsyncTask or HandlerThread if using MessageQueues) inside the core layer and the UI should be updated once this task has been finished. In general with callbacks you achieve a tight coupling between your components, so I would prefer using this approach only within a layer and not for communication across layer boundaries. For message broadcasting between UI- and core-layer I would use the BroadcastReceiver-approach that lets you decouple your UI layer from the logic layer.
+    

@@ -1,0 +1,67 @@
+58
+Q:Is it possible to read binary stdout from an adb shell command?  For example, all examples of how to use screencap include two steps:
+
+adb shell screencap -p /sdcard/foo.png
+adb pull /sdcard/foo.png
+
+
+However, the service supports writing to stdout.  You can for instance, do the following:
+
+adb shell "screencap -p > /sdcard/foo2.png"
+adb pull /sdcard/foo2.png
+
+
+And this works equally well.  But, what about reading the output across ADB?  What I want to do is the following:
+
+adb shell screencap -p > foo3.png
+
+
+And avoid the intermediate write to the SD card.  This generates something that looks like a PNG file (running strings foo3.png generates something with an IHDR, IEND, etc.) and is approximately the same size, but the file is corrupted as far as image readers are concerned.
+
+I have also attempted to do this using ddmlib in java and the results are the same.  I would be happy to use any library necessary.  My goal is to reduce total time to get the capture.  On my device, using the two-command solution, it takes about 3 seconds to get the image.  Using ddmlib and capturing stdout takes less than 900ms, but it doesn't work!
+
+Is it possible to do this?
+
+EDIT: Here is the hexdump of two files.  The first one, screen.png came from stdout and is corrupted.  The second one, xscreen is from the two-command solution and works.  The images should be visually identical.
+
+$ hexdump -C screen.png | head
+00000000  89 50 4e 47 0d 0d 0a 1a  0d 0a 00 00 00 0d 49 48  |.PNG..........IH|
+00000010  44 52 00 00 02 d0 00 00  05 00 08 06 00 00 00 6e  |DR.............n|
+00000020  ce 65 3d 00 00 00 04 73  42 49 54 08 08 08 08 7c  |.e=....sBIT....||
+00000030  08 64 88 00 00 20 00 49  44 41 54 78 9c ec bd 79  |.d... .IDATx...y|
+00000040  9c 1d 55 9d f7 ff 3e 55  75 f7 de b7 74 77 d2 d9  |..U...>Uu...tw..|
+00000050  bb b3 27 10 48 42 16 c0  20 01 86 5d 14 04 11 dc  |..'.HB.. ..]....|
+00000060  78 44 9d c7 d1 d1 11 78  70 7e 23 33 8e 1b 38 33  |xD.....xp~#3..83|
+00000070  ea 2c 8c 8e 0d 0a 08 a8  23 2a 0e 10 82 ac c1 40  |.,......#*.....@|
+00000080  12 02 81 24 64 ef ec 5b  ef fb 5d 6b 3b bf 3f ea  |...$d..[..]k;.?.|
+00000090  de db dd 49 27 e9 ee 74  77 3a e3 79 bf 5e 37 e7  |...I'..tw:.y.^7.|
+
+$ hexdump -C xscreen.png | head
+00000000  89 50 4e 47 0d 0a 1a 0a  00 00 00 0d 49 48 44 52  |.PNG........IHDR|
+00000010  00 00 02 d0 00 00 05 00  08 06 00 00 00 6e ce 65  |.............n.e|
+00000020  3d 00 00 00 04 73 42 49  54 08 08 08 08 7c 08 64  |=....sBIT....|.d|
+00000030  88 00 00 20 00 49 44 41  54 78 9c ec 9d 77 98 1c  |... .IDATx...w..|
+00000040  c5 99 ff 3f d5 dd 93 37  27 69 57 5a e5 55 4e 08  |...?...7'iWZ.UN.|
+00000050  24 a1 00 58 18 04 26 08  8c 01 83 31 38 c0 19 9f  |$..X..&....18...|
+00000060  ef 7c c6 3e 1f 70 f8 7e  67 ee 71 e2 b0 ef ce f6  |.|.>.p.~g.q.....|
+00000070  f9 ec 73 04 1b 1c 31 60  23 84 30 22 88 a0 40 10  |..s...1`#.0"..@.|
+00000080  08 65 69 95 d3 4a 9b c3  c4 4e f5 fb a3 67 66 77  |.ei..J...N...gfw|
+00000090  a5 95 b4 bb da a4 73 7d  9e 67 55 f3 ed 50 5d dd  |......s}.gU..P].|
+
+
+Just at quick glance it seems like a couple of extra 0x0d (13) bytes get added.  Carriage return?? Does that ring any bells?  Is it mixing in some blank lines?
+    
+===============================================================================================
+46
+A:Sorry to be posting an answer to an old question, but I just came across this problem myself and wanted to do it only through the shell. This worked well for me:
+
+adb shell screencap -p | sed 's/^M$//' > screenshot.png
+
+
+That ^M is a char I got by pressing ctrl+v -> ctrl+m, just noticed it doesn't work when copy-pasting.
+
+adb shell screencap -p | sed 's/\\r$//' > screenshot.png
+
+
+did the trick for me as well.
+    

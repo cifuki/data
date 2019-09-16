@@ -1,0 +1,89 @@
+29
+Q:I have a pager adapter that suppose to inflate a complex view representing a calendar.
+
+It takes around ~350 ms to inflate each year of the calendar.
+
+To improve performance I would like to implement the same mechanism that exists in the ListView array adapter of recycling views (convertView parameter in getView()).
+
+Here is my current getView() from the adapter.
+
+@Override
+protected View getView(VerticalViewPager pager, final DateTileGrid currentDataItem, int position)
+{
+    mInflater = LayoutInflater.from(pager.getContext());
+
+        // This is were i would like to understand weather is should use a recycled view or create a new one.
+    View datesGridView = mInflater.inflate(R.layout.fragment_dates_grid_page, pager, false);
+
+
+    DateTileGridView datesGrid = (DateTileGridView) datesGridView.findViewById(R.id.datesGridMainGrid);
+    TextView yearTitle = (TextView) datesGridView.findViewById(R.id.datesGridYearTextView);
+    yearTitle.setText(currentDataItem.getCurrentYear() + "");
+    DateTileView[] tiles = datesGrid.getTiles();
+
+    for (int i = 0; i < 12; i++)
+    {
+        String pictureCount = currentDataItem.getTile(i).getPictureCount().toString();
+        tiles[i].setCenterLabel(pictureCount);
+        final int finalI = i;
+        tiles[i].setOnCheckedChangeListener(new DateTileView.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(DateTileView tileChecked, boolean isChecked)
+            {
+                DateTile tile = currentDataItem.getTile(finalI);
+                tile.isSelected(isChecked);
+            }
+        });
+    }
+
+    return datesGridView;
+}
+
+
+Any pointers or direction for implementing such a behavior?
+In particular how can I know in the adapter that one of the DateTileGridViews is being swiped of the screen so I could save it in memory to reuse it next time.
+    
+===============================================================================================
+32
+A:So I have figured it out.
+
+
+overwrite destroyItem(ViewGroup container, int position, Object view) ans save you cached view
+create a separate method to see if there is any chance to use a recycled view or should you inflate a new one.
+remember to remove the recycled view from cache once its been used to avoid having same view attaching same view to the pager.
+
+
+here is the code.. I used a Stack of view to cache all removed views from my pager
+
+private View inflateOrRecycleView(Context context)
+{
+
+    View viewToReturn;
+    mInflater = LayoutInflater.from(context);
+    if (mRecycledViewsList.isEmpty())
+    {
+        viewToReturn = mInflater.inflate(R.layout.fragment_dates_grid_page, null, false);
+    }
+    else
+    {
+        viewToReturn = mRecycledViewsList.pop();
+        Log.i(TAG,"Restored recycled view from cache "+ viewToReturn.hashCode());
+    }
+
+
+    return viewToReturn;
+}
+
+@Override
+public void destroyItem(ViewGroup container, int position, Object view)
+{
+    VerticalViewPager pager = (VerticalViewPager) container;
+    View recycledView = (View) view;
+    pager.removeView(recycledView);
+    mRecycledViewsList.push(recycledView);
+    Log.i(TAG,"Stored view in cache "+ recycledView.hashCode());
+}
+
+
+do not forget to instantiate the stack in the adapter constructor.
+    

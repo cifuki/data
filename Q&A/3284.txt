@@ -1,0 +1,66 @@
+68
+Q:I've implemented onSharedPreferenceChanged in my main activity. 
+
+If I change the preferences in the main activity, my event fires. 
+
+If I change the preferences through my preferences screen (PreferenceActivity) my event does NOT fire when preferences are changed (because it's a separate activity and separate reference to sharedPreferences?)
+
+Does anybody have a recommendation of how I should go about overcoming this situation? 
+
+Thanks!
+
+EDIT1: I tried adding the event handler right in my preference activity but it never fires. The following method gets called during onCreate of my preference activity. When I change values, it never prints the message (msg() is a wrapper for Log.d). 
+
+private void registerChangeListener () {
+SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(this);
+
+    sp.registerOnSharedPreferenceChangeListener(new OnSharedPreferenceChangeListener () {
+        public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+            msg (" ***** Shared Preference Update ***** ");
+            Intent i = new Intent();
+            i.putExtra("KEY", key);
+            i.setAction("com.gtosoft.dash.settingschanged");
+
+            sendBroadcast(i);
+
+            // TODO: fire off the event
+        }
+    });
+}
+
+    
+===============================================================================================
+135
+A:The OnSharedPreferenceChangeListener gets garbage collected in your case if you use an anonymous class.
+
+To solve that problem use the following code in PreferenceActivity to register and unregister a change listener:
+
+public class MyActivity extends PreferenceActivity implements
+    OnSharedPreferenceChangeListener {
+
+@Override
+protected void onResume() {
+    super.onResume();
+    // Set up a listener whenever a key changes
+    getPreferenceScreen().getSharedPreferences()
+            .registerOnSharedPreferenceChangeListener(this);
+}
+
+@Override
+protected void onPause() {
+    super.onPause();
+    // Unregister the listener whenever a key changes
+    getPreferenceScreen().getSharedPreferences()
+            .unregisterOnSharedPreferenceChangeListener(this);
+}
+
+public void onSharedPreferenceChanged(SharedPreferences sharedPreferences,String key) 
+{
+  // do stuff
+}
+
+
+Furthermore be aware that the listener only gets called if the actual value changes. Setting the same value again will not fire the listener.
+
+see also SharedPreferences.onSharedPreferenceChangeListener not being called consistently
+    

@@ -1,0 +1,69 @@
+31
+Q:After helping another user with a question regarding the Responding to Touch Events Android tutorial, I downloaded the source code, and was quite baffled by what I saw. The tutorial seems to not be able to decide whether it wants to use row vectors or column vectors, and it looks all mixed up to me.
+
+On the Android Matrix page, they claim that their convention is column-vector/column-major, which is typical of OpenGL.
+
+Am I right, or is there something I am missing? Here are the relevant bits of it:
+
+Start out by creating a MVPMatrix by multiplying mProjMatrix * mVMatrix. So far so good.
+
+    // Set the camera position (View matrix)
+    Matrix.setLookAtM(mVMatrix, 0, 0, 0, -3, 0f, 0f, 0f, 0f, 1.0f, 0.0f);
+
+    // Calculate the projection and view transformation
+    Matrix.multiplyMM(mMVPMatrix, 0, mProjMatrix, 0, mVMatrix, 0)
+
+
+
+
+Next they are appending a rotation to the left hand side of the MVPMatrix? This seems a little weird.
+
+    // Create a rotation for the triangle
+    Matrix.setRotateM(mRotationMatrix, 0, mAngle, 0, 0, -1.0f);
+
+    // Combine the rotation matrix with the projection and camera view
+    Matrix.multiplyMM(mMVPMatrix, 0, mRotationMatrix, 0, mMVPMatrix, 0)
+
+
+
+
+Uploading in non-transposed order.
+
+    GLES20.glUniformMatrix4fv(mMVPMatrixHandle, 1, false, mvpMatrix, 0);
+
+
+
+
+Finally in their shader, a vector*matrix multiplication?
+
+    // the matrix must be included as a modifier of gl_Position
+    "  gl_Position = vPosition * uMVPMatrix;" 
+
+
+
+
+Adding this all together, we get:
+
+gl_Position = vPosition * mRotation * mProjection * mView;
+
+
+Which is not correct by any stretch of my imagination. Is there any explanation that I'm not seeing as to what's going on here?
+    
+===============================================================================================
+26
+A:As the guy who wrote that OpenGL tutorial, I can confirm that the example code is incorrect. Specifically, the order of the factors in the shader code should be reversed:
+
+"  gl_Position = uMVPMatrix * vPosition;"
+
+
+As to the application of the rotation matrix, the order of the factors should also be reversed so that the rotation is the last factor. The rule of thumb is that matrices are applied in right-to-left order, and the rotation is applied first (it's the the "M" part of "MVP"), so it needs to be the rightmost operand.  Furthermore, you should use a scratch matrix for this calculation, as recommended by Ian Ni-Lewis (see his more complete answer, below):
+
+float[] scratch = new float[16];
+// Combine the rotation matrix with the projection and camera view
+Matrix.multiplyMM(scratch, 0, mMVPMatrix, 0, mRotationMatrix, 0);
+
+
+Thanks for calling attention to this problem. I'll get the training class and sample code fixed as soon as I can.
+
+Edit: This issue has now been corrected in the downloadable sample code and the OpenGL ES training class, including comments on the correct order of the factors. Thanks for the feedback, folks!
+    

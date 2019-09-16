@@ -1,0 +1,108 @@
+46
+Q:When I compile my Android Application with Proguard enabled I get the following error:
+
+-dex:
+ [echo] Converting compiled files and external libraries into /home/ka/dev/workspace/ImPress/build/classes.dex...
+[apply] 
+[apply] UNEXPECTED TOP-LEVEL EXCEPTION:
+[apply] com.android.dx.cf.code.SimException: local variable type mismatch: attempt to set or access a value of type java.io.File using a local variable of type java.lang.Object[]. This is symptomatic of .class transformation tools that ignore local variable information.
+[apply]     at com.android.dx.cf.code.BaseMachine.throwLocalMismatch(BaseMachine.java:550)
+[apply]     at com.android.dx.cf.code.BaseMachine.getLocalTarget(BaseMachine.java:405)
+[apply]     at com.android.dx.cf.code.BaseMachine.storeResults(BaseMachine.java:532)
+[apply]     at com.android.dx.cf.code.ValueAwareMachine.run(ValueAwareMachine.java:197)
+[apply]     at com.android.dx.cf.code.RopperMachine.run(RopperMachine.java:291)
+[apply]     at com.android.dx.cf.code.Simulator$SimVisitor.visitLocal(Simulator.java:608)
+[apply]     at com.android.dx.cf.code.BytecodeArray.parseInstruction(BytecodeArray.java:526)
+[apply]     at com.android.dx.cf.code.Simulator.simulate(Simulator.java:99)
+[apply]     at com.android.dx.cf.code.Ropper.processBlock(Ropper.java:684)
+[apply]     at com.android.dx.cf.code.Ropper.doit(Ropper.java:639)
+[apply]     at com.android.dx.cf.code.Ropper.convert(Ropper.java:252)
+[apply]     at com.android.dx.dex.cf.CfTranslator.processMethods(CfTranslator.java:252)
+[apply]     at com.android.dx.dex.cf.CfTranslator.translate0(CfTranslator.java:131)
+[apply]     at com.android.dx.dex.cf.CfTranslator.translate(CfTranslator.java:85)
+[apply]     at com.android.dx.command.dexer.Main.processClass(Main.java:369)
+[apply]     at com.android.dx.command.dexer.Main.processFileBytes(Main.java:346)
+[apply]     at com.android.dx.command.dexer.Main.access$400(Main.java:59)
+[apply]     at com.android.dx.command.dexer.Main$1.processFileBytes(Main.java:294)
+[apply]     at com.android.dx.cf.direct.ClassPathOpener.processArchive(ClassPathOpener.java:244)
+[apply]     at com.android.dx.cf.direct.ClassPathOpener.processOne(ClassPathOpener.java:130)
+[apply]     at com.android.dx.cf.direct.ClassPathOpener.process(ClassPathOpener.java:108)
+[apply]     at com.android.dx.command.dexer.Main.processOne(Main.java:313)
+[apply]     at com.android.dx.command.dexer.Main.processAllFiles(Main.java:233)
+[apply]     at com.android.dx.command.dexer.Main.run(Main.java:185)
+[apply]     at com.android.dx.command.dexer.Main.main(Main.java:166)
+[apply]     at com.android.dx.command.Main.main(Main.java:90)
+[apply] ...at bytecode offset 00000006
+[apply] locals[0000]: Lcom/officemax/impress/ui/library/task/DocumentBrowserTask;
+[apply] locals[0001]: [Ljava/lang/Object;
+[apply] locals[0002]: <invalid>
+[apply] ...while working on block 0006
+[apply] ...while working on method doTaskJob:([Ljava/lang/Object;)Lcom/kaciula/utils/ui/BasicTaskResponse;
+[apply] ...while processing doTaskJob ([Ljava/lang/Object;)Lcom/kaciula/utils/ui/BasicTaskResponse;
+[apply] ...while processing com/officemax/impress/ui/library/task/DocumentBrowserTask.class
+[apply] 
+[apply] 1 error; aborting
+
+
+How can I fix this problem?
+    
+===============================================================================================
+15
+A:The actual Proguard part finishes, but then dex cannot convert the resulting bytecode anymore. Dex considers the LocalVariableTable incorrect. Eric Lafortune is the better source to explain why (see his answer).
+
+The problem goes away if you not only don't obfuscate, but also skip the optimization step (-dontoptimize). But you want to have this for the size reduction. Another way to solve it is to drop the debug flags in javac and in dex. Only problem is that then you wouldn't have proper stacktraces either. You will get stacktrace lines without source file info or line numbers such as:
+
+net.lp.collectionista.domain.items.book.BookItem.getCoverImageForFormField(Unkno\xe2\x80\x8c\xe2\x80\x8bwn Source)
+
+
+You can do this by adding debug="false" in the javac tag in the ant main-rules.xml (you may want to copy the part to a build.xml first). This will set a flag javac -g:none. You also have to configure dex and this is harder to do in the provided ant template. I copied the dex-helper macro, made sure it was being used, and added a condition tag surrounding the dex calls:
+
+        <echo>Converting compiled files and external libraries into ${intermediate.dex.file}...</echo>
+        <if condition="debug">
+            <then>
+                <apply executable="${dx}" failonerror="true" parallel="true">
+                    <arg value="--dex" />
+                    <arg value="--output=${intermediate.dex.file}" />
+                    <extra-parameters />
+                    <arg line="${verbose.option}" />
+                    <arg path="${out.dex.input.absolute.dir}" />
+                    <path refid="out.dex.jar.input.ref" />
+                    <external-libs />
+                </apply>
+            </then>
+            <else>
+                <apply executable="${dx}" failonerror="true" parallel="true">
+                    <arg value="--dex" />
+                    <arg value="--output=${intermediate.dex.file}" />
+                    <arg value="--no-locals" /><!-- otherwise dex fails on the proguard bytecode -->
+                    <extra-parameters />
+                    <arg line="${verbose.option}" />
+                    <arg path="${out.dex.input.absolute.dir}" />
+                    <path refid="out.dex.jar.input.ref" />
+                    <external-libs />
+                </apply>
+            </else>
+        </if>
+
+
+It's the --no-locals that does it. 
+
+To mitigate the loss of stacktrace information you can use, respectively for line number information and class and method names information:
+
+-keepattributes SourceFile, LineNumberTable
+-keep,allowshrinking,allowoptimization class * { <methods>; }
+
+
+This way you can do partial obfuscation, and still have equivalent good stacktraces. I still suggest you create and keep the mapping files upon release though.
+
+On top of all this you shouldn't specify -keepattributes LocalVariableTable,LocalVariableTypeTable and equally -keepparameternames (if you do obfuscate, this by itself might get you into troubles as well). Note that the second implies the first, even though it may not be clear from its name that it affects attributes.
+
+Personally, and in view of other problems with Proguard, I chose to do the obfuscation but mitigate the loss of stacktrace information. I haven't tried @plowman's proposal yet.
+
+For more details you can find my version controlled project files here:
+
+
+proguard.cfg
+build.xml
+
+    

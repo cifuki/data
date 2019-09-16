@@ -1,0 +1,152 @@
+33
+Q:I'm switching between fragments by hiding the last fragment and adding a new one (See code below) - adding it to the back-stack as well. This way, users can quickly switch between the fragments without reloading the fragment data.
+
+This works well until the app is killed (Scenario: users uses several other apps and my app is getting persisted and killed).
+
+When a user opens the app, it is being restored and all the fragments are shown - overlapping one another.
+
+Question: How can the restored fragments be restored with their hidden state? Perhaps I'm missing some flag? somewhere? Perhaps there is a better solution for fast switching between fragments (without reloading the data)?
+
+Sample code of adding fragments - invoked several times with different fragments upon clicking somewhere:
+
+FragmentTransaction fragmentTransaction = getFragmentManager().beginTransaction();
+fragmentTransaction.hide(lastFragment);
+fragmentTransaction.add(newFragment);
+fragmentTransaction.addToBackStack(null);
+fragmentTransaction.commit();
+lastFragment = newFragment;
+
+    
+===============================================================================================
+16
+A:Hope somebody finds a better solution. I'll wait for one before I accept my solution:
+
+In general, I use generated tags to find the unhidden fragments and hide them.
+
+In details, I generate a unique tag for each fragment (StackEntry) and stack the tags as the fragments themselves get stacked. I persist the stack in the bundel and load it when the app gets restored in order to continure using it. Then I use the list of tags to find all of the unhidden fragments and hide them - except for the last one.
+
+Heres sample code:
+
+public class FragmentActivity extends Activity {
+
+    private static final String FRAGMENT_STACK_KEY = "FRAGMENT_STACK_KEY";
+
+    private Stack<StackEntry> fragmentsStack = new Stack<StackEntry>();
+
+    public FragmentActivity() {
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        setContentView(R.layout.content_frame);
+
+        if (savedInstanceState == null) {
+            // Init for the first time - not restore
+            // ...
+        } else {
+            Serializable serializable = savedInstanceState.getSerializable(FRAGMENT_STACK_KEY);
+            if (serializable != null) {
+                // Workaround Android bug.
+                // See: http://stackoverflow.com/questions/13982192/when-using-an-android-bundle-why-does-a-serialised-stack-deserialise-as-an-arra
+                // And: https://code.google.com/p/android/issues/detail?id=3847
+                @SuppressWarnings("unchecked")
+                List<StackEntry> arrayList = (List<StackEntry>) serializable;
+                fragmentsStack = new Stack<StackEntry>();
+                fragmentsStack.addAll(arrayList);
+            }
+
+            // Hide all the restored fragments instead of the last one
+            if (fragmentsStack.size() > 1) {
+                FragmentTransaction fragmentTransaction = getFragmentManager().beginTransaction();
+                for (int i = 0; i < fragmentsStack.size()-1; i++) {
+                    String fragTag = fragmentsStack.get(i).getFragTag();
+                    Fragment fragment = getFragmentManager().findFragmentByTag(fragTag);
+                    fragmentTransaction.hide(fragment);
+                }
+                fragmentTransaction.commit();
+            }
+        }
+        getFragmentManager().addOnBackStackChangedListener(new OnBackStackChangedListener() {
+            @Override
+            public void onBackStackChanged() {
+                Fragment lastFragment = getLastFragment();
+                if (lastFragment.isHidden()) {
+                    FragmentTransaction fragmentTransaction = getFragmentManager().beginTransaction();
+                    fragmentTransaction.show(lastFragment);
+                    fragmentTransaction.commit();
+                }
+            }
+        });
+    }
+
+    private Fragment getLastFragment() {
+        if (fragmentsStack.isEmpty()) return null;
+        String fragTag = fragmentsStack.peek().getFragTag();
+        Fragment fragment = getFragmentManager().findFragmentByTag(fragTag);
+        return fragment;
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putSerializable(FRAGMENT_STACK_KEY, fragmentsStack);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (!fragmentsStack.isEmpty()) {
+            fragmentsStack.pop();
+        }
+    }
+
+    public void switchContent(Fragment fragment) {
+        FragmentTransaction fragmentTransaction = getFragmentManager().beginTransaction();
+        Fragment lastFragment = getLastFragment();
+        if (lastFragment != null) {
+            fragmentTransaction.hide(lastFragment);
+        }
+        String fragTag;
+        if (fragment.isAdded()) {
+            fragmentTransaction.show(fragment);
+            fragTag = fragment.getTag();
+        } else {
+            fragTag = Long.toString(System.currentTimeMillis());
+            fragmentTransaction.add(R.id.content_frame, fragment, fragTag);
+        }
+        if (!isFirstFragment()) {
+            // Add to backstack only the first content fragment and not the state before (that has nothing)
+            fragmentTransaction.addToBackStack(null);
+        }
+        fragmentTransaction.commit();
+
+        fragmentsStack.push(new StackEntry(fragTag));
+    }
+
+    public boolean isFirstFragment() {
+        return fragmentsStack.size() == 0;
+    }
+
+    private static class StackEntry implements Serializable {
+        private static final long serialVersionUID = -6162805540320628024L;
+
+        private String fragTag = null;
+        public StackEntry(String fragTag) {
+            super();
+            this.fragTag = fragTag;
+        }
+        public String getFragTag() {
+            return fragTag;
+        }
+    }
+
+
+    public static class Intent extends android.content.Intent {
+        public Intent(Context packageContext) {
+            super(packageContext, FragmentActivity.class);
+        }
+    }
+}
+
+    

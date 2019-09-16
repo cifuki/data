@@ -1,0 +1,46 @@
+29
+Q:Ever since the first release of the Android N developer preview, I get "permission denied" errors when attempting to list the root directory or other system directories. The permissions on these directories didn't seem to change (as far as I can tell).
+
+Question:
+
+What change(s) in Android N caused these permission denied errors?
+
+
+
+How to replicate:
+
+In ADB shell, run the following commands:
+
+run-as com.debuggable.packagename
+ls /
+
+
+This gives permission denied errors on Android N.
+
+
+
+Why list system directories:
+
+I noticed this behavior on Android N with several file managers. They could no longer list the root directory or other system files. This also is limiting the output of running ps in a shell. The changes also caused this library to stop working on Android N.
+    
+===============================================================================================
+10
+A:There were two groups of changes reducing access to /proc.
+
+The procfs filesystem is now mounted with hidepid=2, eliminating access to the /proc/PID directories of other users. This change was implemented in CopperheadOS and was then adopted upstream based on it. There's a group for making exceptions but it's not exposed as a permission. It's only used to make exceptions for some processes in the base system. It could be exposed as a 'dangerous' permission and it's what I expected Google would end up doing but they decided that users wouldn't understand the implications of it.
+
+https://android-review.googlesource.com/#/c/181345/
+
+SELinux policies also became much stricter. For apps, there's no baseline access to /proc at all anymore, although that only applies to files other than the /proc/PID directories. There's still access to a few files with labels not falling under the general proc policy, but it's mostly gone. This has been gradual and there are many relevant commits. One of the big ones:
+
+https://android-review.googlesource.com/#/c/105337/
+
+This not only removes a lot of obvious information, but it also closes some more blatant security holes involving side channels allowing things like logging keyboard input:
+
+
+https://www.lightbluetouchpaper.org/2016/07/29/yet-another-android-side-channel/
+https://staff.ie.cuhk.edu.hk/~khzhang/my-papers/2016-oakland-interrupt.pdf
+
+
+SELinux policies have also become a lot stricter in general over time. You can see the rest of that in the platform/system/sepolicy repository. Note that it was at platform/external/sepolicy for a long time but it was recently moved.
+    

@@ -1,0 +1,77 @@
+82
+Q:I was looking for how to highlight a selected item in a list when displaying a contextual action bar for the selection, and the solution I found was to set the android:background attribute of my row layout xml to "?android:attr/activatedBackgroundIndicator".
+
+How does setting this work though?
+
+
+what is the mechanism involved?
+what do the syntax elements like "?", "attr", "activatedBackgroundIndicator" mean?
+where is the meaning of "activatedBackgroundIndicator" defined?
+
+    
+===============================================================================================
+217
+A:If you are in a forensic mood here is how to dig and find out what is going on.
+
+android:background="?android:attr/activatedBackgroundIndicator"?
+
+
+Intuitively this means set the background to some drawable.
+
+But lets decompose this further to see how we get to our mysterious drawable. 
+
+To be precise it means "set the background attribute to what the attribute "activatedBackgroundIndicator" refers to in the current theme.
+
+If you understand "refers to in the current theme" part, you have basically understood everything that is going on behind the covers.
+
+Basically, activatedBackgroundIndicator is not an actual drawable but a reference to a drawable. So where is "activateBackgroundIndictor" attribute actually defined?
+
+Its defined in your sdk directory in a file name attrs.xml. For example:
+
+
+  path_to_android_sdk/platforms/android-17/data/res/values/attrs.xml
+
+
+If you open that file, you will the declaration as follows:
+
+<attr name="activatedBackgroundIndicator" format="reference" />
+
+
+attrs.xml is where you declare all the attributes that you are later going to use in your view xml. Note we are declaring the attribute and its type and not actually assigning a value here.
+
+The actual value is assigned in themes.xml. This file is located at:
+
+
+  path_to_android_sdk/platforms/android-17/data/res/values/themes.xml
+
+
+If you open that file, you will see the multiple definitions depending on what theme you are using. For example, here are the definitions for themes name Theme, Theme.Light, Theme.Holo, Theme.Holo.Light respectively:
+
+<item name="activatedBackgroundIndicator">@android:drawable/activated_background</item>
+<item name="activatedBackgroundIndicator">@android:drawable/activated_background_light</item>
+<item name="activatedBackgroundIndicator">@android:drawable/activated_background_holo_dark</item>
+<item name="activatedBackgroundIndicator">@android:drawable/activated_background_holo_light</item>
+
+
+Now we have our mysterious drawables. If you pick the first one, it is defined in the drawable folder at:
+
+
+  path_to_android_sdk/platforms/android-17/data/res/drawable/activated_background.xml
+
+
+If you open that file you will see the definition of the drawable which is important to understanding what is going on.
+
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_activated="true" android:drawable="@android:drawable/list_selector_background_selected" />
+    <item android:drawable="@color/transparent" />
+</selector>
+
+
+Here we are defining a drawable with two states - default state is just transparent background and if the state is "state_activated" then our drawable is "list_selector_background_selected". 
+
+see this link for background information on on drawables and states.
+
+"list_selector_background_selected" is a 9 patch png file that is located in the drawable-hdpi folder.
+
+Now you can see why we defined activatedBackgroundIndicator as a reference rather than linking directly to the drawable file - it allows you to pick the right drawable depending on your theme.
+    

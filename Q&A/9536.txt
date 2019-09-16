@@ -1,0 +1,121 @@
+28
+Q:I'm trying to create a relation between two database tables using the new Android Persistence Room Library. I looked at the documentation and tried to implement the example found at https://developer.android.com/reference/android/arch/persistence/room/Relation.html: 
+
+ @Entity
+ public class User {
+ @PrimaryKey
+     int id;
+ }
+
+ @Entity
+ public class Pet {
+     @PrimaryKey
+     int id;
+     int userId;
+     String name;
+
+ }
+
+ @Dao
+ public interface UserDao {
+     @Query("SELECT * from User")
+     public List<User> loadUser();
+ }
+
+ @Dao
+ public interface PetDao {
+     @Query("SELECT * from Pet")
+     public List<Pet> loadUserAndPets();
+ }
+
+
+ public class UserAllPets {
+     @Embedded
+     public User user;
+     @Relation(parentColumn = "user.id", entityColumn = "userId", entity = Pet.class)
+     public List pets;
+ }
+
+ @Dao
+ public interface UserPetDao {
+     @Query("SELECT * from User")
+     public List<UserAllPets> loadUserAndPets();
+ }
+
+
+I get the following error
+
+    ...error: Cannot figure out how to read this field from a cursor.
+
+
+in relation to: 
+
+ private java.util.List<?> pets;
+
+
+I would like to point out that I found some things in their docs really confusing. For example the lack of @PrimaryKey and also the fact that the User class is missing the @Entity annotation, although it's supposed to be an entity (as fas as I see it). Did anybody run into the same problem? Thanks a lot in advance
+    
+===============================================================================================
+136
+A:Document is really confusing. Try with just below classes:
+
+1) User Entity:
+
+@Entity
+public class User {
+    @PrimaryKey
+    public int id; // User id
+}
+
+
+2) Pet Entity:
+
+@Entity
+public class Pet {
+    @PrimaryKey
+    public int id;     // Pet id
+    public int userId; // User id
+    public String name;
+}
+
+
+
+
+3) UserWithPets POJO:
+
+// Note: No annotation required at this class definition.
+public class UserWithPets {
+   @Embedded
+   public User user;
+
+   @Relation(parentColumn = "id", entityColumn = "userId", entity = Pet.class)
+   public List<Pet> pets; // or use simply 'List pets;'
+
+
+   /* Alternatively you can use projection to fetch a specific column (i.e. only name of the pets) from related Pet table. You can uncomment and try below;
+
+   @Relation(parentColumn = "id", entityColumn = "userId", entity = Pet.class, projection = "name")
+   public List<String> pets; 
+   */
+}
+
+
+
+parentColumn refers to Embedded User table's id column, 
+entityColumn refers to Pet table's userId (User - Pet relation) column, 
+entity refers to table(Pet) which has relation with User table.
+
+
+4) UserDao Dao:
+
+@Dao
+public interface UserDao {
+    @Query("SELECT * FROM User")
+    public List<UserWithPets> loadUsersWithPets();
+}
+
+
+Now try loadUsersWithPets(), which returns the users with their list of pets.
+
+Edit: See my other answer for many ot many relation. 
+    

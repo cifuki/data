@@ -1,0 +1,128 @@
+115
+Q:My MainActicity  starts RefreshService with a Intent which has a boolean extra called isNextWeek.
+
+My RefreshService makes a Notification which starts my MainActivity when the user clicks on it.
+
+this looks like this:
+
+    Log.d("Refresh", "RefreshService got: isNextWeek: " + String.valueOf(isNextWeek));
+
+    Intent notificationIntent = new Intent(this, MainActivity.class);
+    notificationIntent.putExtra(MainActivity.IS_NEXT_WEEK, isNextWeek);
+
+    Log.d("Refresh", "RefreshService put in Intent: isNextWeek: " + String.valueOf(notificationIntent.getBooleanExtra(MainActivity.IS_NEXT_WEEK,false)));
+    pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0);
+
+    builder = new NotificationCompat.Builder(this).setContentTitle("Title").setContentText("ContentText").setSmallIcon(R.drawable.ic_notification).setContentIntent(pendingIntent);
+    notification = builder.build();
+    // Hide the notification after its selected
+    notification.flags |= Notification.FLAG_AUTO_CANCEL;
+    notificationManager.notify(NOTIFICATION_REFRESH, notification);
+
+
+As you can see the notificationIntent should have the booleanextra IS_NEXT_WEEK with the value of isNextWeek which is put in the PendingIntent.
+
+When I click now this Notification I always get false as value of isNextWeek
+
+This is the way I get the value in the MainActivity:
+
+    isNextWeek = getIntent().getBooleanExtra(IS_NEXT_WEEK, false);
+
+
+Log:
+
+08-04 00:19:32.500  13367-13367/de.MayerhoferSimon.Vertretungsplan D/Refresh: MainActivity sent: isNextWeek: true
+08-04 00:19:32.510  13367-13573/de.MayerhoferSimon.Vertretungsplan D/Refresh: RefreshService got: isNextWeek: true
+08-04 00:19:32.510  13367-13573/de.MayerhoferSimon.Vertretungsplan D/Refresh: RefreshService put in Intent: isNextWeek: true
+08-04 00:19:41.990  13367-13367/de.MayerhoferSimon.Vertretungsplan D/Refresh: MainActivity.onCreate got: isNextWeek: false
+
+
+When I directly start the MainActivity with an Intent with the \xc3\xacsNextValue` like this:
+
+    Intent i = new Intent(this, MainActivity.class);
+    i.putExtra(IS_NEXT_WEEK, isNextWeek);
+    finish();
+    startActivity(i);
+
+
+everything works fine and I get true when isNextWeek is true.
+
+What do I make wrong that there is always a false value?
+
+UPDATE
+
+this solves the problem:
+https://stackoverflow.com/a/18049676/2180161
+
+Quote:
+
+
+  My suspicion is that, since the only thing changing in the Intent is
+  the extras, the PendingIntent.getActivity(...) factory method is
+  simply re-using the old intent as an optimization.
+  
+  In RefreshService, try:
+
+PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_CANCEL_CURRENT);
+
+  
+  See:
+  
+  http://developer.android.com/reference/android/app/PendingIntent.html#FLAG_CANCEL_CURRENT
+
+
+UPDATE 2
+
+See answer below why it is better to use PendingIntent.FLAG_UPDATE_CURRENT.
+    
+===============================================================================================
+20
+A:Using PendingIntent.FLAG_CANCEL_CURRENT not a good solution because of inefficient use of memory. Instead use PendingIntent.FLAG_UPDATE_CURRENT.
+
+Use also Intent.FLAG_ACTIVITY_SINGLE_TOP (the activity will not be launched if it is already running at the top of the history stack).
+
+Intent resultIntent = new Intent(this, FragmentPagerSupportActivity.class).
+                    addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);  
+resultIntent.putExtra(FragmentPagerSupportActivity.PAGE_NUMBER_KEY, pageNumber);
+
+PendingIntent resultPendingIntent =
+                PendingIntent.getActivity(
+                        this,
+                        0,
+                        resultIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT
+                );
+
+
+Then:
+
+@Override
+    protected void onCreate(Bundle savedInstanceState) {
+        try {
+            super.onCreate(savedInstanceState);
+
+            int startPageNumber;
+            if ( savedInstanceState != null)
+            {
+                startPageNumber = savedInstanceState.getInt(PAGE_NUMBER_KEY);
+//so on
+
+
+It should work now.
+
+
+
+If you still have not expected behaviour, try to implement  void onNewIntent(Intent intent) event handler, that way you can access the new intent that was called for the activity (which is not the same as just calling getIntent(), this will always return the first Intent that launched your activity.
+
+@Override
+protected void onNewIntent(Intent intent) {
+    int startPageNumber;
+
+    if (intent != null) {
+        startPageNumber = intent.getExtras().getInt(PAGE_NUMBER_KEY);
+    } else {
+        startPageNumber = 0;
+    }
+}
+
+    

@@ -1,0 +1,401 @@
+96
+Q:How to use Dagger? How to configure Dagger to work in my Android project?
+
+I'd like to use Dagger in my Android project, but I find it confusing.
+
+EDIT: Dagger2 is also out since 2015 04 15, and it's even more confusing!
+
+[This question is a "stub" on which I am adding to my answer as I learned more about Dagger1, and learn more about Dagger2. This question is more of a guide rather than a "question".]
+    
+===============================================================================================
+181
+A:Guide for Dagger 2.x (Revised Edition 6):
+
+The steps are the following:
+
+1.) add Dagger to your build.gradle files:
+
+
+top level build.gradle:
+
+
+.
+
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:2.2.0'
+        classpath 'com.neenbedankt.gradle.plugins:android-apt:1.8' //added apt for source code generation
+    }
+}
+
+allprojects {
+    repositories {
+        jcenter()
+    }
+}
+
+
+
+app level build.gradle:
+
+
+.
+
+apply plugin: 'com.android.application'
+apply plugin: 'com.neenbedankt.android-apt' //needed for source code generation
+
+android {
+    compileSdkVersion 24
+    buildToolsVersion "24.0.2"
+
+    defaultConfig {
+        applicationId "your.app.id"
+        minSdkVersion 14
+        targetSdkVersion 24
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        debug {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    apt 'com.google.dagger:dagger-compiler:2.7' //needed for source code generation
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile 'com.android.support:appcompat-v7:24.2.1'
+    compile 'com.google.dagger:dagger:2.7' //dagger itself
+    provided 'org.glassfish:javax.annotation:10.0-b28' //needed to resolve compilation errors, thanks to tutplus.org for finding the dependency
+}
+
+
+2.) Create your AppContextModule class that provides the dependencies.
+
+@Module //a module could also include other modules
+public class AppContextModule {
+    private final CustomApplication application;
+
+    public AppContextModule(CustomApplication application) {
+        this.application = application;
+    }
+
+    @Provides
+    public CustomApplication application() {
+        return this.application;
+    }
+
+    @Provides 
+    public Context applicationContext() {
+        return this.application;
+    }
+
+    @Provides
+    public LocationManager locationService(Context context) {
+        return (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+    }
+}
+
+
+3.) create the AppContextComponent class that provides the interface to get the classes that are injectable.
+
+public interface AppContextComponent {
+    CustomApplication application(); //provision method
+    Context applicationContext(); //provision method
+    LocationManager locationManager(); //provision method
+}
+
+
+3.1.) This is how you would create a module with an implementation:
+
+@Module //this is to show that you can include modules to one another
+public class AnotherModule {
+    @Provides
+    @Singleton
+    public AnotherClass anotherClass() {
+        return new AnotherClassImpl();
+    }
+}
+
+@Module(includes=AnotherModule.class) //this is to show that you can include modules to one another
+public class OtherModule {
+    @Provides
+    @Singleton
+    public OtherClass otherClass(AnotherClass anotherClass) {
+        return new OtherClassImpl(anotherClass);
+    }
+}
+
+public interface AnotherComponent {
+    AnotherClass anotherClass();
+}
+
+public interface OtherComponent extends AnotherComponent {
+    OtherClass otherClass();
+}
+
+@Component(modules={OtherModule.class})
+@Singleton
+public interface ApplicationComponent extends OtherComponent {
+    void inject(MainActivity mainActivity);
+}
+
+
+Beware:: You need to provide the @Scope annotation (like @Singleton or @ActivityScope) on the module's @Provides annotated method to get a scoped provider within your generated component, otherwise it will be unscoped, and you'll get a new instance each time you inject.
+
+3.2.) Create an Application-scoped component that specifies what you can inject (this is the same as the injects={MainActivity.class} in Dagger 1.x):
+
+@Singleton
+@Component(module={AppContextModule.class}) //this is where you would add additional modules, and a dependency if you want to subscope
+public interface ApplicationComponent extends AppContextComponent { //extend to have the provision methods
+    void inject(MainActivity mainActivity);
+}
+
+
+3.3.) For dependencies that you can create via a constructor yourself and won't want to redefine using a @Module (for example, you use build flavors instead to change the type of implementation), you can use @Inject annotated constructor.
+
+public class Something {
+    OtherThing otherThing;
+
+    @Inject
+    public Something(OtherThing otherThing) {
+        this.otherThing = otherThing;
+    }
+}
+
+
+Also, if you use @Inject constructor, you can use field injection without having to explicitly call component.inject(this):
+
+public class Something {
+    @Inject
+    OtherThing otherThing;
+
+    @Inject
+    public Something() {
+    }
+}
+
+
+These @Inject constructor classes are automatically added to the component of the same scope without having to explicitly specify them in a module.
+
+A @Singleton scoped @Inject constructor class will be seen in @Singleton scoped components.
+
+@Singleton // scoping
+public class Something {
+    OtherThing otherThing;
+
+    @Inject
+    public Something(OtherThing otherThing) {
+        this.otherThing = otherThing;
+    }
+}
+
+
+3.4.) After you've defined a specific implementation for a given interface, like so:
+
+public interface Something {
+    void doSomething();
+}
+
+@Singleton
+public class SomethingImpl {
+    @Inject
+    AnotherThing anotherThing;
+
+    @Inject
+    public SomethingImpl() {
+    }
+}
+
+
+You'll need to "bind" the specific implementation to the interface with a @Module.
+
+@Module
+public class SomethingModule {
+    @Provides
+    Something something(SomethingImpl something) {
+        return something;
+    }
+}
+
+
+A short-hand for this since Dagger 2.4 is the following:
+
+@Module
+public abstract class SomethingModule {
+    @Binds
+    abstract Something something(SomethingImpl something);
+}
+
+
+4.) create an Injector class to handle your application-level component (it replaces the monolithic ObjectGraph)
+
+(note: Rebuild Project to create the DaggerApplicationComponent builder class using APT)
+
+public enum Injector {
+    INSTANCE;
+
+    ApplicationComponent applicationComponent;
+
+    private Injector(){
+    }
+
+    static void initialize(CustomApplication customApplication) {
+        ApplicationComponent applicationComponent = DaggerApplicationComponent.builder()
+           .appContextModule(new AppContextModule(customApplication))
+           .build();
+        INSTANCE.applicationComponent = applicationComponent;
+    }
+
+    public static ApplicationComponent get() {
+        return INSTANCE.applicationComponent;
+    }
+}
+
+
+5.) create your CustomApplication class
+
+public class CustomApplication
+        extends Application {
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Injector.initialize(this);
+    }
+}
+
+
+6.) add CustomApplication to your AndroidManifest.xml.
+
+<application
+    android:name=".CustomApplication"
+    ...
+
+
+7.) Inject your classes in MainActivity
+
+public class MainActivity
+        extends AppCompatActivity {
+    @Inject
+    CustomApplication customApplication;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        Injector.get().inject(this);
+        //customApplication is injected from component
+    }
+}
+
+
+8.) Enjoy!
+
++1.) You can specify Scope for your components with which you can create Activity-level scoped components. Subscopes allow you to provide dependencies that you only need only for a given subscope, rather than throughout the whole application. Typically, each Activity gets its own module with this setup. Please note that a scoped provider exists per component, meaning in order to retain the instance for that activity, the component itself must survive configuration change. For example, it could survive through onRetainCustomNonConfigurationInstance(), or a Mortar scope.
+
+For more info on subscoping, check out the guide by Google. Also please see this site about provision methods and also the component dependencies section) and here.
+
+To create a custom scope, you must specify the scope qualifier annotation:
+
+@Scope
+@Retention(RetentionPolicy.RUNTIME)
+public @interface YourCustomScope {
+}
+
+
+To create a subscope, you need to specify the scope on your component, and specify ApplicationComponent as its dependency. Obviously you need to specify the subscope on the module provider methods too.
+
+@YourCustomScope
+@Component(dependencies = {ApplicationComponent.class}, modules = {CustomScopeModule.class})
+public interface YourCustomScopedComponent
+        extends ApplicationComponent {
+    CustomScopeClass customScopeClass();
+
+    void inject(YourScopedClass scopedClass);
+}
+
+
+And
+
+@Module
+public class CustomScopeModule {
+    @Provides
+    @YourCustomScope
+    public CustomScopeClass customScopeClass() {
+        return new CustomScopeClassImpl();
+    }
+}
+
+
+Please note that only one scoped component can be specified as a dependency. Think of it exactly like how multiple inheritance is not supported in Java.
+
++2.) About @Subcomponent: essentially, a scoped @Subcomponent can replace a component dependency; but rather than using a builder provided by the annotation processor, you would need to use a component factory method.
+
+So this:
+
+@Singleton
+@Component
+public interface ApplicationComponent {
+}
+
+@YourCustomScope
+@Component(dependencies = {ApplicationComponent.class}, modules = {CustomScopeModule.class})
+public interface YourCustomScopedComponent
+        extends ApplicationComponent {
+    CustomScopeClass customScopeClass();
+
+    void inject(YourScopedClass scopedClass);
+}
+
+
+Becomes this:
+
+@Singleton
+@Component
+public interface ApplicationComponent {
+    YourCustomScopedComponent newYourCustomScopedComponent(CustomScopeModule customScopeModule);
+}
+
+@Subcomponent(modules={CustomScopeModule.class})
+@YourCustomScope
+public interface YourCustomScopedComponent {
+    CustomScopeClass customScopeClass();
+}
+
+
+And this:
+
+DaggerYourCustomScopedComponent.builder()
+      .applicationComponent(Injector.get())
+      .customScopeModule(new CustomScopeModule())
+      .build();
+
+
+Becomes this:
+
+Injector.INSTANCE.newYourCustomScopedComponent(new CustomScopeModule());
+
+
++3.): Please check other Stack Overflow questions regarding Dagger2 as well, they provide a lot of info. For example, my current Dagger2 structure is specified in this answer.
+
+Thanks
+
+Thank you for the guides at Github, TutsPlus, Joe Steele, Froger MCS and Google.
+
+Also for this step by step migration guide I found after writing this post.
+
+And for scope explanation by Kirill.
+
+Even more information in the official documentation.
+    

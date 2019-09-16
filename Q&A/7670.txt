@@ -1,0 +1,159 @@
+34
+Q:I need to highlight a row in a ListView that was selected (to show the user what he chose), so, it's not the one that is going to be chosen, it's the one he chose before.
+
+I already have the location by:
+
+ListView.setSelection(position);
+
+
+And now what I want is to select this specific row and to highlight it.
+
+The code of the onCreate() in the activity that contains the ListView:
+
+public class CountryView extends Activity
+{
+    protected static final String LOG_TAG = null;
+    /** Called when the activity is first created. */
+    String[] lv_arr = {};
+
+    ListAdapter adapter;
+    TextView t;
+    private ListView lvUsers;
+    private ArrayList<Coun> mListUsers;
+    String responce=null;
+    public int d;
+    int selectedListItem = -1;
+
+
+    @Override
+    public void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.country);
+
+        Intent data =getIntent();
+
+        mListUsers = getCoun();
+        lvUsers = (ListView) findViewById(R.id.counlistView);
+
+
+        lvUsers.setAdapter(new ListAdapter(this, R.id.counlistView, mListUsers)); 
+
+
+        selectedListItem=data.getExtras().getInt("PositionInList");
+
+       lvUsers.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
+
+
+
+        lvUsers.setOnItemClickListener(new OnItemClickListener()
+        {
+
+            int positionItem;
+
+            public void onItemClick(AdapterView<?> parent, View view,int position, long id)
+            {
+                Intent pongIntent = new Intent(getApplicationContext(),Trav.class);
+
+                int counId=mListUsers.get(position).id;
+
+                pongIntent.putExtra("response",mListUsers.get(position).p);
+                pongIntent.putExtra("responseCounID",counId);
+
+                //Put the position of the choose list inside extra
+                positionItem=position;
+                pongIntent.putExtra("PositionInListSet",positionItem);
+
+                setResult(Activity.RESULT_OK,pongIntent);
+
+                Log.i("CounID *******************************"," "+counId);
+                finish();
+            }
+         });
+    }
+}
+
+    
+===============================================================================================
+37
+A:Since by default ListViews are set to a selection mode of NONE, in touch mode the setSelection method won't have visual effect. 
+
+For keeping the previous selection / visually display an explicit selection, first you must set your listview's choice mode appropriately:
+
+listview.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
+
+
+It's useful to read the API Docs of these methods: 
+
+
+setSelection
+
+
+
+void android.widget.AdapterView.setSelection(int position)
+
+  
+  Sets the currently selected item. To
+  support accessibility subclasses that
+  override this method must invoke the
+  overriden super method first.
+  
+  Parameters:
+  position Index (starting at 0) of the data item to be selected.
+
+
+
+setChoiceMode
+
+
+
+void android.widget.ListView.setChoiceMode(int choiceMode)
+
+  
+  Defines the choice behavior for the
+  List. By default, Lists do not have
+  any choice behavior
+  (CHOICE_MODE_NONE). By setting the
+  choiceMode to CHOICE_MODE_SINGLE, the
+  List allows up to one item to be in a
+  chosen state. By setting the
+  choiceMode to CHOICE_MODE_MULTIPLE,
+  the list allows any number of items to
+  be chosen.
+  
+  Parameters: choiceMode One of CHOICE_MODE_NONE,
+  CHOICE_MODE_SINGLE, or CHOICE_MODE_MULTIPLE
+
+
+In case this is not enough (say you'd like to always show the last selection differently beside the current selection), you should store your last selected item (a data which populates the ListAdapter) as lastSelectedItem, and in your adapter's getView method assign a different background resource to the renderer if it equals this lastSelectedItem.
+
+If your last selection wouldn't refresh on selection change, you should explicitly call the notifyDataSetChanged method on your adapter instance.
+
+Update
+Since your activity containing the ListView is a child of an activity which waits for this one's result (based on the setResult(Activity.RESULT_OK,pongIntent); part), the initial idea is correct, the last position should be passed through the intent when starting the activity:
+
+selectedListItem = getIntent().getIntExtra("PositionInList", -1);
+lvUsers.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
+lvUsers.setSelection(selectedListItem);
+
+
+The ListView.CHOICE_MODE_SINGLE solution would work if you remain in the same activity, but you are finishing it on every itemClick (selection change), that's why the extra data should be passed to the starting Intent.
+
+You can also set the previously selected item's background from your adapter -as mentioned above-, overriding its getView method:
+
+lvUsers.setAdapter(new ArrayAdapter(this, R.id.counlistView, groups)
+{
+    @Override
+    public View getView(int position, View convertView, ViewGroup parent)
+    {
+        final View renderer = super.getView(position, convertView, parent);
+        if (position == selectedListItem)
+        {
+            //TODO: set the proper selection color here:
+            renderer.setBackgroundResource(android.R.color.darker_gray);
+        }
+        return renderer;
+    }
+});
+
+    

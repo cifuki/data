@@ -1,0 +1,29 @@
+39
+Q:So... I'm making an application for Android. The application needs to send and receive realtime chat data (needs to be a socket) but it also needs to send commands (which don't as the client knows when it is sending something). 
+
+I need to know what is a better solution in terms of saving the user's battery.
+
+a) Opening and Closing the connection every time a command is sent, if the chat tab is opened then keep the connection constant. 
+
+b) Keep the connection constant all the time. 
+
+I've taken a look around the internet but have gotten mixed answers, some say keeping a persistent connection is bad for battery life and others say that it isn't (Example: "Are you asking if holding a TCP connection open will drain battery-life? Maybe I am WAY off here but, holding a connection open shouldn't waste battery life... If you think it will I would love to know where you got that information. It sounds SO strange to me.")
+
+Or if there is another solution that would be better. I don't think that Google's C2DM would be very useful at all in this situation either. 
+
+Basically, what drains the battery more: having a persistent connection, or opening and closing the connection unless the chat tab is open?
+
+Thanks!
+    
+===============================================================================================
+62
+A:Keeping an idle TCP socket connection open (with no data being sent or received) will not (or at least, should not) consume any more battery than having it closed.  That is because an idle TCP connection uses no bandwidth or CPU cycles(*).
+
+That said, keeping a TCP connection open for extended periods may not be a good option for a mobile device, because TCP connections don't interact well with computers that go to sleep.  The problem scenario would be this:  your Android user puts his Android device to sleep while your app is running, and then the remote user's program (or whatever is at the other end of the TCP connection) sends some data over the TCP stream.  The remote user's program never gets any ACKs back from the Android device, because of course the Android device is asleep, so the remote device's TCP stack assumes that the TCP packets it sent must have been lost, and it responds by increasing its timeout period, decreasing its TCP window size (aka number-of-TCP-packets-allowed-in-flight-at-once), and resending the TCP packets.  But the Android device is still asleep, and thus the same thing happens again.  The upshot is that a few minutes later, the remote end of the TCP connection has slowed down to the point where even if the Android device was to wake up, the TCP connection will likely be too slow to be usable -- at which point your program will need to close the bogged-down TCP connection and start up a fresh one anyway, so why bother trying to keep it open?
+
+So my recommendation would be to go with option (a), with the stipulation that you close the TCP connection as part of your device-is-going-to-sleep-now routine.
+
+One possible caveat would be if Android has a feature where keeping a TCP connection open causes the WiFi or cell-network hardware to remain powered up in a situation where it could otherwise be put to sleep -- if that is the case, then the Android device would pay a battery cost for powering the antenna, which it wouldn't otherwise have had to pay.  I'm not aware of any Android logic like that, but I've only used Android a little so that might just be ignorance on my part.  It might be worth testing for, at least.
+
+(*) Well, technically TCP does send a "keepalive" packet every so often while a TCP connection is open, and that does use some CPU cycles and antenna power... but the default interval for sending keepalive packets on Android is two hours, so I doubt the power used for that would be noticeable.
+    

@@ -1,0 +1,52 @@
+71
+Q:I updated Nexus 5X to Android N, and now when I install the app (debug or release) on it I am getting TransactionTooLargeException on every screen transition that has Bundle in extras. The app is working on all other devices. The old app that is on PlayStore and has mostly same code is working on Nexus 5X.
+Is anyone having the same issue?
+
+java.lang.RuntimeException: android.os.TransactionTooLargeException: data parcel size 592196 bytes
+   at android.app.ActivityThread$StopInfo.run(ActivityThread.java:3752)
+   at android.os.Handler.handleCallback(Handler.java:751)
+   at android.os.Handler.dispatchMessage(Handler.java:95)
+   at android.os.Looper.loop(Looper.java:154)
+   at android.app.ActivityThread.main(ActivityThread.java:6077)
+   at java.lang.reflect.Method.invoke(Native Method)
+   at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:865)
+   at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:755)
+Caused by: android.os.TransactionTooLargeException: data parcel size 592196 bytes
+   at android.os.BinderProxy.transactNative(Native Method)
+   at android.os.BinderProxy.transact(Binder.java:615)
+   at android.app.ActivityManagerProxy.activityStopped(ActivityManagerNative.java:3606)
+   at android.app.ActivityThread$StopInfo.run(ActivityThread.java:3744)
+   at android.os.Handler.handleCallback(Handler.java:751)\xc2\xa0
+   at android.os.Handler.dispatchMessage(Handler.java:95)\xc2\xa0
+   at android.os.Looper.loop(Looper.java:154)\xc2\xa0
+   at android.app.ActivityThread.main(ActivityThread.java:6077)\xc2\xa0
+   at java.lang.reflect.Method.invoke(Native Method)\xc2\xa0
+   at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:865)\xc2\xa0
+   at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:755)\xc2\xa0
+
+    
+===============================================================================================
+26
+A:Whenever you see TransactionTooLargeException happening when an Activity is in the process of stopping, that means that the Activity was trying to send its saved state Bundles to the system OS for safe keeping for restoration later (after a config change or process death) but that one or more of the Bundles it sent were too large. There is a maximum limit of about 1MB for all such transactions occurring at once and that limit can be reached even if no single Bundle exceeds that limit. 
+
+The main culprit here is generally saving too much data inside onSaveInstanceState of either the Activity or any Fragments hosted by the Activity. Typically this happens when saving something particularly large like a Bitmap but it can also happen when sending large quantities of smaller data, like lists of Parcelable objects. The Android team has made very clear on numerous occasions that only small amounts of view-related data should be saved in onSavedInstanceState. However, developers have often saved pages of network data in order to make configuration changes appear as smooth as possible by not having to refetch the same data again. As of Google I/O 2017, the Android team has made clear that the preferred architecture for an Android app saves networking data
+
+
+in memory so it can be easily reused across configuration changes
+to disk so that it can be easily restored after process death and app sessions
+
+
+Their new ViewModel framework and Room persistence library are meant to help developers fit this pattern. If your problem is with saving too much data in onSaveInstanceState, updating to an architecture like this using those tools should fix your problem.
+
+Personally, before updating to that new pattern I'd like to take my existing apps and just get around the TransactionTooLargeException in the meantime. I wrote a quick library to do just that: https://github.com/livefront/bridge . It uses the same general ideas of restoring state from memory across configuration changes and from disk after process death, rather than sending all that state to the OS via onSaveInstanceState, but requires very minimal changes to your existing code to use. Any strategy that fits those two goals should help you avoid the exception, though, without sacrificing your ability to save state.
+
+On final note here : the only reason you see this on Nougat+ is that originally if the binder transaction limit was exceeded, the process to send the saved state to the OS would fail silently with only this error showing up in Logcat:
+
+!!! FAILED BINDER TRANSACTION !!!
+
+In Nougat, that silent failure was upgraded to a hard crash. To their credit, this is something the development team documented in the release notes for Nougat:
+
+
+  Many platform APIs have now started checking for large payloads being sent across Binder transactions, and the system now rethrows TransactionTooLargeExceptions as RuntimeExceptions, instead of silently logging or suppressing them. One common example is storing too much data in Activity.onSaveInstanceState(), which causes ActivityThread.StopInfo to throw a RuntimeException when your app targets Android 7.0.
+
+    

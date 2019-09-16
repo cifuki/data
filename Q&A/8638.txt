@@ -1,0 +1,135 @@
+31
+Q:Is it possible to simulate touch from the background application (or service) or to run sh script (that simulate touch)?
+
+It is needed for testing android system without USB or other connection to PC, thats why I can't (or don' know how) use Monkey or other autotest tools.
+
+Added info:
+I found the way to run shell commands with root (tested devices rooted):
+
+Unable to execute sendevent shell command through the android code (create touch simulation).
+Writing file on system partition (run commands with root permissions)
+
+Also I get events to simulate touch.
+
+As a result I have:
+
+//sendevent commands to simulate touch (verify it work from cmd)
+String[] touchEvent = { "sendevent /dev/input/event0 0 0 0\
+",
+                        "sendevent /dev/input/event6 3 53 499\
+",
+                        "sendevent /dev/input/event6 3 54 680\
+",
+                        "sendevent /dev/input/event6 3 58 40\
+",
+                        "sendevent /dev/input/event6 3 48 3\
+",
+                        "sendevent /dev/input/event6 3 57 0\
+",
+                        "sendevent /dev/input/event6 0 2 0\
+",
+                        "sendevent /dev/input/event6 0 0 0\
+",
+                        "sendevent /dev/input/event6 0 2 0\
+",
+                        "sendevent /dev/input/event6 0 0 0\
+",
+                        "sendevent /dev/input/event0 3 0 2\
+",
+                        "sendevent /dev/input/event0 0 0 0\
+"};
+
+try{
+    Thread.sleep(2000);
+    Process root = Runtime.getRuntime().exec("su");
+    DataOutputStream os = new DataOutputStream(root.getOutputStream());             
+    for(int i = 0; i < touchEvent.length; i++){
+            Log.i(TAG, touchEvent[i]);  
+            os.writeBytes(touchEvent[i]);
+            os.flush();
+    }
+    root.waitFor();
+} catch (IOException e) {
+    Log.e(TAG, "Runtime problems\
+");
+    e.printStackTrace();
+} catch (SecurityException se){
+    se.printStackTrace();
+} catch (InterruptedException e) {
+    e.printStackTrace();
+}
+
+
+I have no any exceptions, but it is not touch simulates. 
+
+Can anybody help to solve this problem?
+
+If there is another way to do it with android ndk or daemon on C, please tell me about it.
+
+Thanks.
+    
+===============================================================================================
+29
+A:I can't execute the "sendevent" command, but found another way for myself, hope it will be helpfull for somebody.
+
+For simulate touch I used sendPointerSync() from android.app.Instrumentation, that work only with "android.permission.INJECT_EVENTS" permission. For use it you should compile your app as a system app.
+To do it you should follow next steps:
+
+
+Getting files from android source:
+
+root-of-android-source-tree/out/host//framework/signapk.jar
+
+root-of-android-source-tree/build/target/product/security/platform.x509.pem
+
+root-of-android-source-tree/build/target/product/security/platform.pk8
+sign your app using getting files:
+
+Command  "java -jar signapk.jar platform.x509.pem platform.pk8 YourApp-unsigned.apk" YourApp-signed.apk.
+adb install YourApp-signed.apk
+
+
+Run your app
+Use "adb shell ps" to confirm that your app is running as system. 
+
+
+
+Code with touch simulating(new thread is necessary for simulation):
+
+Thread thread = new Thread(){
+       @Override
+       public void run(){
+               Instrumentation m_Instrumentation = new Instrumentation();
+
+               m_Instrumentation.sendPointerSync(MotionEvent.obtain(
+                       SystemClock.uptimeMillis(),
+                       SystemClock.uptimeMillis(),
+                       MotionEvent.ACTION_DOWN,posx, posy, 0));
+               m_Instrumentation.sendPointerSync(MotionEvent.obtain(
+                       SystemClock.uptimeMillis(),
+                       SystemClock.uptimeMillis(),
+                       MotionEvent.ACTION_UP,width*4/5,height, 0));
+       }
+   };
+
+
+Manifest:
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.yourapp"
+    **android:sharedUserId="android.uid.system"**
+    android:versionCode="1"
+    android:versionName="1.0" >
+
+
+
+        
+
+Using resources:
+
+
+Programmatically Injecting Events on Android \xe2\x80\x93 Part 1
+How to compile Android Application with system permissions
+Instruction for compile here
+
+    

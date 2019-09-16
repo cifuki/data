@@ -1,0 +1,129 @@
+40
+Q:OK.  I am sending text messages through my app.  After a text message is sent, it sends a status update to a server.  This portion works okay, but the problem I am running into is twofold. I am not sure if they are related, but I assume that they are.
+
+My app has the ability to send a single text to multiple users.  Here is a sample of the code...
+
+if(phoneNumbers.length > 0 && message.getText().toString().equals("") == false)
+{
+    for(int i=0;i<phoneNumbers.length;i++)
+    {
+        sms = SmsManager.getDefault();
+        try
+        {
+            sms.sendTextMessage(phoneNumbers[i], null, message.getText().toString(), null, null);
+            sentQuantity++;
+        }
+        catch(IllegalArgumentException e)
+        {
+
+        }
+    }
+}
+
+
+Basically, it just loops through an array of phone numbers, and sends the text one at a time.  Here is where part of my issue lies.  If I choose 3 or more numbers to send the text to, sometimes not all of the texts actually get sent.  It happens very randomly.  
+
+I assume it is because there is a delay between sending each individual message, but the code doesn't wait long enough.  I reached this assumption because if I step into the program using eclipse and manually go through the app, everything always works just fine.
+
+My other issue is when I send off the text message status update to a web server.
+
+Immediately after the text messages get sent, the app then connects to the internet and tells the server via an http post the number of texts that were sent.  Here is my snippet of internet code...
+
+for(int i = 0; i < postNames.length; i++)
+{
+    nameValuePairs.add(new BasicNameValuePair(postNames[i], postValues[i]));
+    }
+
+    //http post
+    try{
+
+            HttpParams httpParameters = new BasicHttpParams();
+            int timeoutConnection = 10000;
+
+            HttpConnectionParams.setConnectionTimeout(httpParameters,timeoutConnection );
+
+            HttpClient httpclient = new DefaultHttpClient(httpParameters);              
+            HttpPost httppost = new HttpPost(webAddress);
+            httppost.setEntity(new UrlEncodedFormEntity(nameValuePairs));
+            HttpResponse response = httpclient.execute(httppost);
+            HttpEntity entity = response.getEntity();
+            is = entity.getContent();
+
+
+This section just compiles the items for the post, connects to a web page, and sends the post.  The key here is the 10 second connection timeout. Once again, like I said earlier, the internet connection happens immediately after sending the texts.  So, if I go into debug mode and manually step through the process, everything works fine.  But if I just run the app on my phone, I will get a connection time out error.
+
+Now, I am hoping that if I can reduce the number of text messages to one single text, regardless of the number of recipients, that would be awesome.  I have tried separating the phone numbers with a comma, and that didn't work.  I also tried separating the numbers with a semi-colon (exactly like how Microsoft Outlook, or GMail lets you add multiple recipients to an email).  None of those worked for me.  Does anyone have any suggestions? Even if there is a different approach altogether, that would be appreciated.  Oh, and I don't want to use the Google Messaging intent to send the messages, I need to use my own app.
+    
+===============================================================================================
+71
+A:You actually need to send the next sms after the previous one is sent, for this you need to check the status of the sms sent, please see this tutorial, it says:
+
+If you need to monitor the status of the SMS message sending process, you can actually use two PendingIntent objects together with two BroadcastReceiver objects, like this:
+
+ //---sends an SMS message to another device---
+    private void sendSMS(String phoneNumber, String message)
+    {        
+        String SENT = "SMS_SENT";
+        String DELIVERED = "SMS_DELIVERED";
+
+        PendingIntent sentPI = PendingIntent.getBroadcast(this, 0,
+            new Intent(SENT), 0);
+
+        PendingIntent deliveredPI = PendingIntent.getBroadcast(this, 0,
+            new Intent(DELIVERED), 0);
+
+        //---when the SMS has been sent---
+        registerReceiver(new BroadcastReceiver(){
+            @Override
+            public void onReceive(Context arg0, Intent arg1) {
+                switch (getResultCode())
+                {
+                    case Activity.RESULT_OK:
+                        Toast.makeText(getBaseContext(), "SMS sent", 
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case SmsManager.RESULT_ERROR_GENERIC_FAILURE:
+                        Toast.makeText(getBaseContext(), "Generic failure", 
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case SmsManager.RESULT_ERROR_NO_SERVICE:
+                        Toast.makeText(getBaseContext(), "No service", 
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case SmsManager.RESULT_ERROR_NULL_PDU:
+                        Toast.makeText(getBaseContext(), "Null PDU", 
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case SmsManager.RESULT_ERROR_RADIO_OFF:
+                        Toast.makeText(getBaseContext(), "Radio off", 
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                }
+            }
+        }, new IntentFilter(SENT));
+
+        //---when the SMS has been delivered---
+        registerReceiver(new BroadcastReceiver(){
+            @Override
+            public void onReceive(Context arg0, Intent arg1) {
+                switch (getResultCode())
+                {
+                    case Activity.RESULT_OK:
+                        Toast.makeText(getBaseContext(), "SMS delivered", 
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case Activity.RESULT_CANCELED:
+                        Toast.makeText(getBaseContext(), "SMS not delivered", 
+                                Toast.LENGTH_SHORT).show();
+                        break;                        
+                }
+            }
+        }, new IntentFilter(DELIVERED));        
+
+        SmsManager sms = SmsManager.getDefault();
+        sms.sendTextMessage(phoneNumber, null, message, sentPI, deliveredPI);        
+    }
+
+
+
+    

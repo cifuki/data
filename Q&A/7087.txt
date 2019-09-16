@@ -1,0 +1,245 @@
+37
+Q:I've been using Travis CI to build my Android app. I am signing it in the debug builds with a debug.keystore which I pushed to public repository
+
+But I want to build the release build and upload them to Google Play Store using this gradle plugin.
+
+This process needs a keystore and a p12 certificate file. 
+
+While I can add encrypted environment variables to Travis CI, I don't know the best way to store these files. 
+
+Question 1: What is the best practice to do this? And can someone provide an open source implementation? (I couldn't find one)
+
+One possible implementation: Store a username and password as a environment variable securely. Store the files in a SSL enabled environment and protect them with these username and password with a simple HTTP authentication. Use them to download using curl before build process begin.
+
+Question 2 Does this implementation make sense at all? Is it secure? 
+
+Extra: These 2 blog posts are great sources related to this but none of them answers this question unfortunately. 
+
+http://stablekernel.com/blog/deploying-google-play-continuous-delivery-android-part-4/
+https://www.bignerdranch.com/blog/continuous-delivery-for-android/
+    
+===============================================================================================
+26
+A:Updated (5/28/15):
+
+I have started to implement my solution here(open source): https://github.com/NonameDev/MathApp
+
+
+Use System.getenv("TRAVIS") to detect your build is running on Travis.
+storeFile rootProject.file('release.keystore') - keep release key in your own repository - travis will hide the password
+storePassword System.getenv("KEYSTORE_PASS") - store environment variable on travis - travis will hide output
+keyAlias System.getenv("ALIAS_NAME") - store environment variable on travis - travis will hide output
+keyPassword System.getenv("ALIAS_PASS") - store environment variable on travis - travis will hide output
+System.getenv("SERVICE_EMAIL") - store environment variable on travis - travis will hide output
+rootProject.file('play.p12') - store cert locally - travis will store the email service account
+
+
+Top build.gradle:
+
+buildscript {
+    repositories {
+        mavenCentral()
+        jcenter()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:1.2.3'
+        classpath 'com.github.triplet.gradle:play-publisher:1.1.0'
+    }
+}
+
+
+App build.gradle:
+
+apply plugin: 'com.android.application'
+apply plugin: 'com.github.triplet.play'
+
+android {
+    compileSdkVersion 22
+    buildToolsVersion '22.0.1'
+
+    defaultConfig {
+        applicationId 'burrows.apps.mathapp'
+        minSdkVersion 9
+        targetSdkVersion 22
+        versionCode 1
+        versionName '1.0'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_7
+        targetCompatibility JavaVersion.VERSION_1_7
+    }
+
+    signingConfigs {
+        debug {
+            storeFile rootProject.file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+
+        if (System.getenv("TRAVIS")) {
+            release {
+                storeFile rootProject.file('release.keystore')
+                storePassword System.getenv("KEYSTORE_PASS")
+                keyAlias System.getenv("ALIAS_NAME")
+                keyPassword System.getenv("ALIAS_PASS")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+}
+
+if (System.getenv("TRAVIS")) {
+    play {
+        serviceAccountEmail = System.getenv("SERVICE_EMAIL")
+        pk12File = rootProject.file('play.p12')
+        track = 'production' // or 'alpha' or 'beta' or 'production'
+    }
+}
+
+
+Original Answer:
+
+Have you seen this answer? He posts a link to his TravisCI builds "before" and "after" correcting his build.
+
+Here is his answer:
+
+
+  Compare build
+  #162
+  and
+  #163.
+
+
+Basically he had to run sudo pip install google-api-python-client
+
+With that being said, I checked out the github repo here.
+
+Here is the his .travis.yml:
+
+language: android
+android:
+  components:
+    - build-tools-21.1.2
+    - extra-android-m2repository
+
+env:
+  global:
+    - secure: <removed>
+    - secure: <removed>
+before_install:
+  - ci/decrypt_files
+  - ci/start_emulator
+
+install:
+  - ./gradlew build
+
+before_script:
+  - ci/wait_for_emulator
+
+script:
+  - ./gradlew connectedAndroidTestMockDebug
+
+after_success:
+  - ci/deploy_all
+
+notifications:
+  email:
+    - <removed>
+
+
+Source: https://github.com/mg6maciej/VielenGamesAndroidClient/blob/develop/.travis.yml
+
+Before build:
+
+This is the secure part of the process where the keys are used and the password is used from TravisCI(securely stored on TravisCI).
+
+before_install:
+  - ci/decrypt_files
+  - ci/start_emulator
+
+
+Source of ci/decrypt_files:
+
+#!/bin/bash
+openssl aes-256-cbc -d -k "$file_password" -in app/gradle.properties.enc -out app/gradle.properties
+openssl aes-256-cbc -d -k "$file_password" -in app/crashlytics.properties.enc -out app/crashlytics.properties
+openssl aes-256-cbc -d -k "$file_password" -in ci/vielengames.keystore.enc -out ci/vielengames.keystore
+openssl aes-256-cbc -d -k "$file_password" -in ci/key.p12.enc -out key.p12
+
+
+Source: https://github.com/mg6maciej/VielenGamesAndroidClient/blob/develop/ci/decrypt_files
+
+After Build:
+
+This is where python and other Google libs are being downloaded and used to deploy the app to Google Play.
+
+after_success:
+  - ci/deploy_all
+
+
+Source of ci/deploy_all:
+
+#!/bin/bash
+test "$TRAVIS_BRANCH" == "master" && ci/deploy_google_play
+ci/deploy_testfairy
+ci/deploy_crashlytics_beta
+
+
+Source of ci/deploy_google_play:
+
+#!/bin/bash
+DIR=$(dirname $0)
+
+sudo apt-get install python-openssl
+sudo pip install google-api-python-client
+
+python $DIR/basic_upload_apks.py com.vielengames $DIR/../app/build/outputs/apk/app-production-release.apk
+python $DIR/basic_upload_apks.py com.vielengames.staging $DIR/../app/build/outputs/apk/app-staging-release.apk
+
+
+Security:
+
+Your Question 1:
+
+I believe you have to have have both the keystore and p12 for the app, but you can safely store your password with TravisCI(see the "$file_password"), just like the example above.
+
+Your Question 2:
+
+Even if you have the keystore and p12 cert, you still need the password(see the "$file_password") for both to work and be used to publish to the store.
+
+For extra security, you want to add another login with less permissions than you main login. Here is what the author of the repo did here:
+
+...
+
+TRACK = 'beta'  # Can be 'alpha', beta', 'production' or 'rollout'
+
+SERVICE_ACCOUNT_EMAIL = (
+    '148768954062-sp89pjb1blr7cu2f73f4fpd6dqloc047@developer.gserviceaccount.com')
+
+# Declare command-line flags.
+argparser = argparse.ArgumentParser(add_help=False)
+argparser.add_argument('package_name',
+                       help='The package name. Example: com.android.sample')
+argparser.add_argument('apk_file',
+                       nargs='?',
+                       default='test.apk',
+                       help='The path to the APK file to upload.')
+
+...
+
+
+Source: https://github.com/mg6maciej/VielenGamesAndroidClient/blob/develop/ci/basic_upload_apks.py
+    

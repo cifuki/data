@@ -1,0 +1,83 @@
+27
+Q:Is there any way to clear data stored in Firebase Database persistence enabled via setPersistenceEnabled(true)?
+Or eventually prevent read access to previously stored users data on the device?
+And extra question - is there any way to check if any data is waiting to sync?
+
+
+In my app I want to clear db when user is logging out and he confirm that unsynchronized changes will be removed. This app will be used on tablet by many people, and there'll be many data stored per user, so I want to clear unnecessary data stored on the device to:
+
+
+shrink storage usage
+prevent unauthorized person from read users data
+
+
+It's a security flaw because any user, regardless of whether is signed in or not, has read access to all previously downloaded data! Fortunately we haven't write access there.
+
+I\xc2\xa0tried to clear db on my own, in both offline and online mode, but data still persist on the device:
+
+// first clear all data on my own
+FirebaseDatabase db = FirebaseDatabase.getInstance();
+db.goOffline(); // even when I clear db in online mode data persist on mobile device
+db.getReference().setValue(null);
+
+// and then logout
+FirebaseAuth.getInstance().signOut();
+db.goOnline();
+
+
+eg data structure:
+
+{
+  "someList": {
+    "userId1": {
+      "itemId11": {
+        "name": "name 11"
+      },
+      "itemId12": {
+        "name": "name 12"
+      },
+      ...
+      "itemId1N": {
+        "name": "name 1N"
+      }
+    }
+    "userId2": {
+      "itemId21": {
+        "name": "name 21"
+      },
+      "itemId22": {
+        "name": "name 22"
+      },
+      ...
+      "itemId2N": {
+        "name": "name 2N"
+      }
+    }
+  }
+}
+
+
+my rules:
+
+{
+  "rules": {
+    ".read": "false",
+    ".write": "false",
+    "someList": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid"
+      }
+    }
+  }
+}
+
+    
+===============================================================================================
+11
+A:Unfortunately there's no supported way to clear the persistence cache.  You could try to manually delete the SQLite database used by Firebase Database (should be under /databases/ in your app's data folder), but you'd need to do it before initializing Firebase Database, so you'd have to force the app to restart after signing somebody out or similar.
+
+Regarding knowing if there's "data waiting to sync", assuming you're talking about writes, the only way is to attach CompletionListeners to every write operation you do, and wait for them to complete.
+
+Both of these are things we'd like to improve in future versions of the Firebase Database SDK.
+    

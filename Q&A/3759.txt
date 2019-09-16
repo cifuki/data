@@ -1,0 +1,76 @@
+61
+Q:Can somebody explain what the exact difference is between BroadcastReceiver and WakefulBroadcastReceiver?
+
+In what situations would we have to use each Receiver class?
+    
+===============================================================================================
+105
+A:There is only one difference between BroadcastReceiver and WakefulBroadcastReceiver.
+
+When you receive the broadcast inside onReceive() method,
+
+Suppose, 
+
+BroadcastReceiver :
+
+
+It is not guaranteed that CPU will stay awake if you initiate some long running process. CPU may go immediately back to sleep.
+
+
+WakefulBroadcastReceiver :
+
+
+It is guaranteed that CPU will stay awake until you fire completeWakefulIntent.
+
+
+Example:
+
+Here, when you receive broadcast, you are starting a service, as you are using WakefulBroadcastReceiver, it will hold wakelock and won't let the CPU sleep until you finish the work inside service and fire completeWakefulIntent
+
+Code:
+
+public class SimpleWakefulReceiver extends WakefulBroadcastReceiver {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        // This is the Intent to deliver to our service.
+        Intent service = new Intent(context, SimpleWakefulService.class);
+
+        // Start the service, keeping the device awake while it is launching.
+        Log.i("SimpleWakefulReceiver", "Starting service @ " + SystemClock.elapsedRealtime());
+        startWakefulService(context, service);
+    }
+}
+
+class SimpleWakefulService extends IntentService {
+    public SimpleWakefulService() {
+        super("SimpleWakefulService");
+    }
+
+    @Override
+    protected void onHandleIntent(Intent intent) {
+        // At this point SimpleWakefulReceiver is still holding a wake lock
+        // for us.  We can do whatever we need to here and then tell it that
+        // it can release the wakelock.  This sample just does some slow work,
+        // but more complicated implementations could take their own wake
+        // lock here before releasing the receiver's.
+        //
+        // Note that when using this approach you should be aware that if your
+        // service gets killed and restarted while in the middle of such work
+        // (so the Intent gets re-delivered to perform the work again), it will
+        // at that point no longer be holding a wake lock since we are depending
+        // on SimpleWakefulReceiver to that for us.  If this is a concern, you can
+        // acquire a separate wake lock here.
+        for (int i=0; i<5; i++) {
+            Log.i("SimpleWakefulReceiver", "Running service " + (i+1)
+                    + "/5 @ " + SystemClock.elapsedRealtime());
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+            }
+        }
+        Log.i("SimpleWakefulReceiver", "Completed service @ " + SystemClock.elapsedRealtime());
+        SimpleWakefulReceiver.completeWakefulIntent(intent);
+    }
+}
+
+    

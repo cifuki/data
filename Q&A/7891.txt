@@ -1,0 +1,71 @@
+33
+Q:I am developing an application and testing it on my device running Android 2.2.  In my code, I make use of a Bitmap that I retrieve using BitmapFactory.decodeResource, and I am able to make changes by calling bitmap.setPixels() on it.  When I test this on a friend's device running Android 1.6, I get an IllegalStateException in the call to bitmap.setPixels.  Documentation online says an IllegalStateException is thrown from this method when the bitmap is immutable.  The documentation doesn't say anything about decodeResource returning an immutable bitmap, but clearly that must be the case.
+
+Is there a different call I can make to get a mutable bitmap reliably from an application resource without needing a second Bitmap object (I could create a mutable one the same size and draw into a Canvas wrapping it, but that would require two bitmaps of equal size using up twice as much memory as I had intended)?
+    
+===============================================================================================
+61
+A:You can convert your immutable bitmap to a mutable bitmap.
+
+I found an acceptable solution that uses only the memory of one bitmap. 
+
+A source bitmap is raw saved (RandomAccessFile) on disk (no ram memory), then source bitmap is released, (now, there's no bitmap at memory), and after that, the file info is loaded to another bitmap. This way is possible to make a bitmap copy having just one bitmap stored in ram memory per time.
+
+See the full solution and implementation here: Android: convert Immutable Bitmap into Mutable
+
+I add a improvement to this solution, that now works with any type of Bitmaps (ARGB_8888, RGB_565, etc), and deletes the temp file. See my method:
+
+/**
+ * Converts a immutable bitmap to a mutable bitmap. This operation doesn't allocates
+ * more memory that there is already allocated.
+ * 
+ * @param imgIn - Source image. It will be released, and should not be used more
+ * @return a copy of imgIn, but muttable.
+ */
+public static Bitmap convertToMutable(Bitmap imgIn) {
+    try {
+        //this is the file going to use temporally to save the bytes. 
+        // This file will not be a image, it will store the raw image data.
+        File file = new File(Environment.getExternalStorageDirectory() + File.separator + "temp.tmp");
+
+        //Open an RandomAccessFile
+        //Make sure you have added uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        //into AndroidManifest.xml file
+        RandomAccessFile randomAccessFile = new RandomAccessFile(file, "rw");
+
+        // get the width and height of the source bitmap.
+        int width = imgIn.getWidth();
+        int height = imgIn.getHeight();
+        Config type = imgIn.getConfig();
+
+        //Copy the byte to the file
+        //Assume source bitmap loaded using options.inPreferredConfig = Config.ARGB_8888;
+        FileChannel channel = randomAccessFile.getChannel();
+        MappedByteBuffer map = channel.map(MapMode.READ_WRITE, 0, imgIn.getRowBytes()*height);
+        imgIn.copyPixelsToBuffer(map);
+        //recycle the source bitmap, this will be no longer used.
+        imgIn.recycle();
+        System.gc();// try to force the bytes from the imgIn to be released
+
+        //Create a new bitmap to load the bitmap again. Probably the memory will be available. 
+        imgIn = Bitmap.createBitmap(width, height, type);
+        map.position(0);
+        //load it back from temporary 
+        imgIn.copyPixelsFromBuffer(map);
+        //close the temporary file and channel , then delete that also
+        channel.close();
+        randomAccessFile.close();
+
+        // delete the temp file
+        file.delete();
+
+    } catch (FileNotFoundException e) {
+        e.printStackTrace();
+    } catch (IOException e) {
+        e.printStackTrace();
+    } 
+
+    return imgIn;
+}
+
+    

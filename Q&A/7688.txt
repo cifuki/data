@@ -1,0 +1,197 @@
+34
+Q:I have created an RSS reader that lists items in a listview.  I also want a date below each item, but I have no idea how to do that.  I need someone's help to make the Sub Item text display the pubDate that was retrieved from the RSS feed.
+
+This is the code I have for my class:
+
+public class RSSReader extends Activity implements OnItemClickListener
+{
+    public final String RSSFEEDOFCHOICE = "http://app.calvaryccm.com/mobile/android/v1/devos";
+
+    public final String tag = "RSSReader";
+    private RSSFeed feed = null;
+
+    /** Called when the activity is first created. */
+
+    public void onCreate(Bundle icicle) {
+        super.onCreate(icicle);
+        setContentView(R.layout.main);
+
+        // go get our feed!
+        feed = getFeed(RSSFEEDOFCHOICE);
+
+        // display UI
+        UpdateDisplay();
+    }
+
+    private RSSFeed getFeed(String urlToRssFeed)
+    {
+        try
+        {
+            // setup the url
+           URL url = new URL(urlToRssFeed);
+
+           // create the factory
+           SAXParserFactory factory = SAXParserFactory.newInstance();
+           // create a parser
+           SAXParser parser = factory.newSAXParser();
+
+           // create the reader (scanner)
+           XMLReader xmlreader = parser.getXMLReader();
+           // instantiate our handler
+           RSSHandler theRssHandler = new RSSHandler();
+           // assign our handler
+           xmlreader.setContentHandler(theRssHandler);
+           // get our data via the url class
+           InputSource is = new InputSource(url.openStream());
+           // perform the synchronous parse           
+           xmlreader.parse(is);
+           // get the results - should be a fully populated RSSFeed instance, or null on error
+           return theRssHandler.getFeed();
+        }
+        catch (Exception ee)
+        {
+            // if we have a problem, simply return null
+            System.out.println(ee.getMessage());
+            System.out.println(ee.getStackTrace());
+            System.out.println(ee.getCause());
+            return null;
+        }
+    }
+    public boolean onCreateOptionsMenu(Menu menu) 
+    {
+        super.onCreateOptionsMenu(menu);
+        menu.add(Menu.NONE, 0, 0, "Refresh");
+        Log.i(tag,"onCreateOptionsMenu");
+        return true;
+    }
+
+    public boolean onOptionsItemSelected(MenuItem item){
+        switch (item.getItemId()) {
+        case 0:
+
+            Log.i(tag,"Set RSS Feed");
+            return true;
+        case 1:
+            Log.i(tag,"Refreshing RSS Feed");
+            return true;
+        }
+        return false;
+    }
+
+    private void UpdateDisplay()
+    {
+        TextView feedtitle = (TextView) findViewById(R.id.feedtitle);
+        TextView feedpubdate = (TextView) findViewById(R.id.feedpubdate);
+        ListView itemlist = (ListView) findViewById(R.id.itemlist);
+
+
+        if (feed == null)
+        {
+            feedtitle.setText("No RSS Feed Available");
+            return;
+        }
+
+        if(feedtitle != null)
+            feedtitle.setText(feed.getTitle());
+        if(feedpubdate != null)
+            feedpubdate.setText(feed.getPubDate());
+
+
+        ArrayAdapter<RSSItem> adapter = new ArrayAdapter<RSSItem>(this,android.R.layout.simple_list_item_1,feed.getAllItems());
+
+        itemlist.setAdapter(adapter);
+
+        itemlist.setOnItemClickListener(this);
+
+        itemlist.setSelection(0);
+    }
+
+    @Override
+    public void onItemClick(AdapterView parent, View v, int position, long id)
+    {
+        //Log.i(tag,"item clicked! [" + feed.getItem(position).getTitle() + "]");       
+
+        Intent itemintent = new Intent(this,ShowDescription.class);
+
+        Bundle b = new Bundle();
+        b.putString("title", feed.getItem(position).getTitle());
+        b.putString("description", feed.getItem(position).getDescription());
+        b.putString("link", feed.getItem(position).getLink());
+        b.putString("pubdate", feed.getItem(position).getPubDate());
+
+        itemintent.putExtra("android.intent.extra.INTENT", b);
+
+        startActivity(itemintent);
+    }
+}
+
+
+This is my XML:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+android:orientation="vertical"
+android:layout_width="fill_parent"
+android:layout_height="fill_parent">
+ <TextView  
+android:layout_width="fill_parent" 
+android:layout_height="wrap_content" 
+android:text="Android RSSReader"
+android:id="@+id/feedtitle"/>
+<TextView  
+android:layout_width="fill_parent" 
+android:layout_height="wrap_content" 
+android:text=""
+android:id="@+id/feedpubdate"/>
+<ListView
+android:layout_width="fill_parent"
+android:layout_height="fill_parent"
+android:id="@+id/itemlist"
+
+android:fastScrollEnabled="true"/>    
+ </LinearLayout>
+
+
+This is what it looks like now in Eclipse:
+
+
+
+This is what it looks like running:
+
+
+
+How to make the Sub Item text display the pubDate that was retrieved from the RSS feed?
+    
+===============================================================================================
+83
+A:The simplest solution is probably to substitute the ArrayAdapter and the android.R.layout.simple_list_item_1 that you are using with a SimpleAdapter and the android.R.layout.simple_list_item_2 predefined layout. This layout is composed by two TextViews, with an id of android.R.id.text1 (the "item") and android.R.id.text2 (the "sub item") respectively, which you will need as a reference for the SimpleAdapter to work.
+
+By looking at the constructor for SimpleAdapter you will notice that, apart from a Context instance and the id of a layout resource, it takes three parameters that may be new to you:
+
+
+a List<? extends Map<String, ?>> instance where you put the elements you want the ListView to show. Elements are in the form of a Map, i.e. something akin to a struct composed by properties in form of name/value pairs. For example, you may use "title" and "date" as keys for the title and date of each RSS item, respectively.
+an array of strings, where to put the names of the keys in each map that you want to show on the ListView.
+an array of integers where you need to put the ids of the parts in the list item view where you want the single elements referenced by the keys in the preceding array of strings to be shown. For example, if you want to show the title and date of a RSS item in the "item" and "sub item" views respectively, you use new String[] { "title", "date" } as the array of strings argument, and new int[] { android.R.id.text1, android.R.id.text2 } as this argument.
+
+
+A rough code example, just to give you the idea:
+
+List<Map<String, String>> data = new ArrayList<Map<String, String>>();
+for (RSSItem item : feed.getAllItems()) {
+    Map<String, String> datum = new HashMap<String, String>(2);
+    datum.put("title", item.getTitle());
+    datum.put("date", item.getDate().toString());
+    data.add(datum);
+}
+SimpleAdapter adapter = new SimpleAdapter(this, data,
+                                          android.R.layout.simple_list_item_2,
+                                          new String[] {"title", "date"},
+                                          new int[] {android.R.id.text1,
+                                                     android.R.id.text2});
+itemList.setAdapter(adapter);
+
+
+The documentation states that "the maps contain the data for each row, and should include all the entries specified in the from parameter", so both title and date should always be present.
+
+Please note that this is all off the top of my head. I haven't actually tested all the code, so you may very well encounter some quirk or bug that you need to adjust or fix on your way up.
+    

@@ -1,0 +1,108 @@
+37
+Q:I have an ImageSpan inside of a piece of text. What I've noticed is that the surrounding text is always drawn at the bottom of the text line -- to be more precise, the size of the text line grows with the image but the baseline of the text does not shift upward. When the image is noticeably larger than the text size, the effect is rather unsightly. 
+
+Here is a sample, the outline shows bounds of the TextView:
+
+
+I am trying to have the surrounding text be centered vertically with respect to the image being displayed. Here is the same sample with blue text showing the desired location:
+
+
+
+Here are the constraints that I'm bound by:
+
+
+I cannot use compound drawables. The images must be able to be shown between words.
+The text may be multiline depending on the content. I have no control over this.
+My images are larger than the surrounding text and I cannot reduce their size. While the sample image above is larger than the actual images (to demonstrate the current behavior), the actual images are still large enough that this problem is noticeable.
+
+
+I've tried using the android:gravity="center_vertical" attribute on the TextView, but this does not have any effect. I believe this just vertically centers the text lines, but within the text line the text is still drawn at the bottom. 
+
+My current train of thought is to create a custom span that shifts the baseline of the text based on the height of the line and the current text size. This span would encompass the entire text, and I would have to compute the intersection with the ImageSpans so I can avoid shifting the images as well. This sounds rather daunting and I'm hoping someone can suggest another approach.
+
+Any and all help is appreciated!
+    
+===============================================================================================
+27
+A:It might be a bit late but I've found a way to do it, no matter the image size. You need to create a class extending ImageSpan and override the methods getSize() and getCachedDrawable() (we don't need to change the last one, but this method from DynamicDrawableSpan is private and cannot be accessed in another way from the child class). In getSize(...), you can then redefined the way DynamicDrawableSpan set the ascent/top/descent/bottom of the line and achieve what you want to do.
+
+Here's my class example:
+
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
+import android.text.style.DynamicDrawableSpan;
+import android.text.style.ImageSpan;
+
+import java.lang.ref.WeakReference;
+
+public class CenteredImageSpan extends ImageSpan {
+
+    // Extra variables used to redefine the Font Metrics when an ImageSpan is added
+    private int initialDescent = 0;
+    private int extraSpace = 0;
+
+    public CenteredImageSpan(final Drawable drawable) {
+        this(drawable, DynamicDrawableSpan.ALIGN_BOTTOM);
+    }
+
+    public CenteredImageSpan(final Drawable drawable, final int verticalAlignment) {
+        super(drawable, verticalAlignment);
+    }
+
+    @Override
+    public void draw(Canvas canvas, CharSequence text,
+                     int start, int end, float x,
+                     int top, int y, int bottom, Paint paint) {
+        getDrawable().draw(canvas);
+    }
+
+    // Method used to redefined the Font Metrics when an ImageSpan is added
+    @Override
+    public int getSize(Paint paint, CharSequence text,
+                       int start, int end,
+                       Paint.FontMetricsInt fm) {
+        Drawable d = getCachedDrawable();
+        Rect rect = d.getBounds();
+
+        if (fm != null) {
+            // Centers the text with the ImageSpan
+            if (rect.bottom - (fm.descent - fm.ascent) >= 0) {
+                // Stores the initial descent and computes the margin available
+                initialDescent = fm.descent;
+                extraSpace = rect.bottom - (fm.descent - fm.ascent);
+            }
+
+            fm.descent = extraSpace / 2 + initialDescent;
+            fm.bottom = fm.descent;
+
+            fm.ascent = -rect.bottom + fm.descent;
+            fm.top = fm.ascent;
+        }
+
+        return rect.right;
+    }
+
+    // Redefined locally because it is a private member from DynamicDrawableSpan
+    private Drawable getCachedDrawable() {
+        WeakReference<Drawable> wr = mDrawableRef;
+        Drawable d = null;
+
+        if (wr != null)
+            d = wr.get();
+
+        if (d == null) {
+            d = getDrawable();
+            mDrawableRef = new WeakReference<>(d);
+        }
+
+        return d;
+    }
+
+    private WeakReference<Drawable> mDrawableRef;
+}
+
+
+Let me know if you have any trouble with that class!
+    

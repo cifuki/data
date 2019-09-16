@@ -1,0 +1,125 @@
+117
+Q:I have an Activity where there are 5 EditTexts. When the user clicks on the first EditText, the soft keyboard opens to enter some value in it. I want to set some other View's visibility to Gone when the soft keyboard opens and also when the user clicks on the first EditText and also when the soft keyboard closes from the same EditText on the back button press. Then I want to set some other View's visibility to visible.
+
+Is there any listener or callback or any hack for when the soft keyboard opens from a click on the first EditText in Android?
+    
+===============================================================================================
+79
+A:This only works when android:windowSoftInputMode of your activity is set to adjustResize in the manifest. You can use a layout listener to see if the root layout of your activity is resized by the keyboard.
+
+I use something like the following base class for my activities:
+
+public class BaseActivity extends Activity {
+    private ViewTreeObserver.OnGlobalLayoutListener keyboardLayoutListener = new ViewTreeObserver.OnGlobalLayoutListener() {
+        @Override
+        public void onGlobalLayout() {
+            int heightDiff = rootLayout.getRootView().getHeight() - rootLayout.getHeight();
+            int contentViewTop = getWindow().findViewById(Window.ID_ANDROID_CONTENT).getTop();
+
+            LocalBroadcastManager broadcastManager = LocalBroadcastManager.getInstance(BaseActivity.this);
+
+            if(heightDiff <= contentViewTop){
+                onHideKeyboard();
+
+                Intent intent = new Intent("KeyboardWillHide");
+                broadcastManager.sendBroadcast(intent);
+            } else {
+                int keyboardHeight = heightDiff - contentViewTop;
+                onShowKeyboard(keyboardHeight);
+
+                Intent intent = new Intent("KeyboardWillShow");
+                intent.putExtra("KeyboardHeight", keyboardHeight);
+                broadcastManager.sendBroadcast(intent);
+            }
+        }
+    };
+
+    private boolean keyboardListenersAttached = false;
+    private ViewGroup rootLayout;
+
+    protected void onShowKeyboard(int keyboardHeight) {}
+    protected void onHideKeyboard() {}
+
+    protected void attachKeyboardListeners() {
+        if (keyboardListenersAttached) {
+            return;
+        }
+
+        rootLayout = (ViewGroup) findViewById(R.id.rootLayout);
+        rootLayout.getViewTreeObserver().addOnGlobalLayoutListener(keyboardLayoutListener);
+
+        keyboardListenersAttached = true;
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+
+        if (keyboardListenersAttached) {
+            rootLayout.getViewTreeObserver().removeGlobalOnLayoutListener(keyboardLayoutListener);
+        }
+    }
+}
+
+
+The following example activity uses this to hide a view when the keyboard is shown and show it again when the keyboard is hidden.
+
+The xml layout:
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@+id/rootLayout"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical">              
+
+    <ScrollView
+        android:id="@+id/scrollView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        >
+
+        <!-- omitted for brevity -->
+
+    </ScrollView>
+
+    <LinearLayout android:id="@+id/bottomContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        >
+
+        <!-- omitted for brevity -->
+
+    </LinearLayout>
+
+</LinearLayout>
+
+
+And the activity:
+
+public class TestActivity extends BaseActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.test_activity);
+
+        attachKeyboardListeners();
+    }
+
+    @Override
+    protected void onShowKeyboard(int keyboardHeight) {
+        // do things when keyboard is shown
+        bottomContainer.setVisibility(View.GONE);
+    }
+
+    @Override
+    protected void onHideKeyboard() {
+        // do things when keyboard is hidden
+        bottomContainer.setVisibility(View.VISIBLE);
+    }        
+}
+
+    

@@ -1,0 +1,270 @@
+32
+Q:I been searching for my answer for a couple of hours now and I can't figure it out. Please help.
+
+What I want to do is to use the VpnService in Android to grab network packets like the application tPacketCapture
+
+I started by using the ToyVpn sample code from google and modifying it so I don't send the data to a server. However, I'm not sure if this is correct.
+
+My configure method uses the wlan ip address for binder.addAddress() before calling establish(). I am using a nexus 7 and I used "adb shell netcfg | grep wlan0" to get the address:
+
+wlan0    UP                                 192.168.0.6/24  0x00001043 10:bf:48:bf:5f:9d
+
+And add it in my method:
+
+    private void configure() throws Exception {
+    // If the old interface has exactly the same parameters, use it!
+    if (mInterface != null) {
+        Log.i(TAG, "Using the previous interface");
+        return;
+    }
+
+    // Configure a builder while parsing the parameters.
+    Builder builder = new Builder();
+    builder.setMtu(1500);
+    builder.addAddress("192.168.0.6", 24);
+
+    try {
+        mInterface.close();
+    } catch (Exception e) {
+        // ignore
+    }
+
+    mInterface = builder.establish();
+}
+
+
+After calling this, I call the run method which I modified to pass a String instead of a InetSocketAddress and this is not important because I am not using it anywhere:
+
+    private void run(String run) throws Exception {
+    configure();
+
+    FileInputStream in = new FileInputStream(mInterface.getFileDescriptor());
+
+    // Allocate the buffer for a single packet.
+    ByteBuffer packet = ByteBuffer.allocate(32767);
+
+    // We use a timer to determine the status of the tunnel. It
+    // works on both sides. A positive value means sending, and
+    // any other means receiving. We start with receiving.
+    int timer = 0;
+
+    // We keep forwarding packets till something goes wrong.
+    while (true) {
+        // Assume that we did not make any progress in this iteration.
+        boolean idle = true;
+
+        // Read the outgoing packet from the input stream.
+        int length = in.read(packet.array());
+        if (length > 0) {
+
+            Log.i(TAG,"************new packet");
+            while (packet.hasRemaining()) {
+                Log.i(TAG,""+packet.get());
+                //System.out.print((char) packet.get());
+            }
+
+            // Write the outgoing packet to the tunnel.
+            packet.limit(length);
+            //  tunnel.write(packet);
+            packet.clear();
+
+            // There might be more outgoing packets.
+            idle = false;
+
+            // If we were receiving, switch to sending.
+            if (timer < 1) {
+                timer = 1;
+            }
+        }
+    }
+}
+
+
+When I do adb logcat, nothing is happening. Am I going about this correctly? I feel like I am missing something.
+
+Thank you!
+
+EDIT: 
+
+From the logs I see the following lines:
+
+I/ActivityManager(  460): START u0 {act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10000000 cmp=com.example.android.toyvpn/.ToyVpnClient} from pid 10247
+I/ActivityManager(  460): Start proc com.example.android.toyvpn for activity com.example.android.toyvpn/.ToyVpnClient: pid=10287 uid=10122 gids={50122, 3003, 1028}
+I/ActivityManager(  460): Displayed com.example.android.toyvpn/.ToyVpnClient: +1s144ms
+I/Vpn     (  460): Switched from [Legacy VPN] to com.example.android.toyvpn
+D/Vpn     (  460): setting state=IDLE, reason=prepare
+I/ToyVpnService(10287): running vpnService
+D/Vpn     (  460): setting state=CONNECTING, reason=establish
+D/VpnJni  (  460): Address added on tun0: 192.168.0.6/24
+I/Vpn     (  460): Established by com.example.android.toyvpn.ToyVpnService on tun0
+W/ContextImpl(  460): Calling a method in the system process without a qualified user: android.app.ContextImpl.bindService:1406 com.android.server.connectivity.Vpn.establish:289 com.android.server.ConnectivityService.establishVpn:3263 android.net.IConnectivityManager$Stub.onTransact:504 android.os.Binder.execTransact:351 
+D/Vpn     (  460): setting state=AUTHENTICATING, reason=establish
+
+
+So it seems to be connecting.
+
+Full source:
+
+public class ToyVpnService extends VpnService implements Handler.Callback, Runnable {
+    private static final String TAG = "ToyVpnService";
+
+    private Handler mHandler;
+    private Thread mThread;
+
+    private ParcelFileDescriptor mInterface;
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        // The handler is only used to show messages.
+        if (mHandler == null) {
+            mHandler = new Handler(this);
+        }
+
+        // Stop the previous session by interrupting the thread.
+        if (mThread != null) {
+            mThread.interrupt();
+        }
+
+        // Start a new session by creating a new thread.
+        mThread = new Thread(this, "ToyVpnThread");
+        mThread.start();
+        return START_STICKY;
+    }
+
+    @Override
+    public void onDestroy() {
+        if (mThread != null) {
+            mThread.interrupt();
+        }
+    }
+
+    @Override
+    public boolean handleMessage(Message message) {
+        if (message != null) {
+            Toast.makeText(this, message.what, Toast.LENGTH_SHORT).show();
+        }
+        return true;
+    }
+
+    @Override
+    public synchronized void run() {
+        Log.i(TAG,"running vpnService");
+        try {
+            runVpnConnection();
+        } catch (Exception e) {
+            e.printStackTrace();
+            //Log.e(TAG, "Got " + e.toString());
+        } finally {
+            try {
+                mInterface.close();
+            } catch (Exception e) {
+                // ignore
+            }
+            mInterface = null;
+
+            mHandler.sendEmptyMessage(R.string.disconnected);
+            Log.i(TAG, "Exiting");
+        }
+    }
+
+    private boolean runVpnConnection() throws Exception {
+
+        configure();
+
+        FileInputStream in = new FileInputStream(mInterface.getFileDescriptor());
+
+        // Allocate the buffer for a single packet.
+        ByteBuffer packet = ByteBuffer.allocate(32767);
+
+        // We keep forwarding packets till something goes wrong.
+        while (true) {
+            // Assume that we did not make any progress in this iteration.
+            boolean idle = true;
+
+            // Read the outgoing packet from the input stream.
+            int length = in.read(packet.array());
+            if (length > 0) {
+
+                Log.i(TAG,"************new packet");
+                System.exit(-1);
+                while (packet.hasRemaining()) {
+                    Log.i(TAG,""+packet.get());
+                    //System.out.print((char) packet.get());
+                }
+                packet.limit(length);
+                //  tunnel.write(packet);
+                packet.clear();
+
+                // There might be more outgoing packets.
+                idle = false;
+            }
+            Thread.sleep(50);
+        }
+    }
+
+    public String getLocalIpAddress()
+    {
+        try {
+            for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements();) {
+                NetworkInterface intf = en.nextElement();
+                for (Enumeration<InetAddress> enumIpAddr = intf.getInetAddresses(); enumIpAddr.hasMoreElements();) {
+                    InetAddress inetAddress = enumIpAddr.nextElement();
+                    Log.i(TAG,"****** INET ADDRESS ******");
+                    Log.i(TAG,"address: "+inetAddress.getHostAddress());
+                    Log.i(TAG,"hostname: "+inetAddress.getHostName());
+                    Log.i(TAG,"address.toString(): "+inetAddress.getHostAddress().toString());
+                    if (!inetAddress.isLoopbackAddress()) {
+                        //IPAddresses.setText(inetAddress.getHostAddress().toString());
+                        Log.i(TAG,"IS NOT LOOPBACK ADDRESS: "+inetAddress.getHostAddress().toString());
+                        return inetAddress.getHostAddress().toString();
+                    } else{
+                        Log.i(TAG,"It is a loopback address");
+                    }
+                }
+            }
+        } catch (SocketException ex) {
+            String LOG_TAG = null;
+            Log.e(LOG_TAG, ex.toString());
+        }
+
+        return null;
+    }
+
+    private void configure() throws Exception {
+        // If the old interface has exactly the same parameters, use it!
+        if (mInterface != null) {
+            Log.i(TAG, "Using the previous interface");
+            return;
+        }
+
+        // Configure a builder while parsing the parameters.
+        Builder builder = new Builder();
+        builder.setMtu(1500);
+        builder.addAddress("192.168.0.6", 24);
+        try {
+            mInterface.close();
+        } catch (Exception e) {
+            // ignore
+        }
+
+        mInterface = builder.establish();
+    }
+}
+
+    
+===============================================================================================
+24
+A:Ok, it was not easy at all but I figured out how to capture packets. Since I am not extremely familiar with networking (but this new job is requesting that I am) I had difficulty with setting everything correctly. Basically after setting the right route in the VpnService.builder I got to receiving packets correctly.
+
+So:
+
+builder.addAddress("192.168.0.6", 24); // was wrong, you need to put an internal IP (10.0.2.0 for example)
+
+
+and 
+
+builder.addRoute("0.0.0.0", 0); // needs to be this.
+
+
+you don't need to set up a DnsServer through builder.addDnsServer() to make it work. Hope this helps anyone!
+    

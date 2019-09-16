@@ -1,0 +1,85 @@
+43
+Q:I am having some trouble understanding the difference between these two Window flags and am not 100% certain when each needs to be used and why. 
+
+The docs for Window.FEATURE_ACTIVITY_TRANSITIONS say:
+
+
+  Enables Activities to run Activity Transitions either
+  through sending or receiving ActivityOptions bundle created with
+  makeSceneTransitionAnimation(Activity, Pair[])
+  or makeSceneTransitionAnimation(Activity, View, String).
+
+
+And the docs for Window.FEATURE_CONTENT_TRANSITIONS say:
+
+
+  Flag for requesting that window content changes should 
+  be animated using a TransitionManager.
+  
+  The TransitionManager is set using 
+  setTransitionManager(TransitionManager).
+  If none is set, a default TransitionManager will be used.
+
+
+The documentation states that the following Window methods require the FEATURE_ACTIVITY_TRANSITIONS flag to be enabled, but say nothing about whether or not the FEATURE_CONTENT_TRANSITIONS needs to be enabled as well (note that according to the source code, FEATURE_ACTIVITY_TRANSITIONS is true and FEATURE_CONTENT_TRANSITIONS is false for material-themed applications by default):
+
+
+get{Enter,Exit,Return,Reenter}Transition()
+set{Enter,Exit,Return,Reenter}Transition()
+getSharedElement{Enter,Exit,Return,Reenter}Transition()
+setSharedElement{Enter,Exit,Return,Reenter}Transition()
+getTransitionBackgroundFadeDuration()
+setTransitionBackgroundFadeDuration()
+
+
+In other words, it seems like based on this information FEATURE_ACTIVITY_TRANSITIONS is the feature flag that applications will need to enable in order to use Lollipop's new Activity Transition APIs. What confuses me, however, is that this article from the Android Developers site states that enabling the FEATURE_CONTENT_TRANSITIONS is required in order to implement custom activity transitions.
+
+So here are my questions:
+
+
+What is the difference between these two flags? What is the difference between an "activity transition" and a "content transition" in this context?
+Why is FEATURE_ACTIVITY_TRANSITIONS enabled and FEATURE_CONTENT_TRANSITIONS disabled by default? When is enabling the FEATURE_CONTENT_TRANSITIONS flag actually required?
+Would it ever make sense to sense to disable FEATURE_ACTIVITY_TRANSITIONS and enable FEATURE_CONTENT_TRANSITIONS? Or does FEATURE_CONTENT_TRANSITIONS require FEATURE_ACTIVITY_TRANSITIONS to be enabled as well?
+
+
+Thanks!
+    
+===============================================================================================
+42
+A:I'm glad I have an opportunity to answer these questions as the documentation is less than clear.
+
+Early-on, there was one flag FEATURE_CONTENT_TRANSITIONS that handled both of the features. We split them when Material applications got unexpected behavior when it was enabled. So some older documentation may still say that you have to enable FEATURE_CONTENT_TRANSITIONS to get activity transitions when they mean FEATURE_ACTIVITY_TRANSITIONS.
+
+
+  
+  What is the difference between these two flags? What is the
+   difference between an "activity transition" and a "content
+   transition" in this context?
+  
+
+
+An activity transition in this context means that you call startActivity with a bundle created from ActivityOptions.makeSceneTransitionAnimation or, your activity was started with that bundle. Activity Transitions modify your layout (e.g. fading in elements, moving shared elements), so if your activity doesn't like that, you should disable FEATURE_ACTIVITY_TRANSITIONS.
+
+Content transitions use a TransitionManager when you call setContentView (other than the first time). Typically, you'll get a cross-fade, but if your Activity's content has things in common, such as sharing IDs or using transitionName, you'll get ChangeBounds behavior between those Views. You can change the details of your transitions by customizing the TransitionManager associated with your Window either using XML or code.
+
+
+  
+  Why is FEATURE_ACTIVITY_TRANSITIONS
+  enabled and FEATURE_CONTENT_TRANSITIONS disabled by default? When is
+  enabling the FEATURE_CONTENT_TRANSITIONS flag actually required?
+  
+
+
+FEATURE_CONTENT_TRANSITIONS uses a TransitionManager when your content changes. By default, this is a cross-fade and that was very bad for some applications. On the other hand, FEATURE_ACTIVITY_TRANSITIONS doesn't do anything to most applications by default. You have to opt into starting an activity that way, so it is safe to turn on.
+
+
+  
+  Would it ever make sense to sense to disable
+  FEATURE_ACTIVITY_TRANSITIONS and enable FEATURE_CONTENT_TRANSITIONS?
+  Or does FEATURE_CONTENT_TRANSITIONS require
+  FEATURE_ACTIVITY_TRANSITIONS to be enabled as well?
+  
+
+
+Yes, but it is unlikely. If your application likes FEATURE_CONTENT_TRANSITIONS, it should work well with FEATURE_ACTIVITY_TRANSITIONS. If you want to explicitly limit people from calling your activity with shared elements or you don't like the standard enter transition effect, you can disable it to prevent the effect when another applications calls into yours.
+    

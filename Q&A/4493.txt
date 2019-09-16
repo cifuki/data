@@ -1,0 +1,114 @@
+53
+Q:I'm writing an app that uses some functions and classes only available in the latest API level - 16, but I want it to run with no errors on devices with API level 15.
+
+Let's use a couple of examples. A new class: Android.widget.Advanceable, and a new/renamed method: View.setBackground():
+
+I can do something like this:
+
+Advanceable myAdvanceable = ...;
+
+if (android.os.Build.VERSION.SDK_INT >= 16)
+{
+    myView.setBackground(...);
+    myAdvanceable.advance();
+}
+else
+{
+    myView.setBackgroundDrawable(...); // The old function name.
+    // Don't bother advancing advanceables.
+}
+
+
+And if I set a minSdk of 15 but a build target of 16 (i.e. in Project Properties->Android), it will actually compile with no errors. At least some of the time. Eclipse is a bit stochastic about the errors and will sometimes say "setBackground() is only available in API level >= 16" or similar, but if I just clean the project those errors magically go away.
+
+So my question is, am I allowed to do this? Won't the code crash if I run it on an API level 15 device? Will it only crash if it actually gets to the 16 code? Why doesn't Eclipse stop me from building it?
+
+Edit 1
+
+Thanks for the answers, I guess the question should really be: Why won't lint warn me about using new APIs?
+
+I have this in my manifest, and am using API level 16 functions but it still doesn't warn me:
+
+<uses-sdk android:minSdkVersion="15"
+    android:targetSdkVersion="16"/>
+
+
+Also I'm still not sure about when entire classes are new to an API level, such as Advanceable. Specifically if I use them as member variables.
+
+Edit 2
+
+The answer turned out to be "Eclipse is buggy as hell", but Nico's answer was also very helpful.
+    
+===============================================================================================
+74
+A:Inline Api errors are new to ADT, Eclipse run Lint (and I guess something else maybe) to analyze your code and put those errors / warnings inline. The same apply to xml layout when you have warnings or hints about optimizations or best practices. You can use Annotations to suppress those errors in the class or in a particular method.
+
+@TargetApi(16)
+@SuppressLint("NewApi")
+
+There is a problem in the sample code you put here, beside the API level check you have an instance of Advanceable in the code that will not work in API < 16, so checking API level is only useful when you call new methods but you cant reference new API classes outside the IF block.
+
+One approach I found acceptable is to create an abstract class and two implementations, then to instantiate the correct implementation you can use a factory class with static methods.
+
+For example to create a view that use some new API classes and methods internally you need:  
+
+1 - Create abstract class:  
+
+public abstract class CustomView {
+    public abstract void doSomething();
+}
+
+
+
+Common implementation compatible with all APIs
+Define abstract method here to split implementation
+
+
+2 - Legacy implementation
+
+public class CustomLegacyView extends CustomView {
+    public void doSomething(){
+        //implement api < 16
+    }
+}
+
+
+
+implement the abstract method for API < 16
+
+
+3 - API 16 implementation
+
+@TargetApi(16)
+public class CustomL16View extends CustomView {
+
+    Advanceable myAdvanceable;
+
+    public void doSomething(){
+        //implement api >= 16
+    }
+}
+
+
+
+Use annotation @TargetApi(16)
+implement the abstract method for API >= 16
+You can reference level 16 classes here (but not in CustomView)
+
+
+4 - Factory class
+
+public class ViewFactory {
+
+    public static CustomView getCustomView(Context context) {
+
+        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            return new CustomL16View(context);
+        }else{
+            return new CustomLegacyView(context);
+        }
+
+    }
+}
+
+    

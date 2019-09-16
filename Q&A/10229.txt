@@ -1,0 +1,106 @@
+27
+Q:I get a json that has "field" field. 
+If the "field" has data, then there is an OBJECT that has many (about 20) other fields that are also objects. I can deserialize them without any problems. 
+But if "field" has no data, it is an empty ARRAY (I know it's crazy, but that's the response from server and I can't change it). 
+Something like this: 
+
+When empty:
+
+"extras":[
+
+]
+
+
+Has some data: 
+
+"extras": {
+    "22":{ "name":"some name" },
+    "59":{ "name":"some other name" },
+    and so on...
+}
+
+
+So, when there if no data (empty array), I obviously get the exception 
+
+Caused by: com.google.gson.JsonSyntaxException: java.lang.IllegalStateException:
+Expected BEGIN_OBJECT but was BEGIN_ARRAY at line 1 column 4319
+
+
+I tried to use custom JavaDeserializer:
+
+public class ExtrasAdapter implements JsonDeserializer<Extras> {
+    @Override
+    public Extras deserialize(JsonElement json, Type typeOf,
+        JsonDeserializationContext context) throws JsonParseException {
+        try {
+            JsonObject jsonObject = json.getAsJsonObject();
+            // deserialize normally
+
+            // the following does not work, as it makes recursive calls
+            // to the same function
+            //return context.deserialize(jsonObject,
+            //                       new TypeToken<Object>(){}.getType());
+        } catch (IllegalStateException e) {
+            return null;
+        }
+    }
+}
+
+
+I read the json the following way
+
+Gson gsonDecoder = new GsonBuilder().registerTypeAdapter(Extras.class, new ExtrasAdapter();
+// httpResponse contains json with extras filed. 
+Reader reader = new InputStreamReader(httpResponse.getEntity().getContent());
+Extras response = gsonDecoder.fromJson(reader, Extras.class);
+
+
+I don't want to deserialize all 20 fields manually (I know this is an option), I just want to call context.defaultDeserialize(), or something like that. 
+Once again: I don't have any problems deserializing normal json, creating custom objects, registering custom TypeAdapters, custom JavaDeserializers. It all works already. I need only  some solution for handling a data, that can be both ARRAY and OBJECT.  
+Thanks for any help. 
+
+======================
+The Joey's answer works perfect. That right the thing I was looking for. 
+I'll post my code here.
+
+public class SafeTypeAdapterFactory implements TypeAdapterFactory {
+    public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> type) {
+        final TypeAdapter<T> delegate = gson.getDelegateAdapter(this, type);
+        return new TypeAdapter<T>() {
+            public void write(JsonWriter out, T value) throws IOException {
+                try {
+                    delegate.write(out, value);
+                } catch (IOException e) {
+                    delegate.write(out, null);
+                }
+            }
+            public T read(JsonReader in) throws IOException {
+                try {
+                    return delegate.read(in);
+                } catch (IOException e) {
+                    Log.w("Adapter Factory", "IOException. Value skipped");
+                    in.skipValue();
+                    return null;
+                } catch (IllegalStateException e) {
+                    Log.w("Adapter Factory", "IllegalStateException. Value skipped");
+                    in.skipValue();
+                    return null;
+                } catch (JsonSyntaxException e) {
+                    Log.w("Adapter Factory", "JsonSyntaxException. Value skipped");
+                    in.skipValue();
+                    return null;
+                }
+            }
+        };
+    }
+}
+
+    
+===============================================================================================
+22
+A:Try using GSON >= 2.2.1 and look for the TypeAdapterFactory class.
+
+This will give you the ability to inspect the Object before you deserialize it and apply custom code while avoiding recursions. 
+
+Here is an example of the getDelegateAdapter you can use.
+    

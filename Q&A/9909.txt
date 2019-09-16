@@ -1,0 +1,117 @@
+28
+Q:I'm developing a camera app based on Camera API 2 and I have found several problems using the libyuv.
+I want to convert YUV_420_888 images retrieved from a ImageReader, but I'm having some problems with scaling in a reprocessable surface.
+
+In essence: Images come out with tones of green instead of having the corresponding tones (I'm exporting the .yuv files and checking them using http://rawpixels.net/).
+
+You can see an input example here: 
+
+And what I get after I perform scaling: 
+
+I think I am doing something wrong with strides, or providing an invalid YUV format (maybe I have to transform the image to another format?). However, I can't figure out where is the error since I don't know how to correlate the green color to the scaling algorithm.
+
+This is the conversion code I am using, you can ignore the return NULL as there is further processing that is not related to the problem.
+
+#include <jni.h>
+#include <stdint.h>
+#include <android/log.h>
+#include <inc/libyuv/scale.h>
+#include <inc/libyuv.h>
+#include <stdio.h>
+
+
+#define  LOG_TAG    "libyuv-jni"
+
+#define unused(x) UNUSED_ ## x __attribute__((__unused__))
+#define  LOGD(...)  __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+#define  LOGE(...)  __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS_)
+
+struct YuvFrame {
+    int width;
+    int height;
+    uint8_t *data;
+    uint8_t *y;
+    uint8_t *u;
+    uint8_t *v;
+};
+
+static struct YuvFrame i420_input_frame;
+static struct YuvFrame i420_output_frame;
+
+extern "C" {
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_android_camera3_camera_hardware_session_output_photo_yuv_YuvJniInterface_scale420YuvByteArray(
+        JNIEnv *env, jclass /*clazz*/, jbyteArray yuvByteArray_, jint src_width, jint src_height,
+        jint out_width, jint out_height) {
+
+    jbyte *yuvByteArray = env->GetByteArrayElements(yuvByteArray_, NULL);
+
+    //Get input and output length
+    int input_size = env->GetArrayLength(yuvByteArray_);
+    int out_size = out_height * out_width;
+
+    //Generate input frame
+    i420_input_frame.width = src_width;
+    i420_input_frame.height = src_height;
+    i420_input_frame.data = (uint8_t *) yuvByteArray;
+    i420_input_frame.y = i420_input_frame.data;
+    i420_input_frame.u = i420_input_frame.y + input_size;
+    i420_input_frame.v = i420_input_frame.u + input_size / 4;
+
+    //Generate output frame
+    free(i420_output_frame.data);
+    i420_output_frame.width = out_width;
+    i420_output_frame.height = out_height;
+    i420_output_frame.data = new unsigned char[out_size * 3 / 2];
+    i420_output_frame.y = i420_output_frame.data;
+    i420_output_frame.u = i420_output_frame.y + out_size;
+    i420_output_frame.v = i420_output_frame.u + out_size / 4;
+    libyuv::FilterMode mode = libyuv::FilterModeEnum::kFilterBilinear;
+
+    int result = I420Scale(i420_input_frame.y, i420_input_frame.width,
+                           i420_input_frame.u, i420_input_frame.width / 2,
+                           i420_input_frame.v, i420_input_frame.width / 2,
+                           i420_input_frame.width, i420_input_frame.height,
+                           i420_output_frame.y, i420_output_frame.width,
+                           i420_output_frame.u, i420_output_frame.width / 2,
+                           i420_output_frame.v, i420_output_frame.width / 2,
+                           i420_output_frame.width, i420_output_frame.height,
+                           mode);
+    LOGD("Image result %d", result);
+    env->ReleaseByteArrayElements(yuvByteArray_, yuvByteArray, 0);
+    return NULL;
+}
+
+    
+===============================================================================================
+1
+A:You can try that code that it uses the y_size instead of full size of your array. 
+
+    ...
+    //Get input and output length
+    int input_size = env->GetArrayLength(yuvByteArray_);
+    int y_size = src_width * src_height;
+    int out_size = out_height * out_width;
+
+    //Generate input frame
+    i420_input_frame.width = src_width;
+    i420_input_frame.height = src_height;
+    i420_input_frame.data = (uint8_t *) yuvByteArray;
+    i420_input_frame.y = i420_input_frame.data;
+    i420_input_frame.u = i420_input_frame.y + y_size;
+    i420_input_frame.v = i420_input_frame.u + y_size / 4;
+
+    //Generate output frame
+    free(i420_output_frame.data);
+    i420_output_frame.width = out_width;
+    i420_output_frame.height = out_height;
+    i420_output_frame.data = new unsigned char[out_size * 3 / 2];
+    i420_output_frame.y = i420_output_frame.data;
+    i420_output_frame.u = i420_output_frame.y + out_size;
+    i420_output_frame.v = i420_output_frame.u + out_size / 4;
+    ...
+
+
+probably your code is based on that https://github.com/begeekmyfriend/yasea/blob/master/library/src/main/libenc/jni/libenc.cc and according to that code you have to use the y_size
+    

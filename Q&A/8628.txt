@@ -1,0 +1,94 @@
+31
+Q:Current, I have 2 Fragments, which is switch-able through ActionBar's tab.
+
+    getSupportActionBar().setNavigationMode(ActionBar.NAVIGATION_MODE_TABS);
+    ActionBar.Tab newTab = getSupportActionBar().newTab();
+    newTab.setText("history");
+    newTab.setTabListener(new TabListenerHistoryFragment>(this, "history",
+        HistoryFragment.class));
+
+
+
+
+ @Override
+public void onTabSelected(Tab tab, FragmentTransaction ft) {
+    // Check if the fragment is already initialized
+    if (mFragment == null) {
+
+        // If not, instantiate and add it to the activity
+        mFragment = Fragment.instantiate(mActivity, mClass.getName());
+        mFragment.setRetainInstance(true);
+        ft.add(android.R.id.content, mFragment, mTag);
+    } else {
+        // If it exists, simply attach it in order to show it
+        ft.attach(mFragment);
+    }        
+}
+
+
+I realize the first time of my Activity (This activity is holding 2 fragments) being launched, Fragments' methods will be called in the following sequence.
+
+onCreate -> onCreateView -> onStart
+
+When I perform Tab switching, and then Tab switching back to the same Fragment, the following methods will be called again.
+
+onCreateView -> onStart
+
+I just wish to retain the same GUI view state, when Tab is being switched back.
+
+
+I want my chart continue to be zoomed into previous level.
+I want my chart horizontal scroll stay at previous level.
+I want my list continue scroll stay at previous level.
+...
+
+
+I know that I can save/restore simple variables using the following method when Tab switching
+
+android fragment- How to save states of views in a fragment when another fragment is pushed on top of it
+
+But, that is not something I want, as my GUI state is pretty difficult to describe within whole bunch of primitive values.
+
+I try the following approach. Of course it won't work, as I am getting the following runtime error.
+
+public class HistoryFragment extends Fragment {
+    View view = null;
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState) {
+        if (this.view != null) {
+            return this.view;
+        }
+        this.view = inflater.inflate(R.layout.history_activity, container, false); 
+    }
+}
+
+
+java.lang.IllegalStateException: The specified child already has a parent. You must call removeView() on the child's parent first.
+
+I realize the following demo example is able to preserve its fragment GUI state (For instance, the position of vertical scroll of list) when there is Tab switching. But I guess, perhaps it is because they are using ListFragment? As I do not find they perform any special handling to preserve GUI state.
+
+
+com.example.android.apis.app.FragmentTabs
+com.example.android.apis.app.LoaderCursor.CursorLoaderListFragment
+
+
+May I know, how I can avoid from recreating same view when perform tab switching\xef\xbc\x9f
+    
+===============================================================================================
+36
+A:I had the same problem, and tried to follow the suggestion in the error message.
+I tried the following code, and it worked for me.
+
+public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle state)  {
+     if (mMyView == null) {
+         mMyView = new MyView(getActivity());
+     } else {
+         ((ViewGroup) mMyView.getParent()).removeView(mMyView);
+     }
+
+     return mPuzzleView; 
+}
+
+    

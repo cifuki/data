@@ -1,0 +1,40 @@
+35
+Q:My Question is: Can Android 4.3 (client) have active connections with multiple BLE devices (servers)? If so, how can I achieve it?
+
+What I did so far
+
+I try to evaluate what throughput you can achieve using BLE and Android 4.3 BLE API. In addition I also try to find out how many devices can be connected and active at the same time. I use a Nexus 7 (2013), Android 4.4 as master and TI CC2540 Keyfob as slaves.
+
+I wrote a simple server software for the slaves, which transmits 10000 20Byte packets through BLE notifications. I based my Android App on the Application Accelerator from the Bluetooth SIG.
+
+It works well for one device and I can achieve around 56 kBits payload throughput at a Connection Interval of 7.5 ms. To connect to multiple slaves I followed the advice of a Nordic Employee who wrote in the Nordic Developer Zone:
+
+
+  Yes it's possible to handle multiple slaves with a single app. You would need to handle each slave with one BluetoothGatt instance. You would also need specific BluetoothGattCallback for each slave you connect to.
+
+
+So I tried that and it partly works. I can connect to multiple slaves. I can also register for notifications on multiple slaves. The problem begins when I start the test. I receive at first notifications from all slaves, but after a couple Connection Intervals just the notifications from one device come trough. After about 10 seconds the other slaves disconnect, because they seem to reach the connection time-out. Sometimes I receive right from the start of the test just notifications from one slave.
+
+I also tried accessing the attribute over a read operation with the same result. After a couple of reads just the answers from one device came trough.
+
+I am aware that there are a few similar questions on this forum: Does Android 4.3 support multiple BLE device connections?, Has native Android BLE GATT implementation synchronous nature? or Ble multiple connection. But none of this answers made it clear for me, if it is possible and how to do it.
+
+I would be very grateful for advice.
+    
+===============================================================================================
+21
+A:I suspect everyone adding delays is just allowing the BLE system to complete the action you have asked before you submit another one. Android's BLE system has no form of queueing. If you do 
+
+BluetoothGatt g;
+g.writeDescriptor(a);
+g.writeDescriptor(b);
+
+
+then the first write operation will immediately be overwritten with the second one. Yes it's really stupid and the documentation should probably actually mention this.
+
+If you insert a wait, it allows the first operation to complete before doing the second. That is a huge ugly hack though. A better solution is to implement your own queue (like Google should have). Fortunately Nordic have released one for us.
+
+https://github.com/NordicSemiconductor/puck-central-android/tree/master/PuckCentral/app/src/main/java/no/nordicsemi/puckcentral/bluetooth/gatt
+
+Edit: By the way this is the universal behaviour for BLE APIs. WebBluetooth behaves the same way (but Javascript does make it easier to use), and I believe iOS's BLE API also behaves the same.
+    

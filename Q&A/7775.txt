@@ -1,0 +1,126 @@
+34
+Q:This topic has been discussed in lots of questions here, with mostly different results and, due to API changes and different types of URIs, no definitive answer.
+
+I don\xe2\x80\x99t have an answer myself, but let\xe2\x80\x99s talk about it.
+The ExifInterface has a single constructor that accepts a filePath. That itself is annoying, as it is discouraged now to rely on paths - you should rather use Uris and ContentResolver. OK.
+
+Our Uri named uri can be retrieved from the intent in onActivityResult (if you pick the picture from gallery with ACTION_GET_CONTENT) or can be an Uri that we previously had (if you pick the picture from camera and call intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)).
+
+API<19
+
+Our uri can have two different schemas:
+
+
+Uris coming from cameras will mostly have a file:// schema. Those are pretty easy to treat, because they hold the path. You can call new ExifInterface(uri.getPath()) and you are done.
+Uris coming from gallery or other content providers usually have a content:// interface. I personally don\xe2\x80\x99t know what that is about, but is driving me mad.
+
+
+This second case, as far as I understand, should be treated with a ContentResolver that you can get with Context.getContentResolver(). The following works with all apps I have tested, in any case:
+
+public static ExifInterface getPictureData(Context context, Uri uri) {
+    String[] uriParts = uri.toString().split(":");
+    String path = null;
+
+    if (uriParts[0].equals("content")) {
+        // we can use ContentResolver.
+        // let\xe2\x80\x99s query the DATA column which holds the path
+        String col = MediaStore.Images.ImageColumns.DATA;
+        Cursor c = context.getContentResolver().query(uri,
+                new String[]{col},
+                null, null, null);
+
+        if (c != null && c.moveToFirst()) {
+            path = c.getString(c.getColumnIndex(col));
+            c.close();
+            return new ExifInterface(path);
+        }
+
+    } else if (uriParts[0].equals("file")) {
+        // it's easy to get the path
+        path = uri.getEncodedPath();
+        return new ExifInterface(path);
+    }
+    return null;
+}
+
+
+API19+
+
+My issues arise from Kitkat onward with content:// URIs. Kitkat introduces the Storage Access Framework (see here) along with a new intent, ACTION_OPEN_DOCUMENT, and a platform picker. However, it is said that
+
+
+  On Android 4.4 and higher, you have the additional option of using the
+  ACTION_OPEN_DOCUMENT intent, which displays a picker UI controlled by
+  the system that allows the user to browse all files that other apps
+  have made available. From this single UI, the user can pick a file
+  from any of the supported apps.
+  
+  ACTION_OPEN_DOCUMENT is not intended to be a replacement for
+  ACTION_GET_CONTENT. The one you should use depends on the needs of
+  your app.
+
+
+So to keeps this very simple, let\xe2\x80\x99s say that we are ok with the old ACTION_GET_CONTENT: it will fire a chooser dialog where you can choose a gallery app.
+
+However, the content approach doesn\xe2\x80\x99t work anymore. Sometimes it works on Kitkat, but never works on Lollipop, for example. I don\xe2\x80\x99t know what exactly has changed.
+
+I have searched and tried a lot; another approach taken for Kitkat specifically is:
+
+String wholeId = DocumentsContract.getDocumentId(uri);
+String[] parts = wholeId.split(\xe2\x80\x9c:\xe2\x80\x9d);
+String numberId = parts[1];
+
+Cursor c = context.getContentResolver().query(
+    // why external and not internal ?
+    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+    new String[]{ col },
+    MediaStore.Images.Media._ID + \xe2\x80\x9c=?\xe2\x80\x9d,
+    new String[]{ numberId },
+    null);
+
+
+This works sometimes, but others not. Specifically, it works when wholeId is something like image:2839, but obviously breaks when wholeId is simply a number.
+
+You can try this using the system picker (i.e. firing the gallery with ACTION_OPEN_DOCUMENT): if you choose an image from \xe2\x80\x9cRecents\xe2\x80\x9d, it works; if you choose an image from \xe2\x80\x9cDownloads\xe2\x80\x9d, it breaks.
+
+So how to?!
+
+The immediate answer is You don\xe2\x80\x99t, you don\xe2\x80\x99t find file paths from content uris in newer version of the OS. It could be said that not all content uris point to pictures or even files.
+
+That\xe2\x80\x99s totally OK for me, and at first I worked to avoid this. But then, How are we supposed to use the ExifInterface class if we should not use paths? 
+
+I don\xe2\x80\x99t understand how modern apps do this - finding orientation and metadata is an issue you immediately face, and ContentResolver does not offer any API in that sense. You have ContentResolver.openFileDescriptor() and similar stuff, but no APIs to read metadata (which truly is in that file). There might be external libraries that read Exif stuff from a stream, but I\xe2\x80\x99m wondering about the common/platform way to solve this.
+
+I have searched for similar code in google\xe2\x80\x99s open source apps, but found nothing.
+    
+===============================================================================================
+9
+A:The following works with all apps I have tested, in any case:
+
+
+That will only work if the Uri happens to be something coming from the MediaStore. It will fail if the Uri happens to come from anything else.
+
+
+  The immediate answer is You don\xe2\x80\x99t, you don\xe2\x80\x99t find file paths from content uris in newer version of the OS. It could be said that not all content uris point to pictures or even files.
+
+
+Correct. I have pointed this out on many occasions, such as here.
+
+
+  How are we supposed to use the ExifInterface class if we should not use paths?
+
+
+You don't. Use other code to get the EXIF headers. 
+
+
+  There might be external libraries that read Exif stuff from a stream, but I\xe2\x80\x99m wondering about the common/platform way to solve this.
+
+
+Use external libraries.
+
+
+  I have searched for similar code in google\xe2\x80\x99s open source apps, but found nothing.
+
+
+You will find some in the Mms app.
+    

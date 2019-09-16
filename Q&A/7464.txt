@@ -1,0 +1,73 @@
+35
+Q:I'm using the new support library ListAdapter. Here's my code for the adapter
+
+class ArtistsAdapter : ListAdapter<Artist, ArtistsAdapter.ViewHolder>(ArtistsDiff()) {
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        return ViewHolder(parent.inflate(R.layout.item_artist))
+    }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        holder.bind(getItem(position))
+    }
+
+    class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        fun bind(artist: Artist) {
+            itemView.artistDetails.text = artist.artistAlbums
+                    .plus(" Albums")
+                    .plus(" \\u2022 ")
+                    .plus(artist.artistTracks)
+                    .plus(" Tracks")
+            itemView.artistName.text = artist.artistCover
+            itemView.artistCoverImage.loadURL(artist.artistCover)
+        }
+    }
+}
+
+
+I'm updating the adapter with 
+
+musicViewModel.getAllArtists().observe(this, Observer {
+            it?.let {
+                artistAdapter.submitList(it)
+            }
+        })
+
+
+My diff class
+
+class ArtistsDiff : DiffUtil.ItemCallback<Artist>() {
+    override fun areItemsTheSame(oldItem: Artist?, newItem: Artist?): Boolean {
+        return oldItem?.artistId == newItem?.artistId
+    }
+
+    override fun areContentsTheSame(oldItem: Artist?, newItem: Artist?): Boolean {
+        return oldItem == newItem
+    }
+}
+
+
+What's happening is when submitList is called the first time the adapter renders all the items, but when submitList is called again with updated object properties it does not re-render the view which has changed.
+
+It re-renders the view as I scroll the list, which in turn calls bindView()
+
+Also, I've noticed that calling adapter.notifyDatasSetChanged() after submit list renders the view with updated values, but I don't want to call notifyDataSetChanged() because the list adapter has diff utils built-in
+
+Can anyone help me here?
+    
+===============================================================================================
+48
+A:Edit: I understand why this happens that wasn't my point. My point is that it at least needs to give a warning or call the notifyDataSetChanged() function. Because apparently I am calling the submitList(...) function for a reason. I am pretty sure people are trying to figure out what went wrong for hours until they figure out the submitList() ignores silently the call.
+
+This is because of Googles weird logic. So if you pass the same list to the adapter it does not even call the DiffUtil. 
+
+public void submitList(final List<T> newList) {
+    if (newList == mList) {
+        // nothing to do
+        return;
+    }
+....
+}
+
+
+I really don't understand the whole point of this ListAdapter if it can't handle changes on the same list. If you want to change the items on the list you pass to the ListAdapter and see the changes then either you need to create a deep copy of the list or you need to use regular RecyclerView with your own DiffUtill class.
+    

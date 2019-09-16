@@ -1,0 +1,91 @@
+857
+Q:I've built a simple music player in Android. The view for each song contains a SeekBar, implemented like this: 
+
+public class Song extends Activity implements OnClickListener,Runnable {
+    private SeekBar progress;
+    private MediaPlayer mp;
+
+    // ...
+
+    private ServiceConnection onService = new ServiceConnection() {
+          public void onServiceConnected(ComponentName className,
+            IBinder rawBinder) {
+              appService = ((MPService.LocalBinder)rawBinder).getService(); // service that handles the MediaPlayer
+              progress.setVisibility(SeekBar.VISIBLE);
+              progress.setProgress(0);
+              mp = appService.getMP();
+              appService.playSong(title);
+              progress.setMax(mp.getDuration());
+              new Thread(Song.this).start();
+          }
+          public void onServiceDisconnected(ComponentName classname) {
+              appService = null;
+          }
+    };
+
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.song);
+
+        // ...
+
+        progress = (SeekBar) findViewById(R.id.progress);
+
+        // ...
+    }
+
+    public void run() {
+    int pos = 0;
+    int total = mp.getDuration();
+    while (mp != null && pos<total) {
+        try {
+            Thread.sleep(1000);
+            pos = appService.getSongPosition();
+        } catch (InterruptedException e) {
+            return;
+        } catch (Exception e) {
+            return;
+        }
+        progress.setProgress(pos);
+    }
+}
+
+
+This works fine. Now I want a timer counting the seconds/minutes of the progress of the song. So I put a TextView in the layout, get it with findViewById() in onCreate(), and put this in run() after progress.setProgress(pos):
+
+String time = String.format("%d:%d",
+            TimeUnit.MILLISECONDS.toMinutes(pos),
+            TimeUnit.MILLISECONDS.toSeconds(pos),
+            TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(
+                    pos))
+            );
+currentTime.setText(time);  // currentTime = (TextView) findViewById(R.id.current_time);
+
+
+But that last line gives me the exception:
+
+
+  android.view.ViewRoot$CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+
+
+Yet I'm doing basically the same thing here as I'm doing with the SeekBar - creating the view in onCreate, then touching it in run() - and it doesn't give me this complaint.
+    
+===============================================================================================
+1762
+A:You have to move the portion of the background task that updates the UI onto the main thread. There is a simple piece of code for this:
+
+runOnUiThread(new Runnable() {
+
+    @Override
+    public void run() {
+
+        // Stuff that updates the UI
+
+    }
+});
+
+
+Documentation for Activity.runOnUiThread.
+
+Just nest this inside the method that is running in the background, and then copy paste the code that implements any updates in the middle of the block. Include only the smallest amount of code possible, otherwise you start to defeat the purpose of the background thread.
+    

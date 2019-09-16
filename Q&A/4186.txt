@@ -1,0 +1,212 @@
+56
+Q:I need an example for compressing a string using GZip in android. I want to send a string like "hello" to the method and get the following zipped string:
+
+BQAAAB+LCAAAAAAABADtvQdgHEmWJSYvbcp7f0r1StfgdKEIgGATJNiQQBDswYjN5pLsHWlHIymrKoHKZVZlXWYWQMztnbz33nvvvffee++997o7nU4n99//P1xmZAFs9s5K2smeIYCqyB8/fnwfPyLmeVlW/w+GphA2BQAAAA==
+
+Then I need to decompress it. Can anybody give me an example and complete the following methods?
+
+private String compressString(String input) {
+    //...
+}
+
+private String decompressString(String input) {
+    //...
+}
+
+
+Thanks,
+
+
+
+update
+
+According to scessor's answer, Now I have the following 4 methods. Android and .net compress and decompress methods. These methods are compatible with each other except in one case. I mean they are compatible in the first 3 states but incompatible in the 4th state:
+
+
+  
+  state 1) Android.compress <-> Android.decompress: (OK)
+  state 2) Net.compress <-> Net.decompress: (OK)
+  state 3) Net.compress -> Android.decompress: (OK)
+  state 4) Android.compress -> .Net.decompress: (NOT OK)
+  
+
+
+can anybody solve it?
+
+Android methods:
+
+public static String compress(String str) throws IOException {
+
+    byte[] blockcopy = ByteBuffer
+            .allocate(4)
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            .putInt(str.length())
+            .array();
+    ByteArrayOutputStream os = new ByteArrayOutputStream(str.length());
+    GZIPOutputStream gos = new GZIPOutputStream(os);
+    gos.write(str.getBytes());
+    gos.close();
+    os.close();
+    byte[] compressed = new byte[4 + os.toByteArray().length];
+    System.arraycopy(blockcopy, 0, compressed, 0, 4);
+    System.arraycopy(os.toByteArray(), 0, compressed, 4,
+            os.toByteArray().length);
+    return Base64.encode(compressed);
+
+}
+
+public static String decompress(String zipText) throws IOException {
+    byte[] compressed = Base64.decode(zipText);
+    if (compressed.length > 4)
+    {
+        GZIPInputStream gzipInputStream = new GZIPInputStream(
+                new ByteArrayInputStream(compressed, 4,
+                        compressed.length - 4));
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        for (int value = 0; value != -1;) {
+            value = gzipInputStream.read();
+            if (value != -1) {
+                baos.write(value);
+            }
+        }
+        gzipInputStream.close();
+        baos.close();
+        String sReturn = new String(baos.toByteArray(), "UTF-8");
+        return sReturn;
+    }
+    else
+    {
+        return "";
+    }
+}
+
+
+.Net methods:
+
+public static string compress(string text)
+{
+    byte[] buffer = Encoding.UTF8.GetBytes(text);
+    MemoryStream ms = new MemoryStream();
+    using (GZipStream zip = new GZipStream(ms, CompressionMode.Compress, true))
+    {
+        zip.Write(buffer, 0, buffer.Length);
+    }
+
+    ms.Position = 0;
+    MemoryStream outStream = new MemoryStream();
+
+    byte[] compressed = new byte[ms.Length];
+    ms.Read(compressed, 0, compressed.Length);
+
+    byte[] gzBuffer = new byte[compressed.Length + 4];
+    System.Buffer.BlockCopy(compressed, 0, gzBuffer, 4, compressed.Length);
+    System.Buffer.BlockCopy(BitConverter.GetBytes(buffer.Length), 0, gzBuffer, 0, 4);
+    return Convert.ToBase64String(gzBuffer);
+}
+
+public static string decompress(string compressedText)
+{
+    byte[] gzBuffer = Convert.FromBase64String(compressedText);
+    using (MemoryStream ms = new MemoryStream())
+    {
+        int msgLength = BitConverter.ToInt32(gzBuffer, 0);
+        ms.Write(gzBuffer, 4, gzBuffer.Length - 4);
+
+        byte[] buffer = new byte[msgLength];
+
+        ms.Position = 0;
+        using (GZipStream zip = new GZipStream(ms, CompressionMode.Decompress))
+        {
+            zip.Read(buffer, 0, buffer.Length);
+        }
+
+        return Encoding.UTF8.GetString(buffer);
+    }
+}
+
+    
+===============================================================================================
+84
+A:The GZIP methods:
+
+public static byte[] compress(String string) throws IOException {
+    ByteArrayOutputStream os = new ByteArrayOutputStream(string.length());
+    GZIPOutputStream gos = new GZIPOutputStream(os);
+    gos.write(string.getBytes());
+    gos.close();
+    byte[] compressed = os.toByteArray();
+    os.close();
+    return compressed;
+}
+
+public static String decompress(byte[] compressed) throws IOException {
+    final int BUFFER_SIZE = 32;
+    ByteArrayInputStream is = new ByteArrayInputStream(compressed);
+    GZIPInputStream gis = new GZIPInputStream(is, BUFFER_SIZE);
+    StringBuilder string = new StringBuilder();
+    byte[] data = new byte[BUFFER_SIZE];
+    int bytesRead;
+    while ((bytesRead = gis.read(data)) != -1) {
+        string.append(new String(data, 0, bytesRead));
+    }
+    gis.close();
+    is.close();
+    return string.toString();
+}
+
+
+And a test:
+
+final String text = "hello";
+try {
+    byte[] compressed = compress(text);
+    for (byte character : compressed) {
+        Log.d("test", String.valueOf(character));
+    }
+    String decompressed = decompress(compressed);
+    Log.d("test", decompressed);
+} catch (IOException e) {
+    e.printStackTrace();
+}
+
+
+=== Update ===
+
+If you need .Net compability my code has to be changed a little:
+
+public static byte[] compress(String string) throws IOException {
+    byte[] blockcopy = ByteBuffer
+        .allocate(4)
+        .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        .putInt(string.length())
+        .array();
+    ByteArrayOutputStream os = new ByteArrayOutputStream(string.length());
+    GZIPOutputStream gos = new GZIPOutputStream(os);
+    gos.write(string.getBytes());
+    gos.close();
+    os.close();
+    byte[] compressed = new byte[4 + os.toByteArray().length];
+    System.arraycopy(blockcopy, 0, compressed, 0, 4);
+    System.arraycopy(os.toByteArray(), 0, compressed, 4, os.toByteArray().length);
+    return compressed;
+}
+
+public static String decompress(byte[] compressed) throws IOException {
+    final int BUFFER_SIZE = 32;
+    ByteArrayInputStream is = new ByteArrayInputStream(compressed, 4, compressed.length - 4);
+    GZIPInputStream gis = new GZIPInputStream(is, BUFFER_SIZE);
+    StringBuilder string = new StringBuilder();
+    byte[] data = new byte[BUFFER_SIZE];
+    int bytesRead;
+    while ((bytesRead = gis.read(data)) != -1) {
+        string.append(new String(data, 0, bytesRead));
+    }
+    gis.close();
+    is.close();
+    return string.toString();
+}
+
+
+You can use the same test script.
+    

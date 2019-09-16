@@ -1,0 +1,158 @@
+40
+Q:I am trying to login to a site and maintain that session/cookie so that the server will recognize my login, but I am struggling to figure out a way of extracting the cookie from the response and setting into a request to maintain my login. I'm wondering if I should go about taking the header "Set-Cookie" or using a CookieStore. Any help is greatly appreciated. Here is my code that I have, with comments where I think the getHeader/getCookie methods would go.
+
+public class Http
+{
+DefaultHttpClient client = new DefaultHttpClient();
+HttpGet request;
+HttpEntity entity;
+HttpResponse response;
+HttpPost post;
+CookieStore cookieStore = new BasicCookieStore();
+HttpContext localContext = new BasicHttpContext();
+
+public static void setContext()
+{
+    localContext.setAttribute(ClientContext.COOKIE_STORE, cookieStore);
+}
+
+public static void getPage(String url) throws Exception
+{
+    request = new HttpGet(url);
+    response = client.execute(request, localContext);
+    PARSER.preParse(url, response);
+}
+
+public static HttpResponse postPage(List<NameValuePair> params, String host, String action) throws Exception
+{
+    post = new HttpPost(host + action);
+    post.setEntity(new UrlEncodedFormEntity(params, HTTP.UTF_8));
+
+    response = client.execute(post, localContext);
+
+    entity = response.getEntity();
+    if(entity != null)
+    {
+        entity.consumeContent();
+    }
+
+    return response;
+}
+
+
+public void destoyHttp()
+{
+    client.getConnectionManager().shutdown();
+}
+}
+
+
+In hopes of others better understanding my confusion am adding code that I know DOES work and maintains a session but when I tried to move the code into my actual application it broke somewhere down the line.
+
+public class HttpClientTest extends Activity{
+
+DefaultHttpClient client = new DefaultHttpClient();
+HttpGet request;
+HttpEntity entity;
+List<Cookie> cookies;
+HttpResponse response;
+HttpPost post;
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    try {
+        getRequest();
+    } catch (Exception e) {
+        Log.d("My Activity", "Failed");
+        e.printStackTrace();
+    }
+}
+
+public void getRequest() throws Exception
+{
+    final String TAG = "MyActivity";
+    request = new HttpGet("http://gc.gamestotal.com/i.cfm?p=login&se=4");
+    response = client.execute(request);
+
+    String action = "i.cfm?&1028&p=login&se=4";
+    String yourServer = "http://gc.gamestotal.com/";
+    post = new HttpPost(yourServer + action);
+
+    List<NameValuePair> params = new ArrayList<NameValuePair>();
+    params.add(new BasicNameValuePair("nic", "myusername"));
+    params.add(new BasicNameValuePair("password", "mypassword"));
+    params.add(new BasicNameValuePair("server", "4"));
+
+    post.setEntity(new UrlEncodedFormEntity(params, HTTP.UTF_8));
+
+
+    response = client.execute(post);
+    entity = response.getEntity();
+
+    if(entity != null){
+        entity.consumeContent();
+    }
+
+    request = new HttpGet("http://gc.gamestotal.com/i.cfm?f=com_empire&cm=3");
+
+    response = client.execute(request);
+
+    if(entity != null)
+    {
+        entity.consumeContent();
+    }    
+
+}
+
+}
+
+
+I know for a fact it works, and you can see that in this code I consumeContent() but adding that to the top code didn't seem to make a difference so I left it out. Any Ideas?
+
+Edit: I am still unable to get the code working in keeping a session going. I am posting the cookies from my current code, along with the cookies of the second code that is working. Perhaps someone will notice an issue, I certainly do not.
+
+08-31 06:53:50.318: VERBOSE/SFGC(496): - [version: 0][name: CFID][value: 26651316][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:53:50.329: VERBOSE/SFGC(496): - [version: 0][name: CFTOKEN][value: 96917381][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:53:50.329: VERBOSE/SFGC(496): - [version: 0][name: CFCLIENT_SFGC_106Y][value: CFTOKEN2%3D735125416524430%23COUNTRY%3D56%23DOWNLOADFLAG%3D0%23OCHAT%3D1%23PM%5FDATE%3D%7Bts+%272010%2D08%2D31+14%3A53%3A45%27%7D%23REGION%3D3%23SCREEN%3D800%23S%5FGC%5FIMAGELOC%3Di%2Fw%2F%23TIMEZONE%3D%2D600%23][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:53:50.339: VERBOSE/SFGC(496): - [version: 0][name: CFGLOBALS][value: HITCOUNT%3D2%23LASTVISIT%3D%7Bts+%272010%2D08%2D31+14%3A53%3A45%27%7D%23TIMECREATED%3D%7Bts+%272010%2D08%2D31+14%3A53%3A39%27%7D%23][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+
+08-31 06:53:51.938: VERBOSE/SFGC(496): - [version: 0][name: CFID][value: 26651316][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:53:51.938: VERBOSE/SFGC(496): - [version: 0][name: CFTOKEN][value: 96917381][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:53:51.938: VERBOSE/SFGC(496): - [version: 0][name: CFCLIENT_SFGC_106Y][value: CFTOKEN2%3D735125416524430%23COUNTRY%3D56%23DOWNLOADFLAG%3D0%23OCHAT%3D1%23PM%5FDATE%3D%7Bts+%272010%2D08%2D31+14%3A53%3A45%27%7D%23REGION%3D3%23SCREEN%3D800%23S%5FGC%5FIMAGELOC%3Di%2Fw%2F%23TIMEZONE%3D%2D600%23][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:53:51.948: VERBOSE/SFGC(496): - [version: 0][name: CFGLOBALS][value: HITCOUNT%3D3%23LASTVISIT%3D%7Bts+%272010%2D08%2D31+14%3A53%3A46%27%7D%23TIMECREATED%3D%7Bts+%272010%2D08%2D31+14%3A53%3A39%27%7D%23][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+
+
+08-31 06:52:41.628: DEBUG/MyActivity(469): - [version: 0][name: CFID][value: 26651274][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:52:41.638: DEBUG/MyActivity(469): - [version: 0][name: CFTOKEN][value: 58361320][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:52:41.638: DEBUG/MyActivity(469): - [version: 0][name: CFCLIENT_SFGC_106Y][value: CFTOKEN2%3D735125815099420%23COUNTRY%3D56%23DOWNLOADFLAG%3D0%23OCHAT%3D1%23PM%5FDATE%3D%7Bts+%272010%2D08%2D31+14%3A52%3A36%27%7D%23REGION%3D3%23SCREEN%3D800%23S%5FGC%5FIMAGELOC%3Di%2Fw%2F%23TIMEZONE%3D%2D600%23][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:52:41.648: DEBUG/MyActivity(469): - [version: 0][name: CFGLOBALS][value: HITCOUNT%3D2%23LASTVISIT%3D%7Bts+%272010%2D08%2D31+14%3A52%3A36%27%7D%23TIMECREATED%3D%7Bts+%272010%2D08%2D31+14%3A52%3A33%27%7D%23][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+
+08-31 06:52:44.138: DEBUG/MyActivity(469): - [version: 0][name: CFID][value: 26651274][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:52:44.138: DEBUG/MyActivity(469): - [version: 0][name: CFTOKEN][value: 58361320][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:52:44.138: DEBUG/MyActivity(469): - [version: 0][name: CFCLIENT_SFGC_106Y][value: CFTOKEN2%3D735125815099420%23COUNTRY%3D56%23DOWNLOADFLAG%3D0%23OCHAT%3D1%23PM%5FDATE%3D%7Bts+%272010%2D08%2D31+14%3A52%3A36%27%7D%23REGION%3D3%23SCREEN%3D800%23S%5FGC%5FIMAGELOC%3Di%2Fw%2F%23TIMEZONE%3D%2D600%23][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+08-31 06:52:44.138: DEBUG/MyActivity(469): - [version: 0][name: CFGLOBALS][value: HITCOUNT%3D4%23LASTVISIT%3D%7Bts+%272010%2D08%2D31+14%3A52%3A38%27%7D%23TIMECREATED%3D%7Bts+%272010%2D08%2D31+14%3A52%3A33%27%7D%23][domain: gc.gamestotal.com][path: /][expiry: Sun Sep 27 00:00:00 GMT+00:00 2037]
+
+    
+===============================================================================================
+37
+A:You need to use HttpContext. Set cookie store to context and pass context long with HttpGet/HttpPost in execute method. Hope this should help.
+
+See example: Complete code can be found here 
+
+   // Create a local instance of cookie store
+    CookieStore cookieStore = new BasicCookieStore();
+
+    // Create local HTTP context
+    HttpContext localContext = new BasicHttpContext();
+    // Bind custom cookie store to the local context
+    localContext.setAttribute(ClientContext.COOKIE_STORE, cookieStore);
+
+    HttpGet httpget = new HttpGet("http://www.google.com/"); 
+
+    System.out.println("executing request " + httpget.getURI());
+
+    // Pass local context as a parameter
+    HttpResponse response = httpclient.execute(httpget, localContext);
+
+    

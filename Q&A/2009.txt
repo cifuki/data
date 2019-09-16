@@ -1,0 +1,153 @@
+97
+Q:I have a WebView in one of my Activities, and when it loads a webpage, the page gathers some background data from Facebook.
+
+What I'm seeing though, is the page displayed in the application is the same on each time the app is opened and refreshed.
+
+I've tried setting the WebView not to use cache and clear the cache and history of the WebView.
+
+I've also followed the suggestion here: How to empty cache for WebView?
+
+But none of this works, does anyone have any ideas of I can overcome this problem because it is a vital part of my application.
+
+    mWebView.setWebChromeClient(new WebChromeClient()
+    {
+           public void onProgressChanged(WebView view, int progress)
+           {
+               if(progress >= 100)
+               {
+                   mProgressBar.setVisibility(ProgressBar.INVISIBLE);
+               }
+               else
+               {
+                   mProgressBar.setVisibility(ProgressBar.VISIBLE);
+               }
+           }
+    });
+    mWebView.setWebViewClient(new SignInFBWebViewClient(mUIHandler));
+    mWebView.getSettings().setJavaScriptEnabled(true);
+    mWebView.clearHistory();
+    mWebView.clearFormData();
+    mWebView.clearCache(true);
+
+    WebSettings webSettings = mWebView.getSettings();
+    webSettings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+
+    Time time = new Time();
+    time.setToNow();
+
+    mWebView.loadUrl(mSocialProxy.getSignInURL()+"?time="+time.format("%Y%m%d%H%M%S"));
+
+
+So I implemented the first suggestion (Although changed the code to be recursive)
+
+private void clearApplicationCache()
+{
+    File dir = getCacheDir();
+
+    if(dir!= null && dir.isDirectory())
+    {
+        try
+        {
+            ArrayList<File> stack = new ArrayList<File>();
+
+            // Initialise the list
+            File[] children = dir.listFiles();
+            for(File child:children)
+            {
+                stack.add(child);
+            }
+
+            while(stack.size() > 0)
+            {
+                Log.v(TAG, LOG_START+"Clearing the stack - " + stack.size());
+                File f = stack.get(stack.size() - 1);
+                if(f.isDirectory() == true)
+                {
+                    boolean empty = f.delete();
+
+                    if(empty == false)
+                    {
+                        File[] files = f.listFiles();
+                        if(files.length != 0)
+                        {
+                            for(File tmp:files)
+                            {
+                                stack.add(tmp);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        stack.remove(stack.size() - 1);
+                    }
+                }
+                else
+                {
+                    f.delete();
+                    stack.remove(stack.size() - 1);
+                }
+            }
+        }
+        catch(Exception e)
+        {
+            Log.e(TAG, LOG_START+"Failed to clean the cache");
+        }
+    }
+}
+
+
+However this still hasn't changed what the page is displaying. On my desktop browser I am getting different html code to the web page produced in the WebView so I know the WebView must be caching somewhere.
+
+On the IRC channel I was pointed to a fix to remove caching from a URL Connection but can't see how to apply it to a WebView yet.
+
+http://www.androidsnippets.org/snippets/45/
+
+If I delete my application and re-install it, I can get the webpage back up to date, i.e. a non-cached version. The main problem is the changes are made to links in the webpage, so the front end of the webpage is completely unchanged.
+    
+===============================================================================================
+41
+A:The edited code snippet above posted by Gaunt Face contains an error in that if a directory fails to delete because one of its files cannot be deleted, the code will keep retrying in an infinite loop. I rewrote it to be truly recursive, and added a numDays parameter so you can control how old the files must be that are pruned:
+
+//helper method for clearCache() , recursive
+//returns number of deleted files
+static int clearCacheFolder(final File dir, final int numDays) {
+
+    int deletedFiles = 0;
+    if (dir!= null && dir.isDirectory()) {
+        try {
+            for (File child:dir.listFiles()) {
+
+                //first delete subdirectories recursively
+                if (child.isDirectory()) {
+                    deletedFiles += clearCacheFolder(child, numDays);
+                }
+
+                //then delete the files and subdirectories in this dir
+                //only empty directories can be deleted, so subdirs have been done first
+                if (child.lastModified() < new Date().getTime() - numDays * DateUtils.DAY_IN_MILLIS) {
+                    if (child.delete()) {
+                        deletedFiles++;
+                    }
+                }
+            }
+        }
+        catch(Exception e) {
+            Log.e(TAG, String.format("Failed to clean the cache, error %s", e.getMessage()));
+        }
+    }
+    return deletedFiles;
+}
+
+/*
+ * Delete the files older than numDays days from the application cache
+ * 0 means all files.
+ */
+public static void clearCache(final Context context, final int numDays) {
+    Log.i(TAG, String.format("Starting cache prune, deleting files older than %d days", numDays));
+    int numDeletedFiles = clearCacheFolder(context.getCacheDir(), numDays);
+    Log.i(TAG, String.format("Cache pruning completed, %d files deleted", numDeletedFiles));
+}
+
+
+Hopefully of use to other people  :)
+    

@@ -1,0 +1,274 @@
+190
+Q:I've been reading the other posts on tracking down the reasons for getting a SIGSEGV in an Android app. I plan to scour my app for possible NullPointers related to Canvas use, but my SIGSEGV barfs up a different memory address each time. Plus I've seen code=1 and code=2. If the memory address was 0x00000000, I'd have a clue it is a NullPointer.
+
+The last one I got was a code=2:
+
+A/libc(4969): Fatal signal 11 (SIGSEGV) at 0x42a637d9 (code=2)
+
+
+Any suggestions on how to track this down?
+
+I have a suspect, but I'm not keen on experimenting with it yet. My app uses the OSMDroid API for offline mapping. The OverlayItem class represents markers/nodes on the map. I have a Service that collects data via the network to populate the OverlayItem which are then displayed on the map. In an effort to simplify my design, I extended OverlayItem into my own NodeOverlayItem class, which includes some addition attributes I use in the UI Activity and in the Service. This gave me a single point of Item information for the UI and Service. I used Intents to broadcast to the Activity to refresh the UI map when something changed. The Activity binds to the Service and there's a Service method to get the list of NodeOverlayItem's. I think it might be the OSMDroid API's use of OverlayItem, and my Service updating node information at the same time. (a concurrency issue)
+
+As I write this I think that's really the problem. The headache isn't splitting out the Node and OverlayItem from NodeOverlayItem, it's that the Activity will need some data from the Node, that the Service holds. Plus when the Activity is created (onResume, etc...) the OverlayItem objects will need to be re-created from the Node data that the Service has been maintaining while the Activity was away. e.g. You start the app, the Service collects data, the UI displays it, you go to Home, then back to the app, the Activity will need to pull and re-create the OverlayItem's from the latest Service node data.
+
+I know this isn't a great or clear questions. It's like all my SO questions are niche or obscure. If anyone has a suggestion on how to interpret those SIGSEGV errors, it would be greatly appreciated!
+
+UPDATE
+Here's the latest crash captured during a debug session. I have 3 of these devices being used for testing and they don't all crash reliably when I'm developing and testing. I included a bit extra just so the GC logging could be noted. You can see the problem is probably not related to memory exhaustion.
+
+03-03 02:02:38.328: I/CommService(7477): Received packet from: 192.168.1.102
+03-03 02:02:38.328: I/CommService(7477): Already processed this packet. It's a re-broadcast from another node, or from myself. It's not a repeat broadcast though.
+03-03 02:02:38.406: D/CommService(7477): Checking OLSRd info...
+03-03 02:02:38.460: D/CommService(7477): Monitoring nodes...
+03-03 02:02:38.515: D/dalvikvm(7477): GC_CONCURRENT freed 2050K, 16% free 17151K/20359K, paused 3ms+6ms
+03-03 02:02:38.515: I/CommService(7477): Received packet from: 192.168.1.102
+03-03 02:02:38.515: D/CommService(7477): Forwarding packet (4f68802cf10684a83ac4936ebb3c934d) along to other nodes.
+03-03 02:02:38.609: I/CommService(7477): Received packet from: 192.168.1.100
+03-03 02:02:38.609: D/CommService(7477): Forwarding packet (e4bc81e91ec92d06f83e03068f52ab4) along to other nodes.
+03-03 02:02:38.609: D/CommService(7477): Already processed this packet: 4204a5b27745ffe5e4f8458e227044bf
+03-03 02:02:38.609: A/libc(7477): Fatal signal 11 (SIGSEGV) at 0x68f52abc (code=1)
+03-03 02:02:38.914: I/DEBUG(4008): *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+03-03 02:02:38.914: I/DEBUG(4008): Build fingerprint: 'Lenovo/IdeaTab_A1107/A1107:4.0.4/MR1/eng.user.20120719.150703:user/release-keys'
+03-03 02:02:38.914: I/DEBUG(4008): pid: 7477, tid: 7712  >>> com.test.testm <<<
+03-03 02:02:38.914: I/DEBUG(4008): signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 68f52abc
+03-03 02:02:38.914: I/DEBUG(4008):  r0 68f52ab4  r1 412ef268  r2 4d9c3bf4  r3 412ef268
+03-03 02:02:38.914: I/DEBUG(4008):  r4 001ad8f8  r5 4d9c3bf4  r6 412ef268  r7 4c479df8
+03-03 02:02:38.914: I/DEBUG(4008):  r8 4d9c3c0c  r9 4c479dec  10 46cf260a  fp 4d9c3c24
+03-03 02:02:38.914: I/DEBUG(4008):  ip 40262a04  sp 4d9c3bc8  lr 402d01dd  pc 402d0182  cpsr 00000030
+03-03 02:02:38.914: I/DEBUG(4008):  d0  00000001000c0102  d1  3a22364574614c7d
+03-03 02:02:38.914: I/DEBUG(4008):  d2  403fc0000000007d  d3  363737343433350a
+03-03 02:02:38.914: I/DEBUG(4008):  d4  49544341223a2273  d5  6f6567222c224556
+03-03 02:02:38.914: I/DEBUG(4008):  d6  3a223645676e6f4c  d7  000000013835372d
+03-03 02:02:38.914: I/DEBUG(4008):  d8  0000000000000000  d9  4040000000000000
+03-03 02:02:38.914: I/DEBUG(4008):  d10 0000000000000000  d11 4040000000000000
+03-03 02:02:38.914: I/DEBUG(4008):  d12 4040000000000000  d13 0000000000000021
+03-03 02:02:38.914: I/DEBUG(4008):  d14 0000000000000000  d15 0000000000000000
+03-03 02:02:38.914: I/DEBUG(4008):  d16 3fe62e42fefa39ef  d17 3ff0000000000000
+03-03 02:02:38.914: I/DEBUG(4008):  d18 3fe62e42fee00000  d19 0000000000000000
+03-03 02:02:38.914: I/DEBUG(4008):  d20 0000000000000000  d21 3ff0000000000000
+03-03 02:02:38.914: I/DEBUG(4008):  d22 4028000000000000  d23 3ff0000000000000
+03-03 02:02:38.914: I/DEBUG(4008):  d24 0000000000000000  d25 3ff0000000000000
+03-03 02:02:38.914: I/DEBUG(4008):  d26 0000000000000000  d27 c028000000000000
+03-03 02:02:38.914: I/DEBUG(4008):  d28 0000000000000000  d29 3ff0000000000000
+03-03 02:02:38.914: I/DEBUG(4008):  d30 3ff0000000000000  d31 3fecccccb5c28f6e
+03-03 02:02:38.914: I/DEBUG(4008):  scr 60000013
+03-03 02:02:39.046: I/DEBUG(4008):          #00  pc 0006b182  /system/lib/libcrypto.so (EVP_DigestFinal_ex)
+03-03 02:02:39.046: I/DEBUG(4008):          #01  pc 0006b1d8  /system/lib/libcrypto.so (EVP_DigestFinal)
+03-03 02:02:39.054: I/DEBUG(4008):          #02  pc 0001f814  /system/lib/libnativehelper.so
+03-03 02:02:39.054: I/DEBUG(4008):          #03  pc 0001ec30  /system/lib/libdvm.so (dvmPlatformInvoke)
+03-03 02:02:39.054: I/DEBUG(4008):          #04  pc 00058c70  /system/lib/libdvm.so (_Z16dvmCallJNIMethodPKjP6JValuePK6MethodP6Thread)
+03-03 02:02:39.054: I/DEBUG(4008): code around pc:
+03-03 02:02:39.054: I/DEBUG(4008): 402d0160 0003151e 4604b570 f7ff460d 4620ff81  ....p..F.F.... F
+03-03 02:02:39.054: I/DEBUG(4008): 402d0170 f7ff4629 bd70ff93 4604b570 460e6800  )F....p.p..F.h.F
+03-03 02:02:39.054: I/DEBUG(4008): 402d0180 68834615 dd062b40 21fa4810 44784a10  .F.h@+...H.!.JxD
+03-03 02:02:39.054: I/DEBUG(4008): 402d0190 f7c8447a 6821f80f 698a4620 47904631  zD....!h F.i1F.G
+03-03 02:02:39.054: I/DEBUG(4008): 402d01a0 b1154606 68836820 6822602b b12b6a13  .F.. h.h+`"h.j+.
+03-03 02:02:39.054: I/DEBUG(4008): code around lr:
+03-03 02:02:39.054: I/DEBUG(4008): 402d01bc 68e06821 21006c4a ea0af7c4 bd704630  !h.hJl.!....0Fp.
+03-03 02:02:39.054: I/DEBUG(4008): 402d01cc 00031492 000314b5 4604b570 ffcef7ff  ........p..F....
+03-03 02:02:39.054: I/DEBUG(4008): 402d01dc 46204605 ff12f7ff bd704628 4604b573  .F F....(Fp.s..F
+03-03 02:02:39.054: I/DEBUG(4008): 402d01ec 2102460d fb36f002 42ab6823 b123d020  .F.!..6.#h.B .#.
+03-03 02:02:39.054: I/DEBUG(4008): 402d01fc b1136c5b f7c868e0 68a0fccf 05c26025  [l...h.....h%`..
+03-03 02:02:39.054: I/DEBUG(4008): memory map around addr 68f52abc:
+03-03 02:02:39.054: I/DEBUG(4008): 4d8c5000-4d9c4000 
+03-03 02:02:39.054: I/DEBUG(4008): (no map for address)
+03-03 02:02:39.054: I/DEBUG(4008): b0001000-b0009000 /system/bin/linker
+03-03 02:02:39.054: I/DEBUG(4008): stack:
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3b88  408d1f90  /system/lib/libdvm.so
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3b8c  412ef258  /dev/ashmem/dalvik-heap (deleted)
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3b90  00000001  
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3b94  408d6c58  /system/lib/libdvm.so
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3b98  408d6fa8  /system/lib/libdvm.so
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3b9c  4c479dec  
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3ba0  46cf260a  /system/framework/core.odex
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3ba4  408735e7  /system/lib/libdvm.so
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3ba8  412ef258  /dev/ashmem/dalvik-heap (deleted)
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3bac  002bf070  [heap]
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3bb0  412ef258  /dev/ashmem/dalvik-heap (deleted)
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3bb4  00000000  
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3bb8  412ef268  /dev/ashmem/dalvik-heap (deleted)
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3bbc  00000000  
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3bc0  df0027ad  
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3bc4  00000000  
+03-03 02:02:39.054: I/DEBUG(4008): #00 4d9c3bc8  001ad8f8  [heap]
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3bcc  002ae0b8  [heap]
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3bd0  00000004  
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3bd4  402d01dd  /system/lib/libcrypto.so
+03-03 02:02:39.054: I/DEBUG(4008): #01 4d9c3bd8  001ad8f8  [heap]
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3bdc  002ae0b8  [heap]
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3be0  00000004  
+03-03 02:02:39.054: I/DEBUG(4008):     4d9c3be4  4024e817  /system/lib/libnativehelper.so
+03-03 02:02:39.406: D/CommService(7477): Checking OLSRd info...
+03-03 02:02:39.500: D/CommService(7477): Monitoring nodes...
+03-03 02:02:39.500: D/dalvikvm(7477): GC_FOR_ALLOC freed 2073K, 16% free 17118K/20359K, paused 51ms
+03-03 02:02:39.632: D/dalvikvm(7477): GC_CONCURRENT freed 1998K, 16% free 17162K/20359K, paused 2ms+4ms
+03-03 02:02:40.406: D/CommService(7477): Checking OLSRd info...
+03-03 02:02:40.445: D/CommService(7477): Monitoring nodes...
+03-03 02:02:40.562: D/dalvikvm(7477): GC_CONCURRENT freed 2045K, 16% free 17158K/20359K, paused 3ms+4ms
+03-03 02:02:41.406: D/CommService(7477): Checking OLSRd info...
+03-03 02:02:41.445: D/CommService(7477): Monitoring nodes...
+03-03 02:02:41.531: D/dalvikvm(7477): GC_CONCURRENT freed 2045K, 16% free 17154K/20359K, paused 3ms+12ms
+03-03 02:02:42.406: D/CommService(7477): Checking OLSRd info...
+03-03 02:02:42.445: D/CommService(7477): Monitoring nodes...
+03-03 02:02:42.507: D/dalvikvm(7477): GC_CONCURRENT freed 2068K, 16% free 17128K/20359K, paused 3ms+4ms
+03-03 02:02:42.679: D/dalvikvm(7477): GC_CONCURRENT freed 2006K, 16% free 17161K/20359K, paused 2ms+12ms
+03-03 02:02:43.140: I/BootReceiver(1236): Copying /data/tombstones/tombstone_05 to DropBox (SYSTEM_TOMBSTONE)
+03-03 02:02:43.210: D/dalvikvm(1236): GC_FOR_ALLOC freed 912K, 17% free 10207K/12295K, paused 62ms
+03-03 02:02:43.265: D/dalvikvm(1236): GC_FOR_ALLOC freed 243K, 16% free 10374K/12295K, paused 49ms
+03-03 02:02:43.265: I/dalvikvm-heap(1236): Grow heap (frag case) to 10.507MB for 196628-byte allocation
+
+    
+===============================================================================================
+151
+A:First, get your tombstone stack trace, it will be printed every time your app crashes. Something like this:
+
+*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+Build fingerprint: 'XXXXXXXXX'
+pid: 1658, tid: 13086  >>> system_server <<<
+signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 64696f7e
+ r0 00000000  r1 00000001  r2 ad12d1e8  r3 7373654d
+ r4 64696f72  r5 00000406  r6 00974130  r7 40d14008
+ r8 4b857b88  r9 4685adb4  10 00974130  fp 4b857ed8
+ ip 00000000  sp 4b857b50  lr afd11108  pc ad115ebc  cpsr 20000030
+ d0  4040000040000000  d1  0000004200000003
+ d2  4e72cd924285e370  d3  00e81fe04b1b64d8
+ d4  3fbc71c7009b64d8  d5  3fe999999999999a
+ d6  4010000000000000  d7  4000000000000000
+ d8  4000000000000000  d9  0000000000000000
+ d10 0000000000000000  d11 0000000000000000
+ d12 0000000000000000  d13 0000000000000000
+ d14 0000000000000000  d15 0000000000000000
+ scr 80000012
+
+         #00  pc 000108d8  /system/lib/libc.so
+         #01  pc 0003724c  /system/lib/libxvi020.so
+         #02  pc 0000ce02  /system/lib/libxvi020.so
+         #03  pc 0000d672  /system/lib/libxvi020.so
+         #04  pc 00010cce  /system/lib/libxvi020.so
+         #05  pc 00004432  /system/lib/libwimax_jni.so
+         #06  pc 00011e74  /system/lib/libdvm.so
+         #07  pc 0004354a  /system/lib/libdvm.so
+         #08  pc 00017088  /system/lib/libdvm.so
+         #09  pc 0001c210  /system/lib/libdvm.so
+         #10  pc 0001b0f8  /system/lib/libdvm.so
+         #11  pc 00059c24  /system/lib/libdvm.so
+         #12  pc 00059e3c  /system/lib/libdvm.so
+         #13  pc 0004e19e  /system/lib/libdvm.so
+         #14  pc 00011b94  /system/lib/libc.so
+         #15  pc 0001173c  /system/lib/libc.so
+
+code around pc:
+ad115e9c 4620eddc bf00bd70 0001736e 0001734e 
+ad115eac 4605b570 447c4c0a f7f44620 e006edc8 
+ad115ebc 42ab68e3 68a0d103 f7f42122 6864edd2 
+ad115ecc d1f52c00 44784803 edbef7f4 bf00bd70 
+ad115edc 00017332 00017312 2100b51f 46682210 
+
+code around lr:
+afd110e8 e2166903 1a000018 e5945000 e1a02004 
+afd110f8 e2055a02 e1a00005 e3851001 ebffed92 
+afd11108 e3500000 13856002 1a000001 ea000009 
+afd11118 ebfffe50 e1a01004 e1a00006 ebffed92 
+afd11128 e1a01005 e1550000 e1a02006 e3a03000 
+
+stack:
+    4b857b10  40e43be8  
+    4b857b14  00857280  
+    4b857b18  00000000  
+    4b857b1c  034e8968  
+    4b857b20  ad118ce9  /system/lib/libnativehelper.so
+    4b857b24  00000002  
+    4b857b28  00000406
+
+
+Then, use the addr2line utility (find it in your NDK tool-chain) to find the function that crashes. In this sample, you do
+
+addr2line -e -f libc.so 0001173c
+
+
+And you will see where you got the problem. Of course this wont help you since it is in libc.
+
+So you might combine the utilities of arm-eabi-objdump to find the final target.
+
+Believe me, it is a tough task.
+
+
+
+
+
+
+
+Just for an update. I think I was doing Android native build from the whole-source-tree for quite a long time, until today I have myself carefully read the NDK documents. Ever since the release NDK-r6, it has provided a utility called ndk-stack.
+
+Following is the content from official NDK documents with the NDK-r9 tar ball.
+
+Overview:
+
+ndk-stack is a simple tool that allows you to filter stack traces as they appear in the output of 'adb logcat' and replace any address inside a shared library with the corresponding : values.
+
+In a nutshell, it will translate something like:
+
+  I/DEBUG   (   31): *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+  I/DEBUG   (   31): Build fingerprint: 'generic/google_sdk/generic/:2.2/FRF91/43546:eng/test-keys'
+  I/DEBUG   (   31): pid: 351, tid: 351  %gt;%gt;%gt; /data/local/ndk-tests/crasher <<<
+  I/DEBUG   (   31): signal 11 (SIGSEGV), fault addr 0d9f00d8
+  I/DEBUG   (   31):  r0 0000af88  r1 0000a008  r2 baadf00d  r3 0d9f00d8
+  I/DEBUG   (   31):  r4 00000004  r5 0000a008  r6 0000af88  r7 00013c44
+  I/DEBUG   (   31):  r8 00000000  r9 00000000  10 00000000  fp 00000000
+  I/DEBUG   (   31):  ip 0000959c  sp be956cc8  lr 00008403  pc 0000841e  cpsr 60000030
+  I/DEBUG   (   31):          #00  pc 0000841e  /data/local/ndk-tests/crasher
+  I/DEBUG   (   31):          #01  pc 000083fe  /data/local/ndk-tests/crasher
+  I/DEBUG   (   31):          #02  pc 000083f6  /data/local/ndk-tests/crasher
+  I/DEBUG   (   31):          #03  pc 000191ac  /system/lib/libc.so
+  I/DEBUG   (   31):          #04  pc 000083ea  /data/local/ndk-tests/crasher
+  I/DEBUG   (   31):          #05  pc 00008458  /data/local/ndk-tests/crasher
+  I/DEBUG   (   31):          #06  pc 0000d362  /system/lib/libc.so
+  I/DEBUG   (   31):
+
+
+Into the more readable output:
+
+  ********** Crash dump: **********
+  Build fingerprint: 'generic/google_sdk/generic/:2.2/FRF91/43546:eng/test-keys'
+  pid: 351, tid: 351  >>> /data/local/ndk-tests/crasher <<<
+  signal 11 (SIGSEGV), fault addr 0d9f00d8
+  Stack frame #00  pc 0000841e  /data/local/ndk-tests/crasher : Routine zoo in /tmp/foo/crasher/jni/zoo.c:13
+  Stack frame #01  pc 000083fe  /data/local/ndk-tests/crasher : Routine bar in /tmp/foo/crasher/jni/bar.c:5
+  Stack frame #02  pc 000083f6  /data/local/ndk-tests/crasher : Routine my_comparison in /tmp/foo/crasher/jni/foo.c:9
+  Stack frame #03  pc 000191ac  /system/lib/libc.so
+  Stack frame #04  pc 000083ea  /data/local/ndk-tests/crasher : Routine foo in /tmp/foo/crasher/jni/foo.c:14
+  Stack frame #05  pc 00008458  /data/local/ndk-tests/crasher : Routine main in /tmp/foo/crasher/jni/main.c:19
+  Stack frame #06  pc 0000d362  /system/lib/libc.so
+
+
+Usage:
+
+To do this, you will first need a directory containing symbolic versions of your application's shared libraries. If you use the NDK build system (i.e. ndk-build), then these are always located under $PROJECT_PATH/obj/local/, where  stands for your device's ABI (i.e. armeabi by default).
+
+You can feed the logcat text either as direct input to the program, e.g.:
+
+adb logcat | $NDK/ndk-stack -sym $PROJECT_PATH/obj/local/armeabi
+
+
+Or you can use the -dump option to specify the logcat as an input file, e.g.:
+
+adb logcat > /tmp/foo.txt
+$NDK/ndk-stack -sym $PROJECT_PATH/obj/local/armeabi -dump foo.txt
+
+
+IMPORTANT :
+
+The tool looks for the initial line containing starts in the logcat output, i.e. something that looks like:
+
+ *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+
+
+When copy/pasting traces, don't forget this line from the traces, or ndk-stack won't work correctly.
+
+TODO:
+
+A future version of ndk-stack will try to launch adb logcat and select the library path automatically. For now, you'll have to do these steps manually.
+
+As of now, ndk-stack doesn't handle libraries that don't have debug information in them. It may be useful to try to detect the nearest function entry point to a given PC address (e.g. as in the libc.so example above).
+    

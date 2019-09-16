@@ -1,0 +1,141 @@
+58
+Q:I am following the guide here: https://github.com/ecgreb/dagger-2-testing-demo
+
+I have the following setup in my app/src/main (the injection and @Provides code omitted):
+
+public class FlingyApplication extends Application {
+    @Singleton
+    @Component(modules = { FlingyModule.class })
+    public interface FlingyComponent
+}
+
+@Module
+public class FlingyModule
+
+
+In app/src/test:
+
+public class TestFlingyApplication extends Application {
+    @Singleton
+    @Component(modules = { TestFlingyModule.class })
+    public interface TestFlingyComponent extends FlingyComponent
+}
+
+@Module
+public class TestFlingyModule
+
+
+So far, it is nearly identical to the example github. When dagger goes to generate the code for the Component builders in src/main, they generate properly. Dagger does not, however, generate code for the Component builders in src/test.
+
+My main build.gradle:
+
+dependencies {
+    classpath 'com.android.tools.build:gradle:2.1.0-alpha3'
+
+    classpath 'com.neenbedankt.gradle.plugins:android-apt:1.5.1'
+}
+
+
+My app/build.gradle
+
+apply plugin: 'com.android.application'
+apply plugin: 'com.neenbedankt.android-apt'
+
+
+android {
+    # There is obviously more in here, but this is the custom part:
+    packagingOptions {
+        exclude 'META-INF/services/javax.annotation.processing.Processor'
+    }
+}
+
+dependencies {
+    compile 'com.squareup:otto:1.3.8'
+    compile 'com.android.support:cardview-v7:23.1.1'
+    compile 'com.android.support:recyclerview-v7:23.1.1'
+    compile 'com.android.support:appcompat-v7:23.1.1'
+    compile 'com.android.support:design:23.1.1'
+    compile 'com.squareup.picasso:picasso:2.5.2'
+    compile 'com.jakewharton:butterknife:7.0.1'
+
+    compile 'com.google.dagger:dagger:2.0.1'
+    apt 'com.google.dagger:dagger-compiler:2.0.1'
+    compile 'javax.annotation:javax.annotation-api:1.2'
+
+    compile 'io.reactivex:rxandroid:1.1.0'
+    compile 'io.reactivex:rxjava:1.1.0'
+
+    testCompile 'com.neenbedankt.gradle.plugins:android-apt:1.4'
+    testCompile 'junit:junit:4.12'
+    testCompile 'org.robolectric:robolectric:3.0'
+    testCompile 'org.mockito:mockito-core:1.10.19'
+}
+
+
+So when I build, I get the DaggerFlingyApplication_FlingyComponent class, but not the DaggerTestFlingyApplication_TestFlingyComponent
+
+Something interesting I noticed is that if I switch the line:
+
+apt 'com.google.dagger:dagger-compiler:2.0.1'
+# TO
+compile 'com.google.dagger:dagger-compiler:2.0.1'
+
+
+I see the following when I run ./gradlew compileDebugUnitTestSources:
+
+:app:compileDebugJavaWithJavac
+Note: /app/build/generated/source/apt/debug/com/jy/flingy/DaggerFlingyApplication_FlingyComponent.java uses unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+:app:preDebugUnitTestBuild UP-TO-DATE
+:app:prepareDebugUnitTestDependencies
+:app:compileDebugUnitTestJavaWithJavac
+Note: /app/build/intermediates/classes/test/debug/com/jy/flingy/DaggerTestFlingyApplication_TestFlingyComponent.java uses unchecked or unsafe operations.
+
+
+I don't know why it builds to intermediates and I assume that I need the build.gradle file to use apt instead of compile, but I can't seem to figure out how to get this to work. I know that it's absolutely possible.
+    
+===============================================================================================
+116
+A:You need to add following to your build.gradle file for instrumentation test:
+
+androidTestApt 'com.google.dagger:dagger-compiler:<version>'
+
+
+or for JUnit test:
+
+testApt 'com.google.dagger:dagger-compiler:<version>'
+
+
+This is required to generate Dagger code for your test components.
+
+
+
+EDIT:
+
+If you are using jack tool chain then add following
+for android test:
+
+androidTestAnnotationProcessor 'com.google.dagger:dagger-compiler:<version>'
+
+
+for JUnit tests:
+
+testAnnotationProcessor 'com.google.dagger:dagger-compiler:<version>'
+
+
+
+
+EDIT:
+
+In case you are using kotlin-kapt for Kotlin code use following:
+
+kaptAndroidTest 'com.google.dagger:dagger-compiler:<version>'
+
+
+or for JUnit test:
+
+kaptTest 'com.google.dagger:dagger-compiler:<version>'
+
+
+Check this link for more info.
+    

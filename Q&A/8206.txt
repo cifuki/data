@@ -1,0 +1,104 @@
+32
+Q:I'm setting up my app so that people can create groups of their friends. When a group is created, it writes 2 tables to the SQL database. The first table has a group name and a group id. The second table has 2 columns, a group id and a user id. This is working fine.
+
+However, now I want to be able to read from the database. I'm using a listview fragment with a cursorloader but I'm having trouble getting the information to display. I want to list all the group names from the first table in my list view.
+
+My problem is that, when I first used the cursorloader to list my contacts, I was using a Uri from the content provider in the onCreateLoader method. Specifically I had CONTENT_URI from the ContactsContracts.Contacts class. 
+
+Example of cursorloader with contentprovider:
+
+@Override
+public Loader<Cursor> onCreateLoader(int i, Bundle bundle) {
+    Uri contentUri = ContactsContract.Contacts.CONTENT_URI;
+    return new CursorLoader(getActivity(),contentUri,PROJECTION,SELECTION,ARGS,ORDER);
+}
+
+
+However, without using a content provider, I don't know what to put in the onCreateLoader method because return new CursorLoader(...) requires a Uri in the second argument.
+
+Any suggestion on how I might be able to display my database data in a listview?
+
+fragment class code:
+
+public class GroupListFragment extends ListFragment implements LoaderManager.LoaderCallbacks<Cursor> {
+
+CursorAdapter mAdapter;
+private OnItemSelectedListener listener;
+private static final String[] PROJECTION ={GroupContract.GroupDetails.COLUMN_NAME_GROUP_NAME};
+private static final String SELECTION = null;
+final String[] FROM = {GroupContract.GroupDetails.COLUMN_NAME_GROUP_NAME};
+final int[] TO = {android.R.id.text1};
+private static final String[] ARGS = null;
+private static final String ORDER = null;
+private Cursor c;
+
+
+@Override
+public void onCreate(Bundle savedInstanceState){
+    super.onCreate(savedInstanceState);
+    mAdapter = new SimpleCursorAdapter(getActivity(), android.R.layout.simple_list_item_1,null,FROM,TO,0 );
+    ReadDBAsync readDB = new ReadDBAsync();
+    readDB.execute();
+}
+
+@Override
+public void onActivityCreated(Bundle savedInstanceState){
+    super.onActivityCreated(savedInstanceState);
+    setListAdapter(mAdapter);
+    getLoaderManager().initLoader(0,null,this);
+}
+
+@Override
+public Loader<Cursor> onCreateLoader(int i, Bundle bundle) {
+    Uri contenturi = Uri.parse("content://preamble.oneapp");
+    Uri tableuri = Uri.withAppendedPath(contenturi,GroupContract.GroupDetails.TABLE_NAME);
+    return new CursorLoader(getActivity(),tableuri,PROJECTION,SELECTION,ARGS,ORDER);
+}
+
+@Override
+public void onLoadFinished(Loader<Cursor> cursorLoader, Cursor cursor) {
+    mAdapter.swapCursor(cursor);
+}
+
+@Override
+public void onLoaderReset(Loader<Cursor> cursorLoader) {
+    mAdapter.swapCursor(null);
+}
+
+
+private class ReadDBAsync extends AsyncTask<Void,Void,String> {
+
+    @Override
+    protected String doInBackground(Void... voids) {
+
+        ContractDBHelpers mDBHelper = new ContractDBHelpers(getActivity());
+        SQLiteDatabase db = mDBHelper.getReadableDatabase();
+        String returnvalue = "database read";
+        c = db.query(GroupContract.GroupDetails.TABLE_NAME,PROJECTION,null,null,null,null,null);
+        return returnvalue;
+    }
+
+    @Override
+    protected void onPostExecute(String result){
+        Toast.makeText(getActivity(), result, Toast.LENGTH_LONG).show();
+    }
+}
+
+}
+
+    
+===============================================================================================
+35
+A:These are the steps to create a cursorloader in a list fragment
+
+1) Create a class extending SQLiteOpenHelper and override onCreate and onUpgrade to create your tables.
+
+2) Create a class extending ContentProvider and create the URIs to access your database. Refer http://developer.android.com/guide/topics/providers/content-providers.html. Add your URIs to the URIMatcher which you use in onCreate, onUpdate, query, etc (overridden methods)  to match the URI. Refer http://developer.android.com/reference/android/content/UriMatcher.html
+
+3) In the insert method call getContext().getContentResolver().notifyChange(uri, null). In the query method call setNotificationUri(ContentResolver cr, Uri uri) before returning the content provider for the insertion change to reflect automatically to your loader. (https://stackoverflow.com/a/7915117/936414).
+
+4) Give that URI in onCreateLoader.
+
+Note:
+Without a content provider, automatic refreshing of changes to the list is not feasible as of the current android version. If you don't want to have your contentprovider visible, set exported attribute in manifest to false. Or you can implement your custom CursorLoader as in https://stackoverflow.com/a/7422343/936414 to retrieve data from the database. But in this case automatic refreshing of data is not possible
+    

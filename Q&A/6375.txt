@@ -1,0 +1,73 @@
+40
+Q:It appears that the old view animations (translate, scale, and so on) are no longer accepted by the AnimationInflater, at least as of ICS.  I read its code in 4.0.4, and it explicitly expects only the XML elements set, objectAnimator, animator.
+
+Even though the documentation at http://developer.android.com/guide/topics/resources/animation-resource.html continues to include the view animations, they appear to be deprecated.  Trying to use them results in, for instance, the error java.lang.RuntimeException: Unknown animator name: translate.
+
+As such, it becomes necessary to use Android's ObjectAnimator.  However, it does not accept fractional values of the associated dimension of itself or its parent (width for translationX, for example) as the old view animations did in the form "75%p".
+
+Constructing the ObjectAnimator manually at runtime, by programmatically fetching the size of the Fragment, isn't feasible because the FragmentTransaction only accepts declarative animations specified by a resid.
+
+My goal is to translate offscreen a Fragment that is filling up an entire Activity (I'm basically doing a shift transition between two fragments).  This is the existing TranslationAnimation implementation (slide_in_right.xml, which along with its counterpart slide_out_left.xml is for some reason not exposed in android.R.anim, and I therefore have to duplicate them in my codebase):
+
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+<translate
+    android:fromXDelta="100%p"
+    android:toXDelta="0"
+    android:duration="@android:integer/config_mediumAnimTime"/>
+</set>
+
+
+My API level is set to 14.
+
+Thanks!
+    
+===============================================================================================
+51
+A:Actually object animators accept fractional values. But maybe you didn't understand the underlying concept of an objectAnimator or more generally a value animator. A value animator will animate a value related to a property (such as a color, a position on screen (X,Y), an alpha parameter or whatever you want). To create such a property (in your case xFraction and yFraction) you need to build your own getters and setters associated to this property name. Lets say you want to translate a FrameLayout from 0% to 25% of the size of your whole screen. Then you need to build a custom View that wraps the FrameLayout objects and write your getters and setters.
+
+public class SlidingFrameLayout extends FrameLayout
+{
+    private static final String TAG = SlidingFrameLayout.class.getName();
+
+    public SlidingFrameLayout(Context context) {
+        super(context);
+    }
+
+    public SlidingFrameLayout(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public float getXFraction()
+    {
+        int width = getWindowManager().getDefaultDisplay().getWidth();
+        return (width == 0) ? 0 : getX() / (float) width;
+    }
+
+    public void setXFraction(float xFraction) {
+        int width = getWindowManager().getDefaultDisplay().getWidth();
+        setX((width > 0) ? (xFraction * width) : 0);
+    }
+}
+
+
+Then You can use the xml way to declare the object animator putting xFraction under the property xml attribute and inflate it with a AnimatorInflater
+
+<?xml version="1.0" encoding="utf-8"?>
+<objectAnimator 
+xmlns:android="http://schemas.android.com/apk/res/android"
+android:propertyName="xFraction" 
+android:valueType="floatType"
+android:valueFrom="0"
+android:valueTo="0.25" 
+android:duration="500"/>
+
+
+or you can just use the java line code
+
+ObjectAnimator oa = ObjectAnimator.ofFloat(menuFragmentContainer, "xFraction", 0, 0.25f);
+
+
+Hope it helps you!
+
+Olivier,
+    

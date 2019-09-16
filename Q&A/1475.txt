@@ -1,0 +1,133 @@
+120
+Q:I'm trying to display 8 items inside a gridview. Sadly, the gridview height is always too little, so that it only shows the first row, and a little part of the second.
+
+Setting android:layout_height="300dp" makes it work. wrap_content and fill_parent apparently not.
+
+My grid view:
+
+<GridView
+    android:id="@+id/myId"
+    android:layout_width="fill_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center"
+    android:horizontalSpacing="2dp"
+    android:isScrollContainer="false"
+    android:numColumns="4"
+    android:stretchMode="columnWidth"
+    android:verticalSpacing="20dp" />
+
+
+My items resource:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:minHeight="?android:attr/listPreferredItemHeight" >
+
+    <ImageView
+        android:id="@+id/appItemIcon"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:src="@android:drawable/ic_dialog_info"
+        android:scaleType="center" />      
+
+    <TextView
+        android:id="@+id/appItemText"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:text="My long application name"
+        android:gravity="center_horizontal"
+        android:textAppearance="?android:attr/textAppearanceSmall" />
+
+</LinearLayout>
+
+
+The issue does not seem related to a lack of vertical space.
+
+What can I do ?
+    
+===============================================================================================
+340
+A:After (too much) research, I stumbled on the excellent answer of Neil Traft.
+
+Adapting his work for the GridView has been dead easy.
+
+ExpandableHeightGridView.java:
+
+package com.example;
+public class ExpandableHeightGridView extends GridView
+{
+
+    boolean expanded = false;
+
+    public ExpandableHeightGridView(Context context)
+    {
+        super(context);
+    }
+
+    public ExpandableHeightGridView(Context context, AttributeSet attrs)
+    {
+        super(context, attrs);
+    }
+
+    public ExpandableHeightGridView(Context context, AttributeSet attrs,
+            int defStyle)
+    {
+        super(context, attrs, defStyle);
+    }
+
+    public boolean isExpanded()
+    {
+        return expanded;
+    }
+
+    @Override
+    public void onMeasure(int widthMeasureSpec, int heightMeasureSpec)
+    {
+        // HACK! TAKE THAT ANDROID!
+        if (isExpanded())
+        {
+            // Calculate entire height by providing a very large height hint.
+            // View.MEASURED_SIZE_MASK represents the largest height possible.
+            int expandSpec = MeasureSpec.makeMeasureSpec(MEASURED_SIZE_MASK,
+                    MeasureSpec.AT_MOST);
+            super.onMeasure(widthMeasureSpec, expandSpec);
+
+            ViewGroup.LayoutParams params = getLayoutParams();
+            params.height = getMeasuredHeight();
+        }
+        else
+        {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        }
+    }
+
+    public void setExpanded(boolean expanded)
+    {
+        this.expanded = expanded;
+    }
+}
+
+
+Include it in your layout like this:
+
+<com.example.ExpandableHeightGridView
+    android:id="@+id/myId"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:gravity="center"
+    android:horizontalSpacing="2dp"
+    android:isScrollContainer="false"
+    android:numColumns="4"
+    android:stretchMode="columnWidth"
+    android:verticalSpacing="20dp" />
+
+
+Lastly you just need to ask it to expand:
+
+mAppsGrid = (ExpandableHeightGridView) findViewById(R.id.myId);
+mAppsGrid.setExpanded(true);
+
+    

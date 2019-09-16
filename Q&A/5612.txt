@@ -1,0 +1,118 @@
+44
+Q:I have implemented the new Android data-binding, and after implementing realised that it does not support two-way binding. I have tried to solve this manually but I am struggling to find a good solution to use when binding to an EditText. 
+In my layout I have this view:
+
+<EditText
+android:id="@+id/firstname"
+android:layout_width="match_parent"
+android:layout_height="wrap_content"
+android:inputType="textCapWords|textNoSuggestions"
+android:text="@{statement.firstName}"/>
+
+
+Another view is also showing the results:
+
+<TextView
+style="@style/Text.Large"
+android:layout_width="wrap_content"
+android:layout_height="wrap_content"
+android:text="@{statement.firstName}"/>
+
+
+In my fragment I create the binding like this: 
+
+FragmentStatementPersonaliaBinding binding = DataBindingUtil.inflate(inflater, R.layout.fragment_statement_personalia, container, false);
+binding.setStatement(mCurrentStatement);
+
+
+This works and puts the current value of firstName in the EditText. The problem is how to update the model when the text changes. I tried putting an OnTextChanged-listener on the editText and updating the model. This created a loop killing my app (model-update updates the GUI, which calls textChanged times infinity). Next I tried to only notify when real changes occured like this: 
+
+@Bindable
+public String getFirstName() {
+    return firstName;
+}
+
+public void setFirstName(String firstName) {
+        boolean changed = !TextUtils.equals(this.firstName, firstName);
+        this.firstName = firstName;
+        if(changed) {
+            notifyPropertyChanged(BR.firstName);
+        }
+    }
+
+
+This worked better, but everytime I write a letter, the GUI is updated and for som reason the edit-cursor is moved to the front. 
+
+Any suggestions would be welcome
+    
+===============================================================================================
+81
+A:EDIT 04.05.16:
+Android Data binding now supports two way-binding automatically! 
+Simply replace:
+
+android:text="@{viewModel.address}"
+
+
+with:
+
+android:text="@={viewModel.address}"
+
+
+in an EditText for instance and you get two-way binding. Make sure you update to the latest version of Android Studio/gradle/build-tools to enable this.
+
+(PREVIOUS ANSWER): 
+
+I tried Bhavdip Pathar's solution, but this failed to update other views I had bound to the same variable. I solved this a different way, by creating my own EditText:
+
+public class BindableEditText extends EditText{
+
+public BindableEditText(Context context) {
+    super(context);
+}
+
+public BindableEditText(Context context, AttributeSet attrs) {
+    super(context, attrs);
+}
+
+public BindableEditText(Context context, AttributeSet attrs, int defStyle) {
+    super(context, attrs, defStyle);
+}
+
+private boolean isInititalized = false;
+
+@Override
+public void setText(CharSequence text, BufferType type) {
+    //Initialization
+    if(!isInititalized){
+        super.setText(text, type);
+        if(type == BufferType.EDITABLE){
+            isInititalized = true;
+        }
+        return;
+    }
+
+    //No change
+    if(TextUtils.equals(getText(), text)){
+        return;
+    }
+
+    //Change
+    int prevCaretPosition = getSelectionEnd();
+    super.setText(text, type);
+    setSelection(prevCaretPosition);
+}}
+
+
+With this solution you can update the model any way you want (TextWatcher, OnTextChangedListener etc), and it takes care of the infinite update loop for you. With this solution the model-setter can be implemented simply as:
+
+public void setFirstName(String firstName) {
+    this.firstName = firstName;
+    notifyPropertyChanged(BR.firstName);
+}
+
+
+This puts less code in the model-class (you can keep the listeners in your Fragment). 
+
+I would appreciate any comments, improvements or other/better solutions to my problem
+    

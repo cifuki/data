@@ -1,0 +1,169 @@
+32
+Q:This question already has an answer here:
+    
+        
+            How to disable BottomNavigationView shift mode?
+                
+                    19 answers
+                
+        
+    
+    
+i am building an application in which i have a BottomNavigationView. Everything works fine until i get to the Activity.
+
+The Navigation is this:
+
+
+
+The problem is that it has this default animation so it pushes the active element everytime higher than the rest.
+
+Another Example:
+
+
+
+So my question is how to get rid of this default animation and every item is aligned when i switch between them?
+
+My code:
+
+public class MainActivity extends AppCompatActivity {
+    private BottomNavigationView bottomNavigationView;
+    private Fragment fragment;
+    private FragmentManager fragmentManager;
+    private FragmentTransaction transaction;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        setupBottomBar();
+    }
+
+    private void setupBottomBar() {
+        bottomNavigationView = (BottomNavigationView)findViewById(R.id.bottomBar);
+        fragmentManager = getSupportFragmentManager();
+        fragment = new CardDeckFragment();
+        transaction = fragmentManager.beginTransaction();
+        transaction.replace(R.id.activity_main, fragment).commit();
+        bottomNavigationView.setOnNavigationItemSelectedListener(new BottomNavigationView.OnNavigationItemSelectedListener() {
+            @Override
+            public boolean onNavigationItemSelected(@NonNull MenuItem item) {
+                switch (item.getItemId()){
+                    case R.id.action_card_deck:{
+                        Toast.makeText(MainActivity.this, "Card Deck Selected", Toast.LENGTH_SHORT).show();
+                        fragment = new CardDeckFragment();
+                        break;
+                    }
+                    case R.id.action_favorites:{
+                        Toast.makeText(MainActivity.this, "Favorites Selected", Toast.LENGTH_SHORT).show();
+                        fragment = new FavoritesFragment();
+                        break;
+                    }
+                    case R.id.action_favorites_another:{
+                        Toast.makeText(MainActivity.this, "Image Selected", Toast.LENGTH_SHORT).show();
+                        fragment = new ImageFragment();
+                        break;
+                    }
+                    case R.id.action_profile:{
+                        Toast.makeText(MainActivity.this, "Profile Selected", Toast.LENGTH_SHORT).show();
+                        fragment = new ProfileFragment();
+                        break;
+                    }
+                    case R.id.action_menu:{
+                        Toast.makeText(MainActivity.this, "Menu Selected", Toast.LENGTH_SHORT).show();
+                        fragment = new MenuFragment();
+                        break;
+                    }
+                }
+
+                transaction = fragmentManager.beginTransaction();
+                transaction.replace(R.id.activity_main, fragment).commit();
+                return true;
+            }
+        });
+
+
+
+    }
+}
+
+
+and my layout:
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/activity_main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context="com.realtimegaming.androidnative.testproject.MainActivity">
+
+    <android.support.design.widget.BottomNavigationView
+        android:id="@+id/bottomBar"
+        android:layout_alignParentBottom="true"
+        android:background="@color/brown"
+        android:layout_gravity="bottom"
+        android:gravity="bottom"
+        android:layout_marginTop="?attr/actionBarSize"
+        app:itemBackground="@color/colorPrimary"
+        app:menu="@menu/bottom_navigation_main"
+        app:itemIconTint="@color/white"
+        android:fitsSystemWindows="true"
+        android:animateLayoutChanges="false"
+        android:splitMotionEvents="false"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+</RelativeLayout>
+
+    
+===============================================================================================
+74
+A:Ok i found a way in case it helps someone else. So by default BottomNavigationView add shiftingmode = true when its more than 3 items. 
+
+At this moment you cannot change it through existing API and the only way to disable shift mode is to use reflection.
+
+So we can use this helper to get rid of this:
+
+class BottomNavigationViewHelper {
+
+    static void removeShiftMode(BottomNavigationView view) {
+        BottomNavigationMenuView menuView = (BottomNavigationMenuView) view.getChildAt(0);
+        try {
+            Field shiftingMode = menuView.getClass().getDeclaredField("mShiftingMode");
+            shiftingMode.setAccessible(true);
+            shiftingMode.setBoolean(menuView, false);
+            shiftingMode.setAccessible(false);
+            for (int i = 0; i < menuView.getChildCount(); i++) {
+                BottomNavigationItemView item = (BottomNavigationItemView) menuView.getChildAt(i);
+                item.setShiftingMode(false);
+                // set once again checked value, so view will be updated
+                item.setChecked(item.getItemData().isChecked());
+            }
+        } catch (NoSuchFieldException e) {
+            Log.e("ERROR NO SUCH FIELD", "Unable to get shift mode field");
+        } catch (IllegalAccessException e) {
+            Log.e("ERROR ILLEGAL ALG", "Unable to change value of shift mode");
+        }
+    }
+}
+
+
+and then use it like this:
+
+BottomNavigationView bottomNavigationView = (BottomNavigationView)findViewById(R.id.bottomBar);
+BottomNavigationViewHelper.removeShiftMode(bottomNavigationView);
+
+
+Hope this helps someone with the same problem with me!!!
+
+Remember, you'll need to execute this method each time you change menu items in your BottomNavigationView.
+
+UPDATE 
+
+As per different stackoverflow question, you also need to update proguard configuration file (e.g. proguard-rules.pro), code above uses reflection and won't work if proguard obfuscate the mShiftingMode field.
+
+-keepclassmembers class android.support.design.internal.BottomNavigationMenuView { 
+    boolean mShiftingMode; 
+}
+
+    

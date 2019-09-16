@@ -1,0 +1,57 @@
+27
+Q:When using the translucent status and navigation bars from the new Android 4.4 KitKat APIs, setting fitsSystemWindows="true" and clipToPadding="false" to a ListView works initially. fitsSystemWindows="true" keeps the list under the action bar and above the navigation bar, clipToPadding="false" allows the list to scroll under the transparent navigation bar and makes the last item in the list scroll up just far enough to pass the navigation bar.
+
+However, when you replace the content with another Fragment through a FragmentTransaction the effect of fitsSystemWindows goes away and the fragment goes under the action bar and navigation bar.
+
+I have a codebase of demo source code here along with a downloadable APK as an example: https://github.com/afollestad/kitkat-transparency-demo. To see what I'm talking about, open the demo app from a device running KitKat, tap an item in the list (which will open another activity), and tap an item in the new activity that opens. The fragment that replaces the content goes under the action bar and clipToPadding doesn't work correctly (the navigation bar covers the last item in the list when you scroll all the way down).
+
+Any ideas? Any clarification needed? I posted the before and after screenshots of my personal app being developed for my employer. 
+
+
+
+    
+===============================================================================================
+12
+A:I struggled with the same problem yesterday. After thinking a lot, I found an elegant solution to this problem.
+
+First, I saw the method requestFitSystemWindows() on ViewParent and I tried to call it in the fragment's onActivityCreated() (after the Fragment is attached to the view hierarchy) but sadly it had no effect. I would like to see a concrete example of how to use that method.
+
+Then I found a neat workaround: I created a custom FitsSystemWindowsFrameLayout that I use as a fragment container in my layouts, as a drop-in replacement for a classic FrameLayout. What it does is memorizing the window insets when fitSystemWindows() is called by the system, then it propagates the call again to its child layout (the fragment layout) as soon as the fragment is added/attached.
+
+Here's the full code:
+
+public class FitsSystemWindowsFrameLayout extends FrameLayout {
+
+    private Rect windowInsets = new Rect();
+    private Rect tempInsets = new Rect();
+
+    public FitsSystemWindowsFrameLayout(Context context) {
+        super(context);
+    }
+
+    public FitsSystemWindowsFrameLayout(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public FitsSystemWindowsFrameLayout(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+    }
+
+    @Override
+    protected boolean fitSystemWindows(Rect insets) {
+        windowInsets.set(insets);
+        super.fitSystemWindows(insets);
+        return false;
+    }
+
+    @Override
+    public void addView(View child, int index, ViewGroup.LayoutParams params) {
+        super.addView(child, index, params);
+        tempInsets.set(windowInsets);
+        super.fitSystemWindows(tempInsets);
+    }
+}
+
+
+I think this is much simpler and more robust than hacks that try to determine the UI elements sizes by accessing hidden system properties which may vary over time and then manually apply padding to the elements.
+    

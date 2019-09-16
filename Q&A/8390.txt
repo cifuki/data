@@ -1,0 +1,288 @@
+32
+Q:I am trying to open files by using Intent.ACTION_GET_CONTENT. 
+
+
+Dependent on the Android version/device brand the file browser opens and I get the following results:
+
+Selecting a file from Downloads:
+
+content://com.android.providers.downloads.documents/document/446
+
+
+Selecting a file from Fotos:
+
+content://media/external/images/media/309
+
+
+Selecting a file from FileCommander:
+
+file:///storage/emulated/0/DCIM/Camera/20141027_132114.jpg
+
+
+I can open all these files except when I try to open a file from Downloads,, Audio , Afbeeldingen(Images) 
+
+It's likely I can't handle this kind of Uri: content://com.android.providers.downloads.documents/document/446
+
+I have tried the following things:
+
+
+Trying to open the file by new File(uri.getPath()). File.exists() returns false.
+Trying to open/reach the file by getContext().getContentResolver().openInputStream(uri). Results into a FileNotFoundException
+Trying to open the file with the following code:
+
+public static String getRealPathFromURI_API19(Context context, Uri uri) {
+
+Log.i("uri", uri.getPath());
+String filePath = "";
+if (uri.getScheme().equals("file")) {
+    return uri.getPath();
+} else if (DocumentsContract.isDocumentUri(context, uri)) {
+    String wholeID = DocumentsContract.getDocumentId(uri);
+    Log.i("wholeID", wholeID);
+    // Split at colon, use second item in the array
+    String[] splits = wholeID.split(":");
+if (splits.length == 2) {
+    String id = splits[1];
+
+        String[] column = {MediaStore.Images.Media.DATA};
+    // where id is equal to
+        String sel = MediaStore.Images.Media._ID + "=?";
+        Cursor cursor = context.getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                column, sel, new String[]{id}, null);
+        int columnIndex = cursor.getColumnIndex(column[0]);
+        if (cursor.moveToFirst()) {
+            filePath = cursor.getString(columnIndex);
+        }
+        cursor.close();
+    }
+} else {
+    filePath = AttachmentUtils.getPath(context, uri);
+}
+return filePath;
+}
+
+
+
+What am I doing wrong?
+
+UPDATE:
+I have noticed that the files that are listed in the screenshot that they are not physically existing in the storage.
+The device I am using is a tablet from the company containing rubbish data. My colleague told me that this device once was connected with a different Google account. These files could be the files from the previous account which are not existing/reachable anymore.
+
+My own conclusion about it is that I am encountering some bug in Android.
+My bug report
+
+Update 6 february 2017:
+
+Android banned the file:// URI. Please consider to think about it.
+
+
+  Ban on file: Uri Scheme The biggest compatibility issue so far with
+  Android 7.0 is that the file: scheme for Uri values is banned, in
+  effect. If you attempt to pass a file: Uri in an Intent that is going
+  to another app \xe2\x80\x94 whether via an extra or as the \xe2\x80\x9cdata\xe2\x80\x9d facet of the
+  Intent \xe2\x80\x94 you will crash with a FileUriExposedException exception. You
+  will face similar issues with putting file: Uri values on the
+  clipboard in ClipData . This is coming from an updated edition of
+  StrictMode . StrictMode.VmPolicy.Builder has a
+  penaltyDeathOnFileUriExposure() method that triggers the detection of
+  file: Uri values and the resulting FileUriExposedException exceptions.
+  And, it appears that this is pre-configured, much as how StrictMode is
+  pre-configured to apply penaltyDeathOnNetwork() (the source of your
+  NetworkOnMainThreadException crashes).
+
+    
+===============================================================================================
+48
+A:Use below code.This will work for sure.
+
+public static String getPath(Context context, Uri uri) {
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+        // DocumentProvider
+        if (DocumentsContract.isDocumentUri(context, uri)) {
+            // ExternalStorageProvider
+            if (isExternalStorageDocument(uri)) {
+                final String docId = DocumentsContract.getDocumentId(uri);
+                final String[] split = docId.split(":");
+                final String type = split[0];
+
+                if ("primary".equalsIgnoreCase(type)) {
+                    return Environment.getExternalStorageDirectory() + "/" + split[1];
+                }
+                // TODO handle non-primary volumes
+            }
+            // DownloadsProvider
+            else if (isDownloadsDocument(uri)) {
+                final String id = DocumentsContract.getDocumentId(uri);
+                final Uri contentUri = ContentUris.withAppendedId(Uri.parse("content://downloads/public_downloads"), Long.valueOf(id));
+                return getDataColumn(context, contentUri, null, null);
+            }
+            // MediaProvider
+            else if (isMediaDocument(uri)) {
+                final String docId = DocumentsContract.getDocumentId(uri);
+                final String[] split = docId.split(":");
+                final String type = split[0];
+                Uri contentUri = null;
+                if ("image".equals(type)) {
+                    contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                } else if ("video".equals(type)) {
+                    contentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+                } else if ("audio".equals(type)) {
+                    contentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+                }
+                final String selection = "_id=?";
+                final String[] selectionArgs = new String[]{split[1]};
+                return getDataColumn(context, contentUri, selection, selectionArgs);
+            }
+        }
+    }
+    // MediaStore (and general)
+    else if ("content".equalsIgnoreCase(uri.getScheme())) {
+        // Return the remote address
+        if (isGooglePhotosUri(uri))
+            return uri.getLastPathSegment();
+        return getDataColumn(context, uri, null, null);
+    }
+    // File
+    else if ("file".equalsIgnoreCase(uri.getScheme())) {
+        return uri.getPath();
+    }
+    return null;
+}
+
+public static String getDataColumn(Context context, Uri uri, String selection, String[] selectionArgs) {
+    Cursor cursor = null;
+    final String column = "_data";
+    final String[] projection = {column};
+    try {
+        cursor = context.getContentResolver().query(uri, projection, selection, selectionArgs, null);
+        if (cursor != null && cursor.moveToFirst()) {
+            final int index = cursor.getColumnIndexOrThrow(column);
+            return cursor.getString(index);
+        }
+    } finally {
+        if (cursor != null)
+            cursor.close();
+    }
+    return null;
+}
+
+public static boolean isExternalStorageDocument(Uri uri) {
+    return "com.android.externalstorage.documents".equals(uri.getAuthority());
+}
+
+/**
+ * @param uri The Uri to check.
+ * @return Whether the Uri authority is DownloadsProvider.
+ */
+public static boolean isDownloadsDocument(Uri uri) {
+    return "com.android.providers.downloads.documents".equals(uri.getAuthority());
+}
+
+/**
+ * @param uri The Uri to check.
+ * @return Whether the Uri authority is MediaProvider.
+ */
+public static boolean isMediaDocument(Uri uri) {
+    return "com.android.providers.media.documents".equals(uri.getAuthority());
+}
+
+/**
+ * @param uri The Uri to check.
+ * @return Whether the Uri authority is Google Photos.
+ */
+public static boolean isGooglePhotosUri(Uri uri) {
+    return "com.google.android.apps.photos.content".equals(uri.getAuthority());
+}
+
+
+Use the below code to browse the file in any format.
+
+public void browseClick() {
+
+    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+    intent.setType("*/*");
+    intent.addCategory(Intent.CATEGORY_OPENABLE);
+    //intent.putExtra("browseCoa", itemToBrowse);
+    //Intent chooser = Intent.createChooser(intent, "Select a File to Upload");
+    try {
+        //startActivityForResult(chooser, FILE_SELECT_CODE);
+        startActivityForResult(Intent.createChooser(intent, "Select a File to Upload"),FILE_SELECT_CODE);
+    } catch (Exception ex) {
+        System.out.println("browseClick :"+ex);//android.content.ActivityNotFoundException ex
+    }
+}
+
+
+Then get that file path in the onActivityResult like below.
+
+@Override
+public void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    if (requestCode == FILE_SELECT_CODE) {
+        if (resultCode == RESULT_OK) {
+            try {
+              Uri uri = data.getData();
+
+                if (filesize >= FILE_SIZE_LIMIT) {
+                    Toast.makeText(this,"The selected file is too large. Selet a new file with size less than 2mb",Toast.LENGTH_LONG).show();
+                } else {
+                    String mimeType = getContentResolver().getType(uri);
+                    if (mimeType == null) {
+                        String path = getPath(this, uri);
+                        if (path == null) {
+                            filename = FilenameUtils.getName(uri.toString());
+                        } else {
+                            File file = new File(path);
+                            filename = file.getName();
+                        }
+                    } else {
+                        Uri returnUri = data.getData();
+                        Cursor returnCursor = getContentResolver().query(returnUri, null, null, null, null);
+                        int nameIndex = returnCursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                        int sizeIndex = returnCursor.getColumnIndex(OpenableColumns.SIZE);
+                        returnCursor.moveToFirst();
+                        filename = returnCursor.getString(nameIndex);
+                        String size = Long.toString(returnCursor.getLong(sizeIndex));
+                    }
+   File fileSave = getExternalFilesDir(null);
+    String sourcePath = getExternalFilesDir(null).toString();
+    try {
+                        copyFileStream(new File(sourcePath + "/" + filename), uri,this);
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+  }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+private void copyFileStream(File dest, Uri uri, Context context)
+        throws IOException {
+    InputStream is = null;
+    OutputStream os = null;
+    try {
+        is = context.getContentResolver().openInputStream(uri);
+        os = new FileOutputStream(dest);
+        byte[] buffer = new byte[1024];
+        int length;
+
+        while ((length = is.read(buffer)) > 0) {
+            os.write(buffer, 0, length);
+
+        }
+    } catch (Exception e) {
+        e.printStackTrace();
+    } finally {
+        is.close();
+        os.close();
+    }
+}
+
+
+After this you can open this file from your application external storage where you saved the file with appropriate action.
+    

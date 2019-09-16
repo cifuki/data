@@ -1,0 +1,211 @@
+28
+Q:I'm trying to down/upload a file with retrofit 2 but can't find any tutorials examples on how to do so.
+My code for downloading is:
+
+@GET("documents/checkout")
+public Call<File> checkout(@Query(value = "documentUrl") String documentUrl, @Query(value = "accessToken") String accessToken, @Query(value = "readOnly") boolean readOnly);
+
+
+and
+
+Call<File> call = RetrofitSingleton.getInstance(serverAddress)
+                .checkout(document.getContentUrl(), apiToken, readOnly[i]);
+call.enqueue(new Callback<File>() {
+        @Override
+        public void onResponse(Response<File> response,
+                Retrofit retrofit) {
+            String fileName = document.getFileName();
+            try {
+                System.out.println(response.body());
+                long fileLength = response.body().length();
+                InputStream input = new FileInputStream(response.body());
+                File path = Environment.getExternalStorageDirectory();
+                File file = new File(path, fileName);
+                BufferedOutputStream output = new BufferedOutputStream(
+                        new FileOutputStream(file));
+                byte data[] = new byte[1024];
+
+                long total = 0;
+                int count;
+                while ((count = input.read(data)) != -1) {
+                    total += count;
+                    output.write(data, 0, count);
+                }
+
+                output.flush();
+
+                output.close();
+            } catch (IOException e) {
+                String logTag = "TEMPTAG";
+                Log.e(logTag, "Error while writing file!");
+                Log.e(logTag, e.toString());
+            }
+        }
+        @Override
+        public void onFailure(Throwable t) {
+            // TODO: Error handling
+            System.out.println(t.toString());
+        }
+    });
+
+
+I've tried with Call and Call but nothing seems to work.
+
+The server-side code writes the file's bytes into HttpServletResponse's output stream after setting the headers and mime type correctly.
+
+What am I doing wrong?
+
+Finally, the upload code:
+
+@Multipart
+@POST("documents/checkin")
+public Call<String> checkin(@Query(value = "documentId") String documentId, @Query(value = "name") String fileName, @Query(value = "accessToken") String accessToken, @Part("file") RequestBody file);
+
+
+and
+
+RequestBody requestBody = RequestBody.create(MediaType.parse(document.getMimeType()), file);
+
+            Call<String> call = RetrofitSingleton.getInstance(serverAddress).checkin(documentId, document.getFileName(), apiToken, requestBody);
+            call.enqueue(new Callback<String>() {
+                @Override
+                public void onResponse(Response<String> response, Retrofit retrofit) {
+                    System.out.println(response.body());
+                }
+
+                @Override
+                public void onFailure(Throwable t) {
+                    System.out.println(t.toString());
+                }
+            });
+
+
+Thanks!
+
+Edit: 
+
+After the answer, downloading only yields a corrupted file (without the @Streaming), uploading doesn't as well. When I use the above code, the server returns a 400 error. After changing it to
+
+RequestBody requestBody = RequestBody.create(MediaType.parse(document.getMimeType()), file);
+            MultipartBuilder multipartBuilder = new MultipartBuilder();
+            multipartBuilder.addFormDataPart("file", document.getFileName(), requestBody);
+
+            Call<String> call = RetrofitSingleton.getInstance(serverAddress).checkin(documentId, document.getFileName(), apiToken, multipartBuilder.build());
+
+
+, the request executes but the backend doesn't seem to receive a file.
+
+Backend code:
+
+@RequestMapping(value = "/documents/checkin", method = RequestMethod.POST)
+public void checkInDocument(@RequestParam String documentId,
+        @RequestParam String name, @RequestParam MultipartFile file,
+        @RequestParam String accessToken, HttpServletResponse response)
+
+
+What am I doing wrong? I was able to use the backend from plain Java with the Apache HttpClient:
+
+    MultipartEntityBuilder builder = MultipartEntityBuilder.create();
+    builder.setMode(HttpMultipartMode.BROWSER_COMPATIBLE);
+    builder.addBinaryBody("file", new File("E:\\\\temp\\\\test.jpg"));
+    HttpEntity httpEntity = builder.build();
+    System.out.println("HttpEntity " + EntityUtils.toString(httpEntity.));
+    HttpPost httpPost = new HttpPost(uri);
+    httpPost.setEntity(httpEntity);
+
+
+Edit v2
+
+For anyone interested, both up- and downloading work now: These are the solutions:
+
+Service:
+
+@GET("documents/checkout")
+public Call<ResponseBody> checkout(@Query(value = "documentUrl") String documentUrl, @Query(value = "accessToken") String accessToken, @Query(value = "readOnly") boolean readOnly);
+
+@Multipart
+@POST("documents/checkin")
+public Call<String> checkin(@Query(value = "documentId") String documentId, @Query(value = "name") String fileName, @Query(value = "accessToken") String accessToken, @Part("file") RequestBody file);
+
+
+Download Code:
+
+    Call<ResponseBody> call = RetrofitSingleton.getInstance(serverAddress)
+                .checkout(document.getContentUrl(), apiToken, readOnly[i]);
+        call.enqueue(new Callback<ResponseBody>() {
+            @Override
+            public void onResponse(Response<ResponseBody> response,
+                    Retrofit retrofit) {
+                String fileName = document.getFileName();
+
+                try {
+                    File path = Environment.getExternalStorageDirectory();
+                    File file = new File(path, fileName);
+                    FileOutputStream fileOutputStream = new FileOutputStream(file);
+                    IOUtils.write(response.body().bytes(), fileOutputStream);
+                } catch (IOException e) {
+                    Log.e(logTag, "Error while writing file!");
+                    Log.e(logTag, e.toString());
+                }
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                // TODO: Error handling
+                System.out.println(t.toString());
+            }
+        });
+
+
+Upload Code:
+
+    Call<String> call = RetrofitSingleton
+                    .getInstance(serverAddress).checkin(documentId,
+                            document.getFileName(), apiToken,
+                            multipartBuilder.build());
+            call.enqueue(new Callback<String>() {
+                @Override
+                public void onResponse(Response<String> response,
+                        Retrofit retrofit) {
+                    // Handle response here
+                }
+
+                @Override
+                public void onFailure(Throwable t) {
+                    // TODO: Error handling
+                    System.out.println("Error");
+                    System.out.println(t.toString());
+                }
+            });
+
+    
+===============================================================================================
+21
+A:For downloading, you can use ResponseBody as your return type -- 
+
+@GET("documents/checkout")
+@Streaming
+public Call<ResponseBody> checkout(@Query("documentUrl") String documentUrl, @Query("accessToken") String accessToken, @Query("readOnly") boolean readOnly);
+
+
+and you can get the ResponseBody input stream in your call back --
+
+Call<ResponseBody> call = RetrofitSingleton.getInstance(serverAddress)
+            .checkout(document.getContentUrl(), apiToken, readOnly[i]);
+
+call.enqueue(new Callback<ResponseBody>() {
+        @Override
+        public void onResponse(Response<ResponseBody> response,
+                Retrofit retrofit) {
+            String fileName = document.getFileName();
+            try {
+                InputStream input = response.body().byteStream();
+                //  rest of your code
+
+
+Your upload looks okay at first glance if you server handles multipart messages correctly. Is it working?  If not, can you explain the failure mode? You also might be able to simplify by not making it multipart.  Remove the @Multipart annotation and convert @Path to @Body -- 
+
+@POST("documents/checkin")
+public Call<String> checkin(@Query("documentId") String documentId, @Query("name") String fileName, @Query("accessToken") String accessToken, @Body RequestBody file);
+
+    

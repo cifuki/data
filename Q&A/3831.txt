@@ -1,0 +1,65 @@
+60
+Q:I have some receivers declared in my AndroidManifest :
+
+<!-- no warning -->
+<receiver
+    android:name=".receivers.TriggerMonitoringBootReceiver"
+    android:enabled="false">
+    <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+    </intent-filter>
+</receiver>
+
+<!-- no warning -->
+<receiver
+    android:name=".receivers.ScanResultsReceiver"
+    android:enabled="false">
+    <intent-filter>
+        <action android:name="android.net.wifi.SCAN_RESULTS" />
+    </intent-filter>
+</receiver>
+
+<!-- warning : Exported receiver does not require permission-->
+<receiver
+    android:name=".receivers.BatteryMonitoringReceiver"
+    android:enabled="false">
+    <intent-filter>
+        <action android:name="@string/intent_action_setup_alarm" />
+        <action android:name="@string/intent_action_cancel_alarm" />
+        <action android:name="@string/intent_action_monitor" />
+    </intent-filter>
+</receiver>
+
+
+The first one is meant to receive a BOOT_COMPLETED action. The second is meant to receive android.net.wifi.SCAN_RESULTS. The third one is meant to receive some actions I broadcast (intent_action_monitor) and some actions broadcasted by the AlarmManager (intent_action_setup_alarm etc).
+
+Two questions:
+
+
+Why don't I get the warning on all receivers? 
+What permissions do I need to set for receivers meant to receive from system services to correct the warning (I understand what it is about and I don't want anyone to use my receivers anyway) ? Will exported="false" do for boot receivers, wifi receivers, alarm receivers etc?
+I thought of using a custom permission with android:protectionLevel="signatureOrSystem" but the docs advise against both this protection level and custom permissions. So how I should handle this warning ?
+
+
+Links to the docs and/or some code will be much appreciated.
+    
+===============================================================================================
+64
+A:Why don't I get the warning on all receivers ?
+
+
+Because the first two are clearly designed to be broadcast by Android. The last one is unknown, partly because you did not supply the string resource values, and possibly because they are your own unique action strings.
+
+
+  What permissions do I need to set for receivers meant to receive from system services to correct the warning
+
+
+The correct solution is to delete the <intent-filter>. If you are broadcasting these Intents, or if you are wrapping an Intent in a getBroadcast() PendingIntent, you do not need action strings. Use the Intent constructor that takes the Java class object as the second parameter, and use that:
+
+new Intent(this, BatteryMonitoringReceiver.class)
+
+
+You are welcome to still attach an action string to that Intent, if you want, but you can dump the <intent-filter> (routing will be based on the supplied component, in this case the Java class).
+
+Only use an <intent-filter> when you are expecting the OS or third-party apps to initiate the Intent themselves (executing a PendingIntent that you created does not count).
+    

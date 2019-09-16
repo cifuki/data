@@ -1,0 +1,48 @@
+40
+Q:I have a data loading system set up using a custom Loader and Cursor that is working great from Activities and Fragments but there is no LoaderManager (that I can find) in Service.  Does anyone know why LoaderManager was excluded from Service?  If not is there a way around this?
+    
+===============================================================================================
+52
+A:Does anyone know why LoaderManager was excluded from Service?
+
+
+As stated in the other answer, LoaderManager was explicitly designed to manage Loaders through the lifecycles of Acivities and Fragments. Since Services do not have these configuration changes to deal with, using a LoaderManager isn't necessary.
+
+
+  If not is there a way around this?
+
+
+Yes, the trick is you don't need to use a LoaderManager, you can just work with your Loader directly, which will handle asynchronously loading your data and monitoring any underlying data changes for you, which is much better than querying your data manually.
+
+First, create, register, and start loading your Loader when your Service is created.
+
+@Override
+public void onCreate() {
+    mCursorLoader = new CursorLoader(context, contentUri, projection, selection, selectionArgs, orderBy);
+    mCursorLoader.registerListener(LOADER_ID_NETWORK, this);
+    mCursorLoader.startLoading();
+}
+
+
+Next, implement OnLoadCompleteListener<Cursor> in your Service to handle load callbacks.
+
+@Override
+public void onLoadComplete(Loader<Cursor> loader, Cursor data) {
+    // Bind data to UI, etc
+}
+
+
+Lastly, don't forget clean up your Loader when the Service is destroyed.
+
+@Override
+public void onDestroy() {
+
+    // Stop the cursor loader
+    if (mCursorLoader != null) {
+        mCursorLoader.unregisterListener(this);
+        mCursorLoader.cancelLoad();
+        mCursorLoader.stopLoading();
+    }
+}
+
+    

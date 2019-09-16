@@ -1,0 +1,31 @@
+35
+Q:I exported my project from Eclipse and imported to Android Studio using the instructions in this link: http://developer.android.com/sdk/installing/migrate.html
+
+When I build, I have an error:
+
+Duplicate files copied in APK META-INF/DEPENDENCIES
+
+
+After searching, I found a solution: add 
+
+packagingOptions {
+    exclude 'META-INF/DEPENDENCIES'
+}
+
+
+into build.gradle. And it works!
+
+But I don't understand why I had this error and why I've had to apply that fix. Can anybody explain?
+    
+===============================================================================================
+38
+A:In Android Gradle builds, you're not permitted to include the same file with the same path more than once in the output. In your build, there were two META-INF/DEPENDENCIES files coming from different places. Since you don't need this file at all in your application, the simplest thing to do is to tell the build system to ignore it altogether, which is what this exclude directive does.
+
+There's also a pickFirst directive to tell the build system to keep one of the copies; there's a tiny amount of detail on that in Android Gradle plugin 0.7.0: "duplicate files during packaging of APK".
+
+Android builds in Gradle are rather strict about duplicate files, which can make life difficult. There's a similar problem if you include the same Java class more than once, where you get the "Multiple dex files define" error (see Multiple dex files define Landroid/support/v4/accessibilityservice/AccessibilityServiceInfoCompat) for a typical example).
+
+Other build systems are more lenient. It's typical in Java that if you include the same class more than once in a classpath, for example, the first copy it sees is the one that's used; duplicates after that are ignored. This is in most cases easier to deal with, but it has a couple problems. The biggest one is that there can be subtle errors if multiple different versions of a file creep into the build without you knowing -- it can be difficult to figure out what's going on. When you do figure it out, you can usually solve it by juggling the order in which things are included to make sure the one you want makes it to the final output, but in very complex builds, this can be difficult to achieve, and it can happen that doing seemingly unrelated things like including new libraries in your project can upset the ordering and lead to a lot of woe.
+
+For that reason, Gradle has the philosophy of not relying on ordering of things to determine "winners" in the game of resolving duplicates, and it forces the developer to make all dependencies explicit. Android's implementation of its build system on top of Gradle follows that philosophy.
+    

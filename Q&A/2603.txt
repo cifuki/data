@@ -1,0 +1,76 @@
+80
+Q:Is there a way to have a Multi-Line EditText present and use the IME Action Label "Done"  on Android 2.3?
+
+In Android 2.2 this is not a problem, the enter button shows the IME Action Label "Done" (android:imeActionLabel="actionDone"), and dismisses Soft Input when clicked.
+
+When configuring an EditText for multi-line, Android 2.3 removes the ability to show the "Done" action for the Soft Input keyboard.
+
+I have managed to alter the behaviour of the Soft Input enter button by using a KeyListener, however the enter button still looks like an enter key.
+
+
+
+Here is the declaration of the EditText
+
+<EditText
+        android:id="@+id/Comment"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="0dp"
+        android:lines="3"
+        android:maxLines="3"
+        android:minLines="3"
+        android:maxLength="60"
+        android:scrollHorizontally="false"
+        android:hint="hint"
+        android:gravity="top|left"
+        android:textColor="#888"
+        android:textSize="14dp"
+        />
+<!-- android:inputType="text" will kill the multiline on 2.3! -->
+<!-- android:imeOptions="actionDone" switches to a "t9" like soft input -->
+
+
+When I check the inputType value after loading setting the content view in the activity, it shows up as:
+
+inputType = 0x20001
+
+
+Which is:
+
+
+class = TYPE_CLASS_TEXT | TYPE_TEXT_VARIATION_NORMAL
+flags = InputType.TYPE_TEXT_FLAG_MULTI_LINE
+
+    
+===============================================================================================
+161
+A:Well, after re-reading the TextView and EditorInfo docs, it has become clear that the platform is going to force IME_FLAG_NO_ENTER_ACTION for multi-line text views.
+
+
+  Note that TextView will automatically
+  set this flag for you on multi-line
+  text views.
+
+
+My solution is to subclass EditText and adjust the IME options after letting the platform configure them:
+
+@Override
+public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+    InputConnection connection = super.onCreateInputConnection(outAttrs);
+    int imeActions = outAttrs.imeOptions&EditorInfo.IME_MASK_ACTION;
+    if ((imeActions&EditorInfo.IME_ACTION_DONE) != 0) {
+        // clear the existing action
+        outAttrs.imeOptions ^= imeActions;
+        // set the DONE action
+        outAttrs.imeOptions |= EditorInfo.IME_ACTION_DONE;
+    }
+    if ((outAttrs.imeOptions&EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0) {
+        outAttrs.imeOptions &= ~EditorInfo.IME_FLAG_NO_ENTER_ACTION;
+    }
+    return connection;
+}
+
+
+In the above, I'm forcing IME_ACTION_DONE too, even though that can be achieved through tedious layout configuration.
+    

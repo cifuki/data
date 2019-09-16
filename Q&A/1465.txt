@@ -1,0 +1,115 @@
+121
+Q:For instance, the default button has the following dependencies between its states and background images:
+
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_window_focused="false" android:state_enabled="true"
+        android:drawable="@drawable/btn_default_normal" />
+    <item android:state_window_focused="false" android:state_enabled="false"
+        android:drawable="@drawable/btn_default_normal_disable" />
+    <item android:state_pressed="true" 
+        android:drawable="@drawable/btn_default_pressed" />
+    <item android:state_focused="true" android:state_enabled="true"
+        android:drawable="@drawable/btn_default_selected" />
+    <item android:state_enabled="true"
+        android:drawable="@drawable/btn_default_normal" />
+    <item android:state_focused="true"
+        android:drawable="@drawable/btn_default_normal_disable_focused" />
+    <item
+        android:drawable="@drawable/btn_default_normal_disable" />
+</selector>
+
+
+How can I define my own custom state (smth like android:state_custom), so then I could use it to dynamically change my button visual appearance?
+    
+===============================================================================================
+252
+A:The solution indicated by @(Ted Hopp) works, but needs a little correction: in the selector, the item states need an "app:" prefix, otherwise the inflater won't recognise the namespace correctly, and will fail silently; at least this is what happens to me.
+
+Allow me to report here the whole solution, with some more details:
+
+First, create file "res/values/attrs.xml":
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="food">
+        <attr name="state_fried" format="boolean" />
+        <attr name="state_baked" format="boolean" />
+    </declare-styleable>
+</resources>
+
+
+Then define your custom class. For instance, it may be a class "FoodButton", derived from class "Button". You will have to implement a constructor; implement this one, which seems to be the one used by the inflater:
+
+public FoodButton(Context context, AttributeSet attrs) {
+    super(context, attrs);
+}
+
+
+On top of the derived class:
+
+private static final int[] STATE_FRIED = {R.attr.state_fried};
+private static final int[] STATE_BAKED = {R.attr.state_baked};
+
+
+Also, your state variables:
+
+private boolean mIsFried = false;
+private boolean mIsBaked = false;
+
+
+And a couple of setters:
+
+public void setFried(boolean isFried) {mIsFried = isFried;}
+public void setBaked(boolean isBaked) {mIsBaked = isBaked;}
+
+
+Then override function "onCreateDrawableState":
+
+@Override
+protected int[] onCreateDrawableState(int extraSpace) {
+    final int[] drawableState = super.onCreateDrawableState(extraSpace + 2);
+    if (mIsFried) {
+        mergeDrawableStates(drawableState, STATE_FRIED);
+    }
+    if (mIsBaked) {
+        mergeDrawableStates(drawableState, STATE_BAKED);
+    }
+    return drawableState;
+}
+
+
+Finally, the most delicate piece of this puzzle; the selector defining the StateListDrawable that you will use as a background for your widget. This is file "res/drawable/food_button.xml":
+
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res/com.mydomain.mypackage">
+<item
+    app:state_baked="true"
+    app:state_fried="false"
+    android:drawable="@drawable/item_baked" />
+<item
+    app:state_baked="false"
+    app:state_fried="true"
+    android:drawable="@drawable/item_fried" />
+<item
+    app:state_baked="true"
+    app:state_fried="true"
+    android:drawable="@drawable/item_overcooked" />
+<item
+    app:state_baked="false"
+    app:state_fried="false"
+    android:drawable="@drawable/item_raw" />
+</selector>
+
+
+Notice the "app:" prefix, whereas with standard android states you would have used prefix "android:". The XML namespace is crucial for a correct interpretation by the inflater and depends on the type of project in which you are adding attributes. If it is an application, replace com.mydomain.mypackage with the actual package name of your application (application name excluded). If it is a library you must use "http://schemas.android.com/apk/res-auto" (and be using Tools R17 or later) or you will get runtime errors.
+
+A couple of notes:
+
+
+It seems you don't need to call the "refreshDrawableState" function, at least the solution works well as is, in my case
+In order to use your custom class in a layout xml file, you will have to specify the fully qualified name (e.g. com.mydomain.mypackage.FoodButton)
+You can as weel mix-up standard states (e.g. android:pressed, android:enabled, android:selected) with custom states, in order to represent more complicated state combinations
+
+    

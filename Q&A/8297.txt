@@ -1,0 +1,113 @@
+32
+Q:I searched, but I didn't find an answer. I'm developing an Android app based on webview, using HTML5 and JavaScript. Can I call an Android method, like makeToast() from JavaScript?
+    
+===============================================================================================
+69
+A:You can do this by adding a JavaScript Interface to your WebView and exposing specific methods to the JavaScript code running in your web view. In other words, you'll need to wrap the calls to Android's Toast class in a method you create in your activity/fragment.
+
+activity_main.xml
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <WebView android:id="@+id/web_view"
+                android:layout_width="fill_parent"
+                android:layout_height="fill_parent"/>
+
+</RelativeLayout>
+
+
+MainActivity.java
+
+public class MainActivity extends Activity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        WebView webView = (WebView)findViewById(R.id.web_view);
+        webView.loadUrl("file:///android_asset/web.html");
+
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.addJavascriptInterface(new WebViewJavaScriptInterface(this), "app");
+    }
+
+    /*
+     * JavaScript Interface. Web code can access methods in here 
+     * (as long as they have the @JavascriptInterface annotation)
+     */
+    public class WebViewJavaScriptInterface{
+
+        private Context context;
+
+        /*
+         * Need a reference to the context in order to sent a post message
+         */
+        public WebViewJavaScriptInterface(Context context){
+            this.context = context;
+        }
+
+        /* 
+         * This method can be called from Android. @JavascriptInterface 
+         * required after SDK version 17. 
+         */
+        @JavascriptInterface
+        public void makeToast(String message, boolean lengthLong){
+            Toast.makeText(context, message, (lengthLong ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT)).show();
+        }
+    }
+
+}
+
+
+assets/web.html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JavaScript View</title>
+
+    <script type="text/javascript">
+
+        function showToast(){
+            var message = document.getElementById("message").value;
+            var lengthLong = document.getElementById("length").checked;
+
+            /* 
+                Call the 'makeToast' method in the Java code. 
+                'app' is specified in MainActivity.java when 
+                adding the JavaScript interface. 
+             */
+            app.makeToast(message, lengthLong);
+            return false;
+        }
+
+        /* 
+            Call the 'showToast' method when the form gets 
+            submitted (by pressing button or return key on keyboard). 
+         */
+        window.onload = function(){
+            var form = document.getElementById("form");
+            form.onsubmit = showToast;
+        }
+    </script>
+</head>
+
+<body>
+
+<form id="form">
+    Message: <input id="message" name="message" type="text"/><br />
+    Long: <input id="length" name="length" type="checkbox" /><br />
+
+    <input type="submit" value="Make Toast" />
+</form>
+
+</body>
+</html>
+
+
+
+    

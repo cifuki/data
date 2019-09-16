@@ -1,0 +1,169 @@
+121
+Q:I have set up Gradle to add package name suffix to my debug app so I could have release version that I'm using and debug version on one phone. I was referencing this: http://tools.android.com/tech-docs/new-build-system/user-guide#TOC-Build-Types
+
+My build.gradle file looks like this:
+
+...
+android
+{
+    ...
+    buildTypes
+    {
+        debug
+        {
+            packageNameSuffix ".debug"
+            versionNameSuffix " debug"
+        }
+    }
+}
+
+
+Everything works fine until I start using a ContentProvider in my app. I get: 
+
+Failure [INSTALL_FAILED_CONFLICTING_PROVIDER]
+
+
+I understand that this happens because two apps (release and debug) are registering same ContentProvider authority.
+
+I see one possibility to solve this. If I understand correctly, you should be able to specify different files to use when building. Then I should be able to put different authorities in different resource files (and from Manifest set authority as string resource) and tell Gradle to use different resource for debug build. Is that possible? If yes then any hints on how to achieve that would be awesome!
+
+Or maybe it's possible to directly modify Manifest using Gradle? Any other solution on how to run same app with ContentProvider on one device is always welcome.
+    
+===============================================================================================
+221
+A:None of existing answers satisfied me, however Liberty was close. So this is how am I doing it.
+First of all at the moment I am working with:
+
+
+Android Studio Beta 0.8.2
+Gradle plugin 0.12.+
+Gradle 1.12
+
+
+My goal is to run Debug version along with Release version on the same device using the same ContentProvider.
+
+
+
+In build.gradle of your app set suffix for Debug build:
+
+buildTypes {
+    debug {
+        applicationIdSuffix ".debug"
+    }
+}
+
+
+
+
+In AndroidManifest.xml file set android:authorities property of your ContentProvider:
+
+<provider
+    android:name="com.example.app.YourProvider"
+    android:authorities="${applicationId}.provider"
+    android:enabled="true"
+    android:exported="false" >
+</provider>
+
+
+
+
+In your code set AUTHORITY property that can be used wherever needed in your implementation:
+
+public static final String AUTHORITY = BuildConfig.APPLICATION_ID + ".provider";
+
+
+Tip: Before it was BuildConfig.PACKAGE_NAME
+
+That's it! It will work like a charm. Keep reading if you use SyncAdapter!
+
+
+
+Update for SyncAdapter (14.11.2014)
+
+Once again I will start with my current setup:
+
+
+Android Studio Beta 0.9.2
+Gradle plugin 0.14.1
+Gradle 2.1
+
+
+Basically, if you need to customise some values for different builds you can do it from the build.gradle file:
+
+
+use buildConfigField to access it from the BuildConfig.java class
+use resValue to access it from resources e.g. @string/your_value 
+
+
+As an alternative for resources, you can create separate buildType or flavour directories and override XMLs or values within them. However, I am not going to use it in example below.
+
+Example
+
+
+
+In build.gradle file add the following:
+
+defaultConfig {
+    resValue "string", "your_authorities", applicationId + '.provider'
+    resValue "string", "account_type", "your.syncadapter.type"
+    buildConfigField "String", "ACCOUNT_TYPE", '"your.syncadapter.type"'
+}
+
+buildTypes {
+    debug {
+        applicationIdSuffix ".debug"
+        resValue "string", "your_authorities", defaultConfig.applicationId + '.debug.provider'
+        resValue "string", "account_type", "your.syncadapter.type.debug"
+        buildConfigField "String", "ACCOUNT_TYPE", '"your.syncadapter.type.debug"'
+    }
+}
+
+
+You will see results in BuildConfig.java class
+
+public static final String ACCOUNT_TYPE = "your.syncadapter.type.debug";
+
+
+and in build/generated/res/generated/debug/values/generated.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Automatically generated file. DO NOT MODIFY -->
+    <!-- Values from default config. -->
+    <item name="account_type" type="string">your.syncadapter.type.debug</item>
+    <item name="authorities" type="string">com.example.app.provider</item>
+
+</resources>
+
+
+
+
+In your authenticator.xml use resource specified in build.gradle file
+
+<?xml version="1.0" encoding="utf-8"?>
+<account-authenticator xmlns:android="http://schemas.android.com/apk/res/android"
+                       android:accountType="@string/account_type"
+                       android:icon="@drawable/ic_launcher"
+                       android:smallIcon="@drawable/ic_launcher"
+                       android:label="@string/app_name"
+/>
+
+
+
+
+In your syncadapter.xml use the same resource again and @string/authorities too
+
+<?xml version="1.0" encoding="utf-8"?>
+<sync-adapter xmlns:android="http://schemas.android.com/apk/res/android"
+              android:contentAuthority="@string/authorities"
+              android:accountType="@string/account_type"
+              android:userVisible="true"
+              android:supportsUploading="false"
+              android:allowParallelSyncs="false"
+              android:isAlwaysSyncable="true"
+        />
+
+
+Tip: autocompletion(Ctrl+Space) does not work for these generated resource so you have to type them manually
+    

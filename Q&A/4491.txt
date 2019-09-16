@@ -1,0 +1,90 @@
+53
+Q:The new commitNow() method added in Android N and support library version 24 has a limited and a bit confusing documentation.
+
+
+  Commits this transaction synchronously. Any added fragments will be
+  initialized and brought completely to the lifecycle state of their
+  host and any removed fragments will be torn down accordingly before
+  this call returns. Committing a transaction in this way allows
+  fragments to be added as dedicated, encapsulated components that
+  monitor the lifecycle state of their host while providing firmer
+  ordering guarantees around when those fragments are fully initialized
+  and ready. Fragments that manage views will have those views created
+  and attached. 
+  
+  Calling commitNow is preferable to calling commit()
+  followed by FragmentManager.executePendingTransactions() as the latter
+  will have the side effect of attempting to commit all currently
+  pending transactions whether that is the desired behavior or not.
+  
+  Transactions committed in this way may not be added to the
+  FragmentManager's back stack, as doing so would break other expected
+  ordering guarantees for other asynchronously committed transactions.
+  This method will throw IllegalStateException if the transaction
+  previously requested to be added to the back stack with
+  addToBackStack(String). 
+  
+  A transaction can only be committed with this
+  method prior to its containing activity saving its state. If the
+  commit is attempted after that point, an exception will be thrown.
+  This is because the state after the commit can be lost if the activity
+  needs to be restored from its state. See commitAllowingStateLoss() for
+  situations where it may be okay to lose the commit.
+
+
+I have highlighted in bold the part that i think it is confusing.
+
+So, my main concerns/questions are:
+
+1 - They MAY NOT be added? It says i will get an IllegalStateException, so will it be or will not be added?
+
+2 - I accept the fact that I cannot use this if we want to add a fragment in the backstack. What it doesn't say is that you get this exception:
+
+java.lang.IllegalStateException: This transaction is already being added to the back stack
+
+
+!!!!???? 
+
+So i cannot call addToBackStack(String) myself because it is internally calling it for me? I am sorry but... what? why? what if i don't want it to be added in the backstack? And what if I try to use that fragment from the backstack later but because it MAY NOT be added, later it is not there? 
+
+It looks like this is something expected if i was using commitAllowingStateLoss(), but i see that commitNowAllowingStateLoss() also exists, so... what kind of logic does it follow?
+
+TL;DR
+
+How is commitNow() working internally regarding the backstack?
+    
+===============================================================================================
+77
+A:It's a good thing that Android Source code is Open Source when we faced some question like this!
+
+Answer
+
+So let's take a look at BackStackRecord source here
+
+@Override
+public void commitNow() {
+    disallowAddToBackStack();
+    mManager.execSingleAction(this, false);
+}
+
+@Override
+public FragmentTransaction disallowAddToBackStack() {
+    if (mAddToBackStack) {
+        throw new IllegalStateException(
+                "This transaction is already being added to the back stack");
+    }
+    mAllowAddToBackStack = false;
+    return this;
+}
+
+
+And mAddToBackStack will be set to true if you call addToBackStack in your transaction. 
+
+So to answer your question, no addToBackStack isn't called internally when you call commitNow(), It's the exception message that ambigous. I think it should say You're not allowed to add to backstack when using commitNow() instead the current message.
+
+Bonus:
+
+If we dig deeper into FragmentManager source code here, commitNow() actually doing almost same thing as executePendingTransactions() like written above, but instead executing all previously committed transaction, commitNow() will only commit that transaction. 
+
+I think that's the main reason why commitNow() isn't allowing addition to the backstack since it cannot guarantee there aren't any other pending transaction. If commitNow() can add to the backstack, there is a possibility that we can break our backstack sequence that will leading into unexpected thing.
+    

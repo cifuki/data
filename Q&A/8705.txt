@@ -1,0 +1,173 @@
+31
+Q:So I've been googling most of yesterday and last nite and just can't seem to wrap my head around how to pass an arraylist to a subactivity. There are tons of examples and snippets passing primitive data types, but what I have is an arraylist of type address (address.java below). 
+
+I've found a lot of stuff on stackoverflow and around the web on this, but nothing that got a lot of attention except for one with a GeoPoint example.  Again, it looked to me like they just flattened the GeoPoint object into two integers and passed it in.  I can't do that because my address class may expand to include integers, floats, whatever.  Right now, the test app below is only two strings for simplicity.  I thought if I could get the parcelalbe stuff working with that, the rest could follow.
+
+Can someone post a working example for an ArrayList of a non-primitive object, or perhaps add code below to make this work?
+
+UPDATE: code below is now working after replies/editing. Thanks!
+
+/* helloParcel.java */        
+       public class helloParcel extends Activity
+{
+    // holds objects of type 'address' == name and state
+    private ArrayList <address> myList;
+
+    @Override
+    public void onCreate (Bundle savedInstanceState)
+    {
+        super.onCreate (savedInstanceState);
+        setContentView (R.layout.main);
+
+        Button b1 = (Button) findViewById(R.id.button1);
+        b1.setOnClickListener(ocl);
+
+        myList = new ArrayList();
+        address frank   = new address ("frank", "florida");
+        address mary    = new address ("mary", "maryland");
+        address monty   = new address ("monty", "montana");
+
+        myList.add (frank);
+        myList.add (mary);
+        myList.add (monty);
+
+        // add the myList ArrayList() the the extras for the intent
+
+    }
+
+    OnClickListener ocl = new OnClickListener() 
+    {
+
+        @Override
+        public void onClick(View v) 
+        {
+            // fill parceable and launch activity
+            Intent intent = new Intent().setClass(getBaseContext (), subActivity.class);
+
+            // for some reason, I remember a posting saying it's best to create a new
+            // object to pass.  I have no idea why..
+            ArrayList <address> addyExtras = new ArrayList <address>();
+
+            for (int i = 0; i < myList.size(); i++)
+                addyExtras.add (myList.get(i));
+
+            intent.putParcelableArrayListExtra ("mylist", addyExtras);
+            startActivity(intent);
+        }
+    };
+} 
+
+
+
+/* address.java */
+  public class address implements Parcelable
+{
+    private String name;
+    private String state;
+    private static String TAG = "** address **";
+
+    public address (String n, String s)
+    {
+        name = n;
+        state = s;
+        Log.d (TAG, "new address");
+    }
+
+    public address (Parcel in)
+   {
+    Log.d (TAG, "parcel in");
+        name = in.readString ();
+        state = in.readString ();
+   }
+
+    public String getState ()
+    {
+        Log.d (TAG, "getState()");
+        return (state);
+    }
+
+    public String getName ()
+    {
+        Log.d (TAG, "getName()");
+        return (name);
+    }
+
+    public static final Parcelable.Creator<address> CREATOR
+    = new Parcelable.Creator<address>() 
+   {
+         public address createFromParcel(Parcel in) 
+         {
+            Log.d (TAG, "createFromParcel()");
+             return new address(in);
+         }
+
+         public address[] newArray (int size) 
+         {
+            Log.d (TAG, "createFromParcel() newArray ");
+             return new address[size];
+         }
+    };
+
+    @Override
+   public int describeContents ()
+   {
+        Log.d (TAG, "describe()");
+       return 0;
+   }
+
+    @Override
+   public void writeToParcel (Parcel dest, int flags)
+   {
+        Log.d (TAG, "writeToParcel");
+       dest.writeString (name);
+       dest.writeString (state);
+   }
+
+}
+
+
+/* subActivity.java */
+  public class subActivity extends Activity
+{
+    private final String TAG = "** subActivity **";
+    private ArrayList <address> myList;
+
+    @Override
+    protected void onCreate (Bundle savedInstanceState)
+    {
+       super.onCreate (savedInstanceState);
+       Log.d (TAG, "onCreate() in subActivity");
+
+       setContentView(R.layout.subactivity);
+       TextView tv1 = (TextView) findViewById(R.id.tv_sub);
+
+       myList = getIntent().getParcelableArrayListExtra ("mylist");
+       Log.d (TAG, "got myList");
+
+       for (int i = 0; i < myList.size (); i++)
+       {
+        address a = myList.get (i);
+        Log.d (TAG, "state:" + a.getState ());
+        tv1.setText (a.getName () + " is from " + a.getState ());
+       }
+
+    }
+
+}
+
+    
+===============================================================================================
+23
+A:I can see a number of problems here:
+
+
+Why use addressParcelable? Why not make address implement Parcelable, and then use:
+
+intent.putParcelableArrayListExtra( "addresses", addyExtras );
+
+Your parcelable object must include a static CREATOR. See the documentation for details.
+You are not actually adding any extras to the intent before you call startActivity(). See point 1 for a suggestion here.
+
+
+I think that you will need to address all of these issues in order to get it working.
+    

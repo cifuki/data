@@ -1,0 +1,73 @@
+57
+Q:in my app I'm using IntentService for sending SMS.
+
+    @Override
+protected void onHandleIntent(Intent intent) {
+    Bundle data = intent.getExtras();
+    String[] recipients = null;
+    String message = getString(R.string.unknown_event);
+    String name = getString(R.string.app_name);
+    if (data != null && data.containsKey(Constants.Services.RECIPIENTS)) {
+        recipients = data.getStringArray(Constants.Services.RECIPIENTS);
+        name = data.getString(Constants.Services.NAME);
+        message = data.getString(Constants.Services.MESSAGE);
+        for (int i = 0; i < recipients.length; i++) {
+            if(!StringUtils.isNullOrEmpty(recipients[i])) {
+                try {
+                    Intent sendIntent = new Intent(this, SMSReceiver.class);
+                    sendIntent.setAction(Constants.SMS.SEND_ACTION);
+                    PendingIntent sendPendingIntent = PendingIntent.getBroadcast(getApplicationContext(), 0, sendIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                    Intent deliveryIntent = new Intent(this, SMSReceiver.class);
+                    deliveryIntent.setAction(Constants.SMS.DELIVERED_ACTION);
+                    PendingIntent deliveryPendingIntent = PendingIntent.getBroadcast(getApplicationContext(), 0, deliveryIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                    SmsManager.getDefault().sendTextMessage(recipients[i].trim(), null, "[" + name + "] " + message, sendPendingIntent, deliveryPendingIntent);
+                } catch (Exception e) {
+                    Log.e(TAG, "sendTextMessage", e);
+                    e.printStackTrace();
+                    Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show();
+                    MainActivity.instance.writeToLogFile(e.getMessage(), System.currentTimeMillis());                       
+                }
+            }
+        }
+    }
+}
+
+
+when running the app, I get the following error:
+
+W/MessageQueue(7180): Handler (android.os.Handler) {42586468} sending message to a Handler on a dead thread
+W/MessageQueue(7180): java.lang.RuntimeException: Handler (android.os.Handler) {42586468} sending message to a Handler on a dead thread
+W/MessageQueue(7180):   at android.os.MessageQueue.enqueueMessage(MessageQueue.java:294)
+W/MessageQueue(7180):   at android.os.Handler.enqueueMessage(Handler.java:618)
+W/MessageQueue(7180):   at android.os.Handler.sendMessageAtTime(Handler.java:587)
+W/MessageQueue(7180):   at android.os.Handler.sendMessageDelayed(Handler.java:558)
+W/MessageQueue(7180):   at android.os.Handler.post(Handler.java:323)
+W/MessageQueue(7180):   at android.widget.Toast$TN.hide(Toast.java:367)
+W/MessageQueue(7180):   at android.app.ITransientNotification$Stub.onTransact(ITransientNotification.java:55)
+W/MessageQueue(7180):   at android.os.Binder.execTransact(Binder.java:351)
+W/MessageQueue(7180):   at dalvik.system.NativeStart.run(Native Method)
+
+
+My SMSReceiver is located in another class.
+How can i solve this problems?
+Thanks;
+Eyal.
+    
+===============================================================================================
+156
+A:The problem here is that you are creating a Toast inside a thread that is managed by the IntentService. The system will use the Handler associated with this thread to show and hide the Toast.
+
+First the Toast will be shown correctly, but when the system tries to hide it, after the onHandleIntent method has finished, the error "sending message to a Handler on a dead thread" will be  thrown because the thread on which the Toast was created is no longer valid, and the Toast will not disappear.
+
+To avoid this you should show the Toast posting a message to the Main Thread. Here's an example:
+
+    // create a handler to post messages to the main thread
+    Handler mHandler = new Handler(getMainLooper());
+    mHandler.post(new Runnable() {
+        @Override
+        public void run() {
+            Toast.makeText(getApplicationContext(), "test", Toast.LENGTH_SHORT).show();
+        }
+    });
+
+    

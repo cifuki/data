@@ -1,0 +1,158 @@
+27
+Q:I am trying a sample program to store a file in the internal storage and the open it using
+Intent.ACTION_VIEW.
+
+For storing the file in private mode I followed the steps provided here.
+
+I was able to find the created file in the internal storage at /data/data/com.storeInternal.poc/files .*
+
+
+  But when I tried to open file,it does not open. 
+
+
+Please find below the code I used for it.
+
+public class InternalStoragePOCActivity extends Activity {
+    /** Called when the activity is first created. */
+    String FILENAME = "hello_file.txt";
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        createFile();
+        openFile(FILENAME);
+    }
+
+    public FileOutputStream getStream(String path) throws FileNotFoundException {
+        return openFileOutput(path, Context.MODE_PRIVATE);
+    }
+
+    public void createFile(){
+
+        String string = "hello world!";
+        FileOutputStream fout = null;
+        try {
+            //getting output stream
+            fout = getStream(FILENAME);
+            //writng data
+            fout.write(string.getBytes());
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }finally{
+            if(fout!=null){
+                //closing the output stream
+                try {
+                    fout.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+        }
+
+    }
+
+    public void openFile(String filePath) {
+        try {
+            File temp_file = new File(filePath);
+
+            Uri data = Uri.fromFile(temp_file);
+            String type = getMimeType(data.toString());
+
+            Intent intent = new Intent(android.content.Intent.ACTION_VIEW);
+            intent.setDataAndType(data, type);
+            startActivity(intent);
+
+        } catch (Exception e) {
+            Log.d("Internal Storage POC ", "No Supported Application found to open this file");
+            e.printStackTrace();
+
+        }
+    }
+
+    public static String getMimeType(String url) {
+        String type = null;
+        String extension = MimeTypeMap.getFileExtensionFromUrl(url);
+
+        if (extension != null) {
+            MimeTypeMap mime = MimeTypeMap.getSingleton();
+            type = mime.getMimeTypeFromExtension(extension);
+        }
+
+        return type;
+    }
+}
+
+
+How may I open the file stored using Context.MODE_PRIVATE by any other existing/appropriate app. Eg: file.pdf should be opened by PDF reader,Video by video Players,etc. 
+    
+===============================================================================================
+51
+A:You can't share/send a file in internal storage, as referenced by a URI, via an Intent to another app. An app cannot read another app's private data (unless it's through a Content Provider). You pass the URI of the file in the intent (not the actual file itself) and the app that receives the intent needs to be able to read from that URI.
+
+The simplest solution is to copy the file to external storage first and share it from there. If you don't want to do that, create a Content Provider to expose your file. An example can be found here: Create and Share a File from Internal Storage
+
+EDIT: To use a content provider:
+
+First create your content provider class as below. The important override here is 'openFile'. When your content provider is called with a file URI, this method will run and return a ParcelFileDescriptor for it. The other methods need to be present as well since they are abstract in ContentProvider.
+
+public class MyProvider extends ContentProvider {
+
+@Override
+public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+    File privateFile = new File(getContext().getFilesDir(), uri.getPath());
+    return ParcelFileDescriptor.open(privateFile, ParcelFileDescriptor.MODE_READ_ONLY);
+}
+
+@Override
+public int delete(Uri arg0, String arg1, String[] arg2) {
+    return 0;
+}
+
+@Override
+public String getType(Uri arg0) {
+    return null;
+}
+
+@Override
+public Uri insert(Uri arg0, ContentValues arg1) {
+    return null;
+}
+
+@Override
+public boolean onCreate() {
+    return false;
+}
+
+@Override
+public Cursor query(Uri arg0, String[] arg1, String arg2, String[] arg3,
+        String arg4) {
+    return null;
+}
+
+@Override
+public int update(Uri arg0, ContentValues arg1, String arg2, String[] arg3) {
+    return 0;
+}
+}
+
+
+Define your provider in the Manifest within the application tag, with exported=true to allow other apps to use it:
+
+<provider android:name=".MyProvider" android:authorities="your.package.name" android:exported="true" />
+
+
+In the openFile() method you have in your Activity, set up a URI as below. This URI points to the content provider in your package along with the filename:
+
+Uri uri = Uri.parse("content://your.package.name/" + filePath);
+
+
+Finally, set this uri in the intent:
+
+intent.setDataAndType(uri, type);
+
+
+Remember to insert your own package name where I have used 'your.package.name' above.
+    

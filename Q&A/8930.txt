@@ -1,0 +1,65 @@
+30
+Q:I try to implement an extendable notification and I have used the InboxStyle for that.
+
+Based on the following image from the documentation:
+
+
+
+it should be possible to style the text. In this case make "Google Play" bold.
+
+InboxStyle has only addLine() where I can pass a CharSequence. I tried with Html.fromHtml() and used some html formatting but I couldn't succeed.
+
+NotificationCompat.InboxStyle inboxStyle = new NotificationCompat.InboxStyle();
+inboxStyle.setBigContentTitle("title");
+inboxStyle.setSummaryText("summarytext");
+// fetch push messages
+synchronized (mPushMessages) {
+    HashMap<String, PushMessage> messages = mPushMessages.get(key);
+    if (messages != null) {
+        for (Entry<String, PushMessage> msg : messages.entrySet()) {
+            inboxStyle.addLine(Html.fromHtml("at least <b>one word</b> should be bold!");
+        }
+        builder.setStyle(inboxStyle);
+        builder.setNumber(messages.size());
+    }
+}
+
+
+Any idea about this?
+    
+===============================================================================================
+49
+A:You don't need to use fromHtml. I've had issues with fromHtml in the past (when what you display comes from user, code injection can result in ugly things). Also, I don't like putting formatting elements in strings.xml (if you use services for translation, they might screw up your HTML tags).
+
+The addLine method, as most methods to set text in notifications (setTicker, setContentInfo, setContentTitle, etc.) take a CharSequence as parameter.
+
+So you can pass a Spannable. Let's say you want "Bold this and italic that.", you can format it this way (of course don't hardcode positions):
+
+Spannable sb = new SpannableString("Bold this and italic that.");
+sb.setSpan(new StyleSpan(android.graphics.Typeface.BOLD), 0, 4, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+sb.setSpan(new StyleSpan(android.graphics.Typeface.ITALIC), 14, 20, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+inboxStyle.addLine(sb);
+
+
+Now if you need to build string dynamically with localized strings, like "Today is [DAY], good morning!", put string with a placeholder in strings.xml:
+
+<string name="notification_line_format">Today is %1$s, good morning!</string>
+
+
+Then format this way:
+
+String today = "Sunday";
+String lineFormat = context.getString(R.string.notification_line_format);
+int lineParamStartPos = lineFormat.indexOf("%1$s");
+if (lineParamStartPos < 0) {
+  throw new InvalidParameterException("Something's wrong with your string! LINT could have caught that.");
+}
+String lineFormatted = context.getString(R.string.notification_line_format, today);
+
+Spannable sb = new SpannableString(lineFormatted);
+sb.setSpan(new StyleSpan(android.graphics.Typeface.BOLD), lineParamStartPos, lineParamStartPos + today.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+inboxStyle.addLine(sb);
+
+
+You'll get "Today is Sunday, good morning!", and as far as I know it works with all versions of Android.
+    

@@ -1,0 +1,92 @@
+28
+Q:I'm trying to start an IntentService within my BOOT_COMPLETED receiver, but in Android O (API 26) I get:
+
+java.lang.RuntimeException: 
+java.lang.IllegalStateException: 
+Not allowed to start service Intent { act=intent.action.update cmp=packageName.services.OwnService }: 
+app is in background
+
+
+(Message is in one line, but this way it's easier readable)
+
+How can I do this the correct way?
+    
+===============================================================================================
+52
+A:Here are some options that I outlined in a blog post:
+
+Workaround #1: startForegroundService()
+
+Your BroadcastReceiver that receives the ACTION_BOOT_COMPLETED broadcast
+could call startForegroundService() instead of startService() when on Android
+8.0+:
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
+
+public class OnBootReceiver extends BroadcastReceiver {
+
+  @Override
+  public void onReceive(Context context, Intent intent) {
+    Intent i=new Intent(context, TestIntentService.class);
+
+    if (Build.VERSION.SDK_INT>=Build.VERSION_CODES.O) {
+      context.startForegroundService(i);
+    }
+    else {
+      context.startService(i);
+    }
+  }
+}
+
+
+Note that this works, to an extent, even if your service does not actually
+ever call startForeground(). You are given a window of time to get around
+to calling startForeground(), "comparable to the ANR interval to do this".
+If your work is longer than a millisecond but less than a few seconds,
+you could skip the Notification and the startForeground() call. However,
+you will get an error in LogCat:
+
+E/AndroidRuntime: FATAL EXCEPTION: main
+ Process: com.commonsware.myapplication, PID: 5991
+ android.app.RemoteServiceException: Context.startForegroundService() did not then call Service.startForeground()
+     at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1775)
+     at android.os.Handler.dispatchMessage(Handler.java:105)
+     at android.os.Looper.loop(Looper.java:164)
+     at android.app.ActivityThread.main(ActivityThread.java:6541)
+     at java.lang.reflect.Method.invoke(Native Method)
+     at com.android.internal.os.Zygote$MethodAndArgsCaller.run(Zygote.java:240)
+     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:767)
+
+
+Of course, if you do not mind having a Notification briefly, you are welcome
+to use startForeground() as Android expects you to, in which case you can
+do background work normally, albeit with an entry showing up in the user's notification
+shade.
+
+Workaround #2: goAsync()
+
+BroadcastReceiver has offered goAsync() since API Level 11. This allows your
+receiver to do work off the main application thread, so you could get rid of the
+IntentService entirely and move your code into the BroadcastReceiver.
+You still only have the ANR
+timeout period to work with, but you will not be tying up your main application
+thread. This is better than the first workaround, insofar as it has the same
+time limitation but avoids the nasty error. However, it does require some amount
+of rework.
+
+Workaround #3: JobScheduler
+
+If your work will take more than a few seconds and you want to avoid the
+Notification, you could modify your code to implement a JobService and
+work with JobScheduler. This has the added advantage of only giving you
+control when other criteria are met (e.g., there is a usable Internet
+connection). However, not only does this require a rewrite, but JobScheduler
+is only available on Android 5.0+, so if your minSdkVersion is less than 21,
+you will need some other solution on the older devices.
+
+UPDATE: Eugen Pechanec pointed out JobIntentService,
+which is an interesting JobService/IntentService mashup.
+    

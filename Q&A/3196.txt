@@ -1,0 +1,348 @@
+69
+Q:Please am trying to implement a filter on my listview. But whenever the text change, the list disappears.Please Help 
+Here are my codes. The adapter class.
+
+package com.talagbe.schymn;
+
+import java.util.ArrayList;
+
+import android.content.Context;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+import android.widget.TextView;
+
+public class HymnsAdapter extends ArrayAdapter<Hymns> {
+ArrayList<Hymns> hymnarray;
+Context context;
+LayoutInflater inflater;
+int Resource;
+
+
+public HymnsAdapter(Context context, int resource, ArrayList<Hymns> objects) {
+    super(context, resource, objects);
+    // TODO Auto-generated constructor stub
+
+    hymnarray=objects;
+    Resource= resource;
+    this.context=context;
+    inflater= (LayoutInflater) context.getSystemService(context.LAYOUT_INFLATER_SERVICE);
+}
+
+
+@Override
+public View getView(int position, View convertView, ViewGroup parent) {
+    // TODO Auto-generated method stub
+     ViewHolder holder;
+     if(convertView==null){
+
+         convertView= inflater.inflate(Resource,null);
+         holder= new ViewHolder();
+         holder.hymntitle= (TextView) convertView.findViewById(R.id.Hymn_title);
+        // holder.hymntext= (TextView) convertView.findViewById(R.id.Channel_name);
+
+
+         convertView.setTag(holder);
+
+     }else{
+         holder=(ViewHolder)convertView.getTag();
+     }
+
+     holder.hymntitle.setText(hymnarray.get(position).getTitle());
+     //holder.hymntext.setText(hymnarray.get(position).getText());
+
+    return convertView;
+
+
+}
+
+
+   static class ViewHolder{
+
+    public TextView hymntitle;
+    public TextView hymntext;
+
+}
+
+ }
+
+
+Here is the other class where am trying to implement the filter. I have an edittext,where i implement on textChangeListener
+
+package com.talagbe.schymn;
+
+import java.util.ArrayList;
+
+import database.DatabaseHelper;
+
+import android.os.Bundle;
+import android.support.v4.app.Fragment;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.EditText;
+import android.widget.ListView;
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import android.widget.AdapterView.OnItemClickListener;
+
+ public class Home extends Fragment {
+
+    private static final String DB_NAME = "schymn.sqlite";
+    private static final String TABLE_NAME = "Hymns";
+    private static final String Hymn_ID = "_id";
+    private static final String Hymn_Title = "Title";
+    private static final String Hymn_Text = "Text";
+    private SQLiteDatabase database;
+
+ListView list;
+EditText search;
+HymnsAdapter vadapter;
+ArrayList<Hymns> HymnsList;
+String url;
+Context context=null;
+
+
+public View onCreateView(LayoutInflater inflater, ViewGroup container,
+        Bundle savedInstanceState) {
+    // TODO Auto-generated method stub
+      return inflater.inflate(R.layout.index, container,false);
+}
+
+
+@Override
+public void onActivityCreated(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    list = (ListView)getActivity().findViewById(R.id.hymn_list);
+    search = (EditText) getActivity().findViewById(R.id.search);
+    HymnsList = new ArrayList<Hymns>();
+
+    DatabaseHelper dbOpenHelper = new DatabaseHelper(getActivity(), DB_NAME);
+    database = dbOpenHelper.openDataBase();
+
+    fillHymns();
+    //setUpList();
+
+}
+
+
+
+private void fillHymns() {
+    Cursor hymnCursor = database.query(TABLE_NAME,
+                                         new String[] 
+                                         {Hymn_ID, Hymn_Title,Hymn_Text},
+                                         null, null, null, null
+                                         , Hymn_Title);
+    hymnCursor.moveToFirst();
+    if(!hymnCursor.isAfterLast()) {
+        do {
+            Hymns hy = new Hymns();
+            hy.setTitle(hymnCursor.getString(1));
+            hy.setText(hymnCursor.getString(2));
+            HymnsList.add(hy);
+
+        } while (hymnCursor.moveToNext());
+    }
+    hymnCursor.close();
+     vadapter = new HymnsAdapter(getActivity().getApplicationContext(),R.layout.hymns,HymnsList);
+    list.setAdapter(vadapter);
+
+    list.setOnItemClickListener(new OnItemClickListener() {
+        @Override
+        public void onItemClick(AdapterView<?> parent, View view,
+                int position, long id) {
+
+            Intent intent = new Intent(getActivity().getApplicationContext(), Hymn_Text.class);
+            intent.putExtra("Title",HymnsList.get(position).getTitle());
+            intent.putExtra("Text",HymnsList.get(position).getText());
+            startActivity(intent);
+            //Log.i("Text",HymnsList.get(position).getText());
+
+        }
+
+
+
+
+
+
+
+
+    });
+
+
+    search.addTextChangedListener( new TextWatcher() {
+
+        @Override
+        public void onTextChanged(CharSequence cs, int start, int before, int count) {
+            // TODO Auto-generated method stub
+            if(count>0){
+
+
+            }
+
+        }
+
+        @Override
+        public void beforeTextChanged(CharSequence s, int start, int count,
+                int after) {
+            // TODO Auto-generated method stub
+
+        }
+
+        @Override
+        public void afterTextChanged(Editable s) {
+            // TODO Auto-generated method stub
+             Home.this.vadapter.getFilter().filter(s);
+                Log.i("Changed",s.toString());
+        }
+    });
+}
+
+
+
+
+  }
+
+
+The log,logs whatever input i type in,but doesn't show the listview. Thank you 
+    
+===============================================================================================
+170
+A:You can use the Filterable interface on your Adapter, see a good example below:
+
+original source and See other example here
+
+public class SearchableAdapter extends BaseAdapter implements Filterable {
+
+    private List<String>originalData = null;
+    private List<String>filteredData = null;
+    private LayoutInflater mInflater;
+    private ItemFilter mFilter = new ItemFilter();
+
+    public SearchableAdapter(Context context, List<String> data) {
+        this.filteredData = data ;
+        this.originalData = data ;
+        mInflater = LayoutInflater.from(context);
+    }
+
+    public int getCount() {
+        return filteredData.size();
+    }
+
+    public Object getItem(int position) {
+        return filteredData.get(position);
+    }
+
+    public long getItemId(int position) {
+        return position;
+    }
+
+    public View getView(int position, View convertView, ViewGroup parent) {
+        // A ViewHolder keeps references to children views to avoid unnecessary calls
+        // to findViewById() on each row.
+        ViewHolder holder;
+
+        // When convertView is not null, we can reuse it directly, there is no need
+        // to reinflate it. We only inflate a new View when the convertView supplied
+        // by ListView is null.
+        if (convertView == null) {
+            convertView = mInflater.inflate(R.layout.list_item, null);
+
+            // Creates a ViewHolder and store references to the two children views
+            // we want to bind data to.
+            holder = new ViewHolder();
+            holder.text = (TextView) convertView.findViewById(R.id.list_view);
+
+            // Bind the data efficiently with the holder.
+
+            convertView.setTag(holder);
+        } else {
+            // Get the ViewHolder back to get fast access to the TextView
+            // and the ImageView.
+            holder = (ViewHolder) convertView.getTag();
+        }
+
+        // If weren't re-ordering this you could rely on what you set last time
+        holder.text.setText(filteredData.get(position));
+
+        return convertView;
+    }
+
+    static class ViewHolder {
+        TextView text;
+    }
+
+    public Filter getFilter() {
+        return mFilter;
+    }
+
+    private class ItemFilter extends Filter {
+        @Override
+        protected FilterResults performFiltering(CharSequence constraint) {
+
+            String filterString = constraint.toString().toLowerCase();
+
+            FilterResults results = new FilterResults();
+
+            final List<String> list = originalData;
+
+            int count = list.size();
+            final ArrayList<String> nlist = new ArrayList<String>(count);
+
+            String filterableString ;
+
+            for (int i = 0; i < count; i++) {
+                filterableString = list.get(i);
+                if (filterableString.toLowerCase().contains(filterString)) {
+                    nlist.add(filterableString);
+                }
+            }
+
+            results.values = nlist;
+            results.count = nlist.size();
+
+            return results;
+        }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        protected void publishResults(CharSequence constraint, FilterResults results) {
+            filteredData = (ArrayList<String>) results.values;
+            notifyDataSetChanged();
+        }
+
+    }
+}
+
+//in your Activity or Fragment where of Adapter is instantiated :
+
+editTxt.addTextChangedListener(new TextWatcher() {
+
+    @Override
+    public void onTextChanged(CharSequence s, int start, int before, int count) {
+        System.out.println("Text ["+s+"]");
+
+        mSearchableAdapter.getFilter().filter(s.toString());                           
+    }
+
+    @Override
+    public void beforeTextChanged(CharSequence s, int start, int count,
+            int after) {
+
+    }
+
+    @Override
+    public void afterTextChanged(Editable s) {
+    }
+});
+
+    

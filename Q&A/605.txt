@@ -1,0 +1,350 @@
+219
+Q:I'm looking to make a service which I can use to make calls to a web-based REST API.
+
+Basically I want to start a service on app init then I want to be able to ask that service to request a url and return the results.  In the meantime I want to be able to display a progress window or something similar.
+
+I've created a service currently which uses IDL, I've read somewhere that you only really need this for cross app communication, so think these needs stripping out but unsure how to do callbacks without it.  Also when I hit the post(Config.getURL("login"), values) the app seems to pause for a while (seems weird - thought the idea behind a service was that it runs on a different thread!)
+
+Currently I have a service with post and get http methods inside, a couple of AIDL files (for two way communication), a ServiceManager which deals with starting, stopping, binding etc to the service and I'm dynamically creating a Handler with specific code for the callbacks as needed.
+
+I don't want anyone to give me a complete code base to work on, but some pointers would be greatly appreciated.
+
+Code in (mostly) full:
+
+public class RestfulAPIService extends Service  {
+
+final RemoteCallbackList<IRemoteServiceCallback> mCallbacks = new RemoteCallbackList<IRemoteServiceCallback>();
+
+public void onStart(Intent intent, int startId) {
+    super.onStart(intent, startId);
+}
+public IBinder onBind(Intent intent) {
+    return binder;
+}
+public void onCreate() {
+    super.onCreate();
+}
+public void onDestroy() {
+    super.onDestroy();
+    mCallbacks.kill();
+}
+private final IRestfulService.Stub binder = new IRestfulService.Stub() {
+    public void doLogin(String username, String password) {
+
+        Message msg = new Message();
+        Bundle data = new Bundle();
+        HashMap<String, String> values = new HashMap<String, String>();
+        values.put("username", username);
+        values.put("password", password);
+        String result = post(Config.getURL("login"), values);
+        data.putString("response", result);
+        msg.setData(data);
+        msg.what = Config.ACTION_LOGIN;
+        mHandler.sendMessage(msg);
+    }
+
+    public void registerCallback(IRemoteServiceCallback cb) {
+        if (cb != null)
+            mCallbacks.register(cb);
+    }
+};
+
+private final Handler mHandler = new Handler() {
+    public void handleMessage(Message msg) {
+
+        // Broadcast to all clients the new value.
+        final int N = mCallbacks.beginBroadcast();
+        for (int i = 0; i < N; i++) {
+            try {
+                switch (msg.what) {
+                case Config.ACTION_LOGIN:
+                    mCallbacks.getBroadcastItem(i).userLogIn( msg.getData().getString("response"));
+                    break;
+                default:
+                    super.handleMessage(msg);
+                    return;
+
+                }
+            } catch (RemoteException e) {
+            }
+        }
+        mCallbacks.finishBroadcast();
+    }
+    public String post(String url, HashMap<String, String> namePairs) {...}
+    public String get(String url) {...}
+};
+
+
+A couple of AIDL files:
+
+package com.something.android
+
+oneway interface IRemoteServiceCallback {
+    void userLogIn(String result);
+}
+
+
+and 
+
+package com.something.android
+import com.something.android.IRemoteServiceCallback;
+
+interface IRestfulService {
+    void doLogin(in String username, in String password);
+    void registerCallback(IRemoteServiceCallback cb);
+}
+
+
+and the service manager:
+
+public class ServiceManager {
+
+    final RemoteCallbackList<IRemoteServiceCallback> mCallbacks = new RemoteCallbackList<IRemoteServiceCallback>();
+    public IRestfulService restfulService;
+    private RestfulServiceConnection conn;
+    private boolean started = false;
+    private Context context;
+
+    public ServiceManager(Context context) {
+        this.context = context;
+    }
+
+    public void startService() {
+        if (started) {
+            Toast.makeText(context, "Service already started", Toast.LENGTH_SHORT).show();
+        } else {
+            Intent i = new Intent();
+            i.setClassName("com.something.android", "com.something.android.RestfulAPIService");
+            context.startService(i);
+            started = true;
+        }
+    }
+
+    public void stopService() {
+        if (!started) {
+            Toast.makeText(context, "Service not yet started", Toast.LENGTH_SHORT).show();
+        } else {
+            Intent i = new Intent();
+            i.setClassName("com.something.android", "com.something.android.RestfulAPIService");
+            context.stopService(i);
+            started = false;
+        }
+    }
+
+    public void bindService() {
+        if (conn == null) {
+            conn = new RestfulServiceConnection();
+            Intent i = new Intent();
+            i.setClassName("com.something.android", "com.something.android.RestfulAPIService");
+            context.bindService(i, conn, Context.BIND_AUTO_CREATE);
+        } else {
+            Toast.makeText(context, "Cannot bind - service already bound", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    protected void destroy() {
+        releaseService();
+    }
+
+    private void releaseService() {
+        if (conn != null) {
+            context.unbindService(conn);
+            conn = null;
+            Log.d(LOG_TAG, "unbindService()");
+        } else {
+            Toast.makeText(context, "Cannot unbind - service not bound", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    class RestfulServiceConnection implements ServiceConnection {
+        public void onServiceConnected(ComponentName className, IBinder boundService) {
+            restfulService = IRestfulService.Stub.asInterface((IBinder) boundService);
+            try {
+            restfulService.registerCallback(mCallback);
+            } catch (RemoteException e) {}
+        }
+
+        public void onServiceDisconnected(ComponentName className) {
+            restfulService = null;
+        }
+    };
+
+    private IRemoteServiceCallback mCallback = new IRemoteServiceCallback.Stub() {
+        public void userLogIn(String result) throws RemoteException {
+            mHandler.sendMessage(mHandler.obtainMessage(Config.ACTION_LOGIN, result));
+
+        }
+    };
+
+    private Handler mHandler;
+
+    public void setHandler(Handler handler) {
+        mHandler = handler;
+    }
+}
+
+
+Service init and bind:
+
+// this I'm calling on app onCreate
+servicemanager = new ServiceManager(this);
+servicemanager.startService();
+servicemanager.bindService();
+application = (ApplicationState)this.getApplication();
+application.setServiceManager(servicemanager);
+
+
+service function call:
+
+// this lot i'm calling as required - in this example for login
+progressDialog = new ProgressDialog(Login.this);
+progressDialog.setMessage("Logging you in...");
+progressDialog.show();
+
+application = (ApplicationState) getApplication();
+servicemanager = application.getServiceManager();
+servicemanager.setHandler(mHandler);
+
+try {
+    servicemanager.restfulService.doLogin(args[0], args[1]);
+} catch (RemoteException e) {
+    e.printStackTrace();
+}
+
+...later in the same file...
+
+Handler mHandler = new Handler() {
+    public void handleMessage(Message msg) {
+
+        switch (msg.what) {
+        case Config.ACTION_LOGIN:
+
+            if (progressDialog.isShowing()) {
+                progressDialog.dismiss();
+            }
+
+            try {
+                ...process login results...
+                }
+            } catch (JSONException e) {
+                Log.e("JSON", "There was an error parsing the JSON", e);
+            }
+            break;
+        default:
+            super.handleMessage(msg);
+        }
+
+    }
+
+};
+
+    
+===============================================================================================
+283
+A:If your service is going to be part of you application then you are making it way more complex than it needs to be. Since you have a simple use case of getting some data from a RESTful Web Service, you should look into ResultReceiver and IntentService. 
+
+This Service + ResultReceiver pattern works by starting or binding to the service with startService() when you want to do some action. You can specify the operation to perform and pass in your ResultReceiver (the activity) through the extras in the Intent.
+
+In the service you implement onHandleIntent to do the operation that is specified in the Intent. When the operation is completed you use the passed in ResultReceiver to send a message back to the Activity at which point onReceiveResult will be called.
+
+So for example, you want to pull some data from your Web Service.
+
+
+You create the intent and call startService.
+The operation in the service starts and it sends the activity a message saying it started
+The activity processes the message and shows a progress.
+The service finishes the operation and sends some data back to your activity.
+Your activity processes the data and puts in in a list view
+The service sends you a message saying that it is done, and it kills itself.
+The activity gets the finish message and hides the progress dialog.
+
+
+I know you mentioned you didn't want a code base but the open source Google I/O 2010 app uses a service in this way I am describing.
+
+Updated to add sample code:
+
+The activity.
+
+public class HomeActivity extends Activity implements MyResultReceiver.Receiver {
+
+    public MyResultReceiver mReceiver;
+
+    public void onCreate(Bundle savedInstanceState) {
+        mReceiver = new MyResultReceiver(new Handler());
+        mReceiver.setReceiver(this);
+        ...
+        final Intent intent = new Intent(Intent.ACTION_SYNC, null, this, QueryService.class);
+        intent.putExtra("receiver", mReceiver);
+        intent.putExtra("command", "query");
+        startService(intent);
+    }
+
+    public void onPause() {
+        mReceiver.setReceiver(null); // clear receiver so no leaks.
+    }
+
+    public void onReceiveResult(int resultCode, Bundle resultData) {
+        switch (resultCode) {
+        case RUNNING:
+            //show progress
+            break;
+        case FINISHED:
+            List results = resultData.getParcelableList("results");
+            // do something interesting
+            // hide progress
+            break;
+        case ERROR:
+            // handle the error;
+            break;
+    }
+}
+
+
+The Service:
+
+public class QueryService extends IntentService {
+    protected void onHandleIntent(Intent intent) {
+        final ResultReceiver receiver = intent.getParcelableExtra("receiver");
+        String command = intent.getStringExtra("command");
+        Bundle b = new Bundle();
+        if(command.equals("query") {
+            receiver.send(STATUS_RUNNING, Bundle.EMPTY);
+            try {
+                // get some data or something           
+                b.putParcelableArrayList("results", results);
+                receiver.send(STATUS_FINISHED, b)
+            } catch(Exception e) {
+                b.putString(Intent.EXTRA_TEXT, e.toString());
+                receiver.send(STATUS_ERROR, b);
+            }    
+        }
+    }
+}
+
+
+ResultReceiver extension - edited about to implement MyResultReceiver.Receiver
+
+public class MyResultReceiver implements ResultReceiver {
+    private Receiver mReceiver;
+
+    public MyResultReceiver(Handler handler) {
+        super(handler);
+    }
+
+    public void setReceiver(Receiver receiver) {
+        mReceiver = receiver;
+    }
+
+    public interface Receiver {
+        public void onReceiveResult(int resultCode, Bundle resultData);
+    }
+
+    @Override
+    protected void onReceiveResult(int resultCode, Bundle resultData) {
+        if (mReceiver != null) {
+            mReceiver.onReceiveResult(resultCode, resultData);
+        }
+    }
+}
+
+    

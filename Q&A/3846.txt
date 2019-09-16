@@ -1,0 +1,50 @@
+60
+Q:I decode bitmaps from the SD card using BitmapFactory.decodeFile. Sometimes the bitmaps are bigger than what the application needs or that the heap allows, so I use BitmapFactory.Options.inSampleSize to request a subsampled (smaller) bitmap.
+
+The problem is that the platform does not enforce the exact value of inSampleSize, and I sometimes end up with a bitmap either too small, or still too big for the available memory. 
+
+From http://developer.android.com/reference/android/graphics/BitmapFactory.Options.html#inSampleSize:
+
+
+  Note: the decoder will try to fulfill
+  this request, but the resulting bitmap
+  may have different dimensions that
+  precisely what has been requested.
+  Also, powers of 2 are often
+  faster/easier for the decoder to
+  honor.
+
+
+How should I decode bitmaps from the SD card to get a bitmap of the exact size I need while consuming as little memory as possible to decode it? 
+
+Edit:
+
+Current source code:
+
+BitmapFactory.Options bounds = new BitmapFactory.Options();
+this.bounds.inJustDecodeBounds = true;
+BitmapFactory.decodeFile(filePath, bounds);
+if (bounds.outWidth == -1) { // TODO: Error }
+int width = bounds.outWidth;
+int height = bounds.outHeight;
+boolean withinBounds = width <= maxWidth && height <= maxHeight;
+if (!withinBounds) {
+    int newWidth = calculateNewWidth(int width, int height);
+    float sampleSizeF = (float) width / (float) newWidth;
+    int sampleSize = Math.round(sampleSizeF);
+    BitmapFactory.Options resample = new BitmapFactory.Options();
+    resample.inSampleSize = sampleSize;
+    bitmap = BitmapFactory.decodeFile(filePath, resample);
+}
+
+    
+===============================================================================================
+45
+A:You are on the right track, however you are trying to do two things at once:  read the file in and scale it to the appropriate size.  
+
+The first step is to read the file to a Bitmap slightly bigger than you require, using BitmapFactory.Options.inSampleSize to ensure that you do not consume excessive memory reading a large bitmap when all you want is a smaller thumbnail or screen resolution image.
+
+The second step is to call Bitmap.createScaledBitmap() to create a new bitmap to the exact resolution you require.
+
+Make sure you clean up after the temporary bitmap to reclaim its memory.  (Either let the variable go out of scope and let the GC deal with it, or call .recycle() on it if you are loading lots of images and are running tight on memory.)
+    

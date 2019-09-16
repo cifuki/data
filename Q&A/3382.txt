@@ -1,0 +1,177 @@
+66
+Q:I am pretty new to java and android development; and I have been working on an app in which I want an action bar with a SearchView. I have looked at the google examples but I can not get it to work. I must be doing something wrong and I'm about to give up on app-development :D I have searched but I have not found anything helpful. Maybe you guys can help me :)
+
+The problem: I get the search view to open as it should, but after that nothing happens at all, I've noticed that my searchManager.getSearchableInfo(getComponentName()) returns null. Also my hint that I've given is not displayed in my search box which leads me to believing that maybe the app can't find my searchable.xml? Enough talk :)
+
+MainActivity.java
+
+public class MainActivity extends Activity {
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.activity_main, menu);
+
+        // Get the SearchView and set the searchable configuration
+        SearchManager searchManager =
+            (SearchManager) getSystemService(Context.SEARCH_SERVICE);
+        SearchView searchView =
+            (SearchView) menu.findItem(R.id.menu_search).getActionView();
+        searchView.setSearchableInfo(
+            searchManager.getSearchableInfo(getComponentName()));
+
+        return true;
+    }
+}
+
+
+searchable.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<searchable xmlns:android="http://schemas.android.com/apk/res/android"
+    android:hint="@string/search_hint"
+    android:label="@string/app_label">
+</searchable>
+
+
+Androidmanifest
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.searchapp"
+    android:versionCode="1"
+    android:versionName="1.0" >
+
+    <uses-sdk
+        android:minSdkVersion="14"
+        android:targetSdkVersion="15" />
+
+    <application
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme" >
+
+        <activity android:name=".SearchableActivity" >
+            <intent-filter>
+                <action android:name="android.intent.action.SEARCH" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>           
+        </activity>
+
+        <meta-data android:name="android.app.searchable"
+                   android:resource="@xml/searchable"/>          
+
+    </application>
+
+</manifest>
+
+
+SearchableActivity.java
+
+package com.example.searchapp;
+
+import android.app.ListActivity;
+import android.app.SearchManager;
+import android.content.Intent;
+import android.os.Bundle;
+import android.util.Log;
+
+public class SearchableActivity extends ListActivity {
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.search);
+
+        // Get the intent, verify the action and get the query
+        Intent intent = getIntent();
+        if (Intent.ACTION_SEARCH.equals(intent.getAction())) {
+          String query = intent.getStringExtra(SearchManager.QUERY);
+          doMySearch(query);
+        }
+    }
+
+    private void doMySearch(String query) {
+        Log.d("Event",query);
+    }
+}
+
+
+And here is a link to the referred project, I would be eternally grateful if someone was to help me with this!
+
+Source code
+    
+===============================================================================================
+147
+A:Your problem is in your AndroidManifest. I had it almost exactly as you do, because that is what I get following the documentation. But it is unclear or  mistaken.
+
+Watching at the API Demos source I found that the "android.app.searchable" metadata must go in your "results" activity, and in the main activity (or the activity where you place the SearchView) you point to the other one with "android.app.default_searchable".
+
+You can see it in the following file, which is the Manifest from my test project:
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+package="com.example.test"
+android:versionCode="1"
+android:versionName="1.0" >
+
+<uses-sdk
+    android:minSdkVersion="8"
+    android:targetSdkVersion="15" />
+
+<application
+    android:icon="@drawable/ic_launcher"
+    android:label="@string/app_name"
+    android:theme="@style/AppTheme" >
+    <activity
+        android:name=".MainActivity"
+        android:label="@string/title_activity_main" >
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+
+        <meta-data
+            android:name="android.app.default_searchable"
+            android:value=".SearchActivity" />
+    </activity>
+    <activity
+        android:name=".SearchActivity"
+        android:label="@string/app_name" >
+
+        <!-- This intent-filter identifies this activity as "searchable" -->
+
+        <intent-filter>
+            <action android:name="android.intent.action.SEARCH" />
+
+            <category android:name="android.intent.category.DEFAULT" />
+        </intent-filter>
+
+        <!-- This metadata entry provides further configuration details for searches -->
+        <!-- that are handled by this activity. -->
+
+        <meta-data
+            android:name="android.app.searchable"
+            android:resource="@xml/searchable" />
+    </activity>
+</application>
+
+
+
+
+It is also important that the hint and label in the searchable.xml are references, and not hardcoded strings.
+
+I hope it solves your problem. It took me all day to figure it out :(
+    

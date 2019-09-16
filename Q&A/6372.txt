@@ -1,0 +1,93 @@
+40
+Q:Is there a way to record mic input in android while it is being process for playback/preview in real time? I tried to use AudioRecord and AudioTrack to do this but the problem is that my device cannot play the recorded audio file. Actually, any android player application cannot play the recorded audio file.
+
+On the other hand, Using Media.Recorder to record generates a good recorded audio file that can be played by any player application. But the thing is that I cannot make a preview/palyback while recording the mic input in real time.
+    
+===============================================================================================
+63
+A:To record and play back audio in (almost) real time you can start a separate thread and use an AudioRecord and an AudioTrack.
+
+Just be careful with feedback.  If the speakers are turned up loud enough on your device, the feedback can get pretty nasty pretty fast.
+
+/*
+ * Thread to manage live recording/playback of voice input from the device's microphone.
+ */
+private class Audio extends Thread
+{ 
+    private boolean stopped = false;
+
+    /**
+     * Give the thread high priority so that it's not canceled unexpectedly, and start it
+     */
+    private Audio()
+    { 
+        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
+        start();
+    }
+
+    @Override
+    public void run()
+    { 
+        Log.i("Audio", "Running Audio Thread");
+        AudioRecord recorder = null;
+        AudioTrack track = null;
+        short[][]   buffers  = new short[256][160];
+        int ix = 0;
+
+        /*
+         * Initialize buffer to hold continuously recorded audio data, start recording, and start
+         * playback.
+         */
+        try
+        {
+            int N = AudioRecord.getMinBufferSize(8000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);
+            recorder = new AudioRecord(AudioSource.MIC, 8000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, N*10);
+            track = new AudioTrack(AudioManager.STREAM_MUSIC, 8000, 
+                    AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT, N*10, AudioTrack.MODE_STREAM);
+            recorder.startRecording();
+            track.play();
+            /*
+             * Loops until something outside of this thread stops it.
+             * Reads the data from the recorder and writes it to the audio track for playback.
+             */
+            while(!stopped)
+            { 
+                Log.i("Map", "Writing new data to buffer");
+                short[] buffer = buffers[ix++ % buffers.length];
+                N = recorder.read(buffer,0,buffer.length);
+                track.write(buffer, 0, buffer.length);
+            }
+        }
+        catch(Throwable x)
+        { 
+            Log.w("Audio", "Error reading voice audio", x);
+        }
+        /*
+         * Frees the thread's resources after the loop completes so that it can be run again
+         */
+        finally
+        { 
+            recorder.stop();
+            recorder.release();
+            track.stop();
+            track.release();
+        }
+    }
+
+    /**
+     * Called from outside of the thread in order to stop the recording/playback loop
+     */
+    private void close()
+    { 
+         stopped = true;
+    }
+
+}
+
+
+EDIT
+
+The audio is not really recording to a file.  The AudioRecord object encodes the audio as 16 bit PCM data and places it in a buffer.  Then the AudioTrack object reads the data from that buffer and plays it through the speakers.  There is no file on the SD card that you will be able to access later.
+
+You can't read and write a file from the SD card at the same time to get playback/preview in real time, so you have to use buffers.
+    

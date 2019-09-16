@@ -1,0 +1,48 @@
+168
+Q:Hopefully someone can help me figure out, if not a solution, at least an explanation for a behaviour.
+
+The Problem:
+
+On some devices, pressing the launcher icon results in the current task being resumed, on others it results in the initial launch intent being fired (effectively restarting the app). Why does this happen? 
+
+The Detail:
+
+When you press the "Launcher Icon" the app starts normally - That is, I assume, an Intent is launched with the name of your first Activity with the action android.intent.action.MAIN and the category android.intent.category.LAUNCHER. This can't always be the case however:
+
+On the majority of devices, if you press the launcher icon after the app is already running, the currently running Activity in that process is resumed (NOT the initial Activity). It resumes in the same way as if you had selected it from the "Recent Tasks" in the OS menu. This is the behaviour I want on all devices.
+
+However, on selected other devices different behaviour occurs:
+
+
+On the Motorola Xoom, when you press the launcher icon, the App will always start the initial launch Activity regardless of what is currently running. I assume that the launcher icons always start the "LAUNCHER" intent.
+On the Samsung Tab 2, when you press the launcher icon, if you have just installed the app, it will always launch the initial Activity (Same as the Xoom) - however, after you restart the device after the install, the launcher icon will instead resume the app. I assume that these devices add "installed apps" into a lookup table on device startup which allow the launcher icons to correctly resume running tasks?
+
+
+I've read many answer that sound similar to my problem  but simply adding android:alwaysRetainTaskState="true" or using launchMode="singleTop" to the Activity are not the answer.
+
+Edit:
+
+After the most recent launch of this app, we find that this behaviour has begun to occur on all devices after the first restart. Which seems crazy to me but looking through the restart process, I can't actually find what's going wrong.
+    
+===============================================================================================
+203
+A:The behavior you are experiencing is caused by an issue that exists in some Android launchers since API 1. You can find details about the bug as well as possible solutions here: https://code.google.com/p/android/issues/detail?id=2373. 
+
+It's a relatively common issue on Samsung devices as well as other manufacturers that use a custom launcher/skin. I haven't seen the issue occur on a stock Android launcher.
+
+Basically, the app is not actually restarting completely, but your launch Activity is being started and added to the top of the Activity stack when the app is being resumed by the launcher. You can confirm this is the case by clicking the back button when you resume the app and are shown the launch Activity. You should then be brought to the Activity that you expected to be shown when you resumed the app.
+
+The workaround I chose to implement to resolve this issue is to check for the Intent.CATEGORY_LAUNCHER category and Intent.ACTION_MAIN action in the intent that starts the initial Activity.  If those two flags are present and the Activity is not at the root of  the task (meaning the app was already running), then I call finish() on the initial Activity.  That exact solution may not work for you, but something similar should.
+
+Here is what I do in onCreate() of the initial/launch Activity:
+
+    if (!isTaskRoot()
+            && getIntent().hasCategory(Intent.CATEGORY_LAUNCHER)
+            && getIntent().getAction() != null
+            && getIntent().getAction().equals(Intent.ACTION_MAIN)) {
+
+        finish();
+        return;
+    }
+
+    

@@ -1,0 +1,76 @@
+30
+Q:So I'm working on a simple music player. The music player as it names states, can play a song, pause playback, forward to next song, go back to previous song, and stop playback completely. When you play a song, there will be a notification displayed with the Artist Name, and the Song Name; this notification also has three buttons (Actions): Stop, Pause an Next. 
+
+What I'm having issues with is making sure that when either action is clicked, the playback control related to the Action is triggered, and well, I have absolutely no idea on how to do that. I searched the Android Notification: http://developer.android.com/guide/topics/ui/notifiers/notifications.html but It does not clarifies, or dedicates too much info on Notification Actions. 
+
+Here is a simple action for instance (which should be associated with the "Next" button click on the notification: Note: All of the code described below is written under the following package: com.deadpixels.light.player and the Activity is called: PlayerActivity
+
+public void nextSong() {
+    if (position == songs.size() -1) {
+        Toast.makeText(this, "No more songs on queue", Toast.LENGTH_SHORT).show();
+        if(mPlayer.isPlaying()) {
+            return;
+        }
+        else {
+            buttonPlay.setImageResource(R.drawable.button_play);
+        }
+        return;
+    }
+    else {
+        position++;
+        playSong(songs.get(position));
+    }
+}
+
+
+Here is what I tried to do:
+
+Intent nextIntent = new Intent(KEY_NEXT);
+PendingIntent nextPendingIntent = createPendingResult(0, nextIntent, 0);
+
+
+Where the action for the NextIntent is: 
+
+public static final String KEY_NEXT = "com.deadpixels.light.player.PlayerActivity.nextSong";
+
+
+and then I add that to the Notification via addAction(): 
+
+mBuilder.addAction(R.drawable.not_action_next, "Next", nextPendingIntent);
+
+
+Do you guys know what else I could try? Using what I explained above does nothing at all, the notification shows up, and has three action buttons, but clicking on them does nothing for me. 
+
+At one point I thought maybe if I added the intent filters with the action names, but then I thought, well, they are all on the same namespace, why should I?
+    
+===============================================================================================
+44
+A:I've solved this problem using broadcasts. For example, to send a broadcast that advances to the next song, you can use the following:
+
+Intent nextIntent = new Intent(KEY_NEXT);
+PendingIntent nextPendingIntent = PendingIntent.getBroadcast(this, 0, nextIntent, 0);
+
+
+Then, register a BroadcastReceiver within your Activity:
+
+IntentFilter filter = new IntentFilter();
+filter.addAction(KEY_NEXT);
+// Add other actions as needed
+
+receiver = new BroadcastReceiver() {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        if (intent.getAction().equals(KEY_NEXT)) {
+            nextSong();
+        } else if (...) {
+            ...
+        }
+        ...
+    }
+}
+
+registerReceiver(receiver, filter);
+
+
+If you're using a service to manage background playback, then you'll want to register the BroadcastReceiver in the service instead of the activity. Be sure to store the receiver instance somewhere so that you can unregister it when the activity or service is shut down.
+    

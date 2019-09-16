@@ -1,0 +1,42 @@
+32
+Q:I've implemented a simple application which shows the camera picture on the screen. What I like to do now is grab a single frame and process it as bitmap.
+From what I could find out to this point it is not an easy thing to do.
+
+I've tried using the onPreviewFrame method with which you get the current frame as a byte array and tried to decode it with the BitmapFactory class but it returns null.
+The format of the frame is a headerless YUV which could be translated to bitmap but it takes too long on a phone. Also I've read that the onPreviewFrame method has contraints on the runtime, if it takes too long the application could crash.
+
+So what is the right way to do this?  
+    
+===============================================================================================
+9
+A:In API 17+, you can do conversion to RGBA888 from NV21 with the 'ScriptIntrinsicYuvToRGB' RenderScript. This allows you to easily process preview frames without manually encoding/decoding frames:
+
+@Override 
+public void onPreviewFrame(byte[] data, Camera camera) { 
+   Bitmap bitmap = Bitmap.createBitmap(r.width(), r.height(), Bitmap.Config.ARGB_8888);
+    Allocation bmData = renderScriptNV21ToRGBA888(
+        mContext,
+        r.width(),
+        r.height(),
+        data);
+    bmData.copyTo(bitmap);
+}
+
+public Allocation renderScriptNV21ToRGBA888(Context context, int width, int height, byte[] nv21) {
+  RenderScript rs = RenderScript.create(context);
+  ScriptIntrinsicYuvToRGB yuvToRgbIntrinsic = ScriptIntrinsicYuvToRGB.create(rs, Element.U8_4(rs));
+
+  Type.Builder yuvType = new Type.Builder(rs, Element.U8(rs)).setX(nv21.length);
+  Allocation in = Allocation.createTyped(rs, yuvType.create(), Allocation.USAGE_SCRIPT);
+
+  Type.Builder rgbaType = new Type.Builder(rs, Element.RGBA_8888(rs)).setX(width).setY(height);
+  Allocation out = Allocation.createTyped(rs, rgbaType.create(), Allocation.USAGE_SCRIPT);
+
+  in.copyFrom(nv21);
+
+  yuvToRgbIntrinsic.setInput(in);
+  yuvToRgbIntrinsic.forEach(out);
+  return out;
+}
+
+    

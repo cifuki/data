@@ -1,0 +1,144 @@
+45
+Q:I'm trying to parse a JSON result fetched from a URL in my Android app... 
+
+I have tried a few examples on the Internet, but can't get it to work. The JSON data looks like this:
+
+[
+    {
+        "city_id": "1",
+        "city_name": "Noida"
+    },
+    {
+        "city_id": "2",
+        "city_name": "Delhi"
+    },
+    {
+        "city_id": "3",
+        "city_name": "Gaziyabad"
+    },
+    {
+        "city_id": "4",
+        "city_name": "Gurgaon"
+    },
+    {
+        "city_id": "5",
+        "city_name": "Gr. Noida"
+    }
+]
+
+
+What's the simplest way to fetch the URL and parse the JSON data show it in the listview
+    
+===============================================================================================
+83
+A:You could use AsyncTask, you'll have to customize to fit your needs, but something like the following
+
+
+
+Async task has three primary methods:
+
+
+onPreExecute() - most commonly used for setting up and starting a progress dialog
+doInBackground() - Makes connections and receives responses from the server (Do NOT try to assign response values to GUI elements, this is a common mistake, that cannot be done in a background thread).
+onPostExecute() - Here we are out of the background thread, so we can do user interface manipulation with the response data, or simply assign the response to specific variable types.
+
+
+
+
+First we will start the class, initialize a String to hold the results outside of the methods but inside the class, then run the onPreExecute() method setting up a simple progress dialog.
+
+class MyAsyncTask extends AsyncTask<String, String, Void> {
+
+    private ProgressDialog progressDialog = new ProgressDialog(MainActivity.this);
+    InputStream inputStream = null;
+    String result = ""; 
+
+    protected void onPreExecute() {
+        progressDialog.setMessage("Downloading your data...");
+        progressDialog.show();
+        progressDialog.setOnCancelListener(new OnCancelListener() {
+            public void onCancel(DialogInterface arg0) {
+                MyAsyncTask.this.cancel(true);
+            }
+        });
+    }
+
+
+Then we need to set up the connection and how we want to handle the response:
+
+    @Override
+    protected Void doInBackground(String... params) {
+
+        String url_select = "http://yoururlhere.com";
+
+        ArrayList<NameValuePair> param = new ArrayList<NameValuePair>();
+
+        try {
+            // Set up HTTP post
+
+            // HttpClient is more then less deprecated. Need to change to URLConnection
+            HttpClient httpClient = new DefaultHttpClient();
+
+            HttpPost httpPost = new HttpPost(url_select);
+            httpPost.setEntity(new UrlEncodedFormEntity(param));
+            HttpResponse httpResponse = httpClient.execute(httpPost);
+            HttpEntity httpEntity = httpResponse.getEntity();
+
+            // Read content & Log
+            inputStream = httpEntity.getContent();
+        } catch (UnsupportedEncodingException e1) {
+            Log.e("UnsupportedEncodingException", e1.toString());
+            e1.printStackTrace();
+        } catch (ClientProtocolException e2) {
+            Log.e("ClientProtocolException", e2.toString());
+            e2.printStackTrace();
+        } catch (IllegalStateException e3) {
+            Log.e("IllegalStateException", e3.toString());
+            e3.printStackTrace();
+        } catch (IOException e4) {
+            Log.e("IOException", e4.toString());
+            e4.printStackTrace();
+        }
+        // Convert response to string using String Builder
+        try {
+            BufferedReader bReader = new BufferedReader(new InputStreamReader(inputStream, "utf-8"), 8);
+            StringBuilder sBuilder = new StringBuilder();
+
+            String line = null;
+            while ((line = bReader.readLine()) != null) {
+                sBuilder.append(line + "\
+");
+            }
+
+            inputStream.close();
+            result = sBuilder.toString();
+
+        } catch (Exception e) {
+            Log.e("StringBuilding & BufferedReader", "Error converting result " + e.toString());
+        }
+    } // protected Void doInBackground(String... params)
+
+
+Lastly, here we will parse the return, in this example it was a JSON Array and then dismiss the dialog:
+
+    protected void onPostExecute(Void v) {
+        //parse JSON data
+        try {
+            JSONArray jArray = new JSONArray(result);    
+            for(i=0; i < jArray.length(); i++) {
+
+                JSONObject jObject = jArray.getJSONObject(i);
+
+                String name = jObject.getString("name");
+                String tab1_text = jObject.getString("tab1_text");
+                int active = jObject.getInt("active");
+
+            } // End Loop
+            this.progressDialog.dismiss();
+        } catch (JSONException e) {
+            Log.e("JSONException", "Error: " + e.toString());
+        } // catch (JSONException e)
+    } // protected void onPostExecute(Void v)
+} //class MyAsyncTask extends AsyncTask<String, String, Void>
+
+    

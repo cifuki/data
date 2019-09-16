@@ -1,0 +1,69 @@
+51
+Q:I'm using RxJava in one of my projects, I converted one of my classes to Kotlin using the Android Studio plugin and in one of map flatMap lambda (Func1 in java), intermediates returns looks like the following @Func1.
+
+I have no idea what this means. 
+
+something.flatMap(Func1<ArticleCriteria, Observable<Pair<String, String>>> {
+    val isTemporaryClone = it.isATemporaryClone
+    val isTheOriginalToken = it.tokenIsOriginalHere
+
+    if (isTemporaryClone) {
+        if (!isTheOriginalToken) {
+            return@Func1 paramsError("Token is always original for temp articles")
+        }
+
+        return@Func1 mJobRunner.doNotRun(DeleteArticleJob.TAG)
+                            .doOnNext(deletePersonalActionById(articleId))
+    }
+
+    runArticleJobAsync(DeleteArticleJob.TAG, it)
+})
+
+    
+===============================================================================================
+60
+A:In Kotlin, the return@label syntax is used for specifying which function among several nested ones this statement returns from.
+
+It works with function literals (lambdas) and local functions. Non-labeled return statements return from the nearest (i.e. innermost) enclosing fun (ignoring lambdas). Consider this function:
+
+fun foo(ints: List<Int>) {
+    ints.forEach {
+        if (it == 0) return
+        print(it)
+    }
+}
+
+
+Here, return will finish the execution of foo, not just the lambda.
+
+But if you want to return from any other function (a lambda or an outer fun) you have to specify it as a label at return statement:
+
+fun foo(ints: List<Int>) {
+    ints.forEach {
+        if (it == 0) return@forEach // implicit label for lambda passed to forEach
+        print(it)
+    }
+}
+
+
+
+
+fun foo(ints: List<Int>): List<String> {
+    val result = ints.map f@{
+        if (it == 0) return@f "zero" // return at named label
+        if (it == -1) return emptyList() // return at foo
+        "number $it" // expression returned from lambda
+    }
+    return result
+}
+
+foo(listOf(1, -1, 1)) // []
+foo(listOf(1, 0, 1)) // ["number 1", "zero", "number 1"]
+
+
+Non-local return (i.e. return from outer functions) from a lambda is only supported for local and inline functions, because if a lambda is not inlined (or a function is placed inside an object), it is not guaranteed to be called only inside the enclosing function (e.g. it can be stored in a variable and called later), and the non-local return would make no sense in this case.
+
+
+
+There is also a similar syntax for qualified this, which is used to reference receivers of outer scopes: this@outer.
+    

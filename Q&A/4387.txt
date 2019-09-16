@@ -1,0 +1,211 @@
+54
+Q:I have a simple Android activity with a single dependency. I inject the dependency into the activity's onCreate like this:
+
+Dagger_HelloComponent.builder()
+    .helloModule(new HelloModule(this))
+    .build()
+    .initialize(this);
+
+
+In my ActivityUnitTestCase I want to override the dependency with a Mockito mock. I assume I need to use a test-specific module which provides the mock, but I can't figure out how to add this module to the object graph.
+
+In Dagger 1.x this is apparently done with something like this:
+
+@Before
+public void setUp() {
+  ObjectGraph.create(new TestModule()).inject(this);
+}
+
+
+What's the Dagger 2.0 equivalent of the above?
+
+You can see my project and its unit test here on GitHub.
+    
+===============================================================================================
+46
+A:Probably this is more a workaround that proper support for test module overriding, but it allows to override production modules with test one. The code snippets below shows simple case when you have just one component and one module, but this should work for any scenario. It requires a lot of boilerplate and code repetition so be aware of this. I'm sure there'll be a better way to achieve this in the future.
+
+I've also created a project with examples for Espresso and Robolectric. This answer is based on code contained in the project.
+
+The solution requires two things:
+
+
+provide additional setter for @Component
+test component must extend the production component
+
+
+Assume we've simple Application like below:
+
+public class App extends Application {
+
+    private AppComponent mAppComponent;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        mAppComponent = DaggerApp_AppComponent.create();
+    }
+
+    public AppComponent component() {
+        return mAppComponent;
+    }
+
+    @Singleton
+    @Component(modules = StringHolderModule.class)
+    public interface AppComponent {
+
+        void inject(MainActivity activity);
+    }
+
+    @Module
+    public static class StringHolderModule {
+
+        @Provides
+        StringHolder provideString() {
+            return new StringHolder("Release string");
+        }
+    }
+}
+
+
+We've to add additional method to App class. This allows us to replace the production component.
+
+/**
+ * Visible only for testing purposes.
+ */
+// @VisibleForTesting
+public void setTestComponent(AppComponent appComponent) {
+    mAppComponent = appComponent;
+}
+
+
+As you can see the StringHolder object contains "Release string" value. This object is injected to the MainActivity. 
+
+public class MainActivity extends ActionBarActivity {
+
+    @Inject
+    StringHolder mStringHolder;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        ((App) getApplication()).component().inject(this);
+    }
+}
+
+
+In our tests we want to provide StringHolder with "Test string". We've to set the test component in App class before the MainActivity is created - because StringHolder is injected in the onCreate callback.
+
+In Dagger v2.0.0 components can extend other interfaces. We can leverage this to create our TestAppComponent which extends AppComponent.
+
+@Component(modules = TestStringHolderModule.class)
+interface TestAppComponent extends AppComponent {
+
+}
+
+
+Now we're able to define our test modules e.g. TestStringHolderModule. The last step is to set the test component using previously added setter method in App class. It's important to do this before the activity is created.
+
+((App) application).setTestComponent(mTestAppComponent);
+
+
+Espresso
+
+For Espresso I've created custom ActivityTestRule which allows to swap the component before the activity is created. You can find code for DaggerActivityTestRule here. 
+
+Sample test with Espresso:
+
+@RunWith(AndroidJUnit4.class)
+@LargeTest
+public class MainActivityEspressoTest {
+
+    public static final String TEST_STRING = "Test string";
+
+    private TestAppComponent mTestAppComponent;
+
+    @Rule
+    public ActivityTestRule<MainActivity> mActivityRule =
+            new DaggerActivityTestRule<>(MainActivity.class, new OnBeforeActivityLaunchedListener<MainActivity>() {
+                @Override
+                public void beforeActivityLaunched(@NonNull Application application, @NonNull MainActivity activity) {
+                    mTestAppComponent = DaggerMainActivityEspressoTest_TestAppComponent.create();
+                    ((App) application).setTestComponent(mTestAppComponent);
+                }
+            });
+
+    @Component(modules = TestStringHolderModule.class)
+    interface TestAppComponent extends AppComponent {
+
+    }
+
+    @Module
+    static class TestStringHolderModule {
+
+        @Provides
+        StringHolder provideString() {
+            return new StringHolder(TEST_STRING);
+        }
+    }
+
+    @Test
+    public void checkSomething() {
+        // given
+        ...
+
+        // when
+        onView(...)
+
+        // then
+        onView(...)
+                .check(...);
+    }
+}
+
+
+Robolectric
+
+It's much easier with Robolectric thanks to the RuntimeEnvironment.application.
+
+Sample test with Robolectric:
+
+@RunWith(RobolectricGradleTestRunner.class)
+@Config(emulateSdk = 21, reportSdk = 21, constants = BuildConfig.class)
+public class MainActivityRobolectricTest {
+
+    public static final String TEST_STRING = "Test string";
+
+    @Before
+    public void setTestComponent() {
+        AppComponent appComponent = DaggerMainActivityRobolectricTest_TestAppComponent.create();
+        ((App) RuntimeEnvironment.application).setTestComponent(appComponent);
+    }
+
+    @Component(modules = TestStringHolderModule.class)
+    interface TestAppComponent extends AppComponent {
+
+    }
+
+    @Module
+    static class TestStringHolderModule {
+
+        @Provides
+        StringHolder provideString() {
+            return new StringHolder(TEST_STRING);
+        }
+    }
+
+    @Test
+    public void checkSomething() {
+        // given
+        MainActivity mainActivity = Robolectric.setupActivity(MainActivity.class);
+
+        // when
+        ...
+
+        // then
+        assertThat(...)
+    }
+}
+
+    

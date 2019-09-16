@@ -1,0 +1,113 @@
+102
+Q:I'm consuming an API from my android app, and all the JSON responses are like this:
+
+{
+    'status': 'OK',
+    'reason': 'Everything was fine',
+    'content': {
+         < some data here >
+}
+
+
+The problem is that all my POJOs have a status, reason fields, and inside the content field is the real POJO I want.
+
+Is there any way to create a custom converter of Gson to extract always the content field, so retrofit returns the appropiate POJO?
+    
+===============================================================================================
+157
+A:You would write a custom deserializer that returns the embedded object.
+
+Let's say your JSON is:
+
+{
+    "status":"OK",
+    "reason":"some reason",
+    "content" : 
+    {
+        "foo": 123,
+        "bar": "some value"
+    }
+}
+
+
+You'd then have a Content POJO:
+
+class Content
+{
+    public int foo;
+    public String bar;
+}
+
+
+Then you write a deserializer:
+
+class MyDeserializer implements JsonDeserializer<Content>
+{
+    @Override
+    public Content deserialize(JsonElement je, Type type, JsonDeserializationContext jdc)
+        throws JsonParseException
+    {
+        // Get the "content" element from the parsed JSON
+        JsonElement content = je.getAsJsonObject().get("content");
+
+        // Deserialize it. You use a new instance of Gson to avoid infinite recursion
+        // to this deserializer
+        return new Gson().fromJson(content, Content.class);
+
+    }
+}
+
+
+Now if you construct a Gson with GsonBuilder and register the deserializer:
+
+Gson gson = 
+    new GsonBuilder()
+        .registerTypeAdapter(Content.class, new MyDeserializer())
+        .create();
+
+
+You can deserialize your JSON straight to your Content:
+
+Content c = gson.fromJson(myJson, Content.class);
+
+
+Edit to add from comments: 
+
+If you have different types of messages but they all have the "content" field, you can make the Deserializer generic by doing:
+
+class MyDeserializer<T> implements JsonDeserializer<T>
+{
+    @Override
+    public T deserialize(JsonElement je, Type type, JsonDeserializationContext jdc)
+        throws JsonParseException
+    {
+        // Get the "content" element from the parsed JSON
+        JsonElement content = je.getAsJsonObject().get("content");
+
+        // Deserialize it. You use a new instance of Gson to avoid infinite recursion
+        // to this deserializer
+        return new Gson().fromJson(content, type);
+
+    }
+}
+
+
+You just have to register an instance for each of your types:
+
+Gson gson = 
+    new GsonBuilder()
+        .registerTypeAdapter(Content.class, new MyDeserializer<Content>())
+        .registerTypeAdapter(DiffContent.class, new MyDeserializer<DiffContent>())
+        .create();
+
+
+When you call .fromJson() the type is carried into the deserializer, so it should then work for all your types. 
+
+And finally when creating a Retrofit instance:
+
+Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl(url)
+                .addConverterFactory(GsonConverterFactory.create(gson))
+                .build();
+
+    

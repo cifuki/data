@@ -1,0 +1,24 @@
+42
+Q:Actually this is a little bit silly about protecting public key (what is the definition of public key then?) but as per the documentation by Google:
+
+
+  To keep your public key safe from malicious users and hackers, do not
+  embed it in any code as a literal string. Instead, construct the
+  string at runtime from pieces or use bit manipulation (for example,
+  XOR with some other string) to hide the actual key. The key itself is
+  not secret information, but you do not want to make it easy for a
+  hacker or malicious user to replace the public key with another key.
+
+
+Are there any recommended way to do it? 
+
+I know there are many ways to do it, I just don't want to follow the same way how people handle password hashing in the past (e.g. md5, sha1 etc), I want to know the best practice in the above use case.
+    
+===============================================================================================
+37
+A:This comes up a lot around here :) The idea behind the paragraph you are quoting is that for in-app billing to be secure, you need to verify transaction signatures. Those are signed with a private key, associated with your developer account. The key resides on Google's servers, so it's fairly safe to assume that no one else can sign data with it. To verify it you need your public key, which you can copy from the developer console. If someone replaced it in your app, they could fool it to accept in-app billing transactions from unauthorized sources, because if they plant the public key, they probably also control the corresponding private key. In practice however, it is far easier to simply modify your code in the right places to always return true for isLicensed(), hasItem() or similar methods you might have and no one does this.
+
+The best way to protect the key is, of course, not to have the key in your app at all. Move all of the transaction validation logic to your server, and use HTTPS to connect to it. Properly validate the certificate chain to ensure you are talking to your own server(s).  Otherwise, someone might mess around with DNS and fool your app to connect to their own servers. A similar attack against iOS purchasing was announced a couple of weeks ago. 
+
+The next best thing is to somehow obfuscate the key, and have it included in your app. This has the advantage that you don't need a server, but the disadvantage is that if someone is determined enough they will figure it out, since they can always reverse the byte code of your app. So your best bet is to come up with your own original way to do it that doesn't show up on public forums :) To make it a bit harder, you can implement the validation part in native code, which is harder (but not impossible) to analyze. Still, as mentioned above, patching byte code in the right places is far easier than trying to replace the public key, so that is what most crackers will do. 
+    

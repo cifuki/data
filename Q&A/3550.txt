@@ -1,0 +1,141 @@
+64
+Q:How can I release Jar packaging of android-library project?
+I've found, classes.jar is located under build/bundles/release/classes.jar and I suppose this is correct Jar package (contains *.class files).
+
+Is there some official way, to release library as JAR instead of AAR ?
+
+Edit
+I use Gradle to release Maven artifacts, and I'd like to release JAR along with AAR package.   So JAR with signature, md5, manifest, ...
+based on https://chris.banes.me/2013/08/27/pushing-aars-to-maven-central/
+
+apply plugin: 'maven'
+apply plugin: 'signing'
+
+configurations {
+    archives {
+        extendsFrom configurations.default
+    }
+}
+
+def sonatypeRepositoryUrl
+if (isReleaseBuild()) {
+    println 'RELEASE BUILD'
+    sonatypeRepositoryUrl = "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+} else {
+    println 'DEBUG BUILD'
+    sonatypeRepositoryUrl = "https://oss.sonatype.org/content/repositories/snapshots/"
+}
+
+if(!hasProperty('nexusPassword')) {
+    ext.set('nexusPassword', System.console().readPassword("\
+\\$ Type in password for Sonatype nexus account " + nexusUsername + ": "))
+}
+
+if(!signing.hasProperty('password')) {
+    ext.set('signing.password', System.console().readPassword("\
+\\$ Type in GPG key password: "))
+}
+
+afterEvaluate { project ->
+    uploadArchives {
+        repositories {
+            mavenDeployer {
+                beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+
+                pom.artifactId = POM_ARTIFACT_ID
+
+                repository(url: sonatypeRepositoryUrl) {
+                    authentication(userName: nexusUsername, password: nexusPassword)
+                }
+
+                pom.project {
+                    name POM_NAME
+                    packaging POM_PACKAGING
+                    description POM_DESCRIPTION
+                    url POM_URL
+
+                    scm {
+                        url POM_SCM_URL
+                        connection POM_SCM_CONNECTION
+                        developerConnection POM_SCM_DEV_CONNECTION
+                    }
+
+                    licenses {
+                        license {
+                            name POM_LICENCE_NAME
+                            url POM_LICENCE_URL
+                            distribution POM_LICENCE_DIST
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            id "loopj"
+                            name "James Smith"
+                        }
+                        developer {
+                            id "smarek"
+                            name "Marek Sebera"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    signing {
+        required { isReleaseBuild() && gradle.taskGraph.hasTask("uploadArchives") }
+        sign configurations.archives
+    }
+
+    task androidJavadocs(type: Javadoc) {
+        source = android.sourceSets.main.java.srcDirs
+    }
+
+    task androidJavadocsJar(type: Jar) {
+        classifier = 'javadoc'
+        from androidJavadocs.destinationDir
+    }
+
+    task androidSourcesJar(type: Jar) {
+        classifier = 'sources'
+        from android.sourceSets.main.java.srcDirs
+    }
+
+    artifacts {
+        archives androidSourcesJar
+        archives androidJavadocsJar
+    }
+}
+
+
+using 
+
+task androidJar(type: Jar) {
+    from android.sourceSets.main.java.srcDirs
+}
+
+
+will package only java files, not compiled and linked against android sdk
+    
+===============================================================================================
+93
+A:While I haven't tried uploading the artifacts with a deployment to Sonatype (or even a local repo), here's what I managed to come up with a few weeks ago when trying to tackle the same problem.
+
+android.libraryVariants.all { variant ->
+  def name = variant.buildType.name
+  if (name.equals(com.android.builder.core.BuilderConstants.DEBUG)) {
+    return; // Skip debug builds.
+  }
+  def task = project.tasks.create "jar${name.capitalize()}", Jar
+  task.dependsOn variant.javaCompile
+  task.from variant.javaCompile.destinationDir
+  artifacts.add('archives', task);
+}
+
+
+Then run the following:
+
+./gradlew jarRelease
+
+    

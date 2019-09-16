@@ -1,0 +1,201 @@
+92
+Q:I'm developing an app using Android 4.0 ICS and fragments.
+
+Consider this modified example from the ICS 4.0.3 (API level 15) API's demo example app:
+
+public class FragmentTabs extends Activity {
+
+private static final String TAG = FragmentTabs.class.getSimpleName();
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    final ActionBar bar = getActionBar();
+    bar.setNavigationMode(ActionBar.NAVIGATION_MODE_TABS);
+    bar.setDisplayOptions(0, ActionBar.DISPLAY_SHOW_TITLE);
+
+    bar.addTab(bar.newTab()
+            .setText("Simple")
+            .setTabListener(new TabListener<SimpleFragment>(
+                    this, "mysimple", SimpleFragment.class)));
+
+    if (savedInstanceState != null) {
+        bar.setSelectedNavigationItem(savedInstanceState.getInt("tab", 0));
+        Log.d(TAG, "FragmentTabs.onCreate tab: " + savedInstanceState.getInt("tab"));
+        Log.d(TAG, "FragmentTabs.onCreate number: " + savedInstanceState.getInt("number"));
+    }
+
+}
+
+@Override
+protected void onSaveInstanceState(Bundle outState) {
+    super.onSaveInstanceState(outState);
+    outState.putInt("tab", getActionBar().getSelectedNavigationIndex());
+}
+
+public static class TabListener<T extends Fragment> implements ActionBar.TabListener {
+    private final Activity mActivity;
+    private final String mTag;
+    private final Class<T> mClass;
+    private final Bundle mArgs;
+    private Fragment mFragment;
+
+    public TabListener(Activity activity, String tag, Class<T> clz) {
+        this(activity, tag, clz, null);
+    }
+
+    public TabListener(Activity activity, String tag, Class<T> clz, Bundle args) {
+        mActivity = activity;
+        mTag = tag;
+        mClass = clz;
+        mArgs = args;
+
+        // Check to see if we already have a fragment for this tab, probably
+        // from a previously saved state.  If so, deactivate it, because our
+        // initial state is that a tab isn't shown.
+        mFragment = mActivity.getFragmentManager().findFragmentByTag(mTag);
+        if (mFragment != null && !mFragment.isDetached()) {
+            Log.d(TAG, "constructor: detaching fragment " + mTag);
+            FragmentTransaction ft = mActivity.getFragmentManager().beginTransaction();
+            ft.detach(mFragment);
+            ft.commit();
+        }
+    }
+
+    public void onTabSelected(Tab tab, FragmentTransaction ft) {
+        if (mFragment == null) {
+            mFragment = Fragment.instantiate(mActivity, mClass.getName(), mArgs);
+            Log.d(TAG, "onTabSelected adding fragment " + mTag);
+            ft.add(android.R.id.content, mFragment, mTag);
+        } else {
+            Log.d(TAG, "onTabSelected attaching fragment " + mTag);
+            ft.attach(mFragment);
+        }
+    }
+
+    public void onTabUnselected(Tab tab, FragmentTransaction ft) {
+        if (mFragment != null) {
+            Log.d(TAG, "onTabUnselected detaching fragment " + mTag);
+            ft.detach(mFragment);
+        }
+    }
+
+    public void onTabReselected(Tab tab, FragmentTransaction ft) {
+        Toast.makeText(mActivity, "Reselected!", Toast.LENGTH_SHORT).show();
+    }
+}
+
+public static class SimpleFragment extends Fragment {
+    TextView textView;
+    int mNum;
+
+    /**
+     * When creating, retrieve this instance's number from its arguments.
+     */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        Log.d(FragmentTabs.TAG, "onCreate " + (savedInstanceState != null ? ("state " + savedInstanceState.getInt("number")) : "no state"));
+        if(savedInstanceState != null) {
+            mNum = savedInstanceState.getInt("number");
+        } else {
+            mNum = 25;
+        }
+    }
+
+    @Override
+    public void onActivityCreated(Bundle savedInstanceState) {
+        Log.d(TAG, "onActivityCreated");
+        if(savedInstanceState != null) {
+            Log.d(TAG, "saved variable number: " + savedInstanceState.getInt("number"));
+        }
+        super.onActivityCreated(savedInstanceState);
+    }
+
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        Log.d(TAG, "onSaveInstanceState saving: " + mNum);
+        outState.putInt("number", mNum);
+        super.onSaveInstanceState(outState);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        Log.d(FragmentTabs.TAG, "onCreateView " + (savedInstanceState != null ? ("state: " + savedInstanceState.getInt("number")) : "no state"));
+        textView = new TextView(getActivity());
+        textView.setText("Hello world: " + mNum);
+        textView.setBackgroundDrawable(getResources().getDrawable(android.R.drawable.gallery_thumb));
+        return textView;
+    }
+}
+
+
+}
+
+Here is the output retrieved from running this example and then rotating the phone:
+
+06-11 11:31:42.559: D/FragmentTabs(10726): onTabSelected adding fragment mysimple
+06-11 11:31:42.559: D/FragmentTabs(10726): onCreate no state
+06-11 11:31:42.559: D/FragmentTabs(10726): onCreateView no state
+06-11 11:31:42.567: D/FragmentTabs(10726): onActivityCreated
+06-11 11:31:45.286: D/FragmentTabs(10726): onSaveInstanceState saving: 25
+06-11 11:31:45.325: D/FragmentTabs(10726): onCreate state 25
+06-11 11:31:45.340: D/FragmentTabs(10726): constructor: detaching fragment mysimple
+06-11 11:31:45.340: D/FragmentTabs(10726): onTabSelected attaching fragment mysimple
+06-11 11:31:45.348: D/FragmentTabs(10726): FragmentTabs.onCreate tab: 0
+06-11 11:31:45.348: D/FragmentTabs(10726): FragmentTabs.onCreate number: 0
+06-11 11:31:45.348: D/FragmentTabs(10726): onCreateView state: 25
+06-11 11:31:45.348: D/FragmentTabs(10726): onActivityCreated
+06-11 11:31:45.348: D/FragmentTabs(10726): saved variable number: 25
+06-11 11:31:45.348: D/FragmentTabs(10726): onCreateView no state
+06-11 11:31:45.348: D/FragmentTabs(10726): onActivityCreated
+
+
+My question is, why is the onCreateView and onActivityCreated called twice? The first time with a Bundle with the saved state and the second time with a null savedInstanceState? 
+
+This is causing problems with retaining the state of the fragment on rotation.
+    
+===============================================================================================
+44
+A:I was scratching my head about this for a while too, and since Dave's explanation is a little hard to understand I'll post my (apparently working) code:
+
+private class TabListener<T extends Fragment> implements ActionBar.TabListener {
+    private Fragment mFragment;
+    private Activity mActivity;
+    private final String mTag;
+    private final Class<T> mClass;
+
+    public TabListener(Activity activity, String tag, Class<T> clz) {
+        mActivity = activity;
+        mTag = tag;
+        mClass = clz;
+        mFragment=mActivity.getFragmentManager().findFragmentByTag(mTag);
+    }
+
+    public void onTabSelected(Tab tab, FragmentTransaction ft) {
+        if (mFragment == null) {
+            mFragment = Fragment.instantiate(mActivity, mClass.getName());
+            ft.replace(android.R.id.content, mFragment, mTag);
+        } else {
+            if (mFragment.isDetached()) {
+                ft.attach(mFragment);
+            }
+        }
+    }
+
+    public void onTabUnselected(Tab tab, FragmentTransaction ft) {
+        if (mFragment != null) {
+            ft.detach(mFragment);
+        }
+    }
+
+    public void onTabReselected(Tab tab, FragmentTransaction ft) {
+    }
+}
+
+
+As you can see it's pretty much like the Android sample, apart from not detaching in the constructor, and using replace instead of add.
+
+After much headscratching and trial-and-error I found that finding the fragment in the constructor seems to make the double onCreateView problem magically go away (I assume it just ends up being null for onTabSelected when called through the ActionBar.setSelectedNavigationItem() path when saving/restoring state).
+    

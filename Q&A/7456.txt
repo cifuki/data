@@ -1,0 +1,149 @@
+35
+Q:I have a CompositeComponent (EditText+ImageButton)
+When clicking on button the edittext content will be cleared.
+It is working fine. My problem is setting attributes to my component. I am using declare-styleable to set attributes to my component. 
+
+I am successful at setting minLines, maxLines and textColor.
+
+How can I set inputtype to my component via xml.
+
+my attributes.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="CET">
+        <attr name="MaxLines" format="integer"/>
+        <attr name="MinLines" format="integer"/>
+        <attr name="TextColor" format="color"/>
+        <attr name="InputType" format="integer" />
+        <attr name="Hint" format="string" />
+    </declare-styleable>
+</resources>
+
+
+And usage of mycomponent in main_layout.xml:
+
+<com.test.ui.ClearableEditText
+        xmlns:cet="http://schemas.android.com/apk/res/com.test.ui"
+        android:id="@+id/clearableEditText2"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        cet:MaxLines="2"
+        cet:MinLines="1"
+        cet:TextColor="#0000FF"
+        cet:InputType="" <---I cant set this property--------->
+        cet:Hint="Clearable EditText Hint">
+
+    </com.test.ui.ClearableEditText>
+
+
+Ordinary Edittext usage:
+
+<EditText
+        android:id="@+id/editText1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="numberSigned" <--------I want to use this property--------> >
+
+
+I cant use ENUM in my attribute.xml.
+How to refer android:inputType="numberSigned" in my  cet:InputType?
+
+EDIT:
+
+This is how I assign properties in my ClearableEditText.java
+
+TypedArray a = getContext().obtainStyledAttributes(attrs,R.styleable.CET,0, 0);
+
+            int minLines = a.getInt(R.styleable.CET_MinLines, 1);
+            int maxLines = a.getInt(R.styleable.CET_MaxLines, 100);
+            String hint = a.getString(R.styleable.CET_Hint);
+            int textColor = a.getColor(R.styleable.CET_TextColor, Color.BLACK);
+            int inputType = a.getInt(R.styleable.CET_InputType, -108);
+
+            Log.i(TAG, "ClearableEditText: Min Line "+minLines +" Max Lines: "+maxLines+" Hint "+hint+" Color: "+textColor+" Input Type: "+inputType);
+
+            edit_text.setMaxLines(maxLines);
+            edit_text.setMinLines(minLines);
+            edit_text.setTextColor(textColor);
+            edit_text.setHint(hint);
+            if(inputType != -108)
+                edit_text.setInputType(inputType);
+
+
+You can see there is no problem with assigning the inputType property to editText.
+    
+===============================================================================================
+77
+A:Lets say you have a custom view named InputView, which is not a TextView (lets say its a RelativeLayout).
+
+In your attrs.xml:
+
+<declare-styleable name="InputView">
+
+    <!-- any custom attributes -->
+    <attr name="title" format="string" /> 
+
+    <!-- standart attributes, note android: prefix and no format attribute -->
+    <attr name="android:imeOptions"/> 
+    <attr name="android:inputType"/>
+
+</declare-styleable>
+
+
+In an xml layout where you want to include InputView:
+
+<!-- note xmlns:custom and com.mycompany.myapp -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:custom="http://schemas.android.com/apk/res-auto"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent">
+
+        <!-- note that you will be using android: prefix for standart attributes, and not custom: prefix -->
+        <!-- also note that you can use standart values: actionNext or textEmailAddress -->
+        <com.mycompany.myapp.InputView
+        android:id="@+id/emailField"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        custom:title="@string/my_title"
+        android:imeOptions="actionNext|flagNoExtractUi"
+        android:inputType="textEmailAddress" />
+
+</FrameLayout>
+
+
+Inside your custom class you can extract attributes as usual:
+
+    ...
+
+    private String title;
+    private int inputType;
+    private int imeOptions;
+
+    ...
+    TypedArray a = getContext().obtainStyledAttributes(attrs, R.styleable.InputView);
+
+    int n = a.getIndexCount();
+    for (int i = 0; i < n; i++) {
+        int attr = a.getIndex(i);
+        switch (attr) {
+        case R.styleable.InputView_title:
+            title = a.getString(attr);
+            break;
+        //note that you are accessing standart attributes using your attrs identifier
+        case R.styleable.InputView_android_inputType:
+            inputType = a.getInt(attr, EditorInfo.TYPE_TEXT_VARIATION_NORMAL);
+            break;
+        case R.styleable.InputView_android_imeOptions:
+            imeOptions = a.getInt(attr, 0);
+            break;
+        default:
+            Log.d("TAG", "Unknown attribute for " + getClass().toString() + ": " + attr);
+            break;
+        }
+    }
+
+    a.recycle();
+    ...
+
+    

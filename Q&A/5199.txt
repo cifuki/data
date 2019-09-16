@@ -1,0 +1,144 @@
+47
+Q:I know this is not the first time someone asking about this problem but with Retrofit2 I can't find the right solution to my problem. I followed a online tutorial and it worked just fine. When I applied same code to my own endpoint i get this exception: java.lang.IllegalStateException: Expected BEGIN_ARRAY but was BEGIN_OBJECT at line 1 column 2 path $ I don't know how to solve this.
+
+Interface:
+
+public interface MyApiService {
+
+// Is this right place to add these headers?
+@Headers({"application-id: MY-APPLICATION-ID",
+        "secret-key: MY-SECRET-KEY",
+        "application-type: REST"})
+@GET("Music")
+Call<List<Music>> getMusicList();
+
+
+
+Retrofit retrofit = new Retrofit.Builder()
+        .baseUrl(MySettings.REST_END_POINT)
+        .addConverterFactory(GsonConverterFactory.create())
+        .build();
+}
+
+
+Client code:
+
+MyApiService service = MyApiService.retrofit.create(MyApiService.class);
+Call<List<Music>> call = service.getMusicList();
+call.enqueue(new Callback<List<Music>>() {
+
+    @Override
+    public void onResponse(Call<List<Music>> call, Response<List<Music>> response) {
+        Log.e("MainActivity", response.body().
+    }
+
+    @Override
+    public void onFailure(Call<List<Music>> call, Throwable t) {
+        Log.e("MainActivity", t.toString());
+    }
+});
+
+
+This code working with this payload:
+
+[
+{
+    "login": "JakeWharton",
+    "id": 66577,
+    "avatar_url": "https://avatars.githubusercontent.com/u/66577?v=3",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/JakeWharton",
+    "html_url": "https://github.com/JakeWharton",
+    "followers_url": "https://api.github.com/users/JakeWharton/followers",
+    "following_url": "https://api.github.com/users/JakeWharton/following{/other_user}",
+    "gists_url": "https://api.github.com/users/JakeWharton/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/JakeWharton/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/JakeWharton/subscriptions",
+    "organizations_url": "https://api.github.com/users/JakeWharton/orgs",
+    "repos_url": "https://api.github.com/users/JakeWharton/repos",
+    "events_url": "https://api.github.com/users/JakeWharton/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/JakeWharton/received_events",
+    "type": "User",
+    "site_admin": false,
+    "contributions": 741
+},
+{....
+
+
+but not with this one:
+
+{
+"offset": 0,
+"data": [
+    {
+        "filename": "E743_1458662837071.mp3",
+        "created": 1458662854000,
+        "publicUrl": "https://api.backendless.com/dbb77803-1ab8-b994-ffd8-65470fa62b00/v1/files/music/E743_1458662837071.mp3",
+        "___class": "Music",
+        "description": "",
+        "likeCount": 0,
+        "title": "hej Susanne. ",
+        "ownerId": "E743756F-E114-6892-FFE9-BCC8C072E800",
+        "updated": null,
+        "objectId": "DDD8CB3D-ED66-0D6F-FFA5-B14543ABC800",
+        "__meta": "{\\"relationRemovalIds\\":{},\\"selectedProperties\\":[\\"filename\\",\\"created\\",\\"publicUrl\\",\\"___class\\",\\"description\\",\\"likeCount\\",\\"title\\",\\"ownerId\\",\\"updated\\",\\"objectId\\"],\\"relatedObjects\\":{}}"
+    },
+    {...
+
+
+My Music class:
+
+public class Music {
+
+   private String ownerId;
+   private String filename;
+   private String title;
+   private String description;
+   private String publicUrl;
+   private int likeCount;
+
+   // Getters & Setters
+
+}
+
+    
+===============================================================================================
+90
+A:When you say "This code is working with this payload:... but not with this one:..." that's expected and that's how it's suppose to work. In fact the error message tells you that while converting the json to a java object the call expected an array in the json but got an object instead.
+
+This call:
+
+@GET("Music")
+Call<List<Music>> getMusicList();
+
+
+expects a list of Music objects, that's why it works with the json:
+
+[
+  {
+    "login": "JakeWharton",
+    ...
+  },
+  ...
+]
+
+
+Because the json itself is an array of your Music objects (Retrofit can convert between json arrays to java lists). For the second json you have just an object and not an array (notice the lack of [...]). For this you need to create another call with another model that maps to that json. Let's assume you've named the model MusicList. Here's how the call could look like:
+
+@GET("Music")
+Call<MusicList> getMusicList();
+
+
+(Note that you might need to change the method name if you want to keep both the first call and this one).
+
+The MusicList model can look something like this:
+
+public class MusicList {
+  @SerializedName("data")
+  private List<Music> musics;
+  // ...
+}
+
+
+I'm assuming that the data array is a list of Music objects, but I did notice that the jsons are completely different. You might need to adapt this as well, but I think you get the picture here.
+    

@@ -1,0 +1,122 @@
+60
+Q:I'm trying to use the new notifications interface. I've added 3 buttons to the notifications, and I want to save something to my database once each of them is clicked.
+
+The notification itself works well and is shown when called, I just don't know how to capture each of the three different button clicks.
+
+I'm using a BroadcastReceiver to catch the clicks, but I don't know how to tell which button was clicked.
+
+This is the code of AddAction(I've excluded the rest of the notification, as its working well) - 
+
+    //Yes intent
+    Intent yesReceive = new Intent();  
+    yesReceive.setAction(CUSTOM_INTENT);
+    Bundle yesBundle = new Bundle();            
+    yesBundle.putInt("userAnswer", 1);//This is the value I want to pass
+    yesReceive.putExtras(yesBundle);
+    PendingIntent pendingIntentYes = PendingIntent.getBroadcast(this, 12345, yesReceive, PendingIntent.FLAG_UPDATE_CURRENT);
+    mBuilder.addAction(R.drawable.calendar_v, "Yes", pendingIntentYes);
+
+    //Maybe intent
+    Intent maybeReceive = new Intent();  
+    maybeReceive.setAction(CUSTOM_INTENT);
+    Bundle maybeBundle = new Bundle();            
+    maybeBundle.putInt("userAnswer", 3);//This is the value I want to pass
+    maybeReceive.putExtras(maybeBundle);
+    PendingIntent pendingIntentMaybe = PendingIntent.getBroadcast(this, 12345, maybeReceive, PendingIntent.FLAG_UPDATE_CURRENT);
+    mBuilder.addAction(R.drawable.calendar_question, "Partly", pendingIntentMaybe);
+
+    //No intent
+    Intent noReceive = new Intent();  
+    noReceive.setAction(CUSTOM_INTENT);
+    Bundle noBundle = new Bundle();            
+    noBundle.putInt("userAnswer", 2);//This is the value I want to pass
+    noReceive.putExtras(noBundle);
+    PendingIntent pendingIntentNo = PendingIntent.getBroadcast(this, 12345, noReceive, PendingIntent.FLAG_UPDATE_CURRENT);
+    mBuilder.addAction(R.drawable.calendar_x, "No", pendingIntentNo);
+
+
+This is the code of the BroadcastReceiver- 
+
+ public class AlarmReceiver extends BroadcastReceiver {
+
+@Override
+public void onReceive(Context context, Intent intent) {
+    Log.v("shuffTest","I Arrived!!!!");
+     //Toast.makeText(context, "Alarm worked!!", Toast.LENGTH_LONG).show();
+
+    Bundle answerBundle = intent.getExtras();
+    int userAnswer = answerBundle.getInt("userAnswer");
+    if(userAnswer == 1)
+    {
+        Log.v("shuffTest","Pressed YES");
+    }
+    else if(userAnswer == 2)
+    {
+        Log.v("shuffTest","Pressed NO");
+    }
+    else if(userAnswer == 3)
+    {
+        Log.v("shuffTest","Pressed MAYBE");
+    }
+
+}           
+}
+
+
+I've registered the BroadcastReceiver in the Manifest.
+Also, I want to mention that the BroadcastReceiver is called when I click one of the buttons in the notification, but the intent always includes an extra of '2'.
+
+This is the notifcation iteslf - 
+
+    
+===============================================================================================
+113
+A:It's because you're using FLAG_UPDATE_CURRENT with Intents that have the same action
+
+From the docs:
+
+
+  if the described PendingIntent already exists, then keep it but its replace its extra data with what is in this new Intent.
+
+
+When you specify pendingIntentMaybe and pendingIntentNo, the system uses the PendingIntent created for pendingIntentYes, but it overwrites the extras.  Thus, all three variables refer to the same object, and the last extras specified were for pendingIntentNo.
+
+You should specify an alternative action for each Intent.  You can still have one BroadcastReceiver, and just have it intercept all three actions.  This would be less confusing semantically as well :)
+
+Your Notification poster:
+
+//Yes intent
+Intent yesReceive = new Intent();  
+yesReceive.setAction(YES_ACTION);
+PendingIntent pendingIntentYes = PendingIntent.getBroadcast(this, 12345, yesReceive, PendingIntent.FLAG_UPDATE_CURRENT);
+mBuilder.addAction(R.drawable.calendar_v, "Yes", pendingIntentYes);
+
+//Maybe intent
+Intent maybeReceive = new Intent();  
+maybeReceive.setAction(MAYBE_ACTION);
+PendingIntent pendingIntentMaybe = PendingIntent.getBroadcast(this, 12345, maybeReceive, PendingIntent.FLAG_UPDATE_CURRENT);
+mBuilder.addAction(R.drawable.calendar_question, "Partly", pendingIntentMaybe);
+
+//No intent
+Intent noReceive = new Intent();  
+noReceive.setAction(NO_ACTION);
+PendingIntent pendingIntentNo = PendingIntent.getBroadcast(this, 12345, noReceive, PendingIntent.FLAG_UPDATE_CURRENT);
+mBuilder.addAction(R.drawable.calendar_x, "No", pendingIntentNo);
+
+
+Your receiver:
+
+@Override
+public void onReceive(Context context, Intent intent) {
+    String action = intent.getAction();
+
+    if(YES_ACTION.equals(action)) {
+        Log.v("shuffTest","Pressed YES");
+    } else if(MAYBE_ACTION.equals(action)) {
+        Log.v("shuffTest","Pressed NO");
+    } else if(NO_ACTION.equals(action)) {
+        Log.v("shuffTest","Pressed MAYBE");
+    }
+}           
+
+    

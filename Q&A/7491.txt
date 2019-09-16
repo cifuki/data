@@ -1,0 +1,61 @@
+35
+Q:I have a very simple build.gradle file with the following content:
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.4.1'
+    }
+}
+
+apply plugin: 'android'
+
+android {
+    buildToolsVersion "17.0.0"
+    compileSdkVersion 17
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            res.srcDirs = ['res']
+            assets.srcDirs = ['assets']
+        }
+    }
+}
+
+task generateSources {
+    doFirst {
+        def script = "python GenerateSources.py".execute()
+        script.in.eachLine {line -> println line}
+        script.err.eachLine {line -> println "ERROR: " + line}
+        script.waitFor()
+    }
+}
+
+
+What I want is to run generateSources task before java compilation is started. I found several solutions how to do that, like compileJava.dependsOn("generateSources"), but unfortunately they give an error:
+
+A problem occurred evaluating root project 'Android'.
+> Could not find property 'compileJava' on root project 'Android'.
+
+
+I don't know Gradle and can't understand what's wrong with this code. So I would like to know how I can fix this error.
+    
+===============================================================================================
+28
+A:Apparently, the android plugin doesn't add a compileJava task (like the java plugin would). You can check which tasks are available with gradle tasks --all, and pick the right one for your (otherwise correct) dependency declaration.
+
+EDIT: 
+
+Apparently, the android plugin defers creation of tasks in such a way that they can't be accessed eagerly as usual. One way to overcome this problem is to defer access until the end of the configuration phase:
+
+gradle.projectsEvaluated {
+    compileJava.dependsOn(generateSources)
+}
+
+
+Chances are that there is a more idiomatic way to solve your use case, but quickly browsing the Android plugin docs I couldn't find one.
+    

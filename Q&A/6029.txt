@@ -1,0 +1,83 @@
+42
+Q:Every so often my app will crash and my log will read:
+
+@@@ ABORTING: INVALID HEAP ADDRESS IN dlfree
+Fatal signal 11 (SIGSEGV) at 0xdeadbaad (code=1)
+
+
+Sometimes code=2, but always Fatal signal 11 and invalid heap address.
+
+I've tried researching what this means and how to fix it. This thread has been the most helpful; however, I'm still without a solution. 
+
+The error occurs when I run a couple of AsyncTasks to download several images.
+
+This is my main AsyncTask
+
+public class FetchArtistImages extends AsyncTask<Void, Integer, String[]> implements Constants {
+
+private final WeakReference<Context> contextReference;
+
+public FetchArtistImages(Context context) {
+    contextReference = new WeakReference<Context>(context);
+}
+
+@Override
+protected String[] doInBackground(Void... params) {
+    String[] projection = new String[] {
+            Audio.Artists._ID, Audio.Artists.ARTIST
+    };
+    String sortOrder = Audio.Artists.DEFAULT_SORT_ORDER;
+    Uri uri = Audio.Artists.EXTERNAL_CONTENT_URI;
+    Cursor c = contextReference.get().getContentResolver()
+            .query(uri, projection, null, null, sortOrder);
+    ArrayList<String> artistIds = new ArrayList<String>();
+    if (c != null) {
+        int count = c.getCount();
+        if (count > 0) {
+            final int ARTIST_IDX = c.getColumnIndex(Audio.Artists.ARTIST);
+            for (int i = 0; i < count; i++) {
+                c.moveToPosition(i);
+                artistIds.add(c.getString(ARTIST_IDX));
+            }
+        }
+        c.close();
+        c = null;
+    }
+    return artistIds.toArray(new String[artistIds.size()]);
+}
+
+@Override
+protected void onPostExecute(String[] result) {
+    for (int i = 0; i < result.length; i++) {
+            new LastfmGetArtistImages(contextReference.get()).executeOnExecutor(
+                    AsyncTask.THREAD_POOL_EXECUTOR, result[i]);
+    }
+    super.onPostExecute(result);
+}
+
+
+Even though I've tried researching what's up with this, I still find myself lost when it comes to fixing it. If anyone has some insight, I'd definitely appreciate seeing it. The error isn't thrown every time I execute my AsyncTasks, but I can't find much of a pattern to help isolate why this is occurring. There are a couple of other threads on SO about fatal signal 11, but they don't provide much help in my case.
+    
+===============================================================================================
+43
+A:I just ran into the same issue and had it at a re-producable state.  This is the error I was getting:
+
+
+  08-04 17:37:05.491: A/libc(4233): @@@ ABORTING: INVALID HEAP ADDRESS IN dlfree
+  08-04 17:37:05.491: A/libc(4233): Fatal signal 11 (SIGSEGV) at 0xdeadbaad (code=1)
+
+
+What it boiled down to is a function call being made from two different threads at the same time.
+
+More specifically, this function was BluetoothSocket's close() method.  
+
+I checked the source code at this website , and the call is not synchronized (not sure if this changed since it is from Android 2.1).
+
+At any rate, do you maybe have a similar scenario where a function call is made from multiple threads?  Can't say for sure from the source code you're showing.
+
+Also have you tried not using THREAD_POOL_EXECUTOR?  According to the android dev guide:
+
+
+  When first introduced, AsyncTasks were executed serially on a single background thread. Starting with DONUT, this was changed to a pool of threads allowing multiple tasks to operate in parallel. Starting with HONEYCOMB, tasks are executed on a single thread to avoid common application errors caused by parallel execution.
+
+    

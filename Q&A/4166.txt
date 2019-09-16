@@ -1,0 +1,123 @@
+56
+Q:My app has an auto-update feature that download an APK and when the download is finished that a Intent.VIEW_ACTION to open the app and let the user install the downloaded apk
+
+         Uri uri = Uri.parse("file://" + destination);
+         Intent install = new Intent(Intent.ACTION_VIEW);
+        install.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        install.setDataAndType(uri,
+            manager.getMimeTypeForDownloadedFile(downloadId));
+        activity.startActivity(install);
+
+
+This works great for all the device < 24
+
+Now with Android 24 apparently we are not allowed any more to start intents with file:/// and after some googling it was advised to use A File Provider
+
+new code:
+
+Intent install = new Intent(Intent.ACTION_VIEW);
+    install.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+    install.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    Uri apkUri = FileProvider.getUriForFile(AutoUpdate.this,
+        BuildConfig.APPLICATION_ID + ".provider", file);
+    install.setDataAndType(apkUri,
+        manager.getMimeTypeForDownloadedFile(downloadId));
+    activity.startActivity(install);
+
+
+Now activity.startActivity(install); throws an error
+
+
+  No Activity found to handle Intent { act=android.intent.action.VIEW
+  dat=content://com.xxxx.xx.provider/MyFolder/Download/MyApkFile.apk
+  typ=application/vnd.android.package-archive flg=0x4000000 }
+
+
+Is there any way I can open the APK viewer in Android 7 (24) ?
+    
+===============================================================================================
+131
+A:After a lot of trying I have been able to solve this by creating different Intents for anything lower than Nougat as using the FileProvider to create an install intent with Android Versions before Nougat causes the error:
+
+ActivityNotFoundException: No Activity found to handle Intent { act=android.intent.action.INSTALL_PACKAGE dat=content://XXX.apk flg=0x1 }
+
+
+While using a normal Uri on Android Nougat creates the following error:
+
+FileUriExposedException: file:///XXX.apk exposed beyond app through Intent.getData()
+
+
+My solution which is working for me with Android N on the emulator and a phone running Android M. 
+
+File toInstall = new File(appDirectory, appName + ".apk");
+Intent intent;
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+    Uri apkUri = FileProvider.getUriForFile(activity, BuildConfig.APPLICATION_ID + ".fileprovider", toInstall);
+    intent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+    intent.setData(apkUri);
+    intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+} else {
+    Uri apkUri = Uri.fromFile(toInstall);
+    intent = new Intent(Intent.ACTION_VIEW);
+    intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+}
+activity.startActivity(intent);
+
+
+UPDATE FOR Android Nougat 7.1:
+
+You also need to add the permission REQUEST_INSTALL_PACKAGES in your manifest. Its available from Api Level 23 (Android 6.0 Marshmallow) and required from Level 25 (Android 7.1 Nougat).
+
+UPDATE:
+
+Remember to request the permissions for read and write to external storage if the file you try to install is on the external storage. And also to set up a correct FileProvider for Android Nougat and above.
+
+First check if you have write permission by calling canReadWriteExternal() below, if not call requestPermission() before:
+
+private static final int REQUEST_WRITE_PERMISSION = 786;
+
+@Override
+public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    if (requestCode == REQUEST_WRITE_PERMISSION && grantResults[0] == PackageManager.PERMISSION_GRANTED)
+        Toast.makeText(this, "Permission granted", Toast.LENGTH_LONG).show();
+}
+
+private void requestPermission() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+        requestPermissions(new String[]{ Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_WRITE_PERMISSION);
+}
+
+private boolean canReadWriteExternal() {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+            ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED;
+}
+
+
+Here is an example of a file provider for the Download folder on the external storage. AndroidManifest.xml:
+
+<application ... >
+    ...
+
+    <provider
+        android:name="android.support.v4.content.FileProvider"
+        android:authorities="${applicationId}.fileprovider"
+        android:exported="false"
+        android:grantUriPermissions="true">
+        <meta-data
+            android:name="android.support.FILE_PROVIDER_PATHS"
+            android:resource="@xml/filepaths" />
+    </provider>
+</application>
+
+
+resources/xml/filepaths.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-path name="external_download" path="Download"/>
+</paths>
+
+
+If you get an error while installing the .apk saying something like "There is a problem parsing the package." it could be that you haven't asked for the read/write permission or the file you try to install doesn't exist or is corrupt. 
+    

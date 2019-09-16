@@ -1,0 +1,103 @@
+35
+Q:I have a FragmentActivity support v4 class which implements two side by side (kind of like gmail) fragments and a button which can bring up a DialogFragment. 
+
+This all works great unless I have an orientation change. When I have an orientation change the states of the Fragments are not saved.
+
+And the main problem is if I have a the FragmentDialog open, it simply disappears. 
+
+I have set setRetainInstance(true); in all fragments but it did not help.
+
+In my manifest I included android:configChanges="orientation" but is still does not help.
+
+Here are my code samples, thank you for the help.
+
+public class AddMasterDialog extends DialogFragment {
+
+    private int mTitle;
+    private int mPrompt;
+    private OnClickListener onSaveListener;
+    private OnClickListener onCancelListener;
+
+    public AddMasterDialog newInstance(int title, int prompt) {
+        AddMasterDialog simpleDialog = new AddMasterDialog(title, prompt);
+        return simpleDialog;
+    }
+
+    public AddMasterDialog() {
+        // Empty constructor required for DialogFragment
+    }
+    public AddMasterDialog(int title, int prompt) {
+        // Empty constructor required for DialogFragment
+        mTitle = title;
+        mPrompt = prompt;
+    }
+    public void setSaveButton(OnClickListener save){
+        onSaveListener = save;
+    }
+    public void setCancelButton(OnClickListener cancel){
+        onCancelListener = cancel;
+    }
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setRetainInstance(true);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState) {
+
+        //if(savedInstanceState == null){
+            View view = inflater.inflate(R.layout.add_new_simple, container);
+            getDialog().setTitle(mTitle);
+            ((TextView) view.findViewById(R.id.add_simple_new_value_prompt)).setText(mPrompt);
+
+            Button saveButton = (Button) view.findViewById(R.id.add_simple_save_button);
+            saveButton.setOnClickListener(onSaveListener);
+
+            //Cancel Button
+            Button cancelButton = (Button) view.findViewById(R.id.add_simple_cancel_button);
+            cancelButton.setOnClickListener(onCancelListener);
+            return view;
+        //}
+    }
+}
+
+
+and in my Main activity:
+
+private void initiateAddMasterPopupWindow() {
+        try {
+            addMasterDialog = new AddMasterDialog(R.string.add_new_master_dialog_title, R.string.add_master_new_value_prompt);
+            addMasterDialog.setSaveButton(saveNewMasterClickListener);
+            addMasterDialog.setCancelButton(cancelNewMasterClickListener);
+            FragmentManager fm = getSupportFragmentManager();
+            addMasterDialog.show(fm, ADD_NEW_MASTER);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    
+===============================================================================================
+73
+A:Okay, so the issue seems to be with the DialogFragment compatibility library. 
+
+The issue was described in this post.
+
+"An obsolete DISMISS message for the fragment is retained in the message queue. It's been queued by DialogFragment.onDestroyView() when dismissing the old dialog and gets reactivated after creating the new dialog.
+
+A quick (and possibly dirty) workaround is to override onDestroyView() and clear the dismiss listener before calling super.onDestroyView()"
+
+Adding the following code to my DialogFragment solved the issue:
+
+ @Override
+ public void onDestroyView() {
+     if (getDialog() != null && getRetainInstance()) {
+         getDialog().setDismissMessage(null);
+     }
+     super.onDestroyView();
+ }
+
+    

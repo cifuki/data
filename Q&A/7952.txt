@@ -1,0 +1,123 @@
+33
+Q:I'm writing my first app in Kotlin after 3 years of experience with Android.
+Just confused as to how to utilize itemClickListener with a RecyclerView in Kotlin.
+
+I have tried the trait (edit: now interface) approach, very Java-like
+
+public class MainActivity : ActionBarActivity() {
+
+  protected override fun onCreate(savedInstanceState: Bundle?) {
+
+    // set content view etc go above this line
+
+    class itemClickListener : ItemClickListener {
+      override fun onItemClick(view: View, position: Int) {
+        Toast.makeText(this@MainActivity, "TEST: " + position, Toast.LENGTH_SHORT).show()
+      }
+    }
+
+    val adapter = DrawerAdapter(itemClickListener())
+    mRecyclerView.setAdapter(adapter)
+ }
+
+  trait ItemClickListener {
+    fun onItemClick(view: View, position: Int)
+  }
+}
+
+
+That seemed very redundant so I tried the inner class approach:
+
+inner class ItemClickListener {
+    fun onItemClick(view: View, position: Int) {
+        startActivityFromFragmentForResult<SelectExerciseActivity>(SELECT_EXERCISES)
+    }
+}
+
+
+And then just setting the adapter's click listener like this:
+
+val adapter = WorkoutsAdapter(ItemClickListener())
+
+
+But I'm still not satisfied with this because I think there might be a better, cleaner way. I'm trying to essentially achieve something like this:
+RecyclerView onClick
+
+Any suggestions?
+
+Ended up going with a variation of the approved answer
+
+Defined the function in the activity:
+
+val itemOnClick: (View, Int, Int) -> Unit = { view, position, type ->
+    Log.d(TAG, "test")
+}
+
+
+Passed the function itself on to the adapter like this:
+
+class ExercisesAdapter(val itemClickListener: (View, Int, Int) -> Unit) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+      // other stuff up here
+      val vhExercise = ExerciseVH(view) // view holder
+      // on to the view holder through the extension function
+      vhExercise.onClick(itemClickListener)
+    }
+}
+
+
+Extension function by Loop in the approved answer below.
+
+fun <T : RecyclerView.ViewHolder> T.onClick(event: (view: View, position: Int, type: Int) -> Unit): T {
+    itemView.setOnClickListener {
+        event.invoke(it, getAdapterPosition(), getItemViewType())
+    }
+    return this
+}
+
+    
+===============================================================================================
+20
+A:I have a little bit different approach. You can create an extension for your ViewHolder
+
+fun <T : RecyclerView.ViewHolder> T.listen(event: (position: Int, type: Int) -> Unit): T {
+    itemView.setOnClickListener {
+        event.invoke(getAdapterPosition(), getItemViewType())
+    }
+    return this
+}
+
+
+Then use it in adapter like this
+
+class MyAdapter : RecyclerView.Adapter<MyAdapter.MyViewHolder>() {
+
+    val items: MutableList<String> = arrayListOf()
+
+    override fun onCreateViewHolder(parent: ViewGroup?, viewType: Int): MyViewHolder? {
+        val inflater = LayoutInflater.from(parent!!.getContext())
+        val view = inflater.inflate(R.layout.item_view, parent, false)
+        return MyViewHolder(view).listen { pos, type ->
+            val item = items.get(pos)
+            //TODO do other stuff here
+        }
+    }
+
+    override fun onBindViewHolder(holder: MyViewHolder?, position: Int) {
+
+    }
+
+    override fun getItemCount(): Int {
+        return items.size()
+    }
+
+
+    class MyViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+
+    }
+}
+
+
+I am working with my colleagues on library providing such extensions.
+    

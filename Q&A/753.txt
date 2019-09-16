@@ -1,0 +1,72 @@
+188
+Q:Just wondering if anyone has tried using new Java 7 language features with Android?
+I know that Android reads the bytecode that Java spits out and turns it to dex. So I guess my question is can it understand the bytecode of Java 7?
+    
+===============================================================================================
+164
+A:If you are using Android Studio, the Java 7 language should be enabled automatically without any patches. Try-with-resource requires API Level 19+, and NIO 2.0 stuff are missing. 
+
+If you can't use Java 7 features, see @Nuno's answer on how to edit your build.gradle.
+
+The following is for historical interest only.
+
+
+
+A small part of Java 7 can certainly be used with Android (note: I have only tested on 4.1). 
+
+First of all, you could not use Eclipse's ADT because it is hard-coded that only Java compiler 1.5 and 1.6 are compliant. You could recompile ADT but I find there is no simple way to do that aside from recompiling the whole Android together. 
+
+But you don't need to use Eclipse. For instance, Android Studio 0.3.2, IntelliJ IDEA CE and other javac-based IDEs supports compiling to Android and you could set the compliance even up to Java 8 with:
+
+
+File \xe2\x86\x92 Project Structure \xe2\x86\x92 Modules \xe2\x86\x92 (pick the module at the 2nd pane) \xe2\x86\x92 Language level \xe2\x86\x92 (choose "7.0 - Diamonds, ARM, multi-catch, etc.")
+
+
+
+
+This only allows Java 7 language features, and you can hardly benefit from anything since a half of improvement also comes from the library. Features you could use are those which do not depend on the library:
+
+
+Diamond operator (<>)
+String switch
+Multiple-catch (catch (Exc1 | Exc2 e))
+Underscore in number literals (1_234_567)
+Binary literals (0b1110111)
+
+
+And these features cannot be used yet:
+
+
+The try-with-resources statement \xe2\x80\x94 because it requires the non-existing interface "java.lang.AutoCloseable" (this can be used publicly in 4.4+)
+The @SafeVarargs annotation \xe2\x80\x94 because "java.lang.SafeVarargs" does not exist
+
+
+... "yet" :) It turns out that, although Android's library is targeting for 1.6, the Android source does contain interfaces like AutoCloseable and traditional interfaces like Closeable does inherit from AutoCloseable (SafeVarargs is really missing, though). We could confirm its existence via reflection. They are hidden simply because the Javadoc has the @hide tag, which caused the "android.jar" not to include them.
+
+There is already as existing question How do I build the Android SDK with hidden and internal APIs available? on how to get those methods back. You just need to replace the existing "android.jar" reference of the current Platform with our customized one, then many of the Java 7 APIs will become available (the procedure is similar to that in Eclipse. Check Project Structure \xe2\x86\x92 SDKs.)
+
+In additional to AutoCloseable, (only) the following Java 7 library features are also revealed:
+
+
+Exception chaining constructors in ConcurrentModificationException, LinkageError and AssertionError
+The static .compare() methods for primitives: Boolean.compare(), Byte.compare(), Short.compare(), Character.compare(), Integer.compare(), Long.compare().
+Currency: .getAvailableCurrencies(), .getDisplayName() (but without .getNumericCode())
+BitSet: .previousSetBit(), .previousClearBit(), .valueOf(), .toLongArray(), .toByteArray()
+Collections: .emptyEnumeration(), .emptyIterator(), .emptyListIterator()
+AutoCloseable
+Throwable: .addSuppressed(), .getSuppressed(), and the 4-argument constructor
+Character: .compare(), .isSurrogate(), .getName(), .highSurrogate(), .lowSurrogate(), .isBmpCodePoint() (but without .isAlphabetic() and .isIdeographic())
+System: .lineSeparator() (undocumented?)
+java.lang.reflect.Modifier: .classModifiers(), .constructorModifiers(), .fieldModifiers(), .interfaceModifiers(), .methodModifiers()
+NetworkInterface: .getIndex(), .getByIndex()
+InetSocketAddress: .getHostString()
+InetAddress: .getLoopbackAddress()
+Logger: .getGlobal()
+ConcurrentLinkedDeque
+AbstractQueuedSynchronizer: .hasQueuedPredecessors()
+DeflaterOutputStream: the 3 constructors with "syncFlush".
+Deflater: .NO_FLUSH, .SYNC_FLUSH, .FULL_FLUSH, .deflate() with 4 arguments
+
+
+That's basically all. In particular, NIO 2.0 does not exist, and Arrays.asList is still not @SafeVarargs.
+    

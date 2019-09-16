@@ -1,0 +1,68 @@
+40
+Q:I had the orientation issue when working with ACTION_IMAGE_CAPTURE activity. I have used the TAG_ORIENTATION so that I would rotate the picture accordingly. But now we found that on some newer devices this doesn't work. In fact it returns 1 for all orientations.
+
+Here's the list of devices we observed this on; 
+
+
+Samsung Infuse 4G (2.3.3) 
+Samsung Galaxy SII X (2.3.5) 
+Sony Xperia Arc (2.3.3)
+
+
+Interesting thing is that once this image is the gallery it shows up properly and if I select it, the TAG_ORIENTATION is populated properly. So somehow the OS fills this information properly but not on ActivityResult.
+
+What's the most reliable way to figure the orientation? Someone on another question suggested comparing height and width but when getting these, they are properly switched based on orientation (another mystery)
+
+EDIT: It seems that this could be connected to another bug where the OS duplicates the image taken in the gallery (it's only supposed to save the image in the URL specified by us), the thing is this image in gallery has the ORIENTATION information while the one in the specified location doesn't.
+
+This is the bug; http://code.google.com/p/android/issues/detail?id=19268
+
+EDIT-2: I've filed a new bug with Android. I'm pretty sure this is an OS bug related the aforementioned bug. 
+http://code.google.com/p/android/issues/detail?id=22822
+    
+===============================================================================================
+53
+A:Ok guys, it seems like this bug for android won't be fixed for a while. Although I found a way to implement the ExifInformation so that both devices (ones with proper Exif tag, and also improper exif tags work together)..
+
+So the issue is on some (newer) devices, there's a bug that makes the picture taken saved in your app folder without proper exif tags while a properly rotated image is saved in the android default folder (even though it shouldn't be)..
+
+Now what I do is, i record the time when I'm starting the camera app from my app. THen on activity result, I query the Media Provider to see if any pictures were saved after this timestamp I saved. That means that, most likely OS saved the properly rotated picture in the default folder and of course put a entry in the media store and we can use the rotation information from this row. Now to make sure we are looking at the right image, i compare the size of this file to the one I have access to (saved in my own app folder);
+
+    int rotation =-1;
+    long fileSize = new File(filePath).length();
+
+    Cursor mediaCursor = content.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, new String[] {MediaStore.Images.ImageColumns.ORIENTATION, MediaStore.MediaColumns.SIZE }, MediaStore.MediaColumns.DATE_ADDED + ">=?", new String[]{String.valueOf(captureTime/1000 - 1)}, MediaStore.MediaColumns.DATE_ADDED + " desc");
+
+    if (mediaCursor != null && captureTime != 0 && mediaCursor.getCount() !=0 ) {
+        while(mediaCursor.moveToNext()){
+            long size = mediaCursor.getLong(1);
+            //Extra check to make sure that we are getting the orientation from the proper file
+            if(size == fileSize){
+                rotation = mediaCursor.getInt(0);
+                break;
+            }
+        }
+    }
+
+
+Now if the rotation at this point is still -1, then that means this is one of the phones with proper rotation information. At this point, we can use the regular exif orientation on the file that's returned to our onActivityResult
+
+    else if(rotation == -1){
+        rotation = getExifOrientationAttribute(filePath);
+    }
+
+
+You can easily find out how to find exif orientations like the answer in this question Camera orientation issue in Android
+
+Also note that ExifInterface is only supported after Api level 5.. So if you want to support phones before 2.0, then you can use this handy library I found for java courtesy of Drew Noakes; http://www.drewnoakes.com/code/exif/
+
+Good luck with your image rotating!
+
+EDIT: Because it was asked, the intent I've used and how i started was like this
+
+Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+//mediaFile is where the image will be saved
+intent.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(mediaFile));
+startActivityForResult(intent, 1);
+
+    

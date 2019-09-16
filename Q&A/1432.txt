@@ -1,0 +1,74 @@
+123
+Q:I'm looking for a way to correctly share (not OPEN) an internal file with external application using Android Support library's FileProvider. 
+
+Following the example on the docs,
+
+<provider
+    android:name="android.support.v4.content.FileProvider"
+    android:authorities="com.example.android.supportv4.my_files"
+    android:grantUriPermissions="true"
+    android:exported="false">
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/my_paths" />
+</provider>
+
+
+and using ShareCompat to share a file to other apps as follows:
+
+ShareCompat.IntentBuilder.from(activity)
+.setStream(uri) // uri from FileProvider
+.setType("text/html")
+.getIntent()
+.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
+
+does not work, since the FLAG_GRANT_READ_URI_PERMISSION only grants permission for the Uri specified on the data of the intent, not the value of the EXTRA_STREAM extra (as was set by setStream).
+
+I tried to compromise security by setting android:exported to true for the provider, but FileProvider internally checks if itself is exported, when so, it throws an exception.
+    
+===============================================================================================
+141
+A:Using FileProvider from support library you have to manually grant and revoke permissions(at runtime) for other apps to read specific Uri. Use Context.grantUriPermission and Context.revokeUriPermission methods. 
+
+For example:
+
+//grant permision for app with package "packegeName", eg. before starting other app via intent
+context.grantUriPermission(packageName, uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+//revoke permisions
+context.revokeUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+
+As a last resort, if you can't provide package name you can grant the permission to all apps that can handle specific intent:
+
+//grant permisions for all apps that can handle given intent
+Intent intent = new Intent();
+intent.setAction(Intent.ACTION_SEND);
+...
+List<ResolveInfo> resInfoList = context.getPackageManager().queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY);
+for (ResolveInfo resolveInfo : resInfoList) {
+    String packageName = resolveInfo.activityInfo.packageName;
+    context.grantUriPermission(packageName, uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+}
+
+
+Alternative method according to the documentation:
+
+
+  
+  Put the content URI in an Intent by calling setData(). 
+  Next, call the method Intent.setFlags() with either FLAG_GRANT_READ_URI_PERMISSION    or FLAG_GRANT_WRITE_URI_PERMISSION
+  or both. 
+  Finally, send the Intent to another app. Most often, you do this by calling setResult().
+  
+  Permissions granted in an Intent remain in effect while the stack
+  of    the receiving Activity is active. When the stack finishes, the
+  permissions are automatically removed. Permissions granted to one
+  Activity in a client app are automatically extended to other
+  components of that app.
+  
+
+
+Btw. if you need to, you can copy source of FileProvider and change attachInfo method to prevent provider from checking if it is exported.
+    

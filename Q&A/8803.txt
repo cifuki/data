@@ -1,0 +1,117 @@
+30
+Q:I am deleting an image file from my application. I was doing  
+
+new  File(filename).delete ();
+
+
+This was actually deleting the file. But the image was still visible in the gallery.
+
+On search i found that we should use 
+
+getContentResolver().delete(Uri.fromFile(file), null,null); to delete
+
+But here i am getting the exception:
+
+
+  Unknown file URL. java.lang.IllegalArgumentException: Unknown URL
+  file:///mnt/sdcard/DCIM/Camera/IMG_20120523_122612.jpg
+
+
+When i see with any file browser, this particular image is present. Please help me to fix this issue. Is there any other way to update gallery when image is physically deleted
+    
+===============================================================================================
+31
+A:Use the code below, it may help you.
+
+File fdelete = new File(file_dj_path);
+if (fdelete.exists()) {
+    if (fdelete.delete()) {
+        System.out.println("file Deleted :" + file_dj_path);
+    } else {
+        System.out.println("file not Deleted :" + file_dj_path);
+    }
+}
+
+
+
+
+to refresh gallery after deleting image use below code for send Broadcast
+
+(for < KITKAT API 14)
+
+ sendBroadcast(new Intent(Intent.ACTION_MEDIA_MOUNTED,
+ Uri.parse("file://" +  Environment.getExternalStorageDirectory())));
+
+
+For >= KITKAT API 14 use below code
+
+MediaScannerConnection.scanFile(this, new String[] { Environment.getExternalStorageDirectory().toString() }, null, new MediaScannerConnection.OnScanCompletedListener() {
+            /*
+             *   (non-Javadoc)
+             * @see android.media.MediaScannerConnection.OnScanCompletedListener#onScanCompleted(java.lang.String, android.net.Uri)
+             */
+            public void onScanCompleted(String path, Uri uri) 
+              {
+                  Log.i("ExternalStorage", "Scanned " + path + ":");
+                  Log.i("ExternalStorage", "-> uri=" + uri);
+              }
+            });
+
+
+Because:   
+
+ACTION_MEDIA_MOUNTED
+
+
+is deprecated in KITKAT(API 14).
+
+
+
+EDITED 04-09-2015 
+
+its working fine check below code
+
+public void deleteImage() {
+        String file_dj_path = Environment.getExternalStorageDirectory() + "/ECP_Screenshots/abc.jpg";
+        File fdelete = new File(file_dj_path);
+        if (fdelete.exists()) {
+            if (fdelete.delete()) {
+                Log.e("-->", "file Deleted :" + file_dj_path);
+                callBroadCast();
+            } else {
+                Log.e("-->", "file not Deleted :" + file_dj_path);
+            }
+        }
+    }
+
+    public void callBroadCast() {
+        if (Build.VERSION.SDK_INT >= 14) {
+            Log.e("-->", " >= 14");
+            MediaScannerConnection.scanFile(this, new String[]{Environment.getExternalStorageDirectory().toString()}, null, new MediaScannerConnection.OnScanCompletedListener() {
+                /*
+                 *   (non-Javadoc)
+                 * @see android.media.MediaScannerConnection.OnScanCompletedListener#onScanCompleted(java.lang.String, android.net.Uri)
+                 */
+                public void onScanCompleted(String path, Uri uri) {
+                    Log.e("ExternalStorage", "Scanned " + path + ":");
+                    Log.e("ExternalStorage", "-> uri=" + uri);
+                }
+            });
+        } else {
+            Log.e("-->", " < 14");
+            sendBroadcast(new Intent(Intent.ACTION_MEDIA_MOUNTED,
+                    Uri.parse("file://" + Environment.getExternalStorageDirectory())));
+        }
+    }
+
+
+below is logs
+
+09-04 14:27:11.085    8290-8290/com.example.sampleforwear E/-->\xef\xb9\x95 file Deleted :/storage/emulated/0/ECP_Screenshots/abc.jpg
+09-04 14:27:11.085    8290-8290/com.example.sampleforwear E/-->\xef\xb9\x95 >= 14
+09-04 14:27:11.152    8290-8290/com.example.sampleforwear E/\xef\xb9\x95 appName=com.example.sampleforwear, acAppName=/system/bin/surfaceflinger
+09-04 14:27:11.152    8290-8290/com.example.sampleforwear E/\xef\xb9\x95 0
+09-04 14:27:15.249    8290-8302/com.example.sampleforwear E/ExternalStorage\xef\xb9\x95 Scanned /storage/emulated/0:
+09-04 14:27:15.249    8290-8302/com.example.sampleforwear E/ExternalStorage\xef\xb9\x95 -> uri=content://media/external/file/2416
+
+    

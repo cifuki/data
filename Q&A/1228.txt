@@ -1,0 +1,274 @@
+136
+Q:I am learning how to use fragments. I have three instances of Fragment that are initialized at the top of the class. I am adding the fragment to an activity like this:
+
+Declaring and initializing:
+
+Fragment A = new AFragment();
+Fragment B = new BFragment();
+Fragment C = new CFragment();
+
+
+Replacing/Adding:
+
+FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
+ft.replace(R.id.content_frame, A);
+ft.addToBackStack(null);
+ft.commit();
+
+
+These snippets are working properly. Every fragment is attached to the activity, and is saved to the back stack without any problem.
+
+So when I launch A, C, and then B, the stack looks like this:
+
+| |
+|B|
+|C|
+|A|
+___
+
+
+And when I press the 'back' button, B is destroyed and C is resumed.
+
+But, when I launch fragment A a second time, instead of resuming from back stack, it is added at the top of the back stack
+
+| |
+|A|
+|C|
+|A|
+___
+
+
+But I want to resume A and destroy all fragments on top of it (if any). Actually, I just like the default back stack behavior. 
+
+How do I accomplish this?
+
+Expected: (A should be resumed and top fragments should be destroyed)
+
+| |
+| |
+| |
+|A|
+___
+
+
+Edit: (suggested by A--C)
+
+This is my trying code:
+
+private void selectItem(int position) {
+        Fragment problemSearch = null, problemStatistics = null;
+        FragmentManager manager = getSupportFragmentManager();
+        FragmentTransaction ft = manager.beginTransaction();
+        String backStateName = null;
+        Fragment fragmentName = null;
+        boolean fragmentPopped = false;
+        switch (position) {
+        case 0:
+            fragmentName = profile;
+            break;
+        case 1:
+            fragmentName = submissionStatistics;
+            break;
+        case 2:
+            fragmentName = solvedProblemLevel;
+            break;
+        case 3:
+            fragmentName = latestSubmissions;
+            break;
+        case 4:
+            fragmentName = CPExercise;
+            break;
+        case 5:
+            Bundle bundle = new Bundle();
+            bundle.putInt("problem_no", problemNo);
+            problemSearch = new ProblemWebView();
+            problemSearch.setArguments(bundle);
+            fragmentName = problemSearch;
+            break;
+        case 6:
+            fragmentName = rankList;
+            break;
+        case 7:
+            fragmentName = liveSubmissions;
+            break;
+        case 8:
+            Bundle bundles = new Bundle();
+            bundles.putInt("problem_no", problemNo);
+            problemStatistics = new ProblemStatistics();
+            problemStatistics.setArguments(bundles);
+            fragmentName = problemStatistics;
+        default:
+            break;
+        }
+        backStateName = fragmentName.getClass().getName();
+        fragmentPopped = manager.popBackStackImmediate(backStateName, 0);
+        if (!fragmentPopped) {
+            ft.replace(R.id.content_frame, fragmentName);
+        }
+        ft.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_FADE);
+        ft.addToBackStack(backStateName);
+        ft.commit();
+
+        // I am using drawer layout
+        mDrawerList.setItemChecked(position, true);
+        setTitle(title[position]);
+        mDrawerLayout.closeDrawer(mDrawerList);
+    }
+
+
+The problem is, when I launch A and then B, then press 'back', B is removed and A is resumed. and pressing 'back' a second time should exit the app. But it is showing a blank window and I have to press back a third time to close it.
+
+Also, when I launch A, then B, then C, then B again...
+
+Expected:
+
+| |
+| |
+|B|
+|A|
+___
+
+
+Actual:
+
+| |
+|B|
+|B|
+|A|
+___
+
+
+Should I override onBackPressed() with any customization or am I missing something?
+    
+===============================================================================================
+263
+A:Reading the documentation, there is a way to pop the back stack based on either the transaction name or the id provided by commit. Using the name may be easier since it shouldn't require keeping track of a number that may change and reinforces the "unique back stack entry" logic.
+
+Since you want only one back stack entry per Fragment, make the back state name the Fragment's class name (via getClass().getName()). Then when replacing a Fragment, use the popBackStackImmediate() method. If it returns true, it means there is an instance of the Fragment in the back stack. If not, actually execute the Fragment replacement logic.
+
+private void replaceFragment (Fragment fragment){
+  String backStateName = fragment.getClass().getName();
+
+  FragmentManager manager = getSupportFragmentManager();
+  boolean fragmentPopped = manager.popBackStackImmediate (backStateName, 0);
+
+  if (!fragmentPopped){ //fragment not in back stack, create it.
+    FragmentTransaction ft = manager.beginTransaction();
+    ft.replace(R.id.content_frame, fragment);
+    ft.addToBackStack(backStateName);
+    ft.commit();
+  }
+}
+
+
+
+
+EDIT
+
+
+  The problem is - when i launch A and then B, then press back button, B
+  is removed and A is resumed. and pressing again back button should
+  exit the app. But it is showing a blank window and need another press
+  to close it.
+
+
+This is because the FragmentTransaction is being added to the back stack to ensure that we can pop the fragments on top later. A quick fix for this is overriding onBackPressed() and finishing the Activity if the back stack contains only 1 Fragment 
+
+@Override
+public void onBackPressed(){
+  if (getSupportFragmentManager().getBackStackEntryCount() == 1){
+    finish();
+  }
+  else {
+    super.onBackPressed();
+  }
+}
+
+
+Regarding the duplicate back stack entries, your conditional statement that replaces the fragment if it hasn't been popped is clearly different than what my original code snippet's. What you are doing is adding to the back stack regardless of whether or not the back stack was popped.
+
+Something like this should be closer to what you want:
+
+private void replaceFragment (Fragment fragment){
+  String backStateName =  fragment.getClass().getName();
+  String fragmentTag = backStateName;
+
+  FragmentManager manager = getSupportFragmentManager();
+  boolean fragmentPopped = manager.popBackStackImmediate (backStateName, 0);
+
+  if (!fragmentPopped && manager.findFragmentByTag(fragmentTag) == null){ //fragment not in back stack, create it.
+    FragmentTransaction ft = manager.beginTransaction();
+    ft.replace(R.id.content_frame, fragment, fragmentTag);
+    ft.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_FADE);
+    ft.addToBackStack(backStateName);
+    ft.commit();
+  } 
+}
+
+
+The conditional was changed a bit since selecting the same fragment while it was visible also caused duplicate entries.
+
+Implementation:
+
+I highly suggest not taking the the updated replaceFragment() method apart like you did in your code. All the logic is contained in this method and moving parts around may cause problems.
+
+This means you should copy the updated replaceFragment() method into your class then change
+
+backStateName = fragmentName.getClass().getName();
+fragmentPopped = manager.popBackStackImmediate(backStateName, 0);
+if (!fragmentPopped) {
+            ft.replace(R.id.content_frame, fragmentName);
+}
+ft.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_FADE);
+ft.addToBackStack(backStateName);
+ft.commit();
+
+
+so it is simply
+
+replaceFragment (fragmentName);
+
+
+
+
+EDIT #2
+
+To update the drawer when the back stack changes, make a method that accepts in a Fragment and compares the class names. If anything matches, change the title and selection. Also add an OnBackStackChangedListener and have it call your update method if there is a valid Fragment.
+
+For example, in the Activity's onCreate(), add
+
+getSupportFragmentManager().addOnBackStackChangedListener(new OnBackStackChangedListener() {
+
+  @Override
+  public void onBackStackChanged() {
+    Fragment f = getSupportFragmentManager().findFragmentById(R.id.content_frame);
+    if (f != null){
+      updateTitleAndDrawer (f);
+    }
+
+  }
+});
+
+
+And the other method:
+
+private void updateTitleAndDrawer (Fragment fragment){
+  String fragClassName = fragment.getClass().getName();
+
+  if (fragClassName.equals(A.class.getName())){
+    setTitle ("A");
+    //set selected item position, etc
+  }
+  else if (fragClassName.equals(B.class.getName())){
+    setTitle ("B");
+    //set selected item position, etc
+  }
+  else if (fragClassName.equals(C.class.getName())){
+    setTitle ("C");
+    //set selected item position, etc
+  }
+}
+
+
+Now, whenever the back stack changes, the title and checked position will reflect the visible Fragment.
+    

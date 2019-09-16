@@ -1,0 +1,71 @@
+71
+Q:I have a LoginActivity (User Logs in). It is basically its own Activity that is themed like a dialog (to appear as if a dialog). It appears over a SherlockFragmentActivity. What I want is:  If there is a successful login, there should be two FragmentTransaction's to update the view. Here is the code:
+
+In LoginActivity, if successful login,
+
+setResult(1, new Intent());
+
+
+In SherlockFragmentActivity:
+
+@Override
+protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+
+    if (resultCode == 1) {
+        LoggedStatus = PrefActivity.getUserLoggedInStatus(this);
+        FragmentTransaction t = MainFragmentActivity.this.getSupportFragmentManager().beginTransaction();
+        SherlockListFragment mFrag = new MasterFragment();
+        t.replace(R.id.menu_frame, mFrag);
+        t.commit();
+
+        // Set up Main Screen
+        FragmentTransaction t2 = MainFragmentActivity.this.getSupportFragmentManager().beginTransaction();
+        SherlockListFragment mainFrag = new FeaturedFragment();
+        t2.replace(R.id.main_frag, mainFrag);
+        t2.commit();
+    }
+}
+
+
+It crashes on the first commit, with this LogCat:
+
+E/AndroidRuntime(32072): Caused by: java.lang.IllegalStateException: Can not perform this action after onSaveInstanceState
+E/AndroidRuntime(32072):    at android.support.v4.app.FragmentManagerImpl.checkStateLoss(FragmentManager.java:1299)
+E/AndroidRuntime(32072):    at android.support.v4.app.FragmentManagerImpl.enqueueAction(FragmentManager.java:1310)
+E/AndroidRuntime(32072):    at android.support.v4.app.BackStackRecord.commitInternal(BackStackRecord.java:541)
+E/AndroidRuntime(32072):    at android.support.v4.app.BackStackRecord.commit(BackStackRecord.java:525)
+E/AndroidRuntime(32072):    at com.kickinglettuce.rate_this.MainFragmentActivity.onActivityResult(MainFragmentActivity.java:243)
+E/AndroidRuntime(32072):    at android.app.Activity.dispatchActivityResult(Activity.java:5293)
+E/AndroidRuntime(32072):    at android.app.ActivityThread.deliverResults(ActivityThread.java:3315)
+
+    
+===============================================================================================
+285
+A:First of all, you should read my blog post for more information (it talks about why this exception happens and what you can do to prevent it).
+
+Calling commitAllowingStateLoss() is more of a hack than a fix. State loss is bad and should be avoided at all costs. At the time that onActivityResult() is called, the activity/fragment's state may not yet have been restored, and therefore any transactions that happen during this time will be lost as a result. This is a very important bug which must be addressed! (Note that the bug only happens when your Activity is coming back after having been killed by the system... which, depending on how much memory the device has, can sometimes be rare... so this sort of bug is not something that is very easy to catch while testing).
+
+Try moving your transactions into onPostResume() instead (note that onPostResume() is always called after onResume() and onResume() is always called after onActivityResult()):
+
+private boolean mReturningWithResult = false;
+
+@Override
+protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    mReturningWithResult = true;
+}
+
+@Override
+protected void onPostResume() {
+    super.onPostResume();
+    if (mReturningWithResult) {
+        // Commit your transactions here.
+    }
+    // Reset the boolean flag back to false for next time.
+    mReturningWithResult = false;
+}
+
+
+This might seem a little weird, but doing this sort of thing is necessary to ensure that your FragmentTransactions are always committed after the Activity's state has been restored to its original state (onPostResume() is guaranteed to be called after the Activity's state has been restored).
+    

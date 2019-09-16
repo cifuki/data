@@ -1,0 +1,189 @@
+226
+Q:Trying to figure out what is the issue with updating RecyclerView's Adapter. 
+
+After I get a new List of products, I tried to:
+
+
+Update the ArrayList from the fragment where recyclerView is created, set new data to adapter, then call adapter.notifyDataSetChanged() ; it did not work.
+Create a new adapter, as others did, and it worked for them, but no change for me: recyclerView.setAdapter(new RecyclerViewAdapter(newArrayList)) 
+Create a method in Adapter which updates the data as follows:
+
+public void updateData(ArrayList<ViewModel> viewModels) {
+   items.clear();
+   items.addAll(viewModels);
+   notifyDataSetChanged();
+}
+
+
+Then I call this method whenever I want to update the data list; it did not work. 
+To check if I can modify the recyclerView in any way, and I tried to remove at least an item:
+
+ public void removeItem(int position) {
+    items.remove(position);
+    notifyItemRemoved(position);
+}
+
+
+Everything remained as it was.
+
+
+Here is my Adapter:
+
+public class RecyclerViewAdapter extends RecyclerView.Adapter<RecyclerViewAdapter.ViewHolder> implements View.OnClickListener {
+
+    private ArrayList<ViewModel> items;
+    private OnItemClickListener onItemClickListener;
+
+    public RecyclerViewAdapter(ArrayList<ViewModel> items) {
+        this.items = items;
+    }
+
+
+    public void setOnItemClickListener(OnItemClickListener onItemClickListener) {
+        this.onItemClickListener = onItemClickListener;
+    }
+
+    @Override
+    public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+        View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_recycler, parent, false);
+        v.setOnClickListener(this);
+        return new ViewHolder(v);
+    }
+
+    public void updateData(ArrayList<ViewModel> viewModels) {
+        items.clear();
+        items.addAll(viewModels);
+        notifyDataSetChanged();
+    }
+    public void addItem(int position, ViewModel viewModel) {
+        items.add(position, viewModel);
+        notifyItemInserted(position);
+    }
+
+    public void removeItem(int position) {
+        items.remove(position);
+        notifyItemRemoved(position);
+    }
+
+
+
+    @Override
+    public void onBindViewHolder(ViewHolder holder, int position) {
+        ViewModel item = items.get(position);
+        holder.title.setText(item.getTitle());
+        Picasso.with(holder.image.getContext()).load(item.getImage()).into(holder.image);
+        holder.price.setText(item.getPrice());
+        holder.credit.setText(item.getCredit());
+        holder.description.setText(item.getDescription());
+
+        holder.itemView.setTag(item);
+    }
+
+    @Override
+    public int getItemCount() {
+        return items.size();
+    }
+
+    @Override
+    public void onClick(final View v) {
+        // Give some time to the ripple to finish the effect
+        if (onItemClickListener != null) {
+            new Handler().postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    onItemClickListener.onItemClick(v, (ViewModel) v.getTag());
+                }
+            }, 0);
+        }
+    }
+
+    protected static class ViewHolder extends RecyclerView.ViewHolder {
+        public ImageView image;
+        public TextView price, credit, title, description;
+
+        public ViewHolder(View itemView) {
+            super(itemView);
+            image = (ImageView) itemView.findViewById(R.id.image);
+            price = (TextView) itemView.findViewById(R.id.price);
+            credit = (TextView) itemView.findViewById(R.id.credit);
+            title = (TextView) itemView.findViewById(R.id.title);
+            description = (TextView) itemView.findViewById(R.id.description);
+        }
+    }
+
+    public interface OnItemClickListener {
+
+        void onItemClick(View view, ViewModel viewModel);
+
+    }
+}
+
+
+And I initiate RecyclerView as follows:
+
+recyclerView = (RecyclerView) view.findViewById(R.id.recycler);
+recyclerView.setLayoutManager(new GridLayoutManager(getActivity(), 5));
+adapter = new RecyclerViewAdapter(items);
+adapter.setOnItemClickListener(this);
+recyclerView.setAdapter(adapter);
+
+
+So, how do I actually update adapter data in order to display newly received items?
+
+
+
+Update: the issue was that the layout where gridView was looked as follows:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:tag="catalog_fragment"
+    android:layout_height="match_parent">
+
+    <FrameLayout
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <android.support.v7.widget.RecyclerView
+            android:id="@+id/recycler"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"/>
+
+        <ImageButton
+            android:id="@+id/fab"
+            android:layout_gravity="top|end"
+            style="@style/FabStyle"/>
+
+    </FrameLayout>
+</LinearLayout>
+
+
+Then I just removed LinearLayout and made FrameLayout as parent layout.
+    
+===============================================================================================
+281
+A:I'm working with RecyclerView and both the remove and the update work well.
+
+1) REMOVE:
+There are 4 steps to remove an item from a RecyclerView
+
+list.remove(position);
+recycler.removeViewAt(position);
+mAdapter.notifyItemRemoved(position);                 
+mAdapter.notifyItemRangeChanged(position, list.size());
+
+
+These line of codes work for me.
+
+2) UPDATE THE DATA:
+The only things I had to do is
+
+mAdapter.notifyDataSetChanged();
+
+
+You had to do all of this in the Actvity/Fragment code not in the RecyclerView Adapter code.
+    

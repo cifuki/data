@@ -1,0 +1,146 @@
+140
+Q:I'm using the v4 compatibility ViewPager in Android.  My FragmentActivity has a bunch of data which is to be displayed in different ways on different pages in my ViewPager.  So far I just have 3 instances of the same ListFragment, but in the future I will have 3 instances of different ListFragments.  The ViewPager is on a vertical phone screen, the lists are not side-by-side.
+
+Now a button on the ListFragment starts an separate full-page activity (via the FragmentActivity), which returns and FragmentActivity modifies the data, saves it, then attempts to update all views in its ViewPager.  It is here, where I am stuck.
+
+public class ProgressMainActivity extends FragmentActivity
+{
+    MyAdapter mAdapter;
+    ViewPager mPager;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState)
+    {
+    ...
+        mAdapter = new MyAdapter(getSupportFragmentManager());
+
+        mPager = (ViewPager) findViewById(R.id.viewpager);
+        mPager.setAdapter(mAdapter);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data)
+    {
+        ...
+        updateFragments();
+        ...
+    }
+    public void updateFragments()
+    {
+        //Attempt 1:
+        //mAdapter.notifyDataSetChanged();
+        //mPager.setAdapter(mAdapter);
+
+        //Attempt 2:
+        //HomeListFragment fragment = (HomeListFragment) getSupportFragmentManager().findFragmentById(mAdapter.fragId[0]);
+        //fragment.updateDisplay();
+    }
+
+    public static class MyAdapter extends FragmentPagerAdapter implements
+         TitleProvider
+    {
+      int[] fragId = {0,0,0,0,0};
+      public MyAdapter(FragmentManager fm)
+      {
+         super(fm);
+      }
+      @Override
+      public String getTitle(int position){
+         return titles[position];
+      }
+      @Override
+      public int getCount(){
+         return titles.length;
+      }
+
+      @Override
+      public Fragment getItem(int position)
+      {
+
+         Fragment frag = HomeListFragment.newInstance(position);
+         //Attempt 2:
+         //fragId[position] = frag.getId();
+         return frag;
+      }
+
+      @Override
+      public int getItemPosition(Object object) {
+         return POSITION_NONE; //To make notifyDataSetChanged() do something
+     }
+   }
+
+    public class HomeListFragment extends ListFragment
+    {
+    ...
+        public static HomeListFragment newInstance(int num)
+        {
+            HomeListFragment f = new HomeListFragment();
+            ...
+            return f;
+        }
+   ...
+
+
+Now as you can see, my first attempt was to notifyDataSetChanged on the entire FragmentPagerAdapter, and this showed to update the data sometimes, but others I got an IllegalStateException: Can not perform this action after onSaveInstanceState.  
+
+My second attempt involed trying to call an update function in my ListFragment, but getId in getItem returned 0.  As per the docs I tried by 
+
+
+  acquiring a reference to the Fragment from FragmentManager, using
+  findFragmentById() or findFragmentByTag()
+
+
+but I don't know the tag or id of my Fragments! I have an android:id="@+id/viewpager" for ViewPager, and a android:id="@android:id/list" for my ListView in the ListFragment layout, but I don't think these are useful.
+
+So, how can I either:
+a) update the entire ViewPager safely in one go (ideally returning the user to the page he was on before) - it is ok that the user see the view change.
+Or preferably,
+b) call a function in each affected ListFragment to update the ListView manually.
+
+Any help would be gratefully accepted!
+    
+===============================================================================================
+57
+A:Try to record the tag each time a Fragement is instantiated.
+
+public class MPagerAdapter extends FragmentPagerAdapter {
+    private Map<Integer, String> mFragmentTags;
+    private FragmentManager mFragmentManager;
+
+    public MPagerAdapter(FragmentManager fm) {
+        super(fm);
+        mFragmentManager = fm;
+        mFragmentTags = new HashMap<Integer, String>();
+    }
+
+    @Override
+    public int getCount() {
+        return 10;
+    }
+
+    @Override
+    public Fragment getItem(int position) {
+        return Fragment.instantiate(mContext, AFragment.class.getName(), null);
+    }
+
+    @Override
+    public Object instantiateItem(ViewGroup container, int position) {
+        Object obj = super.instantiateItem(container, position);
+        if (obj instanceof Fragment) {
+            // record the fragment tag here.
+            Fragment f = (Fragment) obj;
+            String tag = f.getTag();
+            mFragmentTags.put(position, tag);
+        }
+        return obj;
+    }
+
+    public Fragment getFragment(int position) {
+        String tag = mFragmentTags.get(position);
+        if (tag == null)
+            return null;
+        return mFragmentManager.findFragmentByTag(tag);
+    }
+}
+
+    

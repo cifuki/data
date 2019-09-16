@@ -1,0 +1,271 @@
+27
+Q:I am trying to implement saving and restoring state, but I am running into problems when replacing the main Fragment with a PreferenceFragment and then hitting the back button. My main Fragment consists of a ViewPager with a FragmentPagerAdapter with 3 Fragments to swipe through. None of the Fragment.onCreateView() callbacks for my 3 Fragments are invoked after hitting the back button. I have tried all the solutions I have come over here on SO, but I have not been able to resolve the issue.
+
+Another possibly important thing to note is that the data for my 3 ViewPager Fragments are stored in separate classes which are instanced and accessible through the Activity. The 3 Fragments all contain RecyclerViews for listing a fair amount of data. This is done for cleanliness, but also so that these data persist in the Activity. This is probably not an issue, since it works fine when starting the app, but also since the main issue is that my Fragments are not recreated.
+
+Unexpected behavior:
+
+On application creation, everything works fine, but when I replace my main Fragment (containing a ViewPager with a FragmentPagerAdapter) with another one and then pressing the back button, the Fragments in the ViewPager are not recreated. The onCreateView() of my main Fragment is called.
+
+Questions:
+
+What am I missing? Is there some other callbacks that should be created? Where and how should I recreate the Fragments?
+
+What have I tried:
+
+
+Changed the FragmentAdapter in use, but I should really use getSupportFragmentManager() as was the solution here.
+
+
+EDIT: Use of erroneous FragmentManager actually was the source of my troubles. See my answer below. 
+
+
+Add
+@Override public int getItemPosition(Object object) {return POSITION_NONE;} to the FragmentPagerAdapter, as suggested here.
+Change from FragmentPagerAdapter to FragmentStatePagerAdapter which should not matter here, as far as I understand. The internals of FragmentStatePagerAdapter actually keeps the Fragments, but they are not rendered anew.
+Add the main Fragment back using a FragmentTransaction when its onCreateView() is called and in several of the other callbacks of that Fragment, see MMMainFragment below.
+Various other things.
+
+
+My MainFragment class with corresponding XML layout
+
+public class MMMainFragment extends Fragment
+{
+    private MMViewPager mMMViewPager = null;
+
+    @Nullable
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState)
+    {
+        // Note that this method IS called when the back button is pressed.
+        // I have tried setting the content back to this instance in several places.
+
+        View view = inflater.inflate(R.layout.mm_main_fragment, container, false);
+
+        // Setup ViewPager.
+        mMMViewPager = (MMViewPager) view.findViewById(R.id.mm_pager);
+        TabLayout tabLayout = (TabLayout) view.findViewById(R.id.mm_tablayout);
+        tabLayout.setupWithViewPager(mMMViewPager);
+
+        return view;
+    }
+
+    public MMViewPager getMMViewPager()
+    {
+        return mMMViewPager;
+    }
+}
+
+
+mm_main_fragment.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" >
+
+    <android.support.design.widget.TabLayout
+        android:id="@+id/mm_tablayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:tabMode="scrollable" />
+
+    <com.mycompany.myapp.gui.mmpager.MMViewPager
+        android:id="@+id/mm_pager"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_weight="1" />
+
+
+</LinearLayout>
+
+
+Then, in Activity.onCreate() i simply do:
+
+// Insert Main Fragment.
+FragmentManager fragmentManager = getSupportFragmentManager();
+fragmentManager.beginTransaction()
+        .replace(R.id.mm_content_frame, new MMMainFragment())
+        .commit();
+
+
+where mm_content_frame is a FrameLayout where I replace and remove Fragments. Then, when a button to view the preferences are pushed, I run the following snippet below in the Activity. I add this Fragment to the backstack to be able to use the back button.
+
+public void showSettingsFragment()
+{
+    getSupportActionBar().setTitle(getString(R.string.mm_drawer_settings));
+    getSupportFragmentManager().beginTransaction()
+            .replace(R.id.mm_content_frame, new MMPreferencesFragment(), FragmentConstants.SETTINGS_FRAGMENT_TAG)
+            .addToBackStack(null)
+            .commit();
+}
+
+
+The MMViewPager clas:
+
+public class MMViewPager extends ViewPager
+{
+    private MMActivity mMMActivity;
+    private MMPagerAdapter mMMPagerAdapter;
+
+    public MMViewPager(Context context, AttributeSet attrs)
+    {
+        super(context, attrs);
+        mMMActivity = (MMActivity) context;
+        mMMPagerAdapter = new MMPagerAdapter(mMMActivity.getSupportFragmentManager(), mMMActivity);
+
+        this.setOffscreenPageLimit(PagerConstants.OFFSCREEN_PAGE_LIMIT);
+        this.setAdapter(mMMMPagerAdapter);
+        this.setCurrentItem(PagerConstants.PAGE_FILTER_RECIPES);
+    }
+}
+
+
+The MMPagerAdapter class, currently a FragmentStatePagerAdapter:
+
+public class MMPagerAdapter extends FragmentStatePagerAdapter
+{
+    private MMActivity mMMActivity;
+
+    public MMPagerAdapter(FragmentManager fragmentManager, MMActivity mmActivity)
+    {
+        super(fragmentManager);
+        mMMActivity = mmActivity;
+    }
+
+    @Override
+    public Fragment getItem(int position)
+    {
+        switch (position)
+        {
+            case PagerConstants.PAGE_FILTER_RECIPES:
+                return new FilteredRecipesFragment();
+
+            case PagerConstants.PAGE_SELECTED_RECIPES:
+                return new SelectedRecipesFragment();
+
+            case PagerConstants.PAGE_SHOPPING_LIST:
+                return new ShoppingListFragment();
+
+            default:
+                return null;
+        }
+    }
+
+    @Override
+    public int getCount()
+    {
+        return PagerConstants.NUMBER_OF_PAGES; // 3
+    }
+
+    @Override
+    public CharSequence getPageTitle(int position)
+    {
+        switch (position)
+        {
+            case PagerConstants.PAGE_FILTER_RECIPES:
+                return mMMActivity.getResources().getString(R.string.mm_title_recipe_filter_fragment);
+
+            case PagerConstants.PAGE_SELECTED_RECIPES:
+                return mMMActivity.getResources().getString(R.string.mm_title_selected_recipes_fragment);
+
+            case PagerConstants.PAGE_SHOPPING_LIST:
+                return mMMActivity.getResources().getString(R.string.mm_title_shopping_list_fragment);
+
+            default:
+                return "Tab";
+        }
+    }
+}
+
+
+For reference, here is also the main layout of the Activity:
+
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.v4.widget.DrawerLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/mm_drawer_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Source: http://developer.android.com/training/implementing-navigation/nav-drawer.html -->
+    <!-- The main content view -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- Source: http://android-developers.blogspot.in/2014/10/appcompat-v21-material-design-for-pre.html -->
+        <android.support.v7.widget.Toolbar
+            xmlns:android="http://schemas.android.com/apk/res/android"
+            android:id="@+id/mm_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="?attr/actionBarSize"
+            android:layout_alignParentTop="true"
+            style="@style/MMActionBar"
+            app:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+            app:popupTheme="@style/ThemeOverlay.AppCompat.Light" />
+
+        <!-- The FrameLayout where I replace Fragments -->
+        <FrameLayout
+            android:id="@+id/mm_content_frame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_below="@id/mm_toolbar"/>
+
+    </RelativeLayout>
+
+
+    <ListView
+        android:id="@+id/mm_drawer_listview"
+        android:layout_width="260dp"
+        android:layout_height="match_parent"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingStart="16dp"
+        android:layout_gravity="start"
+        android:choiceMode="singleChoice"
+        android:divider="@android:color/transparent"
+        android:dividerHeight="0dp"
+        android:background="@color/mm_white" />
+
+</android.support.v4.widget.DrawerLayout>
+
+    
+===============================================================================================
+26
+A:After struggling with this for a few days I realized that the problem actually was that I passed the wrong FragmentManager to the ViewPager. It is indeed the FragmentManager returned by Fragment.getChildFragmentManager() that should be used. This makes sense, since it is the Fragment itself that stores the state of the child Fragments in the ViewPager. I am not sure why I couldn't make that work before, but now the LifeCycle of the app works fine with the following setup in my main Fragment's onCreate() method:
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState)
+{
+    View view = inflater.inflate(R.layout.mm_main_fragment, container, false);
+
+    mMMActivity = (MMActivity) container.getContext();
+    mMMActivity.getSupportActionBar().setTitle(getString(R.string.mm_toolbar_title_main_fragment));
+
+    // Setup ViewPager.
+    mViewPager = (ViewPager) view.findViewById(R.id.mm_pager);
+    mAdapter = new MMPagerAdapter(getChildFragmentManager(), mMMActivity); // <-- This is the key
+    mViewPager.setAdapter(mAdapter);
+    mViewPager.setOffscreenPageLimit(PagerConstants.OFFSCREEN_PAGE_LIMIT);
+    mViewPager.setCurrentItem(PagerConstants.PAGE_FILTER_RECIPES);
+
+    // Setup TabLayout.
+    TabLayout tabLayout = (TabLayout) view.findViewById(R.id.mm_tablayout);
+    tabLayout.setupWithViewPager(mViewPager);
+
+    return view;
+}
+
+
+This was also the solution of another question. As a side note, I use this solution to get the Fragments in my ViewPager and it works just fine with the LifeCycle.
+
+Test Application:
+
+In the research of this issue I created a test application for this. The ones interested can clone it from here. It has ugly colors.
+    

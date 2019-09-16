@@ -1,0 +1,174 @@
+28
+Q:I'm new to Android so sorry if the question is easy to answer. I have two buttons, a decrease and an increase button, and in the middle of them a TextView which displays a value.
+
+When I hit the decrease button, the value in the TextView decreases and increases when I hit the increase button, no problem with that, I got that working but the problem is the value only increases/decreases by 1 on a single click. What I'm trying to achieve is that as I continuously press the button (the increase button for example), the value is also continuously increasing and only stops when I release the increase button.
+
+Is that possible? If so, can you show some sample code or references on how to implement that? Thanks!
+
+Here is my main.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:gravity="center" >
+
+    <RelativeLayout
+        android:layout_width="fill_parent"
+        android:layout_height="44dp"
+        android:gravity="center_horizontal" >
+
+        <Button android:id="@+id/button1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentLeft="true"
+            android:layout_alignParentTop="true"
+            android:text="&lt;" />
+
+        <TextView android:id="@+id/textView1"
+            android:layout_width="50dp"
+            android:layout_height="fill_parent"
+            android:layout_alignBottom="@+id/button1"
+            android:layout_toRightOf="@+id/button1"
+            android:gravity="center"
+            android:text="45" />
+
+        <Button android:id="@+id/button2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentTop="true"
+            android:layout_toRightOf="@+id/textView1"
+            android:text="&gt;" />
+
+     </RelativeLayout>   
+
+</RelativeLayout>
+
+
+and here is my Main.java
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.widget.Button;
+import android.widget.TextView;
+
+public class Main extends Activity {
+
+    private Button _decrease;
+    private Button _increase;
+    private TextView _value;
+    private static int _counter = 45;
+    private String _stringVal;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        _decrease = (Button) findViewById(R.id.button1);
+        _increase = (Button) findViewById(R.id.button2);
+        _value = (TextView) findViewById(R.id.textView1);
+
+        _decrease.setOnClickListener(new OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+
+                Log.d("src", "Decreasing value...");
+                _counter--;
+                _stringVal = Integer.toString(_counter);
+                _value.setText(_stringVal);
+            }
+        });
+
+        _increase.setOnClickListener(new OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+
+                Log.d("src", "Increasing value...");
+                _counter++;
+                _stringVal = Integer.toString(_counter);
+                _value.setText(_stringVal);
+            }
+        });
+
+    }
+}
+
+    
+===============================================================================================
+78
+A:For that to work, you need a thread that will update the integer value when you long press on a button.
+
+Create a handler in your activity:
+
+private Handler repeatUpdateHandler = new Handler();
+
+
+And 2 vars which will state: is it increment or decrement? Only one set at a time.
+
+private boolean mAutoIncrement = false;
+private boolean mAutoDecrement = false;
+
+
+And the present number value
+
+public int mValue;
+
+
+And a class that will run in another thread:
+
+class RptUpdater implements Runnable {
+    public void run() {
+        if( mAutoIncrement ){
+            increment();
+            repeatUpdateHandler.postDelayed( new RptUpdater(), REP_DELAY );
+        } else if( mAutoDecrement ){
+            decrement();
+            repeatUpdateHandler.postDelayed( new RptUpdater(), REP_DELAY );
+        }
+    }
+}
+
+
+Add a long press listener to your button:
+
+mBTIncrement.setOnLongClickListener( 
+            new View.OnLongClickListener(){
+                public boolean onLongClick(View arg0) {
+                    mAutoIncrement = true;
+                    repeatUpdateHandler.post( new RptUpdater() );
+                    return false;
+                }
+            }
+    );   
+
+mBTIncrement.setOnTouchListener( new View.OnTouchListener() {
+        public boolean onTouch(View v, MotionEvent event) {
+            if( (event.getAction()==MotionEvent.ACTION_UP || event.getAction()==MotionEvent.ACTION_CANCEL) 
+                    && mAutoIncrement ){
+                mAutoIncrement = false;
+            }
+            return false;
+        }
+    });  
+
+
+In the above case the button is the increment one. Create another button which will set mAutoDecrement to true.
+
+And decrement() will be a function, which will set your instance int variable like this:
+
+public void decrement(){
+    mValue--;
+    _value.setText( ""+mValue );
+}
+
+
+You figure the increment out. Oh and REP_DELAY is a static int variable set to 50.
+
+I see this is an excerpt from Jeffrey Cole's open source NumberPicker available at http://www.technologichron.net/   Proper author's attribution must be added.
+    

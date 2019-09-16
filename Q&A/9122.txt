@@ -1,0 +1,144 @@
+30
+Q:Background
+
+I have a small live wallpaper app, that I want to add support for it to show GIF animations.
+
+For this, I've found various solutions. There is the solution of showing a GIF animation in a view (here), and there is even a solution for showing it in a live wallpaper (here).
+
+However, for both of them, I can't find how to fit the content of the GIF animation nicely in the space it has, meaning any of the following:
+
+
+center-crop - fits to 100% of the container (the screen in this case), cropping on sides (top&bottom or left&right) when needed. Doesn't stretch anything. This means the content seems fine, but not all of it might be shown.
+fit-center - stretch to fit width/height
+center-inside - set as original size, centered, and stretch to fit width/height only if too large.
+
+
+The problem
+
+None of those is actually about ImageView, so I can't just use the scaleType attribute.
+
+What I've found
+
+There is a solution that gives you a GifDrawable (here), which you can use in ImageView, but it seems it's pretty slow in some cases, and I can't figure out how to use it in LiveWallpaper and then fit it.
+
+The main code of the LiveWallpaper GIF handling is as such (here) :
+
+class GIFWallpaperService : WallpaperService() {
+    override fun onCreateEngine(): WallpaperService.Engine {
+        val movie = Movie.decodeStream(resources.openRawResource(R.raw.cinemagraphs))
+        return GIFWallpaperEngine(movie)
+    }
+
+    private inner class GIFWallpaperEngine(private val movie: Movie) : WallpaperService.Engine() {
+        private val frameDuration = 20
+
+        private var holder: SurfaceHolder? = null
+        private var visible: Boolean = false
+        private val handler: Handler = Handler()
+        private val drawGIF = Runnable { draw() }
+
+        private fun draw() {
+            if (visible) {
+                val canvas = holder!!.lockCanvas()
+                canvas.save()
+                movie.draw(canvas, 0f, 0f)
+                canvas.restore()
+                holder!!.unlockCanvasAndPost(canvas)
+                movie.setTime((System.currentTimeMillis() % movie.duration()).toInt())
+
+                handler.removeCallbacks(drawGIF)
+                handler.postDelayed(drawGIF, frameDuration.toLong())
+            }
+        }
+
+        override fun onVisibilityChanged(visible: Boolean) {
+            this.visible = visible
+            if (visible)
+                handler.post(drawGIF)
+            else
+                handler.removeCallbacks(drawGIF)
+        }
+
+        override fun onDestroy() {
+            super.onDestroy()
+            handler.removeCallbacks(drawGIF)
+        }
+
+        override fun onCreate(surfaceHolder: SurfaceHolder) {
+            super.onCreate(surfaceHolder)
+            this.holder = surfaceHolder
+        }
+    }
+}
+
+
+The main code for handling GIF animation in a view is as such:
+
+class CustomGifView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0) : View(context, attrs, defStyleAttr) {
+    private var gifMovie: Movie? = null
+    var movieWidth: Int = 0
+    var movieHeight: Int = 0
+    var movieDuration: Long = 0
+    var mMovieStart: Long = 0
+
+    init {
+        isFocusable = true
+        val gifInputStream = context.resources.openRawResource(R.raw.test)
+
+        gifMovie = Movie.decodeStream(gifInputStream)
+        movieWidth = gifMovie!!.width()
+        movieHeight = gifMovie!!.height()
+        movieDuration = gifMovie!!.duration().toLong()
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        setMeasuredDimension(movieWidth, movieHeight)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+
+        val now = android.os.SystemClock.uptimeMillis()
+        if (mMovieStart == 0L) {   // first time
+            mMovieStart = now
+        }
+        if (gifMovie != null) {
+            var dur = gifMovie!!.duration()
+            if (dur == 0) {
+                dur = 1000
+            }
+            val relTime = ((now - mMovieStart) % dur).toInt()
+            gifMovie!!.setTime(relTime)
+            gifMovie!!.draw(canvas, 0f, 0f)
+            invalidate()
+        }
+    }
+}
+
+
+The questions
+
+
+Given a GIF animation, how can I scale it in each of the above ways?
+Is it possible to have a single solution for both cases?
+Is it possible to use GifDrawable library (or any other drawable for the matter) for the live wallpaper, instead of the Movie class? If so, how?
+
+
+
+
+EDIT: after finding how to scale for 2 kinds, I still need to know how to scale according to the third type, and also want to know why it keeps crashing after orientation changes, and why it doesn't always show the preview right away.
+
+I'd also like to know what's the best way to show the GIF animation here, because currently I just refresh the canvas ~60fps (1000/60 waiting between each 2 frames), without consideration of what's in the file.
+
+Project is available here.
+    
+===============================================================================================
+6
+A:If you have Glide in your project, You can easily load Gifs, as it provides drawing GIFs to your ImageViews and does support many scaling options (like center or a given width and ...).
+
+Glide.with(context)
+    .load(imageUrl or resourceId)
+    .asGif()
+    .fitCenter() //or other scaling options as you like
+    .into(imageView);
+
+    

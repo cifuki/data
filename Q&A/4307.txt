@@ -1,0 +1,38 @@
+55
+Q:I recently read this article on Managing Your App's Memory,I strongly suggest to read it if you are an AndroidDev and never did.
+
+There are lots of good practices and one thing I never happen to know about is the onTrimMemory(int level) method called by the system on every Activity/Fragment to notify events on which memory should or could be released.
+
+Here is a quote from that article:
+
+
+  Notice that your app receives the onTrimMemory() callback with
+  TRIM_MEMORY_UI_HIDDEN only when all the UI components of your app
+  process become hidden from the user. This is distinct from the
+  onStop() callback, which is called when an Activity instance becomes
+  hidden, which occurs even when the user moves to another activity in
+  your app. So although you should implement onStop() to release
+  activity resources such as a network connection or to unregister
+  broadcast receivers, you usually should not release your UI resources
+  until you receive onTrimMemory(TRIM_MEMORY_UI_HIDDEN). This ensures
+  that if the user navigates back from another activity in your app,
+  your UI resources are still available to resume the activity quickly.
+
+
+I am really interested in implementing a good memory management in my application so I am looking forward to implement the onTrimMemory() in the right way.
+
+I only have a few questions about it:
+
+
+is onTrimMemory(TRIM_MEMORY_UI_HIDDEN) called right after the onStop()?
+what "release your UI resources" means in that context? just for instance clean the Bitmap cache, or actually remove and destroy every View in the View tree? i usually destroy the Views in the onDestroy() or onDestroyView() methods, i am now wondering if i'm doing it right.
+is there a Twin/correspondent callback to onTrimMemory(TRIM_MEMORY_UI_HIDDEN)? like onCreate-onDestroy, onStart-onStop, onCreateView-onDestroyView. I'm asking to understand where and how i should restore the UI state after an Activity/Fragment as been brought in foreground after onTrimMemory(TRIM_MEMORY_UI_HIDDEN) has been called.
+
+    
+===============================================================================================
+30
+A:onTrimMemory with TRIM_MEMORY_UI_HIDDEN level is actually called before onStop. When onStop is called, it means the activity is really stopping, and the Android OS might kill it right away if it needs to, so you should not expect any more calls to that activity's callbacks aftet that, except for onRestart and sometimes onDestroy.
+"release your UI resources" is actually about things like caches. You usually don't have to worry about managing views or UI components because the OS already does that, and that's why there are all those callbacks for creating, starting, pausing, stopping and destroying an activity. However, sometimes to improve performance you have to increase memory usage, such as caching some data used by your activities. That's the type of resource you should release when onTrimMemory is called, so your app uses less memory, even if it affects performance. You should worry about memory leaks though. If your activity stops, be sure not to keep any references to its views, because that would keep the activity from being garbage collected, which would keep the whole context from being collected, and that's bad, mostly if you want to keep your app running for hours or days (like when you implement services).
+No, there's no correspondent callback to onTrimMemory. However, you shouldn't need one. As I said before, if you keep a cache of some resources to improve performance, just empty that, and let it grow again if it needs to. If memory level keeps low, onTrimMemory may be called again soon, with that same memory level. By the way, keep in mind that onTrimMemory will be called with several different memory levels, not just TRIM_MEMORY_UI_HIDDEN.
+
+    

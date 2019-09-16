@@ -1,0 +1,85 @@
+96
+Q:So, I just updated my codebase to Lollipop, and I'm having issues with the Action Bar.  I'm using AppCompat and ActionBarActivity, and inflating a custom view.  It seems that the custom view no longer takes up the whole width of the screen, leaving a thin strip on the left
+
+
+Way it used to look
+
+
+Way it looks now
+
+This is the code I'm using to set up the Action Bar.  Anyone have any ideas?
+
+final ActionBar actionBar = getSupportActionBar();
+if(actionBar != null) {
+    actionBar.setDisplayHomeAsUpEnabled(false);
+    actionBar.setDisplayShowHomeEnabled(false);
+    actionBar.setDisplayShowTitleEnabled(false);
+    actionBar.setDisplayShowCustomEnabled(true);
+    actionBar.setNavigationMode(ActionBar.NAVIGATION_MODE_STANDARD);
+    actionBar.setCustomView(R.layout.action_bar_content_search_custom_view);
+    actionBar.setBackgroundDrawable(null);
+    // actionBar.setStackedBackgroundDrawable(null);
+    TextView title = (TextView) actionBar.getCustomView().findViewById(R.id.action_bar_title);
+    title.setText(R.string.youtube);
+    ImageView back = (ImageView) actionBar.getCustomView().findViewById(R.id.action_bar_back);
+    back.setOnClickListener(new OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            finish();
+        }
+    });
+}
+
+
+Edit
+
+Taking out the custom view and changing the background now takes up the whole width.  So the issue is, how can we make a CustomView take up the whole width of the ActionBar?
+    
+===============================================================================================
+110
+A:Looks like this is caused by the latest changes to the ActionBar in the recent appcompat-v7 update.
+It seems like that there are significant changes to how you should handle action bars.
+
+I faced the same issue and after reading the ActionBar documentation, and especially the following quote I found a solution.
+
+
+  Beginning with Android L (API level 21), the action bar may be represented by any Toolbar widget within the application layout. The application may signal to the Activity which Toolbar should be treated as the Activity's action bar. Activities that use this feature should use one of the supplied .NoActionBar themes, set the windowActionBar attribute to false or otherwise not request the window feature.
+
+
+The way I see it, the AppCompat themes were changed and on one hand seemed to break a few things but provide much more flexibility on the other.
+I recommend following these steps:
+
+
+Use .NoActionBar style in your activity as described in the above quote
+Add a android.support.v7.widget.Toolbar to your Activity layout
+Set the app:contentInsetStart="0dp" attribute. This is the main issue with the margin that you describe in your question
+
+
+<android.support.v7.widget.Toolbar xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/actionBar"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    app:contentInsetEnd="0dp"
+    app:contentInsetStart="0dp" >
+</android.support.v7.widget.Toolbar>
+
+
+It's usually recommended that you do that in a separate layout file and use include in your activity layout so you will only need to customize the Toolbar in one place if used in multiple activities
+
+<include layout="@layout/view_action_bar" />
+
+
+
+Use findViewById and setSupportActionBar in your Activity onCreate to signal to the Activity which Toolbar should be treated as the Activity's action bar
+
+
+Toolbar actionBar = (Toolbar) findViewById(R.id.actionBar);
+setSupportActionBar(actionBar);
+
+
+
+Once you do that, all actions added in onCreateOptionsMenu will be added to the toolbar and it will be treated as the activity action bar.
+Further customize the Toolbar as desired (Add child views etc.)
+
+    

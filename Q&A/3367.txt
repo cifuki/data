@@ -1,0 +1,93 @@
+67
+Q:I am trying to understand the best use case of using HandlerThread. 
+
+As per definition:
+
+
+  "Handy class for starting a new thread that has a looper. The looper can then be used to create handler classes. Note that start() must still be called."
+
+
+I may be wrong but similar functionality I can achieve by using a Thread, Looper and Handler. So when should I use HandlerThread? An example would be really helpful.
+    
+===============================================================================================
+83
+A:Here is a real life example where HandlerThread becomes handy. When you register for Camera preview frames, you receive them in onPreviewFrame() callback. The documentation explains that This callback is invoked on the event thread open(int) was called from.
+
+Usually, this means that the callback will be invoked on the main (UI) thread. Thus, the task of dealing with the huge pixel arrays may get stuck when menus are opened, animations are animated, or even if statistics in printed on the screen.
+
+The easy solution is to create a new HandlerThread() and delegate Camera.open() to this thread (I did it through post(Runnable), you don't need to implement Handler.Callback).
+
+Note that all other work with the Camera can be done as usual, you don't have to delegate Camera.startPreview() or Camera.setPreviewCallback() to the HandlerThread. To be on the safe side, I wait for the actual Camera.open(int) to complete before I continue on the main thread (or whatever thread was used to call Camera.open() before the change).
+
+
+
+So, if you start with code
+
+try {
+    mCamera = Camera.open(1);
+}
+catch (RuntimeException e) {
+    Log.e(LOG_TAG, "failed to open front camera");
+}
+// some code that uses mCamera immediately
+
+
+first extract it as is into a private method:
+
+private void oldOpenCamera() {
+    try {
+        mCamera = Camera.open(1);
+    }
+    catch (RuntimeException e) {
+        Log.e(LOG_TAG, "failed to open front camera");
+    }
+}
+
+
+and instead of calling oldOpenCamera() simply use newOpencamera():
+
+private void newOpenCamera() {
+    if (mThread == null) {
+        mThread = new CameraHandlerThread();
+    }
+
+    synchronized (mThread) {
+        mThread.openCamera();
+    }
+}
+private CameraHandlerThread mThread = null;
+private static class CameraHandlerThread extends HandlerThread {
+    Handler mHandler = null;
+
+    CameraHandlerThread() {
+        super("CameraHandlerThread");
+        start();
+        mHandler = new Handler(getLooper());
+    }
+
+    synchronized void notifyCameraOpened() {
+        notify();
+    }
+
+    void openCamera() {
+        mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                oldOpenCamera();
+                notifyCameraOpened();
+            }
+        });
+        try {
+            wait();
+        }
+        catch (InterruptedException e) {
+            Log.w(LOG_TAG, "wait was interrupted");
+        }
+    }
+}
+
+
+Note that the whole notify() -- wait() inter-thread communication is not necessary if you don't access mCamera in the original code immediately after opening it.
+
+Update: Here the same approach is applied to accelerometer: Acclerometer Sensor in Separate Thread
+    

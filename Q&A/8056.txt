@@ -1,0 +1,92 @@
+33
+Q:If I add an EditText in XML I can set textCursorDrawable="@null":
+
+<EditText
+    android:id="@+id/txtE3Casecode4"
+    android:layout_width="30dp"
+    android:layout_height="wrap_content"
+    android:layout_alignParentTop="true"
+    android:background="#C7C7C5"
+    android:textCursorDrawable="@null"
+    android:ems="10"
+    android:inputType="number"
+    android:maxLength="2"
+    android:text="01"
+    android:textColor="#000000" />
+
+
+Now I draw an EditText in Java. I want set android:textCursorDrawable="@null".
+
+LinearLayout.LayoutParams paramtext = new LinearLayout.LayoutParams(
+    LinearLayout.LayoutParams.FILL_PARENT,
+    LinearLayout.LayoutParams.WRAP_CONTENT);
+EditText txtOther = new EditText(this);
+txtOther.setLayoutParams(paramtext);
+txtOther.setBackgroundColor(Color.WHITE);
+txtOther.setTextColor(Color.BLACK);
+txtOther.setId(99999);
+// txtOther.setCursorDrawable ?                                
+
+
+How do set it?
+    
+===============================================================================================
+56
+A:There is no public API to set the cursor drawable. You can set it programmatically by using reflection. The field mCursorDrawableRes hasn't changed so this should work on all devices, unless a manufacturer changed something or it is later changed.
+
+Use reflection to set the cursor:
+
+EditText yourEditText = new EditText(context);
+
+...
+
+try {
+    // https://github.com/android/platform_frameworks_base/blob/kitkat-release/core/java/android/widget/TextView.java#L562-564
+    Field f = TextView.class.getDeclaredField("mCursorDrawableRes");
+    f.setAccessible(true);
+    f.set(yourEditText, R.drawable.cursor);
+} catch (Exception ignored) {
+}
+
+
+Define a cursor drawable in your app:
+
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle" >
+
+    <solid android:color="#ff000000" />
+
+    <size android:width="1dp" />
+
+</shape>
+
+
+
+
+Another approach:
+
+You can also set the cursor color with the following method:
+
+public static void setCursorDrawableColor(EditText editText, int color) {
+    try { 
+        Field fCursorDrawableRes = TextView.class.getDeclaredField("mCursorDrawableRes");
+        fCursorDrawableRes.setAccessible(true);
+        int mCursorDrawableRes = fCursorDrawableRes.getInt(editText);
+        Field fEditor = TextView.class.getDeclaredField("mEditor");
+        fEditor.setAccessible(true);
+        Object editor = fEditor.get(editText);
+        Class<?> clazz = editor.getClass();
+        Field fCursorDrawable = clazz.getDeclaredField("mCursorDrawable");
+        fCursorDrawable.setAccessible(true);
+        Drawable[] drawables = new Drawable[2];
+        drawables[0] = editText.getContext().getResources().getDrawable(mCursorDrawableRes);
+        drawables[1] = editText.getContext().getResources().getDrawable(mCursorDrawableRes);
+        drawables[0].setColorFilter(color, PorterDuff.Mode.SRC_IN);
+        drawables[1].setColorFilter(color, PorterDuff.Mode.SRC_IN);
+        fCursorDrawable.set(editor, drawables);
+    } catch (Throwable ignored) {
+    } 
+} 
+
+    

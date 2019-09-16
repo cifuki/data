@@ -1,0 +1,105 @@
+31
+Q:API 26 adds new option Bitmap.Config.HARDWARE:
+
+
+  Special configuration, when bitmap is stored only in graphic memory.
+  Bitmaps in this configuration are always immutable. It is optimal for
+  cases, when the only operation with the bitmap is to draw it on a
+  screen.
+
+
+Questions that aren't explained in docs:
+
+
+Should we ALWAYS prefer now Bitmap.Config.HARDWARE over
+Bitmap.Config.RGB_565 when speed is of top priority and quality
+and mutability are not (e.g. for thumbnails, etc)?
+Does pixel data after decoding using this option actually NOT
+consume ANY heap memory and resides in GPU memory only? If so, this seems
+to finally be a relief for OutOfMemoryException concern when
+working with images.
+What quality compared to RGB_565, RGBA_F16 or ARGB_8888 should we expect
+from this option?
+Is speed of decoding itself the same/better/worth compared to
+decoding with RGB_565?
+(Thanks @CommonsWare for pointing to it in comments) What would
+happen if we exceed GPU memory when decoding an image using this
+option? Would some exception be thrown (maybe the same OutOfMemoryException :)?
+
+    
+===============================================================================================
+12
+A:Documentation and public source code is not pushed yet to Google's git. So my research is based only on partial information, some experiments, and on my own experience porting JVM's to various devices.
+
+My test created large mutable Bitmap and copied it into a new HARDWARE Bitmap on a click of a button, adding it into a bitmap list. I managed to create several instances of the large bitmaps before it crashed.
+
+I was able to find this in the android-o-preview-4 git push:
+
++struct AHardwareBuffer;
++#ifdef EGL_EGLEXT_PROTOTYPES
++EGLAPI EGLClientBuffer eglGetNativeClientBufferANDROID (const struct AHardwareBuffer *buffer);
++#else
++typedef EGLClientBuffer (EGLAPIENTRYP PFNEGLGETNATIVECLIENTBUFFERANDROID) (const struct AHardwareBuffer *buffer);
+
+
+And looking for the documentation of AHardwareBuffer, under the hood it is creating an EGLClientBuffer backed by ANativeWindowBuffer (native graphic buffer) in Android shared memory ("ashmem"). But the actual implementation may vary across hardware.
+
+So as to the questions:
+
+
+  
+  Should we ALWAYS prefer now Bitmap.Config.HARDWARE over Bitmap.Config.RGB_565...?
+  
+
+
+For SDK >= 26, HARDWARE configuration can improve the low level bitmap drawing by preventing the need to copy the pixel data to the GPU every time the same bitmap returns to the screen. I guess it can prevent losing some frames when a bitmap is added to the screen.
+
+The memory is not counted against your app, and my test confirmed this.
+
+The native library docs say it will return null if memory allocation was unsuccessful.
+Without the source code, it is not clear what the Java implementation (the API implementors) will do in this case - it might decide to throw OutOfMemoryException or fallback to a different type of allocation. 
+
+Update: Experiment reveals that no OutOfMemoryException is thrown. While the allocation is successful - everything works fine. Upon failed allocation - the emulator crashed (just gone). On other occasions I've got  a weird NullPointerException when allocating Bitmap in app memory.
+
+Due to the unpredictable stability, I would not recommend using this new API in production currently. At least not without extensive testing.
+
+
+  
+  Does pixel data after decoding using this option actually NOT consume ANY heap memory and resides in GPU memory only? If so, this
+  seems to finally be a relief for OutOfMemoryException concern when
+  working with images.
+  
+
+
+Pixel data will be in shared memory (probably texture memory), but there still be a small Bitmap object in Java referencing it (so "ANY" is inaccurate).
+
+Every vendor can decide to implement the actual allocation differently, it's not a public API they are bound to.
+So OutOfMemoryException may still be an issue. I'm not sure how it can be handled correctly.
+
+
+  
+  What quality compared to RGB_565/ARGB_8888?
+  
+
+
+The HARDWARE flag is not about quality, but about pixel storage location. Since the configuration flags cannot be OR-ed, I suppose that the default (ARGB_8888) is used for the decoding. 
+
+(Actually, the HARDWARE enum seem like a hack to me).
+
+
+  
+  Is speed of decoding itself the same/better/worse...?
+  
+
+
+HARDWARE flag seem unrelated to decoding, so the same as ARGB_8888.
+
+
+  
+  What would happen if we exceed GPU memory?
+  
+
+
+My test result in very bad things when memory is running out.
+The emulator crashed horribly sometimes, and I've got unexpected unrelated NPE on other occasions. No OutOfMemoryException occurred, and there was also no way to tell when the GPU memory is running out, so no way to foresee this.
+    

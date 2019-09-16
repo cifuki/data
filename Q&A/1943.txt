@@ -1,0 +1,64 @@
+100
+Q:Against the traditional approach of prompting user to go to the settings page and enable location services and come back again, I have noticed a simpler way of doing the same in some of the latest apps.
+
+Referring to below screenshot, it prompts a dialog to user to enable the location services with just one click and it works in those apps.
+
+How can I achieve the same?
+
+
+    
+===============================================================================================
+128
+A:This dialog is created by LocationSettingsRequest.Builder available in the Google Play Services.
+
+You need to add a dependency to your app build.gradle:
+
+compile 'com.google.android.gms:play-services-location:10.0.1'
+
+
+Then you can use this minimal example:
+
+private void displayLocationSettingsRequest(Context context) {
+    GoogleApiClient googleApiClient = new GoogleApiClient.Builder(context)
+            .addApi(LocationServices.API).build();
+    googleApiClient.connect();
+
+    LocationRequest locationRequest = LocationRequest.create();
+    locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+    locationRequest.setInterval(10000);
+    locationRequest.setFastestInterval(10000 / 2);
+
+    LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder().addLocationRequest(locationRequest);
+    builder.setAlwaysShow(true);
+
+    PendingResult<LocationSettingsResult> result = LocationServices.SettingsApi.checkLocationSettings(googleApiClient, builder.build());
+    result.setResultCallback(new ResultCallback<LocationSettingsResult>() {
+        @Override
+        public void onResult(LocationSettingsResult result) {
+            final Status status = result.getStatus();
+            switch (status.getStatusCode()) {
+                case LocationSettingsStatusCodes.SUCCESS:
+                    Log.i(TAG, "All location settings are satisfied.");
+                    break;
+                case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
+                    Log.i(TAG, "Location settings are not satisfied. Show the user a dialog to upgrade location settings ");
+
+                    try {
+                        // Show the dialog by calling startResolutionForResult(), and check the result
+                        // in onActivityResult().
+                        status.startResolutionForResult(MainActivity.this, REQUEST_CHECK_SETTINGS);
+                    } catch (IntentSender.SendIntentException e) {
+                        Log.i(TAG, "PendingIntent unable to execute request.");
+                    }
+                    break;
+                case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
+                    Log.i(TAG, "Location settings are inadequate, and cannot be fixed here. Dialog not created.");
+                    break;
+            }
+        }
+    });
+}
+
+
+You can find the complete example here.
+    

@@ -1,0 +1,467 @@
+30
+Q:On my Google Play console I see quite a lot crash reports since I started to use Dagger 2, but only on Android 7.0 and mainly on Samsung devices, some Huawai and Motorola devices and some rare Xperia devices:
+
+java.lang.RuntimeException: 
+  at android.app.ActivityThread.performLaunchActivity (ActivityThread.java:2984)
+  at android.app.ActivityThread.handleLaunchActivity (ActivityThread.java:3045)
+  at android.app.ActivityThread.-wrap14 (ActivityThread.java)
+  at android.app.ActivityThread$H.handleMessage (ActivityThread.java:1642)
+  at android.os.Handler.dispatchMessage (Handler.java:102)
+  at android.os.Looper.loop (Looper.java:154)
+  at android.app.ActivityThread.main (ActivityThread.java:6776)
+  at java.lang.reflect.Method.invoke (Method.java)
+  at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run (ZygoteInit.java:1518)
+  at com.android.internal.os.ZygoteInit.main (ZygoteInit.java:1408)
+Caused by: java.lang.RuntimeException: 
+  at dagger.android.AndroidInjection.inject (AndroidInjection.java:48)
+  at dagger.android.support.DaggerAppCompatActivity.onCreate (DaggerAppCompatActivity.java:43)
+  at com.package.MainActivity.onCreate (MainActivity.java:83)
+  at android.app.Activity.performCreate (Activity.java:6956)
+  at android.app.Instrumentation.callActivityOnCreate (Instrumentation.java:1126)
+  at android.app.ActivityThread.performLaunchActivity (ActivityThread.java:2927)
+
+
+I cannot reproduce the issue since I do not have any affected device at hand, also it seems that not all devices of a type are affected, more like a random startup failure.
+
+From what I learned through research is that most likely the activity's onCreate is called before the activity is actually attached to an application. But I cannot prove this statement...
+
+I am following Google's architecture blueprint for MVP+Dagger.
+
+My Application class:
+
+public class App extends DaggerApplication {
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+    }
+
+    @Override
+    protected AndroidInjector<? extends DaggerApplication> applicationInjector() {
+        AppComponent appComponent = DaggerAppComponent.builder().application(this).build();
+        appComponent.inject(this);
+        return appComponent;
+    }
+
+}
+
+
+My MainActivity class:
+
+public class MainActivity extends DaggerAppCompatActivity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+    }
+
+}
+
+
+Relevant Dagger 2 code:
+
+DaggerAppCompatActivity:
+https://github.com/google/dagger/blob/e8d7cd4c29c1316c5bb1cf0737d4f29111fcb1c8/java/dagger/android/support/DaggerAppCompatActivity.java#L42-L45
+
+protected void onCreate(@Nullable Bundle savedInstanceState) { 
+    AndroidInjection.inject(this); 
+    super.onCreate(savedInstanceState); 
+}
+
+
+AndroidInjection:
+https://github.com/google/dagger/blob/e8d7cd4c29c1316c5bb1cf0737d4f29111fcb1c8/java/dagger/android/AndroidInjection.java#L43-L52
+
+public static void inject(Activity activity) { 
+    checkNotNull(activity, "activity"); 
+    Application application = activity.getApplication(); 
+    if (!(application instanceof HasActivityInjector)) { 
+        throw new RuntimeException( 
+            String.format( 
+                "%s does not implement %s", 
+                application.getClass().getCanonicalName(), 
+                HasActivityInjector.class.getCanonicalName())); 
+    }
+
+
+I have no idea how to resolve this crash, but the amount of crashes is too significant to ignore. Since my Dagger 2 usage works perfectly on all other Android versions and devices I assume that it is not caused by the way I use Dagger 2 but somehow by some vendor specific 7.0 implementations. If anybody faced the same issue and found a solution please, please, please help me!
+
+Since this error is driving me nuts I rolled out a test version to 100k users trying to understand where this whole thing goes wrong.
+
+public abstract class TestDaggerAppCompatActivity extends AppCompatActivity implements HasFragmentInjector, HasSupportFragmentInjector {
+
+    @Inject DispatchingAndroidInjector<Fragment> supportFragmentInjector;
+    @Inject DispatchingAndroidInjector<android.app.Fragment> frameworkFragmentInjector;
+
+    @Override
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
+        inject();
+        super.onCreate(savedInstanceState);
+    }
+
+    @Override
+    public AndroidInjector<Fragment> supportFragmentInjector() {
+        return supportFragmentInjector;
+    }
+
+    @Override
+    public AndroidInjector<android.app.Fragment> fragmentInjector() {
+        return frameworkFragmentInjector;
+    }
+
+    private void inject() {
+        Application application = getApplication();
+
+        if(application == null) {
+            injectWithNullApplication();
+            return;
+        }
+
+        if (!(application instanceof HasActivityInjector)) {
+            injectWithWrongApplication();
+            return;
+        }
+
+        // Everything seems ok...
+        injectNow(application);
+    }
+
+    private void injectWithNullApplication() {
+        Application application = (Application) getApplicationContext();
+        injectNow(application);
+    }
+
+    private void injectWithWrongApplication() {
+        Application application = (Application) getApplicationContext();
+        injectNow(application);
+    }
+
+    private void injectNow(Application application) {
+        checkNotNull(application, "Application must not be null");
+
+        if (!(application instanceof HasActivityInjector)) {
+            throw new RuntimeException(String.format("%s does not implement %s", application.getClass().getCanonicalName(), HasActivityInjector.class.getCanonicalName()));
+        }
+
+        AndroidInjector<Activity> activityInjector = ((HasActivityInjector) application).activityInjector();
+        checkNotNull(activityInjector, "%s.activityInjector() returned null", application.getClass().getCanonicalName());
+
+        activityInjector.inject(this);
+    }
+
+}
+
+
+The activity is based on Dagger's activity with inlined AndroidInjection code. My thinking was that if this issue would not be resolved by using ApplicationContext instead of getApplication() my stack traces should detail whats going on:
+
+
+if the issue is caused by getApplication() the stack trace would contain injectWithNullApplication() or injectWithWrongApplication()
+a thrown NPE would show that getApplicationContext() returned null
+a thrown RuntimeException would show that the getApplicationContext() is not my Application
+if no exception would be thrown either the getApplication() or getApplicationContext() returned my application and I would not care what actually solved the issue
+
+
+And here is the stack trace:
+
+Caused by: java.lang.RuntimeException: 
+  at com.package.di.TestDaggerAppCompatActivity.inject (TestDaggerAppCompatActivity.java:49)
+  at com.package.di.TestDaggerAppCompatActivity.onCreate (TestDaggerAppCompatActivity.java:31)
+  at com.package.MainActivity.onCreate (MainActivity.java:83)
+  at android.app.Activity.performCreate (Activity.java:6942)
+  at android.app.Instrumentation.callActivityOnCreate (Instrumentation.java:1126)
+  at android.app.ActivityThread.performLaunchActivity (ActivityThread.java:2880)
+
+
+So the if clause !(application instanceof HasActivityInjector) in inject() did not reroute to injectWithWrongApplication() but the same if clause caused the RuntimeException in injectNow(Application application) on the same Application instance. WTF? I looked like 100 times at my code but if I have an error in there please let me know! Otherwise, I guess there are some really weird things going on in some Vendor implementations of 7.0 which are maybe not fixable...
+
+Based on the discussions on https://github.com/google/dagger/issues/748 I also rolled out a test version that only uses getApplicationContext() instead of getApplication() in all Dagger components without any difference.
+
+My application tag from manifest
+
+<application
+    android:name=".App"
+    android:allowBackup="true"
+    android:icon="@mipmap/ic_launcher"
+    android:label="@string/app_name"
+    android:theme="@style/SplashScreenTheme"
+    android:fullBackupContent="false">
+
+    <meta-data android:name="com.google.android.gms.version" android:value="@integer/google_play_services_version" />
+    <meta-data android:name="com.google.android.gms.games.APP_ID" android:value="@string/app_id" />
+
+    <meta-data android:name="android.max_aspect" android:value="2.1" />
+
+    <activity
+        android:name="com.package.MainActivity"
+        android:label="@string/app_name">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+    </activity>
+
+    <service android:name="com.package.GeneratorService" android:exported="false"/>
+</application>
+
+    
+===============================================================================================
+13
+A:Finally I found a way to resolve the crashes caused by using Dagger 2 under Android 7.0 for my application. Please note that this does not resolve the issue with a custom application not being properly used under Android 7.0. In my case I did not have important logic in my custom Application besides getting Dagger 2 implemented and so I just replaced the DaggerApplication based implementation with the ApplicationlessInjection below.
+
+Known issues
+
+
+No dependency injection in custom application classes (probably this isn't a good idea with the freaking Android 7.0 OEM implementations anyway)
+Not all Dagger components where modified by me, I replaced only DaggerAppCompatActivity, DaggerIntentService and DaggerFragment. If you are using other components like DaggerDialogFragment or DaggerBroadcastReceiver you need to create your own implements but I guess that should not be too hard :)
+
+
+Implementation
+
+Stop using DaggerApplication. Either extend your custom application again from the standard Application or get rid of the custom application entirely. For the dependency injection with Dagger 2 its not needed anymore. Just extend e.g. FixedDaggerAppCompatActivity and you are good to go with the Dagger 2 DI for activities.
+
+You may notice that I am still passing the application context to the ApplicationlessInjection.getInstance(). The dependency injection itself does not need the context at all but I want to be able to easily inject the application context into my other components and modules. And there I do not care if the application context is my custom App or some crazy other stuff from Android 7.0 as long as it is a context.
+
+ApplicationlessInjection
+
+public class ApplicationlessInjection
+        implements
+            HasActivityInjector,
+            HasFragmentInjector,
+            HasSupportFragmentInjector,
+            HasServiceInjector,
+            HasBroadcastReceiverInjector,
+            HasContentProviderInjector {
+
+    private static ApplicationlessInjection instance = null;
+
+    @Inject DispatchingAndroidInjector<Activity> activityInjector;
+    @Inject DispatchingAndroidInjector<BroadcastReceiver> broadcastReceiverInjector;
+    @Inject DispatchingAndroidInjector<android.app.Fragment> fragmentInjector;
+    @Inject DispatchingAndroidInjector<Fragment> supportFragmentInjector;
+    @Inject DispatchingAndroidInjector<Service> serviceInjector;
+    @Inject DispatchingAndroidInjector<ContentProvider> contentProviderInjector;
+
+    public ApplicationlessInjection(Context applicationContext) {
+        AppComponent appComponent = DaggerAppComponent.builder().context(applicationContext).build();
+        appComponent.inject(this);
+    }
+
+    @Override
+    public DispatchingAndroidInjector<Activity> activityInjector() {
+        return activityInjector;
+    }
+
+    @Override
+    public DispatchingAndroidInjector<android.app.Fragment> fragmentInjector() {
+        return fragmentInjector;
+    }
+
+    @Override
+    public DispatchingAndroidInjector<Fragment> supportFragmentInjector() {
+        return supportFragmentInjector;
+    }
+
+    @Override
+    public DispatchingAndroidInjector<BroadcastReceiver> broadcastReceiverInjector() {
+        return broadcastReceiverInjector;
+    }
+
+    @Override
+    public DispatchingAndroidInjector<Service> serviceInjector() {
+        return serviceInjector;
+    }
+
+    @Override
+    public AndroidInjector<ContentProvider> contentProviderInjector() {
+        return contentProviderInjector;
+    }
+
+    public static ApplicationlessInjection getInstance(Context applicationContext) {
+        if(instance == null) {
+            synchronized(ApplicationlessInjection.class) {
+                if (instance == null) {
+                    instance = new ApplicationlessInjection(applicationContext);
+                }
+            }
+        }
+
+        return instance;
+    }
+
+}
+
+
+FixedDaggerAppCompatActivity
+
+public abstract class FixedDaggerAppCompatActivity extends AppCompatActivity implements HasFragmentInjector, HasSupportFragmentInjector {
+
+    @Inject DispatchingAndroidInjector<Fragment> supportFragmentInjector;
+    @Inject DispatchingAndroidInjector<android.app.Fragment> frameworkFragmentInjector;
+
+    @Override
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
+        inject();
+        super.onCreate(savedInstanceState);
+    }
+
+    @Override
+    public AndroidInjector<Fragment> supportFragmentInjector() {
+        return supportFragmentInjector;
+    }
+
+    @Override
+    public AndroidInjector<android.app.Fragment> fragmentInjector() {
+        return frameworkFragmentInjector;
+    }
+
+    private void inject() {
+        ApplicationlessInjection injection = ApplicationlessInjection.getInstance(getApplicationContext());
+
+        AndroidInjector<Activity> activityInjector = injection.activityInjector();
+
+        if (activityInjector == null) {
+            throw new NullPointerException("ApplicationlessInjection.activityInjector() returned null");
+        }
+
+        activityInjector.inject(this);
+    }
+
+}
+
+
+FixedDaggerFragment
+
+public abstract class FixedDaggerFragment extends Fragment implements HasSupportFragmentInjector {
+
+    @Inject DispatchingAndroidInjector<Fragment> childFragmentInjector;
+
+    @Override
+    public void onAttach(Context context) {
+        inject();
+        super.onAttach(context);
+    }
+
+    @Override
+    public AndroidInjector<Fragment> supportFragmentInjector() {
+        return childFragmentInjector;
+    }
+
+
+    public void inject() {
+        HasSupportFragmentInjector hasSupportFragmentInjector = findHasFragmentInjector();
+
+        AndroidInjector<Fragment> fragmentInjector = hasSupportFragmentInjector.supportFragmentInjector();
+
+        if (fragmentInjector == null) {
+            throw new NullPointerException(String.format("%s.supportFragmentInjector() returned null", hasSupportFragmentInjector.getClass().getCanonicalName()));
+        }
+
+        fragmentInjector.inject(this);
+    }
+
+    private HasSupportFragmentInjector findHasFragmentInjector() {
+        Fragment parentFragment = this;
+
+        while ((parentFragment = parentFragment.getParentFragment()) != null) {
+            if (parentFragment instanceof HasSupportFragmentInjector) {
+                return (HasSupportFragmentInjector) parentFragment;
+            }
+        }
+
+        Activity activity = getActivity();
+
+        if (activity instanceof HasSupportFragmentInjector) {
+            return (HasSupportFragmentInjector) activity;
+        }
+
+        ApplicationlessInjection injection = ApplicationlessInjection.getInstance(activity.getApplicationContext());
+        if (injection != null) {
+            return injection;
+        }
+
+        throw new IllegalArgumentException(String.format("No injector was found for %s", getClass().getCanonicalName()));
+    }
+
+}
+
+
+FixedDaggerIntentService
+
+public abstract class FixedDaggerIntentService extends IntentService {
+
+    public FixedDaggerIntentService(String name) {
+        super(name);
+    }
+
+    @Override
+    public void onCreate() {
+        inject();
+        super.onCreate();
+    }
+
+    private void inject() {
+        ApplicationlessInjection injection = ApplicationlessInjection.getInstance(getApplicationContext());
+
+        AndroidInjector<Service> serviceInjector = injection.serviceInjector();
+
+        if (serviceInjector == null) {
+            throw new NullPointerException("ApplicationlessInjection.serviceInjector() returned null");
+        }
+
+        serviceInjector.inject(this);
+    }
+
+}
+
+
+My AppComponent
+
+@Singleton
+@Component(modules = {
+        AppModule.class,
+        ActivityBindingModule.class,
+        AndroidSupportInjectionModule.class
+})
+public interface AppComponent extends AndroidInjector<ApplicationlessInjection> {
+
+    @Override
+    void inject(ApplicationlessInjection instance);
+
+    @Component.Builder
+    interface Builder {
+
+        @BindsInstance
+        AppComponent.Builder context(Context applicationContext);
+
+        AppComponent build();
+
+    }
+
+}
+
+
+My AppModule
+
+@Module
+public abstract class AppModule {
+
+    @Binds
+    @ApplicationContext
+    abstract Context bindContext(Context applicationContext);
+
+}
+
+
+And for the sake of completeness my @ApplicationContext annotation
+
+@Qualifier
+@Retention(RetentionPolicy.RUNTIME)
+public @interface ApplicationContext {}
+
+
+
+
+Hopefully I can help someone else with my code as well. For me I could resolve all crashes related to introducing Dagger 2 and the weird Android 7.0 versions.
+
+If more clarification is needed just let me know!
+    

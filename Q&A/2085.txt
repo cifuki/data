@@ -1,0 +1,109 @@
+94
+Q:I have 2 ScrollViews in my android layout. How can I synchronise their scroll positions?
+    
+===============================================================================================
+289
+A:There is a method in ScrollView...
+
+protected void onScrollChanged(int x, int y, int oldx, int oldy)
+
+
+Unfortunately Google never thought that we would need to access it, which is why they made it protected and didn't add a "setOnScrollChangedListener" hook. So we will have to do that for ourselves.
+
+First we need an interface.
+
+package com.test;
+
+public interface ScrollViewListener {
+
+    void onScrollChanged(ObservableScrollView scrollView, int x, int y, int oldx, int oldy);
+
+}
+
+
+Then we need to override the ScrollView class, to provide the ScrollViewListener hook.
+
+package com.test;
+
+import android.content.Context;
+import android.util.AttributeSet;
+import android.widget.ScrollView;
+
+public class ObservableScrollView extends ScrollView {
+
+    private ScrollViewListener scrollViewListener = null;
+
+    public ObservableScrollView(Context context) {
+        super(context);
+    }
+
+    public ObservableScrollView(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+    }
+
+    public ObservableScrollView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public void setScrollViewListener(ScrollViewListener scrollViewListener) {
+        this.scrollViewListener = scrollViewListener;
+    }
+
+    @Override
+    protected void onScrollChanged(int x, int y, int oldx, int oldy) {
+        super.onScrollChanged(x, y, oldx, oldy);
+        if(scrollViewListener != null) {
+            scrollViewListener.onScrollChanged(this, x, y, oldx, oldy);
+        }
+    }
+
+}
+
+
+And we should specify this new ObservableScrollView class in the layout, instead of the existing ScrollView tags.
+
+<com.test.ObservableScrollView
+    android:id="@+id/scrollview1"
+    ... >
+
+    ...
+
+</com.test.ObservableScrollView>
+
+
+Finally, we put it all together in the Layout class.
+
+package com.test;
+
+import android.app.Activity;
+import android.os.Bundle;
+
+public class Q3948934 extends Activity implements ScrollViewListener {
+
+    private ObservableScrollView scrollView1 = null;
+    private ObservableScrollView scrollView2 = null;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.q3948934);
+
+        scrollView1 = (ObservableScrollView) findViewById(R.id.scrollview1);
+        scrollView1.setScrollViewListener(this);
+        scrollView2 = (ObservableScrollView) findViewById(R.id.scrollview2);
+        scrollView2.setScrollViewListener(this);
+    }
+
+    public void onScrollChanged(ObservableScrollView scrollView, int x, int y, int oldx, int oldy) {
+        if(scrollView == scrollView1) {
+            scrollView2.scrollTo(x, y);
+        } else if(scrollView == scrollView2) {
+            scrollView1.scrollTo(x, y);
+        }
+    }
+
+}
+
+
+The scrollTo() code takes care of any loop conditions for us, so we don't need to worry about that. The only caveat is that this solution is not guaranteed to work in future versions of Android, because we are overriding a protected method.
+    

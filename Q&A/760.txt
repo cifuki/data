@@ -1,0 +1,129 @@
+186
+Q:I'm measuring text using Paint.getTextBounds(), since I'm interested in getting both the height and width of the text to be rendered. However, the actual text rendered is always a bit wider than the .width() of the Rect information filled by getTextBounds().
+
+To my surprise, I tested .measureText(), and found that it returns a different (higher) value. I gave it a try, and found it correct.
+
+Why do they report different widths? How can I correctly obtain the height and width? I mean, I can use .measureText(), but then I wouldn't know if I should trust the .height() returned by getTextBounds().
+
+As requested, here is minimal code to reproduce the problem:
+
+final String someText = "Hello. I believe I'm some text!";
+
+Paint p = new Paint();
+Rect bounds = new Rect();
+
+for (float f = 10; f < 40; f += 1f) {
+    p.setTextSize(f);
+
+    p.getTextBounds(someText, 0, someText.length(), bounds);
+
+    Log.d("Test", String.format(
+        "Size %f, measureText %f, getTextBounds %d",
+        f,
+        p.measureText(someText),
+        bounds.width())
+    );
+}
+
+
+The output shows that the difference not only gets greater than 1 (and is no last-minute rounding error), but also seems to increase with size (I was about to draw more conclusions, but it may be entirely font-dependent):
+
+D/Test    (  607): Size 10.000000, measureText 135.000000, getTextBounds 134
+D/Test    (  607): Size 11.000000, measureText 149.000000, getTextBounds 148
+D/Test    (  607): Size 12.000000, measureText 156.000000, getTextBounds 155
+D/Test    (  607): Size 13.000000, measureText 171.000000, getTextBounds 169
+D/Test    (  607): Size 14.000000, measureText 195.000000, getTextBounds 193
+D/Test    (  607): Size 15.000000, measureText 201.000000, getTextBounds 199
+D/Test    (  607): Size 16.000000, measureText 211.000000, getTextBounds 210
+D/Test    (  607): Size 17.000000, measureText 225.000000, getTextBounds 223
+D/Test    (  607): Size 18.000000, measureText 245.000000, getTextBounds 243
+D/Test    (  607): Size 19.000000, measureText 251.000000, getTextBounds 249
+D/Test    (  607): Size 20.000000, measureText 269.000000, getTextBounds 267
+D/Test    (  607): Size 21.000000, measureText 275.000000, getTextBounds 272
+D/Test    (  607): Size 22.000000, measureText 297.000000, getTextBounds 294
+D/Test    (  607): Size 23.000000, measureText 305.000000, getTextBounds 302
+D/Test    (  607): Size 24.000000, measureText 319.000000, getTextBounds 316
+D/Test    (  607): Size 25.000000, measureText 330.000000, getTextBounds 326
+D/Test    (  607): Size 26.000000, measureText 349.000000, getTextBounds 346
+D/Test    (  607): Size 27.000000, measureText 357.000000, getTextBounds 354
+D/Test    (  607): Size 28.000000, measureText 369.000000, getTextBounds 365
+D/Test    (  607): Size 29.000000, measureText 396.000000, getTextBounds 392
+D/Test    (  607): Size 30.000000, measureText 401.000000, getTextBounds 397
+D/Test    (  607): Size 31.000000, measureText 418.000000, getTextBounds 414
+D/Test    (  607): Size 32.000000, measureText 423.000000, getTextBounds 418
+D/Test    (  607): Size 33.000000, measureText 446.000000, getTextBounds 441
+D/Test    (  607): Size 34.000000, measureText 455.000000, getTextBounds 450
+D/Test    (  607): Size 35.000000, measureText 468.000000, getTextBounds 463
+D/Test    (  607): Size 36.000000, measureText 474.000000, getTextBounds 469
+D/Test    (  607): Size 37.000000, measureText 500.000000, getTextBounds 495
+D/Test    (  607): Size 38.000000, measureText 506.000000, getTextBounds 501
+D/Test    (  607): Size 39.000000, measureText 521.000000, getTextBounds 515
+
+    
+===============================================================================================
+360
+A:You can do what I did to inspect such problem:
+
+Study Android source code, Paint.java source, see both measureText and getTextBounds methods.
+You'd learn that measureText calls native_measureText, and getTextBounds calls nativeGetStringBounds, which are native methods implemented in C++.
+
+So you'd continue to study Paint.cpp, which implements both.
+
+native_measureText -> SkPaintGlue::measureText_CII
+
+nativeGetStringBounds -> SkPaintGlue::getStringBounds
+
+Now your study checks where these methods differ.
+After some param checks, both call function SkPaint::measureText in Skia Lib (part of Android), but they both call different overloaded form.
+
+Digging further into Skia, I see that both calls result into same computation in same function, only return result differently.
+
+To answer your question:
+Both your calls do same computation. Possible difference of result lies in fact that getTextBounds returns bounds as integer, while measureText returns float value.
+
+So what you get is rounding error during conversion of float to int, and this happens in Paint.cpp in SkPaintGlue::doTextBounds in call to function SkRect::roundOut.
+
+The difference between computed width of those two calls may be maximally 1.
+
+EDIT 4 Oct 2011
+
+What may be better than visualization. I took the effort, for own exploring, and for deserving bounty :)
+
+
+
+This is font size 60, in red is bounds rectangle, in purple is result of measureText.
+
+It's seen that bounds left part starts some pixels from left, and value of measureText is incremented by this value on both left and right. This is something called Glyph's AdvanceX value. (I've discovered this in Skia sources in SkPaint.cpp)
+
+So the outcome of the test is that measureText adds some advance value to the text on both sides, while getTextBounds computes minimal bounds where given text will fit.
+
+Hope this result is useful to you.
+
+Testing code:
+
+  protected void onDraw(Canvas canvas){
+     final String s = "Hello. I'm some text!";
+
+     Paint p = new Paint();
+     Rect bounds = new Rect();
+     p.setTextSize(60);
+
+     p.getTextBounds(s, 0, s.length(), bounds);
+     float mt = p.measureText(s);
+     int bw = bounds.width();
+
+     Log.i("LCG", String.format(
+          "measureText %f, getTextBounds %d (%s)",
+          mt,
+          bw, bounds.toShortString())
+      );
+     bounds.offset(0, -bounds.top);
+     p.setStyle(Style.STROKE);
+     canvas.drawColor(0xff000080);
+     p.setColor(0xffff0000);
+     canvas.drawRect(bounds, p);
+     p.setColor(0xff00ff00);
+     canvas.drawText(s, 0, bounds.bottom, p);
+  }
+
+    

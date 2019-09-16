@@ -1,0 +1,60 @@
+36
+Q:I'm implementing In App Billing for the first time and I'm testing my first purchases using the static SKU ids. 
+
+It worked very well the first time. I called mHelper.launchPurchaseFlow(...) and completed the test purchase. My activity received the onActivityResult callback and I made sure to process it with mHelper.handleActivityResult(...). Everything was great. 
+
+@Override
+protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    // Pass on the activity result to the helper for handling
+    log("onActivityResult");
+    if (!this.mHelper.handleActivityResult(requestCode, resultCode, data)) {
+        log("cleared the launch flow");
+        // not handled, so handle it ourselves (here's where you'd
+        // perform any handling of activity results not related to in-app
+        // billing...
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+}
+
+
+However, I wanted to test the next part, so I relaunched the app and tried to purchase the same SKU (the static purchased SKU). 
+
+mHelper.launchPurchaseFlow(rootActivity, "android.test.purchased", 10002,   
+       new IabHelper.OnIabPurchaseFinishedListener() {
+
+        @Override
+        public void onIabPurchaseFinished(IabResult result, Purchase purchaseInfo) {
+            if (result.isFailure()) {
+                log("purchased failed");
+            } else {
+                log("purchase succeeded");
+            }
+        }
+    }, "bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ");
+
+
+The second time I try to purchase the item, my OnIabPurchaseFinishedListener is called and I see purchase failed in my log: "In-app billing error: Unable to buy item, Error response: 7:Item Already Owned"
+
+That makes sense, but if I try to purchase another item, then my app crashes with the following error:
+
+
+  java.lang.IllegalStateException: Can't start async operation
+  (launchPurchaseFlow) because another async
+  operation(launchPurchaseFlow) is in progress.
+
+
+The onActivityResult callback doesn't happen when I try to do the purchase that fails, so the launch flow that failed doesn't get handled and cleaned up. So, when I try another purchase, that's why it crashes because it's still supposedly in the middle of the last failed transaction.
+
+What am I doing wrong? How do I ensure that the launchPurchaseFlow() is cleaned up after a failure?
+    
+===============================================================================================
+43
+A:I believe you just have to get the updated code the the in-app billing classes and you shouldn't run into the same problem again.
+
+Google hasn't pushed out the changes to the SDK Manager yet as far as I know. Just copy/paste the new classes into yours and you shouldn't run into the problem any longer.
+
+Have a look at the new code changes here:
+https://code.google.com/p/marketbilling/source/detail?r=7ec85a9b619fc5f85023bc8125e7e6b1ab4dd69f&path=/v3/src/com/example/android/trivialdrivesample/MainActivity.java
+
+The classes that were changed as of March 15th are: IABHelper.java, Inventory.java, SkuDetails.java and some of the MainActivity.java file
+    

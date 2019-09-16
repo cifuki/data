@@ -1,0 +1,70 @@
+50
+Q:Update: GCM is deprecated, use FCM
+
+
+How to refresh activity on receiving gcm push notification if my app is open. I have an activity which contains listview filled with data from the server. I want to refresh my activity (here adding one more item to listview) , if I receive gcm push notification(which also contains some data).   
+
+
+One alternative is to add timer that periodically do server requests and update the list adapter data but I don't want these because it will take much resources.  
+Do I need to add broadcast receiver which will trigger on receiving gcm push which further request for newer server data and update my activity UI? 
+
+
+Dear commentors, please read the question carefully, I only need to refresh the list (if app is open and that particular activity is open) else no need for same.
+    
+===============================================================================================
+140
+A:Took me a few hours to figure it out. Posting here in case anyone anyone else has the same problem.
+
+The idea is that you have to register your activity as a broadcast receiver. The easiest way to do this is like so:
+
+//register your activity onResume()
+@Override
+public void onResume() {
+    super.onResume();
+    context.registerReceiver(mMessageReceiver, new IntentFilter("unique_name"));
+}
+
+//Must unregister onPause()
+@Override
+protected void onPause() {
+    super.onPause();
+    context.unregisterReceiver(mMessageReceiver);
+}
+
+
+//This is the handler that will manager to process the broadcast intent
+private BroadcastReceiver mMessageReceiver = new BroadcastReceiver() {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+
+        // Extract data included in the Intent
+        String message = intent.getStringExtra("message");
+
+        //do other stuff here
+    }
+};
+
+
+The above code goes in the activity that you want to 'listen' for events.
+
+Now, how do we send data to this 'listener'? Go to your push notification handler(or from where you want to update your activity) and when you receive a notification call this function:
+
+// This function will create an intent. This intent must take as parameter the "unique_name" that you registered your activity with
+static void updateMyActivity(Context context, String message) {
+
+    Intent intent = new Intent("unique_name");
+
+    //put whatever data you want to send, if any
+    intent.putExtra("message", message);
+
+    //send broadcast
+    context.sendBroadcast(intent);
+}
+
+
+When you call the above function, your activity should receive it.
+
+Note: Your activity must be running/open to receive the broadcast intent
+
+Note2: I switched to a library called 'otto'. It does actually the same thing but easier, 'broadcasts events' thoughout the app. Here's a link http://square.github.io/otto/
+    

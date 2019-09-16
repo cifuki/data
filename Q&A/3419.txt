@@ -1,0 +1,98 @@
+66
+Q:This is my savedInstaceState code:
+
+@Override
+public void onSaveInstanceState(Bundle savedInstanceState) 
+{
+    savedInstanceState.putStringArrayList("todo_arraylist", Altodo);
+    Log.v("bundle", "Saved");
+    super.onSaveInstanceState(savedInstanceState);
+}
+
+
+public void onCreate(Bundle savedInstanceState) 
+{
+    super.onCreate(savedInstanceState);
+
+    if (savedInstanceState != null) 
+    {
+        Altodo = savedInstanceState.getStringArrayList("todo_arraylist");
+        Log.v("bundle", "Restored");
+    }
+    else
+    {
+        Log.v("bundle", "null");
+    }
+
+    setContentView(R.layout.main);
+}
+
+
+The logs always show the "bundle save" tag.
+
+But in onCreate method, SavedInstanceState is always null.
+    
+===============================================================================================
+50
+A:I observed the exact same symptoms (reported as issue 133394) in a project with two Activities A and B that extend ActionBarActivity. Activity A is the main activity, and I always receive null for savedInstanceState in onCreate of its list fragment when returning from a detail view activity B. After many hours, this problem exposed itself to me as a navigation issue in disguise.
+
+The following may be relevant to my setup and come from other answers on this page:
+
+
+Given this answer, I made sure that fragment and activity each have unique IDs set.
+There is no override of onSaveInstanceState without super call.
+Activity A is specified as acitivy B's parent in AndroidManifest.xml, using both the android:parentActivityName attribute and the corresponding meta-data tag for earlier versions of Android (see "Providing Up Navigation").
+
+
+Already without any corresponding creation code such as getActionBar() .setHomeButtonEnabled(true), activity B has a functioning back button (<) in its action bar. When this button is tapped, activity A reappears but with (a) all previous instance state lost, (b) onCreate always called, and (c) savedInstanceState always null.
+
+Interestingly, when I tap the back button provided at the bottom edge of the emulator display (an open triangle that points to the left), activity A reappears just as it was left (i.e. its instance state fully retained) without invoking onCreate. So maybe something is wrong with navigation?
+
+After more reading, I implemented my own navigation instructions to run in response to a tap on the back-button in activity B:
+
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {
+    if (item.getItemId() == android.R.id.home)
+        NavUtils.navigateUpFromSameTask(this);
+        return true;
+    }
+    return super.onOptionsItemSelected(item);
+}
+
+
+Nothing related to restoring instance state of activity A changed. NavUtils also provide a method getParentActivityIntent(Activity) and navigateUpTo(Activity, Intent) that allow us to modify the navigation intent to explicitly instruct that activity A is not started fresh (and thus without saved instance state provided) by setting the FLAG_ACTIVITY_CLEAR_TOP flag:
+
+
+  If set, and the activity being launched is already running in the
+  current task, then instead of launching a new instance of that
+  activity, all of the other activities on top of it will be closed and
+  this Intent will be delivered to the (now on top) old activity as a
+  new Intent.
+
+
+In my hands, this solves problem of lost instance state and could look like:
+
+public boolean onOptionsItemSelected(MenuItem item) {
+    if (item.getItemId()== android.R.id.home) {
+        Intent intent = NavUtils.getParentActivityIntent(this);
+        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        NavUtils.navigateUpTo(this, intent);
+        return true;
+    }
+    return super.onOptionsItemSelected(item);
+}
+
+
+Note that this may not be the complete solution in other cases where a user can switch directly to activity B from within a different task (see here). Also, a possibly identical solution in behavior that does not make use of NavUtils is to simply call finish():
+
+public boolean onOptionsItemSelected(MenuItem item) {
+    if (item.getItemId()== android.R.id.home) {
+        finish();
+        return true;
+    }
+    return super.onOptionsItemSelected(item);
+}
+
+
+Both solutions work in my hands. I am only speculating that the original issue is a slightly incorrect default implementation of the back-button, and it may be related to that implementation invoking some kind of navigateUp that misses FLAG_ACTIVITY_CLEAR_TOP.
+    

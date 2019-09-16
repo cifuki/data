@@ -1,0 +1,97 @@
+51
+Q:I need to implement some functions into an Android application using NDK and thus JNI.
+
+Here's the C code, with my concerns, that I wrote:
+
+#include <jni.h>
+#include <stdio.h>
+
+jobject
+Java_com_example_ndktest_NDKTest_ImageRef(JNIEnv* env, jobject obj, jint width, jint height, jbyteArray myArray)
+{
+    jint i;
+    jobject object;
+    jmethodID constructor;
+    jobject cls;
+    cls = (*env)->FindClass(env, "com/example/ndktest/NDKTest/Point");
+
+//what should put as the second parameter? Is my try correct, according to what
+//you can find in .java file? I used this documentation: http://download.oracle.com/javase/6/docs/technotes/guides/jni/spec/functions.html#wp16027
+
+    constructor = (*env)->GetMethodID(env, cls, "<init>", "void(V)");
+//http://download.oracle.com/javase/6/docs/technotes/guides/jni/spec/functions.html#wp16660
+//Again, is the last parameter ok?
+
+    object = (*env)->NewObject(env, cls, constructor, 5, 6);
+//I want to assign "5" and "6" to point.x and point.y respectively.
+    return object;
+}    
+
+
+My problems are more or less explained inside the code. Maybe also: is the return type of the function (jobject) ok?
+
+Now the NDKTest.java:
+
+package com.example.ndktest;
+
+import android.app.Activity;
+import android.widget.TextView;
+import android.os.Bundle;
+
+public class NDKTest extends Activity {
+    /** Called when the activity is first created. */
+    public native Point ImageRef(int width, int height, byte[] myArray);
+    public class Point
+    {
+
+        Point(int myx, int myy)
+        {
+            x = myx;
+            y = myy;
+        }
+
+        int x;
+        int y;
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState)
+    {
+
+         super.onCreate(savedInstanceState);
+         TextView tv = new TextView(this);
+         byte[] anArray = new byte[3];
+         for (byte i = 0; i < 3; i++)
+             anArray[i] = i;
+         Point point = ImageRef(2, 3, anArray);
+         tv.setText(String.valueOf(point.x));
+            setContentView(tv);     
+    }
+
+
+
+    static
+    {
+       System.loadLibrary("test");
+    }
+}
+
+
+When I try to run the code, it doesn't work.
+    
+===============================================================================================
+79
+A:Since Point is an inner class, the way to get it would be
+
+jclass cls = (*env)->FindClass(env, "com/example/ndktest/NDKTest$Point");
+
+
+The $ convention for inner classes is not really clearly documented in the authoritative specs, but is entrenched in so much working code that it's unlikely to change. Still, it would feel somewhat more robust if you restricted your JNI code to work with top-level classes.
+
+You want a constructor that takes two ints as arguments. The signature for that is (II)V, so:
+
+constructor = (*env)->GetMethodID(env, cls, "<init>", "(II)V");
+
+
+Next time, include some error handling in your code, such that you'll have a clue which part of it doesn't work!
+    

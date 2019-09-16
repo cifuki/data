@@ -1,0 +1,92 @@
+61
+Q:My project implements a TypeAdapter in Gson during serialization/deserialization for preserving object's polymorphism state. Anyhow, the project works fine during development tests, but when it is released with proguard obfuscation and tested, it just crashes.
+
+03-21 10:06:53.632: E/AndroidRuntime(12441): FATAL EXCEPTION: main
+03-21 10:06:53.632: E/AndroidRuntime(12441): java.lang.AssertionError
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.internal.bind.TypeAdapters$EnumTypeAdapter.<init>(SourceFile:724)
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.internal.bind.TypeAdapters$26.create(SourceFile:753)
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.Gson.getAdapter(SourceFile:353)
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.internal.bind.ReflectiveTypeAdapterFactory$1.<init>(SourceFile:82)
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.internal.bind.ReflectiveTypeAdapterFactory.createBoundField(SourceFile:81)
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.internal.bind.ReflectiveTypeAdapterFactory.getBoundFields(SourceFile:118)
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.internal.bind.ReflectiveTypeAdapterFactory.create(SourceFile:72)
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.Gson.getAdapter(SourceFile:353)
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.Gson.toJson(SourceFile:578)
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.Gson.toJsonTree(SourceFile:479)
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.Gson.toJsonTree(SourceFile:458)
+03-21 10:06:53.632: E/AndroidRuntime(12441):    at com.google.gson.Gson$3.serialize(SourceFile:137)
+
+
+My Gson specific proguard configuration is:
+
+##---------------Begin: proguard configuration for Gson  ----------
+# Gson uses generic type information stored in a class file when working with fields. Proguard
+# removes such information by default, so configure it to keep all of it.
+-keepattributes Signature
+
+# For using GSON @Expose annotation
+-keepattributes *Annotation*
+
+# Gson specific classes
+-keep class sun.misc.Unsafe { *; }
+#-keep class com.google.gson.stream.** { *; }
+
+# Application classes that will be serialized/deserialized over Gson
+-keep class com.google.gson.examples.android.model.** { *; }
+
+#This is extra - added by me to exclude gson obfuscation
+-keep class com.google.gson.** { *; }
+
+##---------------End: proguard configuration for Gson  ----------
+
+
+The TypeAdapter I'm using is:
+
+public final class GsonWorkshiftAdapter implements JsonSerializer<IWorkshift>, JsonDeserializer<IWorkshift> {
+    private static final String CLASSNAME = "CLASSNAME";
+    private static final String INSTANCE  = "INSTANCE";
+
+    @Override
+    public JsonElement serialize(IWorkshift src, Type typeOfSrc, JsonSerializationContext context) {
+        String className = src.getClass().getCanonicalName();
+        JsonElement elem = context.serialize(src);
+
+        JsonObject retValue = new JsonObject();
+        retValue.addProperty(CLASSNAME, className);
+        retValue.add(INSTANCE, elem);
+
+        return retValue;
+    }
+
+    @Override
+    public IWorkshift deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+        JsonObject jsonObject =  json.getAsJsonObject();
+        JsonPrimitive prim = (JsonPrimitive) jsonObject.get(CLASSNAME);
+        String className = prim.getAsString();
+
+        Class<?> klass = null;
+        try { klass = Class.forName(className); }
+        catch (ClassNotFoundException e) { throw new JsonParseException(e.getMessage()); }
+
+        return context.deserialize(jsonObject.get(INSTANCE), klass);
+    }
+}
+
+
+I did a lot of search on this error specific to Gson, but couldn't find any helpful answer. However I found another question with the similar issue.
+
+Any help from developer's community would be appreciated.
+    
+===============================================================================================
+139
+A:It seems like we must request that enumerations' members are kept. 
+Adding this to the proguard config file worked for me: 
+
+-keepclassmembers enum * { *; }
+
+
+Or, if you want to be more specific,
+
+-keepclassmembers enum com.your.package.** { *; }
+
+    

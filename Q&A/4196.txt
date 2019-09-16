@@ -1,0 +1,65 @@
+56
+Q:How do I handle situation, when user logs out of my application and I no longer want him to receive notifications to the device.
+
+I tried
+
+FirebaseInstanceId.getInstance().deleteToken(FirebaseInstanceId.getInstance().getId(), FirebaseMessaging.INSTANCE_ID_SCOPE)
+
+
+But I still receive the notifications to my device's registration_id.
+
+I also made sure that this is the token I should delete:
+
+FirebaseInstanceId.getInstance().getToken(FirebaseInstanceId.getInstance().getId(), FirebaseMessaging.INSTANCE_ID_SCOPE)
+
+
+or simply FirebaseInstanceId.getInstance().getToken()).
+
+I also tried FirebaseInstanceId.getInstance().deleteInstanceId(), but then the next time I call FirebaseInstanceId.getInstance.getToken I receive null (it works on the second try).
+
+I guess, after deleteInstanceId I could immediately call getToken() again, but it looks like a hack. And also there's this answer which states that it shouldn't be done, but it proposes deleting the token which apparently doesn't work.
+
+So what is the right method to handle this?
+    
+===============================================================================================
+42
+A:Okay. So I managed to do some testing and have concluded the following:
+
+
+deleteToken() is the counterpart of getToken(String, String), but not for getToken().
+
+
+It only works if the Sender ID you are passing is a different Sender ID (not the same ID that can be seen in your google-services.json). For example, you want to allow a different Server to send to your app, you call getToken("THEIR_SENDER_ID", "FCM") to give them authorization to send to your app. This will return a different registration token that corresponds only to that specific sender.
+
+In the future, if you chose to remove their authorization to send to your app, you'll then have to make use of deleteToken("THEIR_SENDER_ID", "FCM"). This will invalidate the corresponding token, and when the Sender attempts to send a message, as the intended behavior, they will receive a NotRegistered error.
+
+
+In order to delete the token for your own Sender, the correct handling is to use deleteInstanceId().
+
+
+Special mentioning this answer by @Prince, specifically the code sample for helping me with this.
+
+As @Micha\xc5\x82K already doing in his post, after calling the deleteInstanceId(), getToken() should be called in order to send a request for a new token. However, you don't have to call it the second time. So long as onTokenRefresh() onNewToken() is implemented, it should automatically trigger providing you the new token.
+
+For short, deleteInstanceId() > getToken() > check onTokenRefresh() onNewToken().
+
+Note: Calling deleteInstanceId() will not only delete the token for your own app. It will delete all topic subscriptions and all other tokens associated with the app instance.
+
+
+
+Are you positive you're calling deleteToken() properly? The value for audience should be (also seen from my answer that you linked) is "set to the app server's sender ID". You're passing the getId() value which is not the same as the Sender ID (it contains the app instance id value). Also, how are you sending the message (App Server or Notifications Console)?
+
+getToken() and getToken(String, String) returns different tokens. See my answer here. 
+
+
+  I also tried FirebaseInstanceId.getInstance().deleteInstanceId(), but then the next time I call FirebaseInstanceId.getInstance.getToken I receive null (it works on the second try).
+
+
+It's probably because the first time you're calling the getToken(), it's still being generated. It's just the intended behavior.
+
+
+  I guess, after deleteInstanceId I could immediately call getToken() again, but it looks like a hack.
+
+
+Not really. It's how you'll get the new generated (provided that it is already generated) token. So I think it's fine.
+    

@@ -1,0 +1,142 @@
+929
+Q:I was exploring RecyclerView and I was surprised to see that RecyclerView does not have onItemClickListener(). Because RecyclerView extends     
+
+
+  android.view.ViewGroup
+
+
+and ListView extends 
+
+
+  android.widget.AbsListView
+
+
+.  However I solved my problem by writing onClick in my RecyclerView.Adapter:
+
+public static class ViewHolder extends RecyclerView.ViewHolder implements OnClickListener {
+
+    public TextView txtViewTitle;
+    public ImageView imgViewIcon;
+
+    public ViewHolder(View itemLayoutView) {
+        super(itemLayoutView);
+        txtViewTitle = (TextView) itemLayoutView.findViewById(R.id.item_title);
+        imgViewIcon = (ImageView) itemLayoutView.findViewById(R.id.item_icon);
+    }
+
+    @Override
+    public void onClick(View v) {
+
+    }
+}
+
+
+But still I want to know why Google removed onItemClickListener()? 
+
+Is there a performance issue or something else?
+    
+===============================================================================================
+1191
+A:tl;dr 2016 Use RxJava and a PublishSubject to expose an Observable for the clicks.
+
+public class ReactiveAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
+    String[] mDataset = { "Data", "In", "Adapter" };
+
+    private final PublishSubject<String> onClickSubject = PublishSubject.create();
+
+    @Override 
+    public void onBindViewHolder(final ViewHolder holder, int position) {
+        final String element = mDataset[position];
+
+        holder.itemView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+               onClickSubject.onNext(element);
+            }
+        });
+    }
+
+    public Observable<String> getPositionClicks(){
+        return onClickSubject.asObservable();
+    }
+}
+
+
+Original Post:
+
+Since the introduction of ListView, onItemClickListener has been problematic. The moment you have a click listener for any of the internal elements the callback would not be triggered but it wasn't notified or well documented (if at all) so there was a lot of confusion and SO questions about it.
+
+Given that RecyclerView takes it a step further and doesn't have a concept of a row/column, but rather an arbitrarily laid out amount of children, they have delegated the onClick to each one of them, or to programmer implementation.
+
+Think of Recyclerview not as a ListView 1:1 replacement but rather as a more flexible component for complex use cases. And as you say, your solution is what google expected of you. Now you have an adapter who can delegate onClick to an interface passed on the constructor, which is the correct pattern for both ListView and Recyclerview.
+
+public static class ViewHolder extends RecyclerView.ViewHolder implements OnClickListener {
+
+    public TextView txtViewTitle;
+    public ImageView imgViewIcon;
+    public IMyViewHolderClicks mListener;
+
+    public ViewHolder(View itemLayoutView, IMyViewHolderClicks listener) {
+        super(itemLayoutView);
+        mListener = listener;
+        txtViewTitle = (TextView) itemLayoutView.findViewById(R.id.item_title);
+        imgViewIcon = (ImageView) itemLayoutView.findViewById(R.id.item_icon);
+        imgViewIcon.setOnClickListener(this);
+        itemLayoutView.setOnClickListener(this);
+    }
+
+    @Override
+    public void onClick(View v) {
+        if (v instanceof ImageView){
+           mListener.onTomato((ImageView)v);
+        } else {
+           mListener.onPotato(v);
+        }
+    }
+
+    public static interface IMyViewHolderClicks {
+        public void onPotato(View caller);
+        public void onTomato(ImageView callerImage);
+    }
+
+}
+
+
+and then on your adapter
+
+public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
+
+   String[] mDataset = { "Data" };
+
+   @Override
+   public MyAdapter.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+       View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.my_layout, parent, false);
+
+       MyAdapter.ViewHolder vh = new ViewHolder(v, new MyAdapter.ViewHolder.IMyViewHolderClicks() { 
+           public void onPotato(View caller) { Log.d("VEGETABLES", "Poh-tah-tos"); };
+           public void onTomato(ImageView callerImage) {\xc2\xa0Log.d("VEGETABLES", "To-m8-tohs"); }
+        });
+        return vh;
+    }
+
+    // Replace the contents of a view (invoked by the layout manager) 
+    @Override 
+    public void onBindViewHolder(ViewHolder holder, int position) {
+        // Get element from your dataset at this position 
+        // Replace the contents of the view with that element 
+        // Clear the ones that won't be used
+        holder.txtViewTitle.setText(mDataset[position]);
+    } 
+
+    // Return the size of your dataset (invoked by the layout manager) 
+    @Override 
+    public int getItemCount() { 
+        return mDataset.length;
+    } 
+  ...
+
+
+Now look into that last piece of code: onCreateViewHolder(ViewGroup parent, int viewType) the signature already suggest different view types. For each one of them you'll require a different viewholder too, and subsequently each one of them can have a different set of clicks. Or you can just create a generic viewholder that takes any view and one onClickListener and applies accordingly. Or delegate up one level to the orchestrator so several fragments/activities have the same list with different click behaviour. Again, all flexibility is on your side.
+
+It is a really needed component and fairly close to what our internal implementations and improvements to ListView were until now. It's good that Google finally acknowledges it.
+    

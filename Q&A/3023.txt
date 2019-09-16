@@ -1,0 +1,147 @@
+72
+Q:I am trying to make a view in android with rounded edges. The solution I found so far is to define a shape with rounded corners and use it as the background of that view.
+
+Here is what I did,define a drawable as given below
+
+
+    
+
+<padding
+android:top="2dp"
+android:bottom="2dp"/>
+<corners android:bottomRightRadius="20dp"
+android:bottomLeftRadius="20dp"
+android:topLeftRadius="20dp"
+android:topRightRadius="20dp"/>
+
+
+
+
+Now I used this as the background for my layout as below
+
+<LinearLayout
+        android:orientation="vertical"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="10dp"
+        android:layout_marginRight="10dp"
+        android:layout_marginBottom="10dp"
+        android:clipChildren="true"
+        android:background="@drawable/rounded_corner">
+
+
+This works perfectly fine, I can see that the view has rounded edges. 
+
+But my layout has got many other child views in it Say an ImageView or a MapView. When I place an ImageView inside the above layout, the corners of image are not clipped/cropped, instead it appears full.
+
+I have seen other workarounds to make it work like the one explained here. 
+
+
+  But is there a method to set rounded corners for a view and all its
+  child views are contained within that main view that has rounded
+  corners?
+
+
+Thanks.
+    
+===============================================================================================
+111
+A:Another approach is to make a custom layout class like the one below. This layout first draws its contents to an offscreen bitmap, masks the offscreen bitmap with a rounded rect and then draws the offscreen bitmap on the actual canvas.
+
+I tried it and it seems to work (at least for my simple testcase). It will of course affect performance compared to a regular layout.
+
+package com.example;
+
+import android.content.Context;
+import android.graphics.*;
+import android.util.AttributeSet;
+import android.util.DisplayMetrics;
+import android.util.TypedValue;
+import android.widget.FrameLayout;
+
+public class RoundedCornerLayout extends FrameLayout {
+    private final static float CORNER_RADIUS = 40.0f;
+
+    private Bitmap maskBitmap;
+    private Paint paint, maskPaint;
+    private float cornerRadius;
+
+    public RoundedCornerLayout(Context context) {
+        super(context);
+        init(context, null, 0);
+    }
+
+    public RoundedCornerLayout(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        init(context, attrs, 0);
+    }
+
+    public RoundedCornerLayout(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+        init(context, attrs, defStyle);
+    }
+
+    private void init(Context context, AttributeSet attrs, int defStyle) {
+        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        cornerRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, CORNER_RADIUS, metrics);
+
+        paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        maskPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        maskPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+
+        setWillNotDraw(false);
+    }
+
+    @Override
+    public void draw(Canvas canvas) {
+        Bitmap offscreenBitmap = Bitmap.createBitmap(canvas.getWidth(), canvas.getHeight(), Bitmap.Config.ARGB_8888);
+        Canvas offscreenCanvas = new Canvas(offscreenBitmap);
+
+        super.draw(offscreenCanvas);
+
+        if (maskBitmap == null) {
+            maskBitmap = createMask(canvas.getWidth(), canvas.getHeight());
+        }
+
+        offscreenCanvas.drawBitmap(maskBitmap, 0f, 0f, maskPaint);
+        canvas.drawBitmap(offscreenBitmap, 0f, 0f, paint);
+    }
+
+    private Bitmap createMask(int width, int height) {
+        Bitmap mask = Bitmap.createBitmap(width, height, Bitmap.Config.ALPHA_8);
+        Canvas canvas = new Canvas(mask);
+
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.WHITE);
+
+        canvas.drawRect(0, 0, width, height, paint);
+
+        paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+        canvas.drawRoundRect(new RectF(0, 0, width, height), cornerRadius, cornerRadius, paint);
+
+        return mask;
+    }
+}
+
+
+Use this like a normal layout:
+
+<com.example.RoundedCornerLayout
+    android:layout_width="200dp"
+    android:layout_height="200dp">
+
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:src="@drawable/test"/>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="100dp"
+        android:background="#ff0000"
+        />
+
+</com.example.RoundedCornerLayout>
+
+    

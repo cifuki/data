@@ -1,0 +1,92 @@
+58
+Q:I'm attempting to send out a notification to all app users (on Android), essentially duplicating what happens when a notification is sent via the Firebase admin console. Here is the CURL command I begin with:
+
+curl --insecure --header "Authorization: key=AIzaSyBidmyauthkeyisfineL-6NcJxj-1JUvEM" --header "Content-Type:application/json" -d "{\\"notification\\":{\\"title\\":\\"note-Title\\",\\"body\\":\\"note-Body\\"}}" https://fcm.googleapis.com/fcm/send
+
+Here's that JSON parsed out to be easier on your eyes:
+
+{
+"notification":{
+    "title":"note-Title",
+    "body":"note-Body"
+    }
+}
+
+
+The response that comes back is just two characters:
+
+to
+
+That's it, the word "to". (Headers report a 400) I suspect this has to do with not having a "to" in my JSON. What would one even put for a "to"? I have no topics defined, and the devices have not registered themselves for anything. Yet, they are still able to receive notifications from the Firebase admin panel.
+
+I'm want to attempt a "data only" JSON package due to the amazing limitation of Firebase notification processing whereby if your app is in the foreground, the notification gets processed by YOUR handler, but if your app is in the background, it gets processed INTERNALLY by the Firebase service and never passed to your notification handler. APPARENTLY this can be worked around if you submit your notification request via the API, but ONLY if you do it with data-only. (Which then breaks the ability to handle iOS and Android with the same message.) Replacing "notification" with "data" in any of my JSON has no effect.
+
+Ok, then I attempted the solution here: Firebase Java Server to send push notification to all devices
+which seems to me to say "Ok, even though notifications to everyone is possible via the Admin console... it's not really possible via the API." The workaround is to have each client subscribe to a topic, and then push out the notification to that topic. So first the code in onCreate:
+
+FirebaseMessaging.getInstance().subscribeToTopic("allDevices");
+
+
+then the new JSON I send:
+
+{
+"notification":{
+    "title":"note-Title",
+    "body":"note-Body"
+    },
+"to":"allDevices"
+}
+
+
+So now I'm getting a real response from the server at least. JSON response:
+
+{
+"multicast_id":463numbersnumbers42000,
+"success":0,
+"failure":1,
+"canonical_ids":0,
+"results":
+    [
+    {
+    "error":"InvalidRegistration"
+    }
+    ]
+}
+
+
+And that comes with a HTTP code 200. Ok... according to https://firebase.google.com/docs/cloud-messaging/http-server-ref a 200 code with "InvalidRegistration" means a problem with the registration token. Maybe? Because that part of the documentation is for the messaging server. Is the notification server the same? Unclear. I see elsewhere that the topic might take hours before it's active. It seems like that would make it useless for creating new chat rooms, so that seems off as well.
+
+I was pretty excited when I could code up an app from scratch that got notifications in just a few hours when I had never used Firebase before. It seems like it has a long way to go before it reaches the level of, say, the Stripe.com documentation. 
+
+Bottom line: does anyone know what JSON to supply to send a message out to all devices running the app to mirror the Admin console functionality?
+    
+===============================================================================================
+77
+A:Firebase Notifications doesn't have an API to send messages. Luckily it is built on top of Firebase Cloud Messaging, which has precisely such an API.
+
+With Firebase Notifications and Cloud Messaging, you can send so-called downstream messages to devices in three ways:
+
+
+to specific devices, if you know their device IDs
+to groups of devices, if you know the registration IDs of the groups
+to topics, which are just keys that devices can subscribe to
+
+
+You'll note that there is no way to send to all devices explicitly. You can build such functionality with each of these though.
+
+For sending to a topic you have a syntax error in your command. Topics are identified by starting with /topics/. Since you don't have that in your code, the server interprets allDevices as a device id. Since it is an invalid format for a device registration token, it raises an error.
+
+From the documentation on sending messages to topics:
+
+https://fcm.googleapis.com/fcm/send
+Content-Type:application/json
+Authorization:key=AIzaSyZ-1u...0GBYzPu7Udno5aA
+
+{
+  "to": "/topics/foo-bar",
+  "data": {
+    "message": "This is a Firebase Cloud Messaging Topic Message!",
+   }
+}
+
+    

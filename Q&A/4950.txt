@@ -1,0 +1,83 @@
+49
+Q:When creating a custom component in android it is often asked how to create and pass through the attrs property to the constructor.
+
+It is often suggested that when creating a component in java that you simply use the default constructor, i.e. 
+
+new MyComponent(context);
+
+
+rather than attempting to create an attrs object to pass through to the overloaded constructor often seen in xml based custom components. I've tried to create an attrs object and it doesn't seem either easy or at all possible (without an exceedingly complicated process), and by all accounts isn't really required. 
+
+My question is then: What is the most efficient way of construction a custom component in java that passes or sets properties that would have otherwise been set by the attrs object when inflating a component using xml?
+    
+===============================================================================================
+95
+A:(Full disclosure:  This question is an offshoot of Creating custom view)
+
+You can create constructors beyond the three standard ones inherited from View that add the attributes you want...
+
+MyComponent(Context context, String foo)
+{
+  super(context);
+  // Do something with foo
+}
+
+
+...but I don't recommend it.  It's better to follow the same convention as other components.  This will make your component as flexible as possible and will prevent developers using your component from tearing their hair out because yours is inconsistent with everything else:
+
+1.  Provide getters and setters for each of the attributes:
+
+public void setFoo(String new_foo) { ... }
+public String getFoo() { ... }
+
+
+2.  Define the attributes in res/values/attrs.xml so they can be used in XML.
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <declare-styleable name="MyComponent">
+    <attr name="foo" format="string" />
+  </declare-styleable>
+</resources>
+
+
+3.  Provide the three standard constructors from View.
+
+If you need to pick anything out of the attributes in one of the constructors that takes an AttributeSet, you can do...
+
+TypedArray arr = context.obtainStyledAttributes(attrs, R.styleable.MyComponent);
+CharSequence foo_cs = arr.getString(R.styleable.MyComponent_foo);
+if (foo_cs != null) {
+  // Do something with foo_cs.toString()
+}
+arr.recycle();  // Do this when done.
+
+
+With all that done, you can instantiate MyCompnent programmatically...
+
+MyComponent c = new MyComponent(context);
+c.setFoo("Bar");
+
+
+...or via XML:
+
+<!-- res/layout/MyActivity.xml -->
+<LinearLayout
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:blrfl="http://schemas.android.com/apk/res-auto"
+  ...etc...
+>
+  <com.blrfl.MyComponent
+   android:id="@+id/customid"
+   android:layout_weight="1"
+   android:layout_width="fill_parent"
+   android:layout_height="fill_parent"
+   android:layout_gravity="center"
+   blrfl:foo="bar"
+   blrfl:quux="bletch"
+  />
+</LinearLayout>
+
+
+Additional Resource - https://developer.android.com/training/custom-views/create-view
+    

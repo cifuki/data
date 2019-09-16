@@ -1,0 +1,35 @@
+39
+Q:I would like to know high level idea of how Android Modem code will call/pass message to Android application layer. Say we take SMS for example. If network sends SMS and Modem (say Qualcomm C code parses it) how is it transmitted to Android Application layer?
+
+Is there always a JNI call happening? as interface between modem and Android? Can you please share the information with us. Thanks
+    
+===============================================================================================
+72
+A:In almost all android source base as found in the AOSP/CAF/CM source (Android Open Source Project, CodeAurora Forum, Cyanogenmod respectively), will have C code called the rild, (Radio Interface Layer Daemon). This is commonly found within the /hardware/ril of the source tree. 
+
+This daemon runs from the moment Android boots up, and creates a socket called /dev/socket/rild and /dev/socket/rild-debug. There will be a proprietary library coming from Qualcomm, HTC, that gets dynamically loaded at run time upon boot. It is that proprietary library that in turn, communicates to the radio firmware. And the rild's hooks for the call-backs into the proprietary library is established there and then.
+
+At the rild layer, via the aforementioned socket, is how the Android layer (found in the source tree, frameworks/base/telephony/com/android/internal/telephony/RIL.java) communicates. 
+
+On the Java side, it opens the socket for reading/writing, along with establishing intents and setting up delegates for broadcasting/receiving events via this socket.
+
+For example, an incoming call, the proprietary library, invokes a callback hook as set up by rild. The rild writes standard generic AT Hayes modem commands to the socket, on the Java side, it reads and interprets the modem commands, and from there, the PhoneManager broadcasts CALL_STATE_RINGING, in which Phone application (found in the source packages/apps/Phone) has registered a receiver and kickstarts the User interface, and that is how  you get to answer the call.
+
+Another example, making an outgoing call, you dial a number on Android, the intent gets created and which in turn the PhoneManager (This is the root of it all, here, cannot remember top of my head, think its in frameworks/base/core/java somewhere in the source tree) receives the intent, convert it into either a sequence of AT Hayes modem commands, write it out to the socket, the rild then invokes a callback to the proprietary library, the proprietary library in turn delegates to the radio firmware.
+
+Final example, sending text messages, from the Messaging (found in packages/apps/Mms source tree) application, the text you type, gets shoved into an intent, the PhoneManager receives the intent, converts the text into GSM-encoded using 7-bit GSM letters (IIRC), gets written out to the socket, the rild in turn invokes a callback to the proprietary library, the proprietary library in turn delegates to the radio firmware and the text has now left the domain of the handset and is in the airwaves somewhere... :) Along with sending a broadcast message within Android itself, provided that READ_PHONE_STATE permission is used and specified in the AndroidManifest.xml.
+
+Likewise conversely, when receiving a text message, it is in the reverse, radio firmware receives some bytes, the proprietary library invokes the callback to the rild, and thus writes out the bytes to the socket. On the Java side, it reads from it, and decodes the sequence of bytes, converts it to text as we know of, fires a broadcast with a message received notification. The Messaging application in turn, has registered receivers for the said broadcast, and sends an intent to the notification bar to say something like "New message received from +xxxxxx"
+
+The intents are found in frameworks/base/telephony/java/com/android/internal/telephony/TelephonyIntents.java
+
+That is the gist of how the telephony system works, the real beauty is, that it uses generic AT Hayes modem commands thusly simplifying and hiding the real proprietary mechanisms.
+
+As for the likes of Qualcomm, HTC, forget about it in thinking they'd ever open source the library in question because the radio telephony layer is embedded within the S-o-C (System on a Chip) circuitry! 
+
+Which is also, as a side note, why its risky to flash radio firmware, some handsets provide the capability to do it, flash the wrong firmware (such as an incompatible or not suitable for handset), kiss the handset good-bye and use that as a door stopper or paper-weight! :)
+
+It should be noted, that there is zero JNI mechanisms involved. 
+
+This is from my understanding of how it works, from what I can tell is this, the radio firmware is loaded into a memory address somewhere where the linux kernel has reserved the address space and does not touch it, something like back in the old PC days when DOS booted up, there was reserved addresses used by the BIOS, I think, its similar here, the addresses marked as reserved are occupied by the firmware, in which the proprietary radio library talks to it - and since the library is running in the address space owned by the kernel, a l\xc3\xa1 owned by root with root privileges, it can "talk" to it, if you think of using the old BASIC dialect of peek and poke, I'd guess you would not be far off the mark there, by writing a certain sequence of bytes to that address, the radio firmware acts on it, almost like having a interrupt vector table... this am guessing here how it works exactly. :)
+    

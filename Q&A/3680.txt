@@ -1,0 +1,59 @@
+62
+Q:What is the difference between screen and view in the context of these two methods?
+
+I have a button and I want to get the x coordinate of its center.
+
+I guess this would be enough:
+
+public int getButtonXPosition() {
+    return (button.getLeft()+button.getRight())/2;
+}
+
+
+but then, what difference would it make if I would have used 
+
+getLocationOnScreen() or getLocationInWindow() ?
+
+(adding half of the button's width to that, of course)
+    
+===============================================================================================
+109
+A:I don't think this answer is correct. If I create a new project, and edit only the MainActivity by adding the following snippet:
+
+public boolean dispatchTouchEvent(MotionEvent ev) {
+    View contentsView = findViewById(android.R.id.content);
+
+    int test1[] = new int[2];
+    contentsView.getLocationInWindow(test1);
+
+    int test2[] = new int[2];
+    contentsView.getLocationOnScreen(test2);
+
+    System.out.println(test1[1] + " " + test2[1]);
+
+    return super.dispatchTouchEvent(ev);
+}
+
+
+I will see printed to the console 108 108. This is using a Nexus 7 running 4.3. I have similar results using emulators running android versions as far back as 2.2.
+
+Normal activity windows will have FILL_PARENTxFILL_PARENT as their WindowManager.LayoutParams, which results in them laying out to the size of the entire screen. The Window is laid out underneath (in regards to z-order, not y-coordinates) the statusbar and other decorations, so I believe a more accurate chart would be:
+
+|--phone screen-----activity window---| 
+|--------status bar-------------------| 
+|                                     | 
+|                                     | 
+|-------------------------------------| 
+
+
+If you step through the source of these two methods, you will see that getLocationInWindow traverses up your view's view hierarchy up to the RootViewImpl, summing view coordinates and
+subtracting parent scroll offsets. In the case I described above the ViewRootImpl is getting the status bar height from the WindowSession, and passing it down through fitSystemWindows to the ActionBarOverlayLayout, which adds this value to the actionbar height. ActionBarOverlayLayout then takes this summed value and applies it to its content view, which is the parent of your layout, as a margin.
+
+So, your content is laid out lower than the status bar not as a result of the window starting at a lower y coordinate than the status bar, but instead as a result of a margin being applied to your activity's content view.
+
+If you peer into the getLocationOnScreen source you'll see it merely calls getLocationInWindow and then adds the Window's left and top coords (which are also passed to the View by ViewRootImpl, which fetches them from the WindowSession). In the normal case, these values will both be zero. There are some situations where these values may be non-zero, for example a dialog window that is placed in the middle of the screen.
+
+
+
+So, to summarize: A normal activity's window fills the entire screen, even the space under the status bar and decorations. The two methods in question will return the same x and y coordinates. Only in special cases such as dialogs where the Window is actually offset will these two values differ.
+    

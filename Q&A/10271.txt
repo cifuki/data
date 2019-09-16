@@ -1,0 +1,137 @@
+27
+Q:How correctly get access to "view" variable in onCreate function ? I want loadUrl() but it throws an error on line with, public Emitter.Listener onServerReceive = new Emitter.Listener() { on view = loadUrl: 
+
+
+E/AndroidRuntime: FATAL EXCEPTION: main java.lang.NullPointerException
+    at com.myapp.MainActivity$7$1.run(MainActivity.java:399)
+    at android.os.Handler.handleCallback(Handler.java:615)
+    at android.os.Handler.dispatchMessage(Handler.java:92)
+    at android.os.Looper.loop(Looper.java:177)
+    at android.app.ActivityThread.main(ActivityThread.java:4947)
+    at java.lang.reflect.Method.invokeNative(Native Method)
+    at java.lang.reflect.Method.invoke(Method.java:511)
+    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1038)
+    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:805)
+    at dalvik.system.NativeStart.main(Native Method)
+
+
+
+import com.github.nkzawa.emitter.Emitter;
+....
+
+public class MainActivity extends Activity {
+    WebView view;
+    Socket mSocket;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        ...
+        view = (WebView) findViewById(R.id.webView);
+        view.getSettings().setJavaScriptEnabled(true);
+        ...
+        view.loadUrl("file:///android_asset/loading.html");
+
+    }
+
+    ...
+
+    @JavascriptInterface
+    public void websocket_start(){
+        try {
+            mSocket = IO.socket("http://some web com:8888");
+            mSocket.on("connect", onConnect);
+            mSocket.on("server_receive", onServerReceive);
+            mSocket.connect();
+        } catch (URISyntaxException e) {}
+    }
+
+
+public Emitter.Listener onConnect = new Emitter.Listener() {
+    @Override
+    public void call(final Object... args) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                JSONObject jsonRootObject = new JSONObject();
+                try {
+                    jsonRootObject = new JSONObject("{ pn: " + global_login + ", pp: " + global_pass + " }");
+                } catch (JSONException e) {
+                    throw new RuntimeException(e);
+                }
+                mSocket.emit("Auth", jsonRootObject);
+            }
+        });
+    }
+};
+
+    public Emitter.Listener onServerReceive = new Emitter.Listener() {
+        @Override
+        public void call(final Object... args) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    final String argsStr = TextUtils.join(",", args);
+PROBLEM HERE "view" is null ->         view.loadUrl("javascript:receive('" + argsStr + "')");
+                }
+            });
+        }
+    };
+
+}
+
+
+What do I do wrong, how to fix it ? thanks!
+    
+===============================================================================================
+15
+A:You're trying to use view before it has been initialized. You need to wait until after view = (WebView) findViewById(R.id.webView); has been called in order to initialize onServerReceive.
+
+EDIT: Looking at this some more what's more likely happening is that you're using your instance of onServerRecieve before view is initialized in onCreate().
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+    ...
+    view = (WebView) findViewById(R.id.webView);
+    onServerRecieve = createListener()
+    view.getSettings().setJavaScriptEnabled(true);
+    ...
+    view.loadUrl("file:///android_asset/loading.html");
+
+}
+
+...
+
+@JavascriptInterface
+public void websocket_start(){
+    try {
+        mSocket = IO.socket("http://some web com:8888");
+        mSocket.on("connect", onConnect);
+        mSocket.on("server_receive", onServerReceive);
+        mSocket.connect();
+    } catch (URISyntaxException e) {}
+}
+
+private Emitter.Listener createListener() {
+    return new Emitter.Listener() {
+    @Override
+    public void call(final Object... args) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                final String argsStr = TextUtils.join(",", args);
+                view.loadUrl("javascript:receive('" + argsStr + "')");
+            }
+        });
+    }
+};
+}
+
+public Emitter.Listener onServerReceive;
+
+}
+
+    

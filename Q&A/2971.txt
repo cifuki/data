@@ -1,0 +1,103 @@
+73
+Q:I downloaded and installed:
+
+
+JDK (jdk-9.0.1_osx-x64_bin.dmg) from Oracle here
+Android SDK (sdk-tools-darwin-3859397.zip) from Google here.
+
+
+After configuring the PATH variable, I tried running sdkmanager, which replaced the android command for managing SDK components. However, it failed as shown here:
+
+$ sdkmanager --list
+Exception in thread "main" java.lang.NoClassDefFoundError: javax/xml/bind/annotation/XmlSchema
+    at com.android.repository.api.SchemaModule$SchemaModuleVersion.<init>(SchemaModule.java:156)
+    at com.android.repository.api.SchemaModule.<init>(SchemaModule.java:75)
+    at com.android.sdklib.repository.AndroidSdkHandler.<clinit>(AndroidSdkHandler.java:81)
+    at com.android.sdklib.tool.SdkManagerCli.main(SdkManagerCli.java:117)
+    at com.android.sdklib.tool.SdkManagerCli.main(SdkManagerCli.java:93)
+Caused by: java.lang.ClassNotFoundException: javax.xml.bind.annotation.XmlSchema
+    at java.base/jdk.internal.loader.BuiltinClassLoader.loadClass(BuiltinClassLoader.java:582)
+    at java.base/jdk.internal.loader.ClassLoaders$AppClassLoader.loadClass(ClassLoaders.java:185)
+    at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:496)
+    ... 5 more
+
+
+Here is the Java version:
+
+$ java -version
+java version "9.0.1"
+Java(TM) SE Runtime Environment (build 9.0.1+11)
+Java HotSpot(TM) 64-Bit Server VM (build 9.0.1+11, mixed mode)
+
+
+Does anyone know how to fix it without going back to Java 8?
+
+Related Questions
+
+
+Failed to install android-sdk
+
+
+This post asked a similar question. However, the post is closed and the only answer suggests going back to Java 8.
+
+
+    
+===============================================================================================
+135
+A:With the help of this answer, I successfully solved the problem.
+
+We are going to apply a fix in sdkmanager. It is a shell script. It is located at $android_sdk/tools/bin, where $android_sdk is where you unzipped the Android SDK. 
+
+
+Open sdkmanager in your favorite editor.
+Locate the line which sets the DEFAULT_JVM_OPTSvariable. In my copy, it is at line 31:
+
+DEFAULT_JVM_OPTS='"-Dcom.android.sdklib.toolsdir=$APP_HOME"'
+
+Append the following options to the variable: -XX:+IgnoreUnrecognizedVMOptions --add-modules java.se.ee. Please pay attention to the quotes. In my copy, the line becomes:
+
+DEFAULT_JVM_OPTS='"-Dcom.android.sdklib.toolsdir=$APP_HOME" -XX:+IgnoreUnrecognizedVMOptions --add-modules java.se.ee'
+
+Save the file and quit the editor.
+Run the command again.
+
+
+Here is the result:
+
+$ sdkmanager --list
+Installed packages:
+  Path    | Version | Description              | Location
+  ------- | ------- | -------                  | ------- 
+  tools   | 26.0.1  | Android SDK Tools 26.0.1 | tools/  
+
+Available Packages:
+  Path                              | Version      | Description                      
+  -------                           | -------      | -------                          
+  add-ons;addon-g..._apis-google-15 | 3            | Google APIs                      
+  add-ons;addon-g..._apis-google-16 | 4            | Google APIs                      
+  add-ons;addon-g..._apis-google-17 | 4            | Google APIs                      
+  add-ons;addon-g..._apis-google-18 | 4            | Google APIs                      
+  add-ons;addon-g..._apis-google-19 | 20           | Google APIs                      
+  add-ons;addon-g..._apis-google-21 | 1            | Google APIs                      
+  add-ons;addon-g..._apis-google-22 | 1            | Google APIs                      
+  add-ons;addon-g..._apis-google-23 | 1            | Google APIs                      
+  add-ons;addon-g..._apis-google-24 | 1            | Google APIs
+...
+
+
+Hola! It works!
+
+-- Edit: 2017-11-07 --
+
+Please note that you may need to apply the fix above again after running sdkmanager --update, since the sdkmanager shell script may be overridden if the tools package is updated.
+
+Related Answers
+
+
+https://stackoverflow.com/a/43574427/142239
+
+
+@andy-guibert pointed out the necessary options to make this work. He also briefly what those mysterious options mean.
+
+
+    

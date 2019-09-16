@@ -1,0 +1,56 @@
+32
+Q:I would like to know if there are known issues on Android with HttpUrlConnection and POST requests. We are experiencing intermittent EOFExceptions when making POST requests from an Android client. Retrying the same request will eventually work. Here is a sample stack trace:
+
+java.io.EOFException
+at libcore.io.Streams.readAsciiLine(Streams.java:203)
+at libcore.net.http.HttpEngine.readResponseHeaders(HttpEngine.java:579)
+at libcore.net.http.HttpEngine.readResponse(HttpEngine.java:827)
+at libcore.net.http.HttpURLConnectionImpl.getResponse(HttpURLConnectionImpl.java:283)
+at libcore.net.http.HttpURLConnectionImpl.getResponseCode(HttpURLConnectionImpl.java:497)
+at libcore.net.http.HttpsURLConnectionImpl.getResponseCode(HttpsURLConnectionImpl.java:134)
+
+
+There are many similar bug reports and posts to stack overflow but I cannot understand if there really is an issue and if so, what versions of Android are affected and what the proposed fix/work around is.
+
+Here are some of the similar reports I am referring to:
+
+
+Android HttpsUrlConnection eofexception
+Android HttpURLConnection throwing EOFException
+EOFException and FileNotFoundException in HttpURLConnection getInputStream()
+https://code.google.com/p/google-http-java-client/issues/detail?id=213
+https://code.google.com/p/android/issues/detail?id=29509
+https://code.google.com/p/google-http-java-client/issues/detail?id=230
+https://code.google.com/p/android/issues/detail?id=41576
+
+
+Here is a potential Android framework fix
+
+
+https://android.googlesource.com/platform/libcore/+/19aa40c81c48ff98ccc7272f2a3c41479b806376
+
+
+I do know there was an issue with poisoned connections in the connection pool in pre-Froyo but these issues are occurring on new ICS+ devices exclusively. If there were a problem on later devices I would expect some kind of official Android documentation of the issue.
+    
+===============================================================================================
+12
+A:Our conclusion is that there is an issue in the Android platform. Our workaround was to catch the EOFException and retry the request N number of times. Below is the pseudo code:
+
+private static final int MAX_RETRIES = 3;
+
+private ResponseType fetchResult(RequestType request) {
+    return fetchResult(request, 0);
+}
+
+private ResponseType fetchResult(RequestType request, int reentryCount) {
+    try {
+        // attempt to execute request
+    } catch (EOFException e) {
+        if (reentryCount < MAX_RETRIES) {
+            fetchResult(request, reentryCount + 1);
+        }
+    }
+    // continue processing response
+}
+
+    

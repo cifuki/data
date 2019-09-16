@@ -1,0 +1,261 @@
+111
+Q:Even if this thread has accepted answer, feel free to propose other ideas, you do use or like
+
+
+
+I've met these articles:
+
+
+Restful API service
+Java REST client API for Android
+
+
+And that lead me to this Google I/O 2010 video about REST client applications
+
+
+http://www.youtube.com/watch?v=xHXn3Kg2IQE&feature=player_embedded
+
+
+Since now, I've been creating REST component as static component in my Application controller class.   
+
+From now, I think, I should change the pattern. Somebody pointed out that Google IOSched application is great sample of how to write REST clients on Android. Somebody else told that this ways is too overcomplicated.  
+
+So, can anybody please show us what is the best practice? In short and simple way.
+The IOSched application is too complex for sample use-case.
+    
+===============================================================================================
+95
+A:EDIT 2 (October 2017):
+
+It is 2017. Just use Retrofit. There is almost no reason to use anything else.
+
+EDIT:
+
+The original answer is more than a year and a half old at the time of this edit. Although the concepts presented in original answer still hold, as other answers point out, there are now libraries out there that make this task easier for you. More importantly, some of these libraries handle device configuration changes for you.
+
+The original answer is retained below for reference. But please also take the time to examine some of the Rest client libraries for Android to see if they fit your use cases. The following is a list of some of the libraries I've evaluated. It is by no means intended to be an exhaustive list.
+
+
+Volley (this is from Google) 
+RESTDroid
+RoboSpice
+Retrofit
+
+
+
+
+Original Answer:
+
+Presenting my approach to having REST clients on Android. I do not claim it is the best though :) Also, note that this is what I came up with in response to my requirement. You might need to have more layers/add more complexity if your use case demands it. For example, I do not have local storage at all; because my app can tolerate loss of a few REST responses.
+
+My approach uses just AsyncTasks under the covers. In my case, I "call" these Tasks from my Activity instance; but to fully account for cases like screen rotation, you might choose to call them from a Service or such.
+
+I consciously chose my REST client itself to be an API. This means, that the app which uses my REST client need not even be aware of the actual REST URL's and the data format used. 
+
+The client would have 2 layers:
+
+
+Top layer: The purpose of this layer is to provide methods which mirror the functionality of the REST API. For example, you could have one Java method corresponding to every URL in your REST API (or even two - one for GETs and one for POSTs).
+This is the entry point into the REST client API. This is the layer the app would use normally. It could be a singleton, but not necessarily.
+The response of the REST call is parsed by this layer into a POJO and returned to the app.
+This is the lower level AsyncTask layer, which uses HTTP client methods to actually go out and make that REST call.
+
+
+In addition, I chose to use a Callback mechanism to communicate the result of the AsyncTasks back to the app.
+
+Enough of text. Let's see some code now. Lets take a hypothetical REST API URL - http://myhypotheticalapi.com/user/profile
+
+The top layer might look like this:
+
+   /**
+ * Entry point into the API.
+ */
+public class HypotheticalApi{   
+    public static HypotheticalApi getInstance(){
+        //Choose an appropriate creation strategy.
+    }
+
+    /**
+     * Request a User Profile from the REST server.
+     * @param userName The user name for which the profile is to be requested.
+     * @param callback Callback to execute when the profile is available.
+     */
+    public void getUserProfile(String userName, final GetResponseCallback callback){
+        String restUrl = Utils.constructRestUrlForProfile(userName);
+        new GetTask(restUrl, new RestTaskCallback (){
+            @Override
+            public void onTaskComplete(String response){
+                Profile profile = Utils.parseResponseAsProfile(response);
+                callback.onDataReceived(profile);
+            }
+        }).execute();
+    }
+
+    /**
+     * Submit a user profile to the server.
+     * @param profile The profile to submit
+     * @param callback The callback to execute when submission status is available.
+     */
+    public void postUserProfile(Profile profile, final PostCallback callback){
+        String restUrl = Utils.constructRestUrlForProfile(profile);
+        String requestBody = Utils.serializeProfileAsString(profile);
+        new PostTask(restUrl, requestBody, new RestTaskCallback(){
+            public void onTaskComplete(String response){
+                callback.onPostSuccess();
+            }
+        }).execute();
+    }
+}
+
+
+/**
+ * Class definition for a callback to be invoked when the response data for the
+ * GET call is available.
+ */
+public abstract class GetResponseCallback{
+
+    /**
+     * Called when the response data for the REST call is ready. <br/>
+     * This method is guaranteed to execute on the UI thread.
+     * 
+     * @param profile The {@code Profile} that was received from the server.
+     */
+    abstract void onDataReceived(Profile profile);
+
+    /*
+     * Additional methods like onPreGet() or onFailure() can be added with default implementations.
+     * This is why this has been made and abstract class rather than Interface.
+     */
+}
+
+/**
+ * 
+ * Class definition for a callback to be invoked when the response for the data 
+ * submission is available.
+ * 
+ */
+public abstract class PostCallback{
+    /**
+     * Called when a POST success response is received. <br/>
+     * This method is guaranteed to execute on the UI thread.
+     */
+    public abstract void onPostSuccess();
+
+}
+
+
+Note that the app doesn't use the JSON or XML (or whatever other format) returned by the REST API directly. Instead, the app only sees the bean Profile.
+
+Then, the lower layer (AsyncTask layer) might look like this:
+
+/**
+ * An AsyncTask implementation for performing GETs on the Hypothetical REST APIs.
+ */
+public class GetTask extends AsyncTask<String, String, String>{
+
+    private String mRestUrl;
+    private RestTaskCallback mCallback;
+
+    /**
+     * Creates a new instance of GetTask with the specified URL and callback.
+     * 
+     * @param restUrl The URL for the REST API.
+     * @param callback The callback to be invoked when the HTTP request
+     *            completes.
+     * 
+     */
+    public GetTask(String restUrl, RestTaskCallback callback){
+        this.mRestUrl = restUrl;
+        this.mCallback = callback;
+    }
+
+    @Override
+    protected String doInBackground(String... params) {
+        String response = null;
+        //Use HTTP Client APIs to make the call.
+        //Return the HTTP Response body here.
+        return response;
+    }
+
+    @Override
+    protected void onPostExecute(String result) {
+        mCallback.onTaskComplete(result);
+        super.onPostExecute(result);
+    }
+}
+
+    /**
+     * An AsyncTask implementation for performing POSTs on the Hypothetical REST APIs.
+     */
+    public class PostTask extends AsyncTask<String, String, String>{
+        private String mRestUrl;
+        private RestTaskCallback mCallback;
+        private String mRequestBody;
+
+        /**
+         * Creates a new instance of PostTask with the specified URL, callback, and
+         * request body.
+         * 
+         * @param restUrl The URL for the REST API.
+         * @param callback The callback to be invoked when the HTTP request
+         *            completes.
+         * @param requestBody The body of the POST request.
+         * 
+         */
+        public PostTask(String restUrl, String requestBody, RestTaskCallback callback){
+            this.mRestUrl = restUrl;
+            this.mRequestBody = requestBody;
+            this.mCallback = callback;
+        }
+
+        @Override
+        protected String doInBackground(String... arg0) {
+            //Use HTTP client API's to do the POST
+            //Return response.
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            mCallback.onTaskComplete(result);
+            super.onPostExecute(result);
+        }
+    }
+
+    /**
+     * Class definition for a callback to be invoked when the HTTP request
+     * representing the REST API Call completes.
+     */
+    public abstract class RestTaskCallback{
+        /**
+         * Called when the HTTP request completes.
+         * 
+         * @param result The result of the HTTP request.
+         */
+        public abstract void onTaskComplete(String result);
+    }
+
+
+Here's how an app might use the API (in an Activity or Service):
+
+HypotheticalApi myApi = HypotheticalApi.getInstance();
+        myApi.getUserProfile("techie.curious", new GetResponseCallback() {
+
+            @Override
+            void onDataReceived(Profile profile) {
+                //Use the profile to display it on screen, etc.
+            }
+
+        });
+
+        Profile newProfile = new Profile();
+        myApi.postUserProfile(newProfile, new PostCallback() {
+
+            @Override
+            public void onPostSuccess() {
+                //Display Success
+            }
+        });
+
+
+I hope the comments are sufficient to explain the design; but I'd be glad to provide more info.
+    

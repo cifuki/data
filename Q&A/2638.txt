@@ -1,0 +1,130 @@
+80
+Q:public class MainActivity extends Activity implements MainMenuFragment.OnMainMenuItemSelectedListener {
+
+ @Override
+ public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    FragmentManager fragmentManager = getFragmentManager();
+    FragmentTransaction fragmentTransaction = fragmentManager
+            .beginTransaction();
+
+    // add menu fragment
+    MainMenuFragment myFragment = new MainMenuFragment();
+    fragmentTransaction.add(R.id.menu_fragment, myFragment);
+
+    //add content
+    DetailPart1 content1= new DetailPart1 ();
+    fragmentTransaction.add(R.id.content_fragment, content1);
+    fragmentTransaction.commit();
+
+}
+public void onMainMenuSelected(String tag) {
+  //next menu is selected replace existing fragment
+}
+
+
+I have a need to display two list views side by side ,menu on left and its content on right side,by default the first menu is selected and its content is displayed on right side.The Fragment that displays content is as below
+
+public class DetailPart1 extends Fragment {
+  ArrayList<HashMap<String, String>> myList = new ArrayList<HashMap<String, String>>();
+  ListAdapter adap;
+  ListView listview;
+
+  @Override
+  public void onActivityCreated(Bundle savedInstanceState) {
+      super.onActivityCreated(savedInstanceState);
+
+       if(savedInstanceState!=null){
+        myList = (ArrayList)savedInstanceState.getSerializable("MYLIST_obj");
+        adap = new LoadImageFromArrayListAdapter(getActivity(),myList );
+        listview.setAdapter(adap);
+       }else{
+        //get list and load in list view
+        getlistTask = new GetALLListTasks().execute();
+    }
+
+
+     @Override
+   public View onCreateView(LayoutInflater inflater, ViewGroup container,
+        Bundle savedInstanceState) {
+    View v = inflater.inflate(R.layout.skyview_fragment, container,false);
+           return v;
+        }
+
+
+     @Override
+      public void onSaveInstanceState(Bundle outState) {
+         super.onSaveInstanceState(outState);
+          outState.putSerializable("MYLIST_obj", myList );
+        }
+    }
+
+
+The onActivityCreated and onCreateView is called twice ,there are many examples out there using fragments ,hence i am beginner in this segment i am unable relate the example with my problem .I need fool proof way to handle orientation change in a better way.I have NOT declared  android:configChanges in manifest file ,i need the activity destroy and recreate so that i can use different layout in landscape mode.Please help to a workaround  
+    
+===============================================================================================
+123
+A:You are creating a new fragment every time you turn the screen in your activity onCreate(); But you are also maintaining the old ones with super.onCreate(savedInstanceState);. So maybe set tag and find the fragment if it exist, or pass null bundle to super.
+
+This took me a while to learn and it can really be a bi**** when you are working with stuff like viewpager.
+
+I'd recommend you to read about fragments an extra time as this exact topic is covered. 
+
+Here is an example of how to handle fragments on a regular orientation change:
+
+Activity:
+
+public class MainActivity extends FragmentActivity {
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        if (savedInstanceState == null) {
+            TestFragment test = new TestFragment();
+            test.setArguments(getIntent().getExtras());
+            getSupportFragmentManager().beginTransaction().replace(android.R.id.content, test, "your_fragment_tag").commit();
+        } else {
+            TestFragment test = (TestFragment) getSupportFragmentManager().findFragmentByTag("your_fragment_tag");
+        }
+    }
+}
+
+
+Fragment:
+
+public class TestFragment extends Fragment {
+
+    public static final String KEY_ITEM = "unique_key";
+    public static final String KEY_INDEX = "index_key";
+    private String mTime;
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.fragment_layout, container, false);
+
+        if (savedInstanceState != null) {
+            // Restore last state
+            mTime = savedInstanceState.getString("time_key");
+        } else {
+            mTime = "" + Calendar.getInstance().getTimeInMillis();
+        }
+
+        TextView title = (TextView) view.findViewById(R.id.fragment_test);
+        title.setText(mTime);
+
+        return view;
+    }
+
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString("time_key", mTime);
+    }
+}
+
+    

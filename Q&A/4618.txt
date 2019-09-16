@@ -1,0 +1,63 @@
+52
+Q:Whenever I use addListenerForSingleValueEvent with setPersistenceEnabled(true), I only manage to get a local offline copy of DataSnapshot and NOT the updated DataSnapshot from the server.
+
+However, if I use addValueEventListener with setPersistenceEnabled(true), I can get the latest copy of DataSnapshot from the server.
+
+Is this normal for addListenerForSingleValueEvent as it only searches DataSnapshot locally (offline) and removes its listener after successfully retrieving DataSnapshot ONCE (either offline or online)?
+    
+===============================================================================================
+70
+A:How persistence works
+
+The Firebase client keeps a copy of all data you're actively listening to in memory. Once the last listener disconnects, the data is flushed from memory.
+
+If you enable disk persistence in a Firebase Android application with:
+
+Firebase.getDefaultConfig().setPersistenceEnabled(true); 
+
+
+The Firebase client will keep a local copy (on disk) of all data that the app has recently listened to.
+
+What happens when you attach a listener
+
+Say you have the following ValueEventListener:
+
+ValueEventListener listener = new ValueEventListener() {
+    @Override
+    public void onDataChange(DataSnapshot snapshot) {
+        System.out.println(snapshot.getValue());
+    }
+
+    @Override
+    public void onCancelled(FirebaseError firebaseError) {
+        // No-op
+    }
+};
+
+
+When you add a ValueEventListener to a location:
+
+ref.addValueEventListener(listener); 
+// OR
+ref.addListenerForSingleValueEvent(listener); 
+
+
+If the value of the location is in the local disk cache, the Firebase client will invoke onDataChange() immediately for that value from the local cache. If will then also initiate a check with the server, to ask for any updates to the value. It may subsequently invoke onDataChange() again if there has been a change of the data on the server since it was last added to the cache.
+
+What happens when you use addListenerForSingleValueEvent
+
+When you add a single value event listener to the same location:
+
+ref.addListenerForSingleValueEvent(listener);
+
+
+The Firebase client will (like in the previous situation) immediately invoke onDataChange() for the value from the local disk cache. It will not invoke the onDataChange() any more times, even if the value on the server turns out to be different. Do note that updated data still will be requested and returned on subsequent requests.
+
+This was covered previously in How does Firebase sync work, with shared data?
+
+Solution and workaround
+
+The best solution is to use addValueEventListener(), instead of a single-value event listener. A regular value listener will get both the immediate local event and the potential update from the server.
+
+As a workaround you can also call keepSynced(true) on the locations where you use a single-value event listener. This ensures that the data is updated whenever it changes, which drastically improves the chance that your single-value event listener will see the current value.
+    

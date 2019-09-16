@@ -1,0 +1,99 @@
+30
+Q:I'm trying to get this to work on Android 4.1 (using an  upgraded Asus Transformer tablet). Thanks to Alex's response to my previous question, I already was able to write some raw H.264 data to a file, but this file is only playable with ffplay -f h264, and it seems like it's lost all information regarding the framerate (extremely fast playback). Also the color-space looks incorrect (atm using the camera's default on encoder's side).
+
+public class AvcEncoder {
+
+private MediaCodec mediaCodec;
+private BufferedOutputStream outputStream;
+
+public AvcEncoder() { 
+    File f = new File(Environment.getExternalStorageDirectory(), "Download/video_encoded.264");
+    touch (f);
+    try {
+        outputStream = new BufferedOutputStream(new FileOutputStream(f));
+        Log.i("AvcEncoder", "outputStream initialized");
+    } catch (Exception e){ 
+        e.printStackTrace();
+    }
+
+    mediaCodec = MediaCodec.createEncoderByType("video/avc");
+    MediaFormat mediaFormat = MediaFormat.createVideoFormat("video/avc", 320, 240);
+    mediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, 125000);
+    mediaFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 15);
+    mediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar);
+    mediaFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5);
+    mediaCodec.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+    mediaCodec.start();
+}
+
+public void close() {
+    try {
+        mediaCodec.stop();
+        mediaCodec.release();
+        outputStream.flush();
+        outputStream.close();
+    } catch (Exception e){ 
+        e.printStackTrace();
+    }
+}
+
+// called from Camera.setPreviewCallbackWithBuffer(...) in other class
+public void offerEncoder(byte[] input) {
+    try {
+        ByteBuffer[] inputBuffers = mediaCodec.getInputBuffers();
+        ByteBuffer[] outputBuffers = mediaCodec.getOutputBuffers();
+        int inputBufferIndex = mediaCodec.dequeueInputBuffer(-1);
+        if (inputBufferIndex >= 0) {
+            ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
+            inputBuffer.clear();
+            inputBuffer.put(input);
+            mediaCodec.queueInputBuffer(inputBufferIndex, 0, input.length, 0, 0);
+        }
+
+        MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
+        int outputBufferIndex = mediaCodec.dequeueOutputBuffer(bufferInfo,0);
+        while (outputBufferIndex >= 0) {
+            ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
+            byte[] outData = new byte[bufferInfo.size];
+            outputBuffer.get(outData);
+            outputStream.write(outData, 0, outData.length);
+            Log.i("AvcEncoder", outData.length + " bytes written");
+
+            mediaCodec.releaseOutputBuffer(outputBufferIndex, false);
+            outputBufferIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, 0);
+
+        }
+    } catch (Throwable t) {
+        t.printStackTrace();
+    }
+
+}
+
+
+Changing the encoder type to "video/mp4" apparently solves the framerate-problem, but since the main goal is to make a streaming service, this is not a good solution.
+
+I'm aware that I dropped some of Alex' code considering the SPS and PPS NALU's, but I was hoping this would not be necessary since that information was also coming from outData and I assumed the encoder would format this correctly. If this is not the case, how should I arrange the different types of NALU's in my file/stream?
+
+So, what am I missing here in order to make a valid, working H.264 stream? And which settings should I use to make a match between the camera's colorspace and the encoder's colorspace?
+
+I have a feeling this is more of a H.264-related question than a Android/MediaCodec topic. Or am I still not using the MediaCodec API correctly?
+
+Thanks in advance.
+    
+===============================================================================================
+7
+A:For your fast playback - frame rate issue, there is nothing you have to do here. Since it is a streaming solution the other side has to be told the frame rate in advance or timestamps with each frame. Both of these are not part of elementary stream.  Either pre-determined framerate is chosen or you pass on some sdp or something like that or you use existing protocols like rtsp. In the second case the timestamps are part of the stream sent in form of something like rtp.  Then the client has to depay the rtp stream and play it bacl. This is how elementary streaming works. [either fix your frame rate if you have a fixed rate encoder or give timestamps]
+
+Local PC playback will be fast because it will not know the fps. By giving the fps parameter before the input e.g
+
+ffplay -fps 30 in.264
+
+
+you can control the playback on the PC. 
+
+As for the file not being playable: Does it have a SPS and PPS. Also you should have NAL headers enabled - annex b format. I don't know much about android, but this is requirement for any h.264 elementary stream to be playable when they are not in any containers and need to be dumped and played later.
+If android default is mp4, but default annexb headers will be switched off, so perhaps there is a switch to enable it. Or if you are getting data frame by frame, just add it yourself.
+
+As for color format: I would guess the default should work. So try not setting it.
+ If not try 422 Planar or UVYV / VYUY interleaved formats. usually cameras are one of those. (but not necessary, these may be the ones I have encountered more often).
+    

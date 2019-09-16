@@ -1,0 +1,107 @@
+50
+Q:I already have this code which listens to connectivity change -
+
+public class NetworkStateReceiver extends BroadcastReceiver
+{
+  public void onReceive(Context context, Intent intent)
+  {
+    Log.d("app","Network connectivity change");
+
+    if(intent.getExtras() != null)
+    {
+      NetworkInfo ni = (NetworkInfo) intent.getExtras().get(ConnectivityManager.EXTRA_NETWORK_INFO);
+      if(ni != null && ni.getState() == NetworkInfo.State.CONNECTED)
+      {
+        Log.i("app", "Network " + ni.getTypeName() + " connected");
+      }
+    }
+
+    if(intent.getExtras().getBoolean(ConnectivityManager.EXTRA_NO_CONNECTIVITY, Boolean.FALSE))
+    {
+      Log.d("app", "There's no network connectivity");
+    }
+  }
+}
+
+
+And I check Internet connectivity using this code - Internet Check
+
+But the problem is that if network suddenly loses internet connection without any connectivity change, this code is useless. Is there any way to create Broadcast Receiver listener for Internet connectivity change? I have a web app and sudden Internet connectivity changes can cause problems.
+    
+===============================================================================================
+74
+A:Try this
+
+public class NetworkUtil {
+    public static final int TYPE_WIFI = 1;
+    public static final int TYPE_MOBILE = 2;
+    public static final int TYPE_NOT_CONNECTED = 0;
+    public static final int NETWORK_STATUS_NOT_CONNECTED = 0;
+    public static final int NETWORK_STATUS_WIFI = 1;
+    public static final int NETWORK_STATUS_MOBILE = 2;
+
+    public static int getConnectivityStatus(Context context) {
+        ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+        if (null != activeNetwork) {
+            if(activeNetwork.getType() == ConnectivityManager.TYPE_WIFI)
+                return TYPE_WIFI;
+
+            if(activeNetwork.getType() == ConnectivityManager.TYPE_MOBILE)
+                return TYPE_MOBILE;
+        } 
+        return TYPE_NOT_CONNECTED;
+    }
+
+    public static int getConnectivityStatusString(Context context) {
+        int conn = NetworkUtil.getConnectivityStatus(context);
+        int status = 0;
+        if (conn == NetworkUtil.TYPE_WIFI) {
+            status = NETWORK_STATUS_WIFI;
+        } else if (conn == NetworkUtil.TYPE_MOBILE) {
+            status = NETWORK_STATUS_MOBILE;
+        } else if (conn == NetworkUtil.TYPE_NOT_CONNECTED) {
+            status = NETWORK_STATUS_NOT_CONNECTED;
+        }
+        return status;
+    }
+}
+
+
+And for the BroadcastReceiver
+
+public class NetworkChangeReceiver extends BroadcastReceiver {
+
+    @Override
+    public void onReceive(final Context context, final Intent intent) {
+
+        int status = NetworkUtil.getConnectivityStatusString(context);
+        Log.e("Sulod sa network reciever", "Sulod sa network reciever");
+        if ("android.net.conn.CONNECTIVITY_CHANGE".equals(intent.getAction())) {
+            if (status == NetworkUtil.NETWORK_STATUS_NOT_CONNECTED) {
+                new ForceExitPause(context).execute();
+            } else {
+                new ResumeForceExitPause(context).execute();
+            }
+       }
+    }
+}
+
+
+Don't forget to put this into your AndroidManifest.xml
+
+ <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+ <uses-permission android:name="android.permission.INTERNET" />
+ <receiver
+        android:name="NetworkChangeReceiver"
+        android:label="NetworkChangeReceiver" >
+        <intent-filter>
+            <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+            <action android:name="android.net.wifi.WIFI_STATE_CHANGED" />
+        </intent-filter>
+    </receiver>
+
+
+Hope this will help you Cheers!
+    

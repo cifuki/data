@@ -1,0 +1,107 @@
+59
+Q:I have created a helper class to handle all of my http calls in my app. It is a simple singleton wrapper for okhttp that looks like this (I have omitted some unimportant parts):
+
+public class HttpUtil {
+
+    private OkHttpClient client;
+    private Request.Builder builder;
+
+    ...
+
+    public void get(String url, HttpCallback cb) {
+        call("GET", url, cb);
+    }
+
+    public void post(String url, HttpCallback cb) {
+        call("POST", url, cb);
+    }
+
+    private void call(String method, String url, final HttpCallback cb) {
+        Request request = builder.url(url).method(method, method.equals("GET") ? null : new RequestBody() {
+            // don't care much about request body
+            @Override
+            public MediaType contentType() {
+                return null;
+            }
+
+            @Override
+            public void writeTo(BufferedSink sink) throws IOException {
+
+            }
+        }).build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Request request, Throwable throwable) {
+                cb.onFailure(null, throwable);
+            }
+
+            @Override
+            public void onResponse(Response response) throws IOException {
+                if (!response.isSuccessful()) {
+                    cb.onFailure(response, null);
+                    return;
+                }
+                cb.onSuccess(response);
+            }
+        });
+    }
+
+
+    public interface HttpCallback  {
+
+        /**
+         * called when the server response was not 2xx or when an exception was thrown in the process
+         * @param response - in case of server error (4xx, 5xx) this contains the server response
+         *                 in case of IO exception this is null
+         * @param throwable - contains the exception. in case of server error (4xx, 5xx) this is null
+         */
+        public void onFailure(Response response, Throwable throwable);
+
+        /**
+         * contains the server response
+         * @param response
+         */
+        public void onSuccess(Response response);
+    }
+
+}
+
+
+Then, in my main activity, I use this helper class :
+
+HttpUtil.get(url, new HttpUtil.HttpCallback() {
+            @Override
+            public void onFailure(Response response, Throwable throwable) {
+                // handle failure
+            }
+
+            @Override
+            public void onSuccess(Response response) {
+                // <-------- Do some view manipulation here
+            }
+        });
+
+
+onSuccess throws an exception when the code runs :
+
+
+  android.view.ViewRootImpl$CalledFromWrongThreadException: Only the
+  original thread that created a view hierarchy can touch its views.
+
+
+From my understanding, Okhttp callbacks run on the main thread so why do I get this error ? 
+
+** Just as a side note, I have created HttpCallback interface to wrap Okhttp's Callback class because I wanted to change the behaviour of onResponse and onFailure so I could unite the logic of handling failed responses due to i/o exception and failed responses due to server problems.
+
+Thanks.
+    
+===============================================================================================
+71
+A:From my understanding, Okhttp callbacks run on the main thread so why do I get this error ?
+
+
+This is not true. Callbacks run on a background thread. If you want to immediately process something in the UI you will need to post to the main thread.
+
+Since you already have a wrapper around the callback you can do this internally in your helper so that all HttpCallback methods are invoked on the main thread for convenience.
+    

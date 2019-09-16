@@ -1,0 +1,83 @@
+36
+Q:It has been asked many times before, I browsed through everything, no clear answers yet.
+
+Question simplified: Is it possible to inject local Javascript file (from asset or storage) to remote webpage loaded in an Android Web-View? I know that it is possible to inject such files to local Webpages (Assets HTML) loaded in a Web-View.
+
+Why do I need this to work? : To make browsing experience faster, by avoiding downloading of bigger files such as Js and CSS files every time. I want to avoid Web-View Caching.
+    
+===============================================================================================
+52
+A:There is a way to 'force' the injection of your local Javascript files from local assets (e.g., assets/js/script.js), and to circumvent the 'Not allowed to load local resource : file:///android_assets/js/script.js ...' issue.
+
+It is similar to what described in another thread (Android webview, loading javascript file in assets folder), with additional BASE64 encoding/decoding for representing your Javascript file as a printable string.
+
+I am using an Android 4.4.2, API level 19 Virtual Device.
+
+Here are some code snippets:
+
+[assets/js/script.js]:
+
+    'use strict';
+
+    function test() {
+       // ... do something
+    }
+
+    // more Javascript
+
+
+[MainActivity.java]:
+
+    ...
+
+    WebView myWebView = (WebView) findViewById(R.id.webView);
+    WebSettings webSettings = myWebView.getSettings();
+
+    webSettings.setJavaScriptEnabled(true);
+    webSettings.setAllowUniversalAccessFromFileURLs(true);
+    myWebView.setWebViewClient(new WebViewClient() {
+       @Override
+       public boolean shouldOverrideUrlLoading(WebView view, String url) {
+          return false;
+       }
+
+       @Override
+       public void onPageFinished(WebView view, String url) {
+          super.onPageFinished(view, url);
+
+          injectScriptFile(view, "js/script.js"); // see below ...
+
+          // test if the script was loaded
+          view.loadUrl("javascript:setTimeout(test(), 500)");
+       }
+
+       private void injectScriptFile(WebView view, String scriptFile) {
+          InputStream input;
+          try {
+             input = getAssets().open(scriptFile);
+             byte[] buffer = new byte[input.available()];
+             input.read(buffer);
+             input.close();
+
+             // String-ify the script byte-array using BASE64 encoding !!!
+             String encoded = Base64.encodeToString(buffer, Base64.NO_WRAP);
+             view.loadUrl("javascript:(function() {" +
+                          "var parent = document.getElementsByTagName('head').item(0);" +
+                          "var script = document.createElement('script');" +
+                          "script.type = 'text/javascript';" +
+             // Tell the browser to BASE64-decode the string into your script !!!
+                          "script.innerHTML = window.atob('" + encoded + "');" +
+                          "parent.appendChild(script)" +
+                          "})()");
+          } catch (IOException e) {
+             // TODO Auto-generated catch block
+             e.printStackTrace();
+          }
+       }
+    });
+
+    myWebView.loadUrl("http://www.example.com");
+
+    ...
+
+    

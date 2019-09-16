@@ -1,0 +1,72 @@
+120
+Q:I use the latest version of Google Play Services (7.0) and followed the steps given in their guide and I enabled the location dialog like below, which has a "never" button. My app mandatorily needs location so I don't want to show never to user, because once the user clicks "never", I'm unable to get location or request for location again at all.
+
+Where as Google Maps has only yes and no button without never button, any idea how to achieve the same?
+
+My app's image
+
+
+Google Map's image
+
+    
+===============================================================================================
+142
+A:LocationSettingsRequest.Builder has a method setAlwaysShow(boolean show). While the document indicates it's currently doing nothing(updated 2015-07-05: updated Google documentation has removed this wording), setting builder.setAlwaysShow(true); will enable Google Maps behavior: 
+
+
+Here's the code that got it working:
+
+if (googleApiClient == null) {
+    googleApiClient = new GoogleApiClient.Builder(getActivity())
+            .addApi(LocationServices.API)
+            .addConnectionCallbacks(this)
+            .addOnConnectionFailedListener(this).build();
+    googleApiClient.connect();
+
+    LocationRequest locationRequest = LocationRequest.create();
+    locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+    locationRequest.setInterval(30 * 1000);
+    locationRequest.setFastestInterval(5 * 1000);
+    LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder()
+            .addLocationRequest(locationRequest);
+
+    //**************************
+    builder.setAlwaysShow(true); //this is the key ingredient
+    //**************************
+
+    PendingResult<LocationSettingsResult> result =
+            LocationServices.SettingsApi.checkLocationSettings(googleApiClient, builder.build());
+    result.setResultCallback(new ResultCallback<LocationSettingsResult>() {
+        @Override
+        public void onResult(LocationSettingsResult result) {
+            final Status status = result.getStatus();
+            final LocationSettingsStates state = result.getLocationSettingsStates();
+            switch (status.getStatusCode()) {
+                case LocationSettingsStatusCodes.SUCCESS:
+                    // All location settings are satisfied. The client can initialize location
+                    // requests here.
+                    break;
+                case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
+                    // Location settings are not satisfied. But could be fixed by showing the user
+                    // a dialog.
+                    try {
+                        // Show the dialog by calling startResolutionForResult(),
+                        // and check the result in onActivityResult().
+                        status.startResolutionForResult(
+                                getActivity(), 1000);
+                    } catch (IntentSender.SendIntentException e) {
+                        // Ignore the error.
+                    }
+                    break;
+                case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
+                    // Location settings are not satisfied. However, we have no way to fix the
+                    // settings so we won't show the dialog.
+                    break;
+            }
+        }
+    });
+}
+
+
+From Android Documentation
+    

@@ -1,0 +1,104 @@
+28
+Q:So I have a bit of experience building android applications. But now i would like to build a widget for android that would sit on the home screen and display a button, and when the button is pressed it plays a sound. I've been looking at tutorials online on how to set up an android widget but i cant seem to figure it out. Are there any good tutorials out there on how to make a standalone widget this simple or somewhere i can start?
+Thanks in advance,
+Peter
+    
+===============================================================================================
+44
+A:first  Create a new layout file inside res/layout, under the project structure, that will define the widget layout (widgetlayout.xml) according to the following structure.
+
+<TextView android:text="@string/widgettext" 
+              android:layout_width="0dp"
+              android:layout_height="wrap_content"
+              android:layout_weight="0.8"
+              android:layout_gravity="center_vertical"
+              android:textColor="#000000"></TextView>
+<TextView android:text="@string/widgetmoodtext"
+              android:id="@+id/widgetMood" android:layout_width="0dp" 
+              android:layout_height="wrap_content" 
+              android:layout_weight="0.3" 
+              android:layout_gravity="center_vertical" 
+              android:textColor="#000000"></TextView>
+<ImageButton android:id="@+id/widgetBtn" 
+             android:layout_width="0dp" 
+             android:layout_height="wrap_content" 
+             android:layout_weight="0.5"  
+             android:src="@drawable/smile_icon" 
+             android:layout_gravity="center_vertical">
+ </ImageButton>
+
+
+Create the res/xml folder under the project structure
+Create a xml file (widgetproviderinfo.xml) with the following parameters:
+
+ <appwidget-provider
+           xmlns:android="http://schemas.android.com/apk/res/android" 
+           android:minWidth="220dp" 
+           android:minHeight="72dp"
+           android:updatePeriodMillis="86400000" 
+           android:initialLayout="@layout/widgetlayout">
+       </appwidget-provider>
+
+
+Now you should create the service that reacts to the user interaction with the smiley image button (CurrentMoodService.java).
+
+@Override
+public int onStartCommand(Intent intent, int flags, int startId) {
+    super.onStart(intent, startId);
+            updateMood(intent);
+    stopSelf(startId);
+    return START_STICKY;
+}
+
+private void updateMood(Intent intent) {
+       if (intent != null){
+        String requestedAction = intent.getAction();
+        if (requestedAction != null &&  requestedAction.equals(UPDATEMOOD)){
+            this.currentMood = getRandomMood();
+            int widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, 0);
+            AppWidgetManager appWidgetMan = AppWidgetManager.getInstance(this);
+            RemoteViews views = new RemoteViews(this.getPackageName(),R.layout.widgetlayout);
+            views.setTextViewText(R.id.widgetMood, currentMood);
+            appWidgetMan.updateAppWidget(widgetId, views);  
+        }
+       }
+   }
+
+
+After defining the service, it is time to implement the widget provider class (CurrentMoodWidgetProvider.java).
+
+    @Override
+public void onUpdate(Context context, AppWidgetManager appWidgetManager,
+        int[] appWidgetIds) {
+    super.onUpdate(context, appWidgetManager, appWidgetIds);
+
+    for (int i=0; i<appWidgetIds.length; i++) {
+        int appWidgetId = appWidgetIds[i];
+        RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widgetlayout);
+        Intent intent = new Intent(context, CurrentMoodService.class);
+        intent.setAction(CurrentMoodService.UPDATEMOOD);
+        intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId);
+        PendingIntent pendingIntent = PendingIntent.getService(context, 0, intent, 0);
+        views.setOnClickPendingIntent(R.id.widgetBtn, pendingIntent);
+        appWidgetManager.updateAppWidget(appWidgetId, views);
+    }
+}   
+
+
+Finally it is necessary to declare the Service and the AppWidgetProvider in the Manifest (AndroidManifest.xml).
+
+    <service android:name=".CurrentMoodService">
+    </service>
+<receiver android:name=".CurrentMoodWidgetProvider">
+    <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+    </intent-filter>
+    <meta-data android:name="android.appwidget.provider"
+               android:resource="@xml/widgetproviderinfo" />
+</receiver>
+
+
+and if you want to download the whole source code then have a look at the url below...
+
+http://sites.google.com/site/androidsourcecode/src/CurrentMoodWidgetProject.rar?attredirects=0
+    

@@ -1,0 +1,146 @@
+77
+Q:I have been working on an Android app which uses try/catch frequently to prevent it from crashing even on places where there is no need. For example,
+
+A view in xml layout with id = toolbar is referenced like:
+
+// see new example below, this one is just confusing
+// it seems like I am asking about empty try/catch
+try {
+    View view = findViewById(R.id.toolbar);
+}
+catch(Exception e) {
+}
+
+
+This approach is used throughout the app. The stack trace is not printed and it's really hard to find what went wrong. The app closes suddenly without printing any stack trace.
+
+I asked my senior to explain it to me and he said,
+
+
+  This is for preventing crashing in production.
+
+
+I totally disagree with it. To me this is not the way to prevent apps from crashes. It shows that developer doesn't know what he/she is doing and is in doubt.
+
+Is this the approach being used in industry to prevent enterprise apps from crashes?
+
+If try/catch is really, really our need then is it possible to attach an exception handler with UI thread or other threads and catch everything there? That will be a better approach if possible.
+
+Yes, empty try/catch is bad and even if we print stack trace or log exception to server, wrapping blocks of code in try/catch randomly across all the app doesn't make sense to me e.g. when every function is enclosed in a try/catch.
+
+UPDATE
+
+As this question has got a lot of attention and some people have misinterpreted the question (perhaps because I haven't phrased it clearly) I am going to rephrase it. 
+
+Here is what developers are doing here
+
+
+A function is written and tested, it can be a small function which just initializes views or a complex one, after testing it is wrapped around try/catch block. Even for function which will never throw any exception.
+This practice is used throughout the application. Sometime stack trace is printed and sometime just a debug log with some random error message. This error message differ from developer to developer.
+With this approach, app does not crash but behavior of the app becomes undetermined. Even sometime it is hard to follow what went wrong.
+The real question I have been asking was; Is it the practice being following in the industry for preventing the enterprise applications from crashes? and I am not asking about empty try/catch. Is it like, users love application which do not crash than applications which behave unexpectedly? Because it really boils down to either crash it or present the user with a blank screen or the behaviour user is unaware of.
+I am posting a few snippets from the real code here
+
+  private void makeRequestForForgetPassword() {
+    try {
+        HashMap<String, Object> params = new HashMap<>();
+
+        String email= CurrentUserData.msisdn;
+        params.put("email", "blabla");
+        params.put("new_password", password);
+
+        NetworkProcess networkProcessForgetStep = new NetworkProcess(
+            serviceCallListenerForgotPasswordStep, ForgotPassword.this);
+        networkProcessForgetStep.serviceProcessing(params, 
+            Constants.API_FORGOT_PASSWORD);
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+}
+
+ private void languagePopUpDialog(View view) {
+    try {
+        PopupWindow popupwindow_obj = popupDisplay();
+        popupwindow_obj.showAsDropDown(view, -50, 0);
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+}
+
+void reloadActivity() {
+    try {
+        onCreateProcess();
+    } catch (Exception e) {
+    }
+}
+
+
+
+
+  It is not duplicate of Android exception handling best
+  practices, there OP is trying to catch exception for a different
+  purpose than this question.
+
+    
+===============================================================================================
+78
+A:Of course, there are always exceptions to rules, but if you need a rule of thumb - then you are correct; empty catch blocks are "absolutely" bad practice. 
+
+Let's have a closer look, first starting with your specific example:
+
+try {
+  View view = findViewById(R.id.toolbar);
+}
+catch(Exception e) { }
+
+
+So, a reference to something is created; and when that fails ... it doesn't matter; because that reference isn't used in the first place! The above code is absolutely useless line noise. Or does the person who wrote that code initially assume that a second, similar call would magically no longer throw an exception?!
+
+Maybe this was meant to look like:
+
+try {
+  View view = findViewById(R.id.toolbar);
+  ... and now do something with that view variable ...
+}
+catch(Exception e) { }
+
+
+But again, what does this help?! Exceptions exist to communicate respectively propagate error situations within your code. Ignoring errors is rarely a good idea. Actually, an exception can be treated in ways like:
+
+
+You give feedback to the user; (like: "the value you entered is not a string, try again"); or to engage in more complex error handling
+Maybe the problem is somehow expected and can be mitigated (for example by giving a "default" answer when some "remote search" failed)
+...
+
+
+Long story short: the minimum thing that you do with an exception is to log/trace it; so that when you come in later debugging some problem you understand "OK, at this point in time that exception happened".
+
+And as others have pointed out: you also avoid catching for Exception in general (well, depending on the layer: there might be good reasons to have some catch for Exception, and even some kinds of Errors at the highest level, to make sure that nothing gets lost; ever).
+
+Finally, let's quote Ward Cunningham:
+
+You know you are working with clean code when each routine you read turns out to be pretty much what you expected. You can call it beautiful code when the code also makes it look like the language was made for the problem.
+
+Let that sink in and meditate about it. Clean code does not surprise you. The example you are showing to us surprises everybody looking at.
+
+Update, regarding the update that the OP asks about
+
+try {
+  do something
+}
+catch(Exception e) { 
+  print stacktrace
+}
+
+
+Same answer: doing that "all over the place" is also bad practice. Because this code is also surprising the reader.
+
+The above:
+
+
+Prints error information somewhere. It is not at all guaranteed that this "somewhere" resembles a reasonable destination. To the contrary. Example: within the application I am working with, such calls would magically appear in our trace buffers. Depending on context, our application might pump tons and tons of data into those buffers sometimes; making those buffer prune every few seconds. So "just printing errors" often translates to: "simply loosing all such error information".
+Then: you don't do try/catch because you can. You do it because you understand what your code is doing; and you know: I better have a try/catch here to do the right thing (see the first parts of my answer again).
+
+
+So, using try/catch as "pattern" like you are showing; is as said: still not a good idea. And yes, it prevents crashes; but leads to all kind of "undefined" behavior. You know, when you just catch an exception instead of properly dealing with it; you open a can of worms; because you might run into myriads of follow-on errors that you later don't understand. Because you consumed the "root cause" event earlier on; printed it somewhere; and that somewhere is now gone.
+    

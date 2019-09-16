@@ -1,0 +1,90 @@
+31
+Q:I have tried almost every method but I've failed to achieve gapless audio playback between looping a single track with a duration of 10-15 seconds.
+
+Steps I've tried and failed :
+
+
+Different audio file formats .mp3 .wav .ogg using
+setLooping(true):
+
+MediaPlayer mp1 = MediaPlayer.create(MainActivity.this, R.raw.track1);
+mp1.setLooping(true);
+mp1.start();
+
+Creating two mediaplayers and looping one after another using
+setOnCompletionListenersame failed to loop without gaps.
+Using setNextMediaPlayer(nextmp) some how it works but only two loops is possible. We have to prepare and start again after the completion of previous two loops. 
+
+mp1.start();
+mp1.setNextMediaPlayer(mp2);
+
+Update:
+Result of @Jeff Mixon answer:
+Mediaplayer looping stops with an error Android. 
+Jeff Mixon works fine but only for 10 or 20 loops after that, due to some garbage collection issue the Mediaplayers stops immediately leaving the logs as posted below. I'm really kind of stuck here for 2 years. Thanks in advance.
+
+E/MediaPlayer(24311): error (1, -38)
+E/MediaPlayer(23256): Error(1,-1007)
+E/MediaPlayer(23546): Error (1,-2147483648)
+
+
+    
+===============================================================================================
+31
+A:From the test that I have done, this solution works fine, over 150 loops with a 13 seconds 160 kbps MP3 without any problem:
+
+public class LoopMediaPlayer {
+
+    public static final String TAG = LoopMediaPlayer.class.getSimpleName();
+
+    private Context mContext = null;
+    private int mResId = 0;
+    private int mCounter = 1;
+
+    private MediaPlayer mCurrentPlayer = null;
+    private MediaPlayer mNextPlayer = null;
+
+    public static LoopMediaPlayer create(Context context, int resId) {
+        return new LoopMediaPlayer(context, resId);
+    }
+
+    private LoopMediaPlayer(Context context, int resId) {
+        mContext = context;
+        mResId = resId;
+
+        mCurrentPlayer = MediaPlayer.create(mContext, mResId);
+        mCurrentPlayer.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+            @Override
+            public void onPrepared(MediaPlayer mediaPlayer) {
+                mCurrentPlayer.start();
+            }
+        });
+
+        createNextMediaPlayer();
+    }
+
+    private void createNextMediaPlayer() {
+        mNextPlayer = MediaPlayer.create(mContext, mResId);
+        mCurrentPlayer.setNextMediaPlayer(mNextPlayer);
+        mCurrentPlayer.setOnCompletionListener(onCompletionListener);
+    }
+
+    private MediaPlayer.OnCompletionListener onCompletionListener = new MediaPlayer.OnCompletionListener() {
+        @Override
+        public void onCompletion(MediaPlayer mediaPlayer) {
+            mediaPlayer.release();
+            mCurrentPlayer = mNextPlayer;
+
+            createNextMediaPlayer();
+
+            Log.d(TAG, String.format("Loop #%d", ++mCounter));
+        }
+    };
+}
+
+
+To use LoopMediaPlayer you can just call:
+
+LoopMediaPlayer.create(context, R.raw.sample);
+
+    

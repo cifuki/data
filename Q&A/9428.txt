@@ -1,0 +1,96 @@
+29
+Q:I seem to be running into a peculiar problem on Android 1.5 when a library I'm using (signpost 1.1-SNAPSHOT), makes two consecutive connections to a remote server.  The second connection always fails with a HttpURLConnection.getResponseCode() of -1
+
+Here's a testcase that exposes the problem:
+
+// BROKEN
+public void testDefaultOAuthConsumerAndroidBug() throws Exception {
+    for (int i = 0; i < 2; ++i) {
+        final HttpURLConnection c = (HttpURLConnection) new URL("https://api.tripit.com/oauth/request_token").openConnection();
+        final DefaultOAuthConsumer consumer = new DefaultOAuthConsumer(api_key, api_secret, SignatureMethod.HMAC_SHA1);
+        consumer.sign(c);                             // This line...
+        final InputStream is = c.getInputStream();
+        while( is.read() >= 0 ) ;                     // ... in combination with this line causes responseCode -1 for i==1 when using api.tripit.com but not mail.google.com
+        assertTrue(c.getResponseCode() > 0);
+    }
+}
+
+
+Basically, if I sign the request and then consume the entire input stream, the next request will fail with a resultcode of -1.  The failure doesn't seem to happen if I just read one character from the input stream.
+
+Note that this doesn't happen for any url -- just specific urls such as the one above.
+
+Also, if I switch to using HttpClient instead of HttpURLConnection, everything works fine:
+
+// WORKS
+public void testCommonsHttpOAuthConsumerAndroidBug() throws Exception {
+    for (int i = 0; i < 2; ++i) {
+        final HttpGet c = new HttpGet("https://api.tripit.com/oauth/request_token");
+        final CommonsHttpOAuthConsumer consumer = new CommonsHttpOAuthConsumer(api_key, api_secret, SignatureMethod.HMAC_SHA1);
+        consumer.sign(c);
+        final HttpResponse response = new DefaultHttpClient().execute(c);
+        final InputStream is = response.getEntity().getContent();
+        while( is.read() >= 0 ) ;
+        assertTrue( response.getStatusLine().getStatusCode() == 200);
+    }
+}
+
+
+I've found references to what seems to be a similar problem elsewhere, but so far no solutions.  If they're truly the same problem, then the problem probably isn't with signpost since the other references make no reference to it.
+
+Any ideas?
+    
+===============================================================================================
+28
+A:Try set this property to see if it helps,
+
+http.keepAlive=false
+
+
+I saw similar problems when server response is not understood by UrlConnection and client/server gets out of sync.
+
+If this solves your problem, you have to get a HTTP trace to see exactly what's special about the response.
+
+EDIT: This change just confirms my suspicion. It doesn't solve your problem. It just hides the symptom.
+
+If the response from first request is 200, we need a trace. I normally use Ethereal/Wireshark to get the TCP trace.
+
+If your first response is not 200, I do see a problem in your code. With OAuth, the error response (401) actually returns data, which includes ProblemAdvice, Signature Base String etc to help you debug. You need to read everything from error stream. Otherwise, it's going to confuse next connection and that's the cause of -1. Following example shows you how to handle errors correctly,
+
+public static String get(String url) throws IOException {
+
+    ByteArrayOutputStream os = new ByteArrayOutputStream();
+    URLConnection conn=null;
+    byte[] buf = new byte[4096];
+
+    try {
+        URL a = new URL(url);
+        conn = a.openConnection();
+        InputStream is = conn.getInputStream();
+        int ret = 0;
+        while ((ret = is.read(buf)) > 0) {
+            os.write(buf, 0, ret);
+        }
+        // close the inputstream
+        is.close();
+        return new String(os.toByteArray());
+    } catch (IOException e) {
+        try {
+            int respCode = ((HttpURLConnection)conn).getResponseCode();
+            InputStream es = ((HttpURLConnection)conn).getErrorStream();
+            int ret = 0;
+            // read the response body
+            while ((ret = es.read(buf)) > 0) {
+                os.write(buf, 0, ret);
+            }
+            // close the errorstream
+            es.close();
+            return "Error response " + respCode + ": " + 
+               new String(os.toByteArray());
+        } catch(IOException ex) {
+            throw ex;
+        }
+    }
+}
+
+    

@@ -1,0 +1,61 @@
+56
+Q:So in 4.3 there was a concept of System applications. APKs that were placed in /system/app were given system privileges. As of 4.4, there is a new concept of "privileged app". Privileged apps are stored in /system/priv-app directory and seem to be treated differently. If you look in the AOSP Source code, under PackageManagerService, you will see new methods such as
+
+static boolean locationIsPrivileged(File path) {
+    try {
+        final String privilegedAppDir = new File(Environment.getRootDirectory(), "priv-app")
+                .getCanonicalPath();
+        return path.getCanonicalPath().startsWith(privilegedAppDir);
+    } catch (IOException e) {
+        Slog.e(TAG, "Unable to access code path " + path);
+    }
+    return false;
+}
+
+
+So here is an example of a situation where these differ. 
+
+public final void addActivity(PackageParser.Activity a, String type) {
+...
+if (!systemApp && intent.getPriority() > 0 && "activity".equals(type)) {
+                intent.setPriority(0);
+                Log.w(TAG, "Package " + a.info.applicationInfo.packageName + " has activity "
+                        + a.className + " with priority > 0, forcing to 0");
+            }
+...
+
+
+This affects the priority of any activities that are not defined as system applications. This seems to imply you can not add an activity to the package manager who's priority is higher than 0, unless you are a system app. This does not preclude privileged apps as far as I can tell (there is a lot of logic here, I may be wrong.). 
+
+My question is what exactly does this imply? If my app is privileged, but not system, what difference will that make? In PackageManagerService you can find various things that differ between system and privileged apps, they are not exactly the same. There should be some kind of ideology behind privileged apps, otherwise they would have just said:
+
+if locationIsPrivileged: app.flags |= FLAG_SYSTEM
+
+
+and been done with it. This is a new concept, and I think it would be important to know the difference between these kinds of apps for anyone who is doing AOSP development as of 4.4.
+    
+===============================================================================================
+71
+A:So after some digging, it's clear that apps in priv-app are eligible for system permissions, the same way that old apps used to be eligible to claim system permissions by being in system-app. The only official Google documentation I could find on this came in the form of a commit message:
+Commit hash: ccbf84f44c9e6a5ed3c08673614826bb237afc54
+
+
+  Some system apps are more system than others
+  
+  "signatureOrSystem" permissions are no longer available to all apps
+  residing en the /system partition.  Instead, there is a new
+  /system/priv-app directory, and only apps whose APKs are in that
+  directory are allowed to use signatureOrSystem permissions without
+  sharing the platform cert. This will reduce the surface area for
+  possible exploits of system- bundled applications to try to gain
+  access to permission-guarded operations.
+  
+  The ApplicationInfo.FLAG_SYSTEM flag continues to mean what it is says
+  in the documentation: it indicates that the application apk was
+  bundled on the /system partition.  A new hidden flag FLAG_PRIVILEGED
+  has been introduced that reflects the actual right to access these
+  permissions.
+
+
+Update: As of Android 8.0 priv-app has changed slightly with the addition of Privileged Permission Whitelisting. Beyond just being in priv-app, your app must also be added to a whitelist in order to gain various system permissions. Information on this can be found here: https://source.android.com/devices/tech/config/perms-whitelist
+    

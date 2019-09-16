@@ -1,0 +1,76 @@
+39
+Q:I have a DialogFragment with a custom view which contains two text fields where the user is to input their username and password. When the positive button is clicked, I want to validate that the user actually did input something before dismissing the dialog.
+
+public class AuthenticationDialog extends DialogFragment {
+
+    public Dialog onCreateDialog(Bundle savedInstanceState) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
+        LayoutInflater inflater = getActivity().getLayoutInflater();
+        builder.setView(inflater.inflate(R.layout.authentication_dialog, null))
+            .setPositiveButton(getResources().getString(R.string.login), new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface dialog, int which) {
+                    // TODO
+                }
+            })
+            .setNegativeButton(getResources().getString(R.string.reset), new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface dialog, int which) {
+                    // TODO
+                }
+            });
+
+        return builder.create();
+    }
+}
+
+
+So how can I prevent the dialog from dismissing? Is there some method I should override?
+    
+===============================================================================================
+64
+A:Override the default button handlers in OnStart() to do this.
+
+@Override
+public Dialog onCreateDialog(Bundle savedInstanceState)
+{
+    AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
+    builder.setMessage("Test for preventing dialog close");
+    builder.setPositiveButton("Test", 
+        new DialogInterface.OnClickListener()
+        {
+            @Override
+            public void onClick(DialogInterface dialog, int which)
+            {
+                //Do nothing here because we override this button later to change the close behaviour. 
+                //However, we still need this because on older versions of Android unless we 
+                //pass a handler the button doesn't get instantiated
+            }
+        });
+    return builder.create();
+}
+
+@Override
+public void onStart()
+{
+    super.onStart();    //super.onStart() is where dialog.show() is actually called on the underlying dialog, so we have to do it after this point
+    AlertDialog d = (AlertDialog)getDialog();
+    if(d != null)
+    {
+        Button positiveButton = (Button) d.getButton(Dialog.BUTTON_POSITIVE);
+        positiveButton.setOnClickListener(new View.OnClickListener()
+                {
+                    @Override
+                    public void onClick(View v)
+                    {
+                        Boolean wantToCloseDialog = false;
+                        //Do stuff, possibly set wantToCloseDialog to true then...
+                        if(wantToCloseDialog)
+                            dismiss();
+                        //else dialog stays open. Make sure you have an obvious way to close the dialog especially if you set cancellable to false.
+                    }
+                });
+    }
+}
+
+
+See my answer here https://stackoverflow.com/a/15619098/579234 for more explanation and examples on other dialog types too.
+    

@@ -1,0 +1,105 @@
+106
+Q:I need 2 ways of showing vertical label in Android: 
+
+
+Horizontal label turned 90 degrees counterclockwise (letters on the side)
+Horizontal label with letters one under the other (like a store sign)
+
+
+Do I need to develop custom widgets for both cases (one case), can I make TextView to render that way, and what would be a good way to do something like that if I need to go completely custom?
+    
+===============================================================================================
+232
+A:Here is my elegant and simple vertical text implementation, extending TextView. This means that all standard styles of TextView may be used, because it is extended TextView.
+
+public class VerticalTextView extends TextView{
+   final boolean topDown;
+
+   public VerticalTextView(Context context, AttributeSet attrs){
+      super(context, attrs);
+      final int gravity = getGravity();
+      if(Gravity.isVertical(gravity) && (gravity&Gravity.VERTICAL_GRAVITY_MASK) == Gravity.BOTTOM) {
+         setGravity((gravity&Gravity.HORIZONTAL_GRAVITY_MASK) | Gravity.TOP);
+         topDown = false;
+      }else
+         topDown = true;
+   }
+
+   @Override
+   protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec){
+      super.onMeasure(heightMeasureSpec, widthMeasureSpec);
+      setMeasuredDimension(getMeasuredHeight(), getMeasuredWidth());
+   }
+
+   @Override
+   protected boolean setFrame(int l, int t, int r, int b){
+      return super.setFrame(l, t, l+(b-t), t+(r-l));
+   }
+
+   @Override
+   public void draw(Canvas canvas){
+      if(topDown){
+         canvas.translate(getHeight(), 0);
+         canvas.rotate(90);
+      }else {
+         canvas.translate(0, getWidth());
+         canvas.rotate(-90);
+      }
+      canvas.clipRect(0, 0, getWidth(), getHeight(), android.graphics.Region.Op.REPLACE);
+      super.draw(canvas);
+   }
+}
+
+
+By default, rotated text is from top to bottom. If you set android:gravity="bottom", then it's drawn from bottom to top.
+
+Technically, it fools underlying TextView to think that it's normal rotation (swapping width/height in few places), while drawing it rotated.
+It works fine also when used in an xml layout.
+
+EDIT:
+posting another version, above has problems with animations. This new version works better, but loses some TextView features, such as marquee and similar specialties. 
+
+public class VerticalTextView extends TextView{
+   final boolean topDown;
+
+   public VerticalTextView(Context context, AttributeSet attrs){
+      super(context, attrs);
+      final int gravity = getGravity();
+      if(Gravity.isVertical(gravity) && (gravity&Gravity.VERTICAL_GRAVITY_MASK) == Gravity.BOTTOM) {
+         setGravity((gravity&Gravity.HORIZONTAL_GRAVITY_MASK) | Gravity.TOP);
+         topDown = false;
+      }else
+         topDown = true;
+   }
+
+   @Override
+   protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec){
+      super.onMeasure(heightMeasureSpec, widthMeasureSpec);
+      setMeasuredDimension(getMeasuredHeight(), getMeasuredWidth());
+   }
+
+   @Override
+   protected void onDraw(Canvas canvas){
+      TextPaint textPaint = getPaint(); 
+      textPaint.setColor(getCurrentTextColor());
+      textPaint.drawableState = getDrawableState();
+
+      canvas.save();
+
+      if(topDown){
+         canvas.translate(getWidth(), 0);
+         canvas.rotate(90);
+      }else {
+         canvas.translate(0, getHeight());
+         canvas.rotate(-90);
+      }
+
+
+      canvas.translate(getCompoundPaddingLeft(), getExtendedPaddingTop());
+
+      getLayout().draw(canvas);
+      canvas.restore();
+  }
+}
+
+    

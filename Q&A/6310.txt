@@ -1,0 +1,72 @@
+40
+Q:I have a database saved in my apps assets folder and I copy the database using the below code when the app first opens.
+
+inputStream = mContext.getAssets().open(Utils.getDatabaseName());
+
+        if(inputStream != null) {
+
+            int mFileLength = inputStream.available();
+
+            String filePath = mContext.getDatabasePath(Utils.getDatabaseName()).getAbsolutePath();
+
+            // Save the downloaded file
+            output = new FileOutputStream(filePath);
+
+            byte data[] = new byte[1024];
+            long total = 0;
+            int count;
+            while ((count = inputStream.read(data)) != -1) {
+                total += count;
+                if(mFileLength != -1) {
+                    // Publish the progress
+                    publishProgress((int) (total * 100 / mFileLength));
+                }
+                output.write(data, 0, count);
+            }
+            return true;
+        }
+
+
+The above code runs without problem but when you try to query the database you get an SQLite: No such table exception.
+
+This issue only occurs in Android P, all earlier versions of Android work correctly.
+
+Is this a known issue with Android P or has something changed?
+    
+===============================================================================================
+25
+A:This issue seems to lead to a crash much more often on Android P than on previous versions, but it's not a bug on Android P itself.
+
+The problem is that your line where you assign the value to your String filePath opens a connection to the database that remains open when you copy the file from assets.
+
+To fix the problem, replace the line
+
+String filePath = mContext.getDatabasePath(Utils.getDatabaseName()).getAbsolutePath();
+
+
+with code to get the file path value and then close the database:
+
+MySQLiteOpenHelper helper = new MySQLiteOpenHelper();
+SQLiteDatabase database = helper.getReadableDatabase();
+String filePath = database.getPath();
+database.close();
+
+
+And also add an inner helper class:
+
+class MySQLiteOpenHelper extends SQLiteOpenHelper {
+
+    MySQLiteOpenHelper(Context context, String databaseName) {
+        super(context, databaseName, null, 2);
+    }
+
+    @Override
+    public void onCreate(SQLiteDatabase db) {
+    }
+
+    @Override
+    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+    }
+}
+
+    

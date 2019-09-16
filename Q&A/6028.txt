@@ -1,0 +1,39 @@
+42
+Q:I have an IntentService that is started from an Activity and I would like to be able to stop the service immediately from the activity with a "cancel" button in the activity.  As soon as that "cancel" button is pressed, I want the service to stop executing lines of code.
+
+I've found a number of questions similar to this (i.e. here, here, here, here), but no good answers.  Activity.stopService() and Service.stopSelf() execute the Service.onDestroy() method immediately but then let the code in onHandleIntent() finish all the way through before destroying the service.
+
+Since there is apparently no guaranteed way to terminate the service's thread immediately, the only recommended solution I can find (here) is to have a boolean member variable in the service that can be switched in the onDestroy() method, and then have just about every line of the code in onHandleIntent() wrapped in its own "if" clause looking at that variable.  That's an awful way to write code.
+
+Does anybody know of a better way to do this in an IntentService?
+    
+===============================================================================================
+12
+A:Stopping a thread or a process immediately is often a dirty thing. However, it should be fine if your service is stateless.
+
+Declare the service as a separate process in the manifest:
+
+<service
+     android:process=":service"
+     ...
+
+
+And when you want to stop its execution, just kill that process:
+
+ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+List<RunningAppProcessInfo> runningAppProcesses = am.getRunningAppProcesses();
+
+Iterator<RunningAppProcessInfo> iter = runningAppProcesses.iterator();
+
+while(iter.hasNext()){
+    RunningAppProcessInfo next = iter.next();
+
+    String pricessName = getPackageName() + ":service";
+
+    if(next.processName.equals(pricessName)){
+        Process.killProcess(next.pid);
+        break;
+    }
+}
+
+    

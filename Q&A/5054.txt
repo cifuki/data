@@ -1,0 +1,93 @@
+48
+Q:I have followed some Facebook API 3.0 tutorials, including the Login/Logout and the Publish To Feed examples. So the login works this way:
+
+
+App opens, shows a fragment which displays a login button
+User clicks login, the authentication is done via the referenced FacebookSDK library (com.facebook.widget.LoginActivity) and the provided code using sessions.
+User is redirected to next screen
+
+
+I don't want to make the user to login this way. I want them to use my app without any login/registration, then if they click on a facebook specific feature e.g. share a note on Facebook, then the app should ask them whether they let Facebook use their app or something, you know the usual stuff. Without this I get a nullpointer in the publishFeedDialog() function as session is null, because no login has been made.
+
+So my question is, how can I ignore the SplashFragment with the Login button, so when the user clicks on a Facebook feature in my app, no new screen is displayed with a login button, but only the default Facebook authentication window that users are used to?
+    
+===============================================================================================
+89
+A:@erdomester, @sromku
+
+Facebook launch new sdk version 4.x where Session is deprecated,
+
+There new concept of login as from facebook
+
+
+  LoginManager and AccessToken - These new classes perform Facebook
+  Login
+
+
+So, Now you can access Facebook authentication without login button as
+
+layout.xml
+
+    <Button
+            android:id="@+id/btn_fb_login"
+            .../>
+
+
+MainActivity.java
+
+private CallbackManager mCallbackManager;
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    FacebookSdk.sdkInitialize(this.getApplicationContext());
+
+    mCallbackManager = CallbackManager.Factory.create();
+
+    LoginManager.getInstance().registerCallback(mCallbackManager,
+            new FacebookCallback<LoginResult>() {
+                @Override
+                public void onSuccess(LoginResult loginResult) {
+                    Log.d("Success", "Login");
+
+                }
+
+                @Override
+                public void onCancel() {
+                    Toast.makeText(MainActivity.this, "Login Cancel", Toast.LENGTH_LONG).show();
+                }
+
+                @Override
+                public void onError(FacebookException exception) {
+                    Toast.makeText(MainActivity.this, exception.getMessage(), Toast.LENGTH_LONG).show();
+                }
+            });
+
+    setContentView(R.layout.activity_main);
+
+    Button btn_fb_login = (Button)findViewById(R.id.btn_fb_login);
+
+    btn_fb_login.setOnClickListener(new View.OnClickListener() {
+        @Override
+        public void onClick(View view) {
+              LoginManager.getInstance().logInWithReadPermissions(this, Arrays.asList("public_profile", "user_friends"));
+        }
+    });
+
+}
+
+
+Edit
+
+If you don't add the following, it won't work (rightly pointed out by @Daniel Zolnai in comment below):
+
+@Override
+protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    if(mCallbackManager.onActivityResult(requestCode, resultCode, data)) {
+        return;
+    }
+}
+
+    

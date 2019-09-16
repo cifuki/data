@@ -1,0 +1,239 @@
+142
+Q:How do you programmatically detect the application heap size available to an Android app?
+
+I heard there's a function that does this in later versions of the SDK. In any case, I'm looking for solution that works for 1.5 and upwards.
+    
+===============================================================================================
+441
+A:There are two ways to think about your phrase "application heap size available":
+
+
+How much heap can my app use before a hard error is triggered?  And
+How much heap should my app use, given the constraints of the Android OS version and hardware of the user's device?
+
+
+There is a different method for determining each of the above.
+
+For item 1 above: maxMemory()
+
+which can be invoked (e.g., in your main activity's onCreate() method) as follows:
+
+Runtime rt = Runtime.getRuntime();
+long maxMemory = rt.maxMemory();
+Log.v("onCreate", "maxMemory:" + Long.toString(maxMemory));
+
+
+This method tells you how many total bytes of heap your app is allowed to use.
+
+For item 2 above: getMemoryClass()
+
+which can be invoked as follows:
+
+ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+int memoryClass = am.getMemoryClass();
+Log.v("onCreate", "memoryClass:" + Integer.toString(memoryClass));
+
+
+This method tells you approximately how many megabytes of heap your app should use if it wants to be properly respectful of the limits of the present device, and of the rights of other apps to run without being repeatedly forced into the onStop() / onResume() cycle as they are rudely flushed out of memory while your elephantine app takes a bath in the Android jacuzzi.
+
+This distinction is not clearly documented, so far as I know, but I have tested this hypothesis on five different Android devices (see below) and have confirmed to my own satisfaction that this is a correct interpretation.
+
+For a stock version of Android, maxMemory() will typically return about the same number of megabytes as are indicated in getMemoryClass() (i.e., approximately a million times the latter value).
+
+The only situation (of which I am aware) for which the two methods can diverge is on a rooted device running an Android version such as CyanogenMod, which allows the user to manually select how large a heap size should be allowed for each app.  In CM, for example, this option appears under "CyanogenMod settings" / "Performance" / "VM heap size".
+
+NOTE:  BE AWARE THAT SETTING THIS VALUE MANUALLY CAN MESS UP YOUR SYSTEM, ESPECIALLY if you select a smaller value than is normal for your device.
+
+Here are my test results showing the values returned by maxMemory() and getMemoryClass() for four different devices running CyanogenMod, using two different (manually-set) heap values for each:
+
+
+G1:
+
+
+With VM Heap Size set to 16MB:
+
+
+maxMemory: 16777216
+getMemoryClass: 16
+
+With VM Heap Size set to 24MB:
+
+
+maxMemory: 25165824
+getMemoryClass: 16
+
+
+Moto Droid:
+
+
+With VM Heap Size set to 24MB:
+
+
+maxMemory: 25165824
+getMemoryClass: 24
+
+With VM Heap Size set to 16MB:
+
+
+maxMemory: 16777216
+getMemoryClass: 24
+
+
+Nexus One:
+
+
+With VM Heap size set to 32MB:
+
+
+maxMemory: 33554432
+getMemoryClass: 32
+
+With VM Heap size set to 24MB:
+
+
+maxMemory: 25165824
+getMemoryClass: 32
+
+
+Viewsonic GTab:
+
+
+With VM Heap Size set to 32:
+
+
+maxMemory: 33554432
+getMemoryClass: 32
+
+With VM Heap Size set to 64:
+
+
+maxMemory: 67108864
+getMemoryClass: 32
+
+
+
+
+In addition to the above, I tested on a Novo7 Paladin tablet running Ice Cream Sandwich.
+This was essentially a stock version of ICS, except that I've rooted the tablet through a simple process that does not replace the entire OS, and in particular does not provide an interface that would allow the heap size to be manually adjusted.
+
+For that device, here are the results:
+
+
+Novo7
+
+
+maxMemory: 62914560
+getMemoryClass: 60
+
+
+
+Also (per Kishore in a comment below):
+
+
+HTC One X
+
+
+maxMemory: 67108864
+getMemoryClass: 64
+
+
+
+And (per akauppi's comment):
+
+
+Samsung Galaxy Core Plus
+
+
+maxMemory: (Not specified in comment)
+getMemoryClass: 48
+largeMemoryClass: 128
+
+
+
+Per a comment from cmcromance:
+
+
+Galaxy S3 (Jelly Bean) large heap
+
+
+maxMemory: 268435456
+getMemoryClass: 64
+
+
+
+And (per tencent's comments):
+
+
+LG Nexus 5 (4.4.3) normal
+
+
+maxMemory: 201326592
+getMemoryClass: 192
+
+LG Nexus 5 (4.4.3) large heap
+
+
+maxMemory: 536870912
+getMemoryClass: 192
+
+Galaxy Nexus (4.3) normal
+
+
+maxMemory: 100663296
+getMemoryClass: 96
+
+Galaxy Nexus (4.3) large heap
+
+
+maxMemory: 268435456
+getMemoryClass: 96
+
+Galaxy S4 Play Store Edition (4.4.2) normal
+
+
+maxMemory: 201326592
+getMemoryClass: 192
+
+Galaxy S4 Play Store Edition (4.4.2) large heap
+
+
+maxMemory: 536870912
+getMemoryClass: 192
+
+
+
+Other Devices
+
+
+Huawei Nexus 6P (6.0.1) normal
+
+
+maxMemory: 201326592
+getMemoryClass: 192
+
+
+
+I haven't tested these two methods using the special android:largeHeap="true" manifest option available since Honeycomb, but thanks to cmcromance and tencent we do have some sample largeHeap values, as reported above.
+
+My expectation (which seems to be supported by the largeHeap numbers above) would be that this option would have an effect similar to setting the heap manually via a rooted OS - i.e., it would raise the value of maxMemory() while leaving getMemoryClass() alone. There is another method, getLargeMemoryClass(), that indicates how much memory is allowable for an app using the largeHeap setting.  The documentation for getLargeMemoryClass() states, "most applications should not need this amount of memory, and should instead stay with the getMemoryClass() limit."
+
+If I've guessed correctly, then using that option would have the same benefits (and perils) as would using the space made available by a user who has upped the heap via a rooted OS (i.e., if your app uses the additional memory, it probably will not play as nicely with whatever other apps the user is running at the same time).
+
+Note that the memory class apparently need not be a multiple of 8MB.
+
+We can see from the above that the getMemoryClass() result is unchanging for a given device/OS configuration, while the maxMemory() value changes when the heap is set differently by the user.
+
+My own practical experience is that on the G1 (which has a memory class of 16), if I manually select 24MB as the heap size, I can run without erroring even when my memory usage is allowed to drift up toward 20MB (presumably it could go as high as 24MB, although I haven't tried this).  But other similarly large-ish apps may get flushed from memory as a result of my own app's pigginess.  And, conversely, my app may get flushed from memory if these other high-maintenance apps are brought to the foreground by the user.
+
+So, you cannot go over the amount of memory specified by maxMemory().  And, you should try to stay within the limits specified by getMemoryClass().  One way to do that, if all else fails, might be to limit functionality for such devices in a way that conserves memory.  
+
+Finally, if you do plan to go over the number of megabytes specified in getMemoryClass(), my advice would be to work long and hard on the saving and restoring of your app's state, so that the user's experience is virtually uninterrupted if an onStop() / onResume() cycle occurs.  
+
+In my case, for reasons of performance I'm limiting my app to devices running 2.2 and above, and that means that almost all devices running my app will have a memoryClass of 24 or higher.  So I can design to occupy up to 20MB of heap and feel pretty confident that my app will play nice with the other apps the user may be running at the same time.
+
+But there will always be a few rooted users who have loaded a 2.2 or above version of Android onto an older device (e.g., a G1).  When you encounter such a configuration, ideally, you ought to pare down your memory use, even if maxMemory() is telling you that you can go much higher than the 16MB that getMemoryClass() is telling you that you should be targeting.  And if you cannot reliably ensure that your app will live within that budget, then at least make sure that onStop() / onResume() works seamlessly.
+
+getMemoryClass(), as indicated by Diane Hackborn (hackbod) above, is only available back to API level 5 (Android 2.0), and so, as she advises, you can assume that the physical hardware of any device running an earlier version of the OS is designed to optimally support apps occupying a heap space of no more than 16MB.
+
+By contrast, maxMemory(), according to the documentation, is available all the way back to API level 1.  maxMemory(), on a pre-2.0 version, will probably return a 16MB value, but I do see that in my (much later) CyanogenMod versions the user can select a heap value as low as 12MB, which would presumably result in a lower heap limit, and so I would suggest that you continue to test the maxMemory() value, even for versions of the OS prior to 2.0.  You might even have to refuse to run in the unlikely event that this value is set even lower than 16MB, if you need to have more than maxMemory() indicates is allowed.
+    

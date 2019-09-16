@@ -1,0 +1,54 @@
+125
+Q:I want to send an image from the android client to the Django server using Http Post. The image is chosen from the gallery. At present, I am using list value name Pairs to send the necessary data to the server and receiving responses from Django in JSON. Can the same approach be used for images (with urls for images embedded in JSON responses)? 
+
+Also, which is a better method: accessing images remotely without downloading them from the server or downloading and storing them in a Bitmap array and using them locally? The images are few in number (<10) and small in size (50*50 dip).
+
+Any tutorial to tackle these problems would be much appreciated. 
+
+Edit: The images chosen from the gallery are sent to the server after scaling it to required size.  
+    
+===============================================================================================
+143
+A:I'm going to assume that you know the path and filename of the image that you want to upload. Add this string to your NameValuePair using image as the key-name.
+
+Sending images can be done using the HttpComponents libraries. Download the latest HttpClient  (currently 4.0.1) binary with dependencies package and copy apache-mime4j-0.6.jar and httpmime-4.0.1.jar to your project and add them to your Java build path.
+
+You will need to add the following imports to your class.
+
+import org.apache.http.entity.mime.HttpMultipartMode;
+import org.apache.http.entity.mime.MultipartEntity;
+import org.apache.http.entity.mime.content.FileBody;
+import org.apache.http.entity.mime.content.StringBody;
+
+
+Now you can create a MultipartEntity to attach an image to your POST request. The following code shows an example of how to do this:
+
+public void post(String url, List<NameValuePair> nameValuePairs) {
+    HttpClient httpClient = new DefaultHttpClient();
+    HttpContext localContext = new BasicHttpContext();
+    HttpPost httpPost = new HttpPost(url);
+
+    try {
+        MultipartEntity entity = new MultipartEntity(HttpMultipartMode.BROWSER_COMPATIBLE);
+
+        for(int index=0; index < nameValuePairs.size(); index++) {
+            if(nameValuePairs.get(index).getName().equalsIgnoreCase("image")) {
+                // If the key equals to "image", we use FileBody to transfer the data
+                entity.addPart(nameValuePairs.get(index).getName(), new FileBody(new File (nameValuePairs.get(index).getValue())));
+            } else {
+                // Normal string data
+                entity.addPart(nameValuePairs.get(index).getName(), new StringBody(nameValuePairs.get(index).getValue()));
+            }
+        }
+
+        httpPost.setEntity(entity);
+
+        HttpResponse response = httpClient.execute(httpPost, localContext);
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+}
+
+
+I hope this helps you a bit in the right direction.
+    

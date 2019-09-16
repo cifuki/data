@@ -1,0 +1,123 @@
+28
+Q:Summary:
+
+I have an AAR file that depends on a JAR file, when I build the AAR project, it doesn't contain the JAR code.
+
+Details:
+
+I have a Java SDK library project that contains code that we use for Java web projects and such, this library is created using Gradle and resides in an internal nexus server (as a JAR).
+
+The goal is to provide an "Android configured" version of this JAR library through an AAR library that multiple Android Applications can use and minimize the effort (and boilerplate code) to implement it. This AAR file is also uploaded to the nexus server to be used by the Android Application projects.
+
+My AAR project includes a gradle dependency for my Java SDK library (the JAR) but when built, the AAR doesn't include any classes from it.
+
+Code:
+
+This is the Java SDK project's gradle file:
+
+apply plugin: 'java'
+
+//noinspection GroovyUnusedAssignment
+sourceCompatibility = 1.7
+version = '1.1.1'
+
+repositories {
+    mavenCentral()
+}
+
+jar {
+    from {
+        configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}
+
+dependencies {
+    testCompile group: 'junit', name: 'junit', version: '4.11'
+    testCompile 'org.apache.directory.studio:org.apache.commons.io:2.4'
+    compile 'org.springframework:spring-web:3.1.1.RELEASE'
+    compile 'com.google.code.gson:gson:2.3'
+}
+
+
+This is the gradle file for my AAR Project, note that I removed the Maven repository declarations to my nexus server from it. I guess it shouldn't matter for the sake of this question.
+
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion 23
+    buildToolsVersion "23.0.1"
+
+    defaultConfig {
+        minSdkVersion 16
+        targetSdkVersion 23
+        versionCode 1
+        versionName "2.2.2"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    lintOptions {
+        abortOnError false
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    testCompile 'junit:junit:4.12'
+    compile 'com.android.support:appcompat-v7:23.1.0'
+
+    compile ('com.mycompany:javasdk:1.1.1')
+}
+
+
+This is the gradle file for my Android Project, again I removed the nexus server references:
+
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 23
+    buildToolsVersion "23.0.1"
+
+    defaultConfig {
+        applicationId "com.mycompany.application1"
+        minSdkVersion 16
+        targetSdkVersion 23
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    testCompile 'junit:junit:4.12'
+    compile 'com.android.support:appcompat-v7:23.1.0'
+
+    compile ('com.mycompany:androidsdk:2.2.2@aar')
+}
+
+
+NOTE: I initially solved the issue by adding the JAR in the lib directory of the AAR project, but this is undesired. It makes having a nexus server useless. It would be good that we can just bump the JAR's version number in the AAR project's gradle file and the update happens automatically at compile time.
+
+NOTE2: I tried adding transitive=true to my AAR dependency in the Android Project but it didn't solved anything, the real issue is that when building the AAR project, the JAR project code doesn't get bundled.
+    
+===============================================================================================
+43
+A:You can add this task:
+
+task copyLibs(type: Copy) {
+    from configurations.compile
+    into 'libs'
+}
+
+
+Dependencies will be downloaded from your Nexus, but when you need package the library, execute this task first and jar files will be copied and included inside final aar.
+    

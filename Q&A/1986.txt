@@ -1,0 +1,54 @@
+98
+Q:I'm attempting to do the following SQL query within Android:
+
+
+
+    String names = "'name1', 'name2";   // in the code this is dynamically generated
+
+    String query = "SELECT * FROM table WHERE name IN (?)";
+    Cursor cursor = mDb.rawQuery(query, new String[]{names});
+
+
+However, Android does not replace the question mark with the correct values.  I could do the following, however, this does not protect against SQL injection:
+
+    String query = "SELECT * FROM table WHERE name IN (" + names + ")";
+    Cursor cursor = mDb.rawQuery(query, null);
+
+
+How can I get around this issue and be able to use the IN clause?
+    
+===============================================================================================
+183
+A:A string of the form "?, ?, ..., ?" can be a dynamically created string and safely put into the original SQL query (because it is a restricted form that does not contain external data) and then the placeholders can be used as normal.
+
+Consider a function String makePlaceholders(int len) which returns len question-marks separated with commas, then:
+
+String[] names = { "name1", "name2" }; // do whatever is needed first
+String query = "SELECT * FROM table"
+    + " WHERE name IN (" + makePlaceholders(names.length) + ")";
+Cursor cursor = mDb.rawQuery(query, names);
+
+
+Just make sure to pass exactly as many values as places. The default maximum limit of host parameters in SQLite is 999 - at least in a normal build, not sure about Android :)
+
+Happy coding.
+
+
+
+Here is one implementation:
+
+String makePlaceholders(int len) {
+    if (len < 1) {
+        // It will lead to an invalid query anyway ..
+        throw new RuntimeException("No placeholders");
+    } else {
+        StringBuilder sb = new StringBuilder(len * 2 - 1);
+        sb.append("?");
+        for (int i = 1; i < len; i++) {
+            sb.append(",?");
+        }
+        return sb.toString();
+    }
+}
+
+    

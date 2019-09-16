@@ -1,0 +1,42 @@
+143
+Q:I am not getting the reason to use RxJava in Android and LiveData from Android Architectural Components.It would be really helpful if the usecases and differences between the both are explained along with sample example in the form of code which explains the differences between the both.
+    
+===============================================================================================
+96
+A:Android LiveData is a variant of the original observer pattern, with the addition of active/inactive transitions. As such, it is very restrictive in its scope.
+
+Using the example described in Android LiveData, a class is created to monitor location data, and register and unregister based on application state.
+
+RxJava provides operators that are much more generalized. Let's assume that this observable will provide location data:
+
+Observable<LocationData> locationObservable;
+
+
+The implementation of the observable can be built up using Observable.create() to map the call back operations. When the observable is subscribed, the call back is registered, and when it is unsubscribed, the call back is unregistered. The implementation looks very similar to the code provided in the example.
+
+Let's also assume that you have an observable that emits true when the application is active:
+
+Observable<Boolean> isActive;
+
+
+Then you can provide all the functionality of LiveData by the following
+
+Observable<LocationData> liveLocation =
+  isActive
+    .switchMap( active -> active ? locationObservable : Observable.never() );
+
+
+The switchMap() operator will either provide the current location as a stream, or nothing if the application is not active. Once you have the liveLocation observable, there a lot of things you can do with it using RxJava operators. My favorite example is:
+
+liveLocation.distinctUntilChanged()
+  .filter( location -> isLocationInAreaOfInterest( location ) )
+  .subscribe( location -> doSomethingWithNewLocation( location ) );
+
+
+That will only perform the action when the location changed, and the location is interesting. You can create similar operations that 
+combine time operators to determine speed. More importantly, you can provide detailed control of whether operations happen in the main thread, or a background thread, or a multiple threads, using RxJava operators.
+
+The point of RxJava is that it combines control and timing into a single universe, using operations provided from the library, or even custom operations that you provide.
+
+LiveData addresses only one small part of that universe, the equivalent of building the liveLocation.
+    

@@ -1,0 +1,213 @@
+81
+Q:I am trying a sample with Room Persistence Library.
+I created an Entity:
+
+@Entity
+public class Agent {
+    @PrimaryKey
+    public String guid;
+    public String name;
+    public String email;
+    public String password;
+    public String phone;
+    public String licence;
+}
+
+
+Created a DAO class:
+
+@Dao
+public interface AgentDao {
+    @Query("SELECT COUNT(*) FROM Agent where email = :email OR phone = :phone OR licence = :licence")
+    int agentsCount(String email, String phone, String licence);
+
+    @Insert
+    void insertAgent(Agent agent);
+}
+
+
+Created the Database class:
+
+@Database(entities = {Agent.class}, version = 1)
+public abstract class AppDatabase extends RoomDatabase {
+    public abstract AgentDao agentDao();
+}
+
+
+Exposed database using below subclass in Kotlin:
+
+class MyApp : Application() {
+
+    companion object DatabaseSetup {
+        var database: AppDatabase? = null
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        MyApp.database =  Room.databaseBuilder(this, AppDatabase::class.java, "MyDatabase").build()
+    }
+}
+
+
+Implemented below function in my activity:
+
+void signUpAction(View view) {
+        String email = editTextEmail.getText().toString();
+        String phone = editTextPhone.getText().toString();
+        String license = editTextLicence.getText().toString();
+
+        AgentDao agentDao = MyApp.DatabaseSetup.getDatabase().agentDao();
+        //1: Check if agent already exists
+        int agentsCount = agentDao.agentsCount(email, phone, license);
+        if (agentsCount > 0) {
+            //2: If it already exists then prompt user
+            Toast.makeText(this, "Agent already exists!", Toast.LENGTH_LONG).show();
+        }
+        else {
+            Toast.makeText(this, "Agent does not exist! Hurray :)", Toast.LENGTH_LONG).show();
+            onBackPressed();
+        }
+    }
+
+
+Unfortunately on execution of above method it crashes with below stack trace:
+
+    FATAL EXCEPTION: main
+ Process: com.example.me.MyApp, PID: 31592
+java.lang.IllegalStateException: Could not execute method for android:onClick
+    at android.support.v7.app.AppCompatViewInflater$DeclaredOnClickListener.onClick(AppCompatViewInflater.java:293)
+    at android.view.View.performClick(View.java:5612)
+    at android.view.View$PerformClick.run(View.java:22288)
+    at android.os.Handler.handleCallback(Handler.java:751)
+    at android.os.Handler.dispatchMessage(Handler.java:95)
+    at android.os.Looper.loop(Looper.java:154)
+    at android.app.ActivityThread.main(ActivityThread.java:6123)
+    at java.lang.reflect.Method.invoke(Native Method)
+    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:867)
+    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:757)
+ Caused by: java.lang.reflect.InvocationTargetException
+    at java.lang.reflect.Method.invoke(Native Method)
+    at android.support.v7.app.AppCompatViewInflater$DeclaredOnClickListener.onClick(AppCompatViewInflater.java:288)
+    at android.view.View.performClick(View.java:5612)\xc2\xa0
+    at android.view.View$PerformClick.run(View.java:22288)\xc2\xa0
+    at android.os.Handler.handleCallback(Handler.java:751)\xc2\xa0
+    at android.os.Handler.dispatchMessage(Handler.java:95)\xc2\xa0
+    at android.os.Looper.loop(Looper.java:154)\xc2\xa0
+    at android.app.ActivityThread.main(ActivityThread.java:6123)\xc2\xa0
+    at java.lang.reflect.Method.invoke(Native Method)\xc2\xa0
+    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:867)\xc2\xa0
+    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:757)\xc2\xa0
+ Caused by: java.lang.IllegalStateException: Cannot access database on the main thread since it may potentially lock the UI for a long periods of time.
+    at android.arch.persistence.room.RoomDatabase.assertNotMainThread(RoomDatabase.java:137)
+    at android.arch.persistence.room.RoomDatabase.query(RoomDatabase.java:165)
+    at com.example.me.MyApp.RoomDb.Dao.AgentDao_Impl.agentsCount(AgentDao_Impl.java:94)
+    at com.example.me.MyApp.View.SignUpActivity.signUpAction(SignUpActivity.java:58)
+    at java.lang.reflect.Method.invoke(Native Method)\xc2\xa0
+    at android.support.v7.app.AppCompatViewInflater$DeclaredOnClickListener.onClick(AppCompatViewInflater.java:288)\xc2\xa0
+    at android.view.View.performClick(View.java:5612)\xc2\xa0
+    at android.view.View$PerformClick.run(View.java:22288)\xc2\xa0
+    at android.os.Handler.handleCallback(Handler.java:751)\xc2\xa0
+    at android.os.Handler.dispatchMessage(Handler.java:95)\xc2\xa0
+    at android.os.Looper.loop(Looper.java:154)\xc2\xa0
+    at android.app.ActivityThread.main(ActivityThread.java:6123)\xc2\xa0
+    at java.lang.reflect.Method.invoke(Native Method)\xc2\xa0
+    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:867)\xc2\xa0
+    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:757)\xc2\xa0
+
+
+Seems like that problem is related to execution of db operation on main thread. However the sample test code provided in above link does not run on a separate thread:
+
+@Test
+    public void writeUserAndReadInList() throws Exception {
+        User user = TestUtil.createUser(3);
+        user.setName("george");
+        mUserDao.insert(user);
+        List<User> byName = mUserDao.findUsersByName("george");
+        assertThat(byName.get(0), equalTo(user));
+    }
+
+
+Am I missing anything over here? How can I make it execute without crash? Please suggest.
+    
+===============================================================================================
+47
+A:Database access on main thread locking the UI is the error, like Dale said.
+
+Create a static nested class (to prevent memory leak) in your Activity extending AsyncTask.
+
+private static class AgentAsyncTask extends AsyncTask<Void, Void, Integer> {
+
+    //Prevent leak
+    private WeakReference<Activity> weakActivity;
+    private String email;
+    private String phone;
+    private String license;
+
+    public AgentAsyncTask(Activity activity, String email, String phone, String license) {
+        weakActivity = new WeakReference<>(activity);
+        this.email = email;
+        this.phone = phone;
+        this.license = license;
+    }
+
+    @Override
+    protected Integer doInBackground(Void... params) {
+        AgentDao agentDao = MyApp.DatabaseSetup.getDatabase().agentDao();
+        return agentDao.agentsCount(email, phone, license);
+    }
+
+    @Override
+    protected void onPostExecute(Integer agentsCount) {
+        Activity activity = weakActivity.get();
+        if(activity == null) {
+            return;
+        }
+
+        if (agentsCount > 0) {
+            //2: If it already exists then prompt user
+            Toast.makeText(activity, "Agent already exists!", Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(activity, "Agent does not exist! Hurray :)", Toast.LENGTH_LONG).show();
+            activity.onBackPressed();
+        }
+    }
+}
+
+
+Or you can create a final class on its own file.
+
+Then execute it in the signUpAction(View view) method:
+
+new AgentAsyncTask(this, email, phone, license).execute();
+
+
+In some cases you might also want to hold a reference to the AgentAsyncTask in your activity so you can cancel it when the Activity is destroyed. But you would have to interrupt any transactions yourself.
+
+Also, your question about the Google's test example...
+They state in that web page:
+
+
+  The recommended approach for testing your database implementation is
+  writing a JUnit test that runs on an Android device. Because these
+  tests don't require creating an activity, they should be faster to
+  execute than your UI tests.
+
+
+No Activity, no UI.
+
+--EDIT--
+
+For people wondering... You have other options.
+I recommend taking a look into the new ViewModel and LiveData components. LiveData works great with Room.
+https://developer.android.com/topic/libraries/architecture/livedata.html
+
+Another option is the RxJava/RxAndroid. More powerful but more complex than LiveData.
+https://github.com/ReactiveX/RxJava
+
+--EDIT 2--
+
+Since many people may come across this answer...
+The best option nowadays, generally speaking, is Kotlin Coroutines. Room now supports it directly (currently in beta).
+https://kotlinlang.org/docs/reference/coroutines-overview.html
+https://developer.android.com/jetpack/androidx/releases/room#2.1.0-beta01
+    

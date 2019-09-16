@@ -1,0 +1,169 @@
+49
+Q:I was wondering whether it is possible to actually authenticate to the Firebase REST API withouth using the custom authentication?
+
+I've worked with Firebase now for some time and I'm currently thinking about migrating a backend of mine to Firebase.
+The app that uses the backend currently uses a REST API and does not need realtime data at all.
+Thus I'd like to use only the REST API and not the full Android framework on the clients.
+
+Is it possible to get an auth token using the mail & password authentication of Firebase via HTTP-requests?
+
+In the old docs I've only found a solution with custom login and in the new docs you seem to need a Google Service Account.
+
+Any help or advice appreciated.
+    
+===============================================================================================
+61
+A:Update: Firebase REST authentication is now documented!
+
+View the documentation
+
+
+
+Firebase REST authentication
+
+I figured out how to perform email and password authentication for Firebase by examining the requests sent by the Javascript API.
+
+These APIs are undocumented and unsupported
+
+
+
+Firebase 3
+
+Firebase 3 authentication is an updated and renamed version of the Google Identity Toolkit. The old documentation is not fully accurate, but may be useful and can be found here: https://developers.google.com/identity/toolkit/web/reference/
+
+Firebase 3 requires all requests to have Content-Type: application/json in the header
+
+API Key
+
+Firebase 3 requires an API key to be attached to all authentication requests. You can find the API key for your database by visiting the Firebase project overview and clicking on "Add Firebase to your web app". You should see a window with code like the following:
+
+<script src="https://www.gstatic.com/firebasejs/live/3.0/firebase.js">    </script>
+<script>
+  // Initialize Firebase
+  var config = {
+    apiKey: "<my-firebase-api-key>",
+    authDomain: "my-firebase.firebaseapp.com",
+    databaseURL: "https://my-firebase.firebaseio.com",
+    storageBucket: "my-firebase.appspot.com",
+  };
+  firebase.initializeApp(config);
+</script>
+
+
+Copy the apiKey value and save it for later.
+
+Registration
+
+Method: POST
+
+URL: https://www.googleapis.com/identitytoolkit/v3/relyingparty/signupNewUser?key=<my-firebase-api-key>
+
+Payload:
+
+{
+    email: "<email>",
+    password: "<password>",
+    returnSecureToken: true
+}
+
+
+Response: 
+
+{
+    "kind": "identitytoolkit#SignupNewUserResponse",
+    "localId": "<firebase-user-id>", // Use this to uniquely identify users
+    "email": "<email>",
+    "displayName": "",
+    "idToken": "<provider-id-token>", // Use this as the auth token in database requests
+    "registered": true,
+    "refreshToken": "<refresh-token>",
+    "expiresIn": "3600"
+}
+
+
+Login
+
+Method: POST
+
+URL: https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyPassword?key=<my-firebase-api-key>
+
+Payload:
+
+{
+    email: "<email>",
+    password: "<password>",
+    returnSecureToken: true
+}
+
+
+Response: 
+
+{
+    "kind": "identitytoolkit#VerifyPasswordResponse",
+    "localId": "<firebase-user-id>", // Use this to uniquely identify users
+    "email": "<email>",
+    "displayName": "",
+    "idToken": "<provider-id-token>", // Use this as the auth token in database requests
+    "registered": true,
+    "refreshToken": "<refresh-token>",
+    "expiresIn": "3600"
+}
+
+
+Get Account Info
+
+Method: POST
+
+URL: https://www.googleapis.com/identitytoolkit/v3/relyingparty/getAccountInfo?key=<my-firebase-api-key>
+
+Payload:
+
+{
+    idToken: "<provider-id-token>"
+}
+
+
+Response: 
+
+{
+    "kind": "identitytoolkit#GetAccountInfoResponse",
+    "users": [
+    {
+        "localId": "<firebase-user-id>",
+        "email": "<email>",
+        "emailVerified": false,
+        "providerUserInfo": [
+        {
+            "providerId": "<password>",
+            "federatedId": "<email>",
+            "email": "<email>",
+            "rawId": "<email>"
+        }],
+        "passwordHash": "<hash>",
+        "passwordUpdatedAt": 1.465327109E12,
+        "validSince": "1465327108",
+        "createdAt": "1465327108000"
+    }]
+}
+
+
+
+
+Firebase 2
+
+These requests return JSON data described in the Firebase docs. https://www.firebase.com/docs/web/guide/login/password.html#section-logging-in
+
+Login
+
+You can authenticate by sending a GET request with the following format:
+
+https://auth.firebase.com/v2/<db_name>/auth/password?&email=<email>&password=<password>
+
+
+Registration
+
+User creation can also be performed by sending the same GET request with _method=POST as part of the query string
+
+https://auth.firebase.com/v2/<db_name>/users?&email=<email>&password=<password>&_method=POST
+
+    

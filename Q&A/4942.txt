@@ -1,0 +1,117 @@
+49
+Q:I've got an old eclipse project I've moved into android studio and setup to use flavors.  It seemed to be working fine till I started trying to use different java files between my flavors.
+
+My project setup is this:
+
+ProjectRoot
++- acitonbarsherlock
++- facebook
++- myLib1
++- myProject
+   +- src
+      +- commonFiles
+         +- flavor1
+         +- flavor2
+   +- res
+      +- flavor1
+      +- flavor2
+
+
+The innards of the myProject gradle file android closure looks like this:
+
+android {
+compileSdkVersion 17
+buildToolsVersion "18.0.1"
+
+signingConfigs {
+     ...
+}
+
+productFlavors {
+    flavor2 {
+    }
+    flavor1 {
+    }
+}
+
+sourceSets{
+    main {
+        manifest.srcFile 'AndroidManifest.xml'
+        java.srcDirs = ['src/commonFiles/java']
+        resources.srcDirs = ['src/commonFiles/java']
+        aidl.srcDirs = ['src/commonFiles/java']
+        renderscript.srcDirs = ['src/commonFiles/java']
+        res.srcDirs = ['res']
+        assets.srcDirs = ['assets']
+    }
+
+    flavor2 {
+        manifest.srcFile 'AndroidManifest-flavor2.xml'
+        res.srcDirs = ['res-flavor2', 'res']
+        java.srcDirs = ['src/flavor2/java','src/commonFiles/java']
+        resources.srcDirs = ['src/flavor2/java','src/commonFiles/java']
+        aidl.srcDirs = ['src/flavor2/java','src/commonFiles/java']
+        renderscript.srcDirs = ['src/flavor2/java','src/commonFiles/java']
+    }
+
+    flavor1 {
+        manifest.srcFile 'AndroidManifest.xml'
+        java.srcDirs = ['src/flavor1/java','src/commonFiles/java']
+        resources.srcDirs = ['src/flavor1/java','src/commonFiles/java']
+        aidl.srcDirs = ['src/flavor1/java','src/commonFiles/java']
+        renderscript.srcDirs = ['src/flavor1/java','src/commonFiles/java']
+        res.srcDirs = ['res-flavor1','res']
+        assets.srcDirs = ['assets']
+    }
+
+    // Move the tests to tests/java, tests/res, etc...
+    instrumentTest.setRoot('tests')
+
+    // Move the build types to build-types/<type>
+    // For instance, build-types/debug/java, build-types/debug/AndroidManifest.xml, ...
+    // This moves them out of them default location under src/<type>/... which would
+    // conflict with src/ being used by the main source set.
+    // Adding new build types or product flavors should be accompanied
+    // by a similar customization.
+    debug.setRoot('build-types/debug')
+    release.setRoot('build-types/release')
+
+}
+
+buildTypes {
+    release {
+        signingConfig signingConfigs.release
+    }
+}
+
+
+}
+
+With my setup like this gradle complains about not being able to find classes I'm trying to inherit from commonFiles in flavor1 or flavor2.
+
+From the various other topics I've looked at on here I see others not even defining source sets, and I feel like what I'm doing in them is perhaps too much.
+
+Has anyone experimented with this before and know how this should properly be configured?
+    
+===============================================================================================
+55
+A:I think you'd be better off not defining custom sourceSets but using the default gradle configuration. I used to do custom sourcesets until I realized the conventions are, well, convenient.
+
+You'll want something like this: 
+
++ src
+    + main // this is your common code
+        + java 
+        + res
+    + flavor1
+        + java
+        + res
+    + flavor2
+        + java
+        + res
+
+
+Then you can just go ahead and remove the sourcesets closure from your build.gradle
+
+NOTE: For the gradle configuration, resources are merged or overridden whereas all java code is put on the same class-path. For example, the AndroidManifest.xml files for each flavor need only have the differences from main's manifest file. Having an asset, for example, ic_launcher in a flavor overrides the ic_launcher from main if such file exists. However, having a file HomeActivity.java in both main and the flavor is not possible and will give a duplicate file error.
+    

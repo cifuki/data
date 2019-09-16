@@ -1,0 +1,247 @@
+43
+Q:Recently I upgrade my recyclerview-v7:23 to recyclerview-v7:24.2.0. My applicaton has an endless scroll list. The error message points to the line notifyItemInserted when I add loading view into RecyclerView (null object it means loading, id 0 is empty, -1 is end of the page) and it works fine before (recyclerview-v7:23) but suddenly I got error like this and somehow my loading show up twice then when it removed one, there is one loading that still visible in the top.
+
+    W/RecyclerView: Cannot call this method in a scroll callback. Scroll callbacks might be run during a measure & layout pass where you cannot change the RecyclerView data. Any method call that might change the structure of the RecyclerView or the adapter contents should be postponed to the next frame.java.lang.IllegalStateException:  
+ at android.support.v7.widget.RecyclerView.assertNotInLayoutOrScroll(RecyclerView.java:2403)
+     at android.support.v7.widget.RecyclerView$RecyclerViewDataObserver.onItemRangeInserted(RecyclerView.java:4631)
+     at android.support.v7.widget.RecyclerView$AdapterDataObservable.notifyItemRangeInserted(RecyclerView.java:10469)
+     at android.support.v7.widget.RecyclerView$Adapter.notifyItemInserted(RecyclerView.java:6211)
+     at com.sketchproject.infogue.fragments.MessageFragment.loadMessages(MessageFragment.java:109)
+     at com.sketchproject.infogue.fragments.MessageFragment.access$100(MessageFragment.java:42)
+     at com.sketchproject.infogue.fragments.MessageFragment$1.onLoadMore(MessageFragment.java:87)
+     at com.sketchproject.infogue.modules.EndlessRecyclerViewScrollListener.onScrolled(EndlessRecyclerViewScrollListener.java:74)
+
+
+When I remove the part of error (add loading) it works fine again, I don't know why, is the newer version of recyclerview prevent adding data into adapter too fast or there is callback function that triggered when "measure & layout" of recyclerview finished, this is my code
+
+private void loadArticles(final int page) {
+        if (!isEndOfPage && apiArticleUrl != null) {
+            if (swipeRefreshLayout == null || !swipeRefreshLayout.isRefreshing()) {
+                allArticles.add(null);
+                articleAdapter.notifyItemInserted(allArticles.size() - 1); // error here
+            }
+
+            JsonObjectRequest articleRequest = new JsonObjectRequest(Request.Method.GET, apiArticleUrl, null,
+                    new Response.Listener<JSONObject>() {
+                        @Override
+                        public void onResponse(JSONObject response) {
+
+                            try {
+                                String status = response.getString("status");
+                                JSONObject articles = response.getJSONObject("articles");
+
+                                String nextUrl = articles.getString("next_page_url");
+                                int currentPage = articles.getInt("current_page");
+                                int lastPage = articles.getInt("last_page");
+                                JSONArray data = articles.optJSONArray("data");
+
+                                apiArticleUrl = nextUrl;
+
+                                if (status.equals(APIBuilder.REQUEST_SUCCESS)) {
+                                    if (swipeRefreshLayout == null || !swipeRefreshLayout.isRefreshing()) {
+                                        allArticles.remove(allArticles.size() - 1);
+                                        articleAdapter.notifyItemRemoved(allArticles.size());
+                                    } else {
+                                        swipeRefreshLayout.setRefreshing(false);
+                                        int total = allArticles.size();
+                                        for (int i = 0; i < total; i++) {
+                                            allArticles.remove(0);
+                                        }
+                                        articleAdapter.notifyItemRangeRemoved(0, total);
+                                    }
+
+                                    List<Article> moreArticles = new ArrayList<>();
+
+                                    if (data != null) {
+                                        for (int i = 0; i < data.length(); i++) {
+                                            JSONObject articleData = data.getJSONObject(i);
+                                            Article article = new Article();
+                                            article.setId(articleData.getInt(Article.ID));
+                                            article.setSlug(articleData.getString(Article.SLUG));
+                                            article.setTitle(articleData.getString(Article.TITLE));
+                                            article.setFeatured(articleData.getString(Article.FEATURED_REF));
+                                            article.setCategoryId(articleData.getInt(Article.CATEGORY_ID));
+                                            article.setCategory(articleData.getString(Article.CATEGORY));
+                                            article.setSubcategoryId(articleData.getInt(Article.SUBCATEGORY_ID));
+                                            article.setSubcategory(articleData.getString(Article.SUBCATEGORY));
+                                            article.setContent(articleData.getString(Article.CONTENT));
+                                            article.setContentUpdate(articleData.getString(Article.CONTENT_UPDATE));
+                                            article.setPublishedAt(articleData.getString(Article.PUBLISHED_AT));
+                                            article.setView(articleData.getInt(Article.VIEW));
+                                            article.setRating(articleData.getInt(Article.RATING_TOTAL));
+                                            article.setStatus(articleData.getString(Article.STATUS));
+                                            moreArticles.add(article);
+                                        }
+                                    }
+
+                                    int curSize = articleAdapter.getItemCount();
+                                    allArticles.addAll(moreArticles);
+
+                                    if (allArticles.size() <= 0) {
+                                        Log.i("INFOGUE/Article", "Empty on page " + page);
+                                        isEndOfPage = true;
+                                        Article emptyArticle = new Article(0, null, "Empty page");
+                                        allArticles.add(emptyArticle);
+                                    } else if (currentPage >= lastPage) {
+                                        Log.i("INFOGUE/Article", "End on page " + page);
+                                        isEndOfPage = true;
+                                        Article endArticle = new Article(-1, null, "End of page");
+                                        allArticles.add(endArticle);
+                                    }
+
+                                    articleAdapter.notifyItemRangeInserted(curSize, allArticles.size() - 1);
+                                } else {
+                                    Log.i("INFOGUE/Article", "Error on page " + page);
+                                    Helper.toastColor(getContext(), R.string.error_unknown, R.color.color_warning_transparent);
+
+                                    isEndOfPage = true;
+                                    Article failureArticle = new Article();
+                                    failureArticle.setId(-2);
+                                    failureArticle.setTitle(getString(R.string.error_unknown));
+                                    allArticles.add(failureArticle);
+                                }
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    },
+                    new Response.ErrorListener() {
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            error.printStackTrace();
+
+                            if (swipeRefreshLayout != null && swipeRefreshLayout.isRefreshing()) {
+                                swipeRefreshLayout.setRefreshing(false);
+                            }
+
+                            // remove last loading
+                            allArticles.remove(allArticles.size() - 1);
+                            articleAdapter.notifyItemRemoved(allArticles.size());
+
+                            String errorMessage = getString(R.string.error_unknown);
+                            NetworkResponse networkResponse = error.networkResponse;
+                            if (networkResponse == null) {
+                                if (error.getClass().equals(TimeoutError.class)) {
+                                    errorMessage = getString(R.string.error_timeout);
+                                } else if (error.getClass().equals(NoConnectionError.class)) {
+                                    errorMessage = getString(R.string.error_no_connection);
+                                }
+                            } else {
+                                if (networkResponse.statusCode == 404) {
+                                    errorMessage = getString(R.string.error_not_found);
+                                } else if (networkResponse.statusCode == 500) {
+                                    errorMessage = getString(R.string.error_server);
+                                } else if (networkResponse.statusCode == 503) {
+                                    errorMessage = getString(R.string.error_maintenance);
+                                }
+                            }
+                            Helper.toastColor(getContext(), errorMessage, R.color.color_danger_transparent);
+
+                            // add error view holder
+                            isEndOfPage = true;
+                            Article errorArticle = new Article();
+                            errorArticle.setId(-2);
+                            errorArticle.setTitle(errorMessage);
+                            allArticles.add(errorArticle);
+                        }
+                    }
+            );
+
+            articleRequest.setTag("articles");
+            articleRequest.setRetryPolicy(new DefaultRetryPolicy(
+                    APIBuilder.TIMEOUT_SHORT,
+                    DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
+                    DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
+            VolleySingleton.getInstance(getContext()).addToRequestQueue(articleRequest);
+        }
+    }
+
+
+that code was called from onCreate method
+
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+            View view = inflater.inflate(R.layout.fragment_article_list, container, false);
+
+            // Set the adapter
+            if (view instanceof RecyclerView) {
+                Context context = view.getContext();
+                recyclerView = (RecyclerView) view;
+
+                // determine column of list
+                LinearLayoutManager linearLayoutManager;
+                if (mColumnCount <= 1) {
+                    linearLayoutManager = new LinearLayoutManager(context);
+                } else {
+                    linearLayoutManager = new GridLayoutManager(context, mColumnCount);
+            }
+
+        // if article list authored by logged user then prefer editable view holder
+        if (mMyArticle) {
+            articleAdapter = new ArticleRecyclerViewAdapter(allArticles, mArticleListListener, mArticleEditableListener);
+        } else {
+            articleAdapter = new ArticleRecyclerViewAdapter(allArticles, mArticleListListener, hasHeader);
+        }
+
+        // set the adapter and attach custom scroll listener that triggered onLoadMore() and onReachTop()
+        recyclerView.setAdapter(articleAdapter);
+        recyclerView.setLayoutManager(linearLayoutManager);
+        recyclerView.addOnScrollListener(new EndlessRecyclerViewScrollListener(linearLayoutManager) {
+            @Override
+            public void onLoadMore(final int page, int totalItemsCount) {
+                if (!isFirstCall) {
+                    loadArticles(page);
+                }
+            }
+
+            @Override
+            public void onReachTop(boolean isFirst) {
+                // activate swipe function when list reach top only, find out where do fragment attached
+                if (getActivity() instanceof ArticleActivity) {
+                    ((ArticleActivity) getActivity()).setSwipeEnable(isFirst);
+                } else if (getActivity() instanceof ApplicationActivity) {
+                    ((ApplicationActivity) getActivity()).setSwipeEnable(isFirst);
+                }
+            }
+        });
+
+        if (isFirstCall) {
+            isFirstCall = false;
+            loadArticles(0);
+        }
+    }
+    return view;
+} 
+
+
+My questions are:
+
+
+Does the issue come from new version of RecyclerView? 
+Is it wrong to implement notifyItemInserted inside scroll listener? It worked before.
+How can I solve this problem?
+
+
+Updated
+
+when I logged the code inside first call and scroll,
+09-12 03:49:10.078 7046-7046/com.sketchproject.infogue I/Infogue/Contributor: Followers URL http://192.168.43.141:8000/api/contributor/support/followers?contributor_id=1
+09-12 03:49:26.421 7046-7046/com.sketchproject.infogue I/Infogue/Contributor: Followers first call
+09-12 03:49:26.421 7046-7046/com.sketchproject.infogue I/Infogue/Contributor: Followers URL http://192.168.43.141:8000/api/contributor/support/followers?contributor_id=1
+09-12 03:49:26.617 7046-7046/com.sketchproject.infogue I/Infogue/Contributor: Followers second call (scroll)
+09-12 03:49:26.618 7046-7046/com.sketchproject.infogue I/Infogue/Contributor: Followers URL http://192.168.43.141:8000/api/contributor/support/followers?contributor_id=1
+09-12 03:49:27.365 7046-7046/com.sketchproject.infogue I/Infogue/Contributor: Followers second call (scroll)
+
+
+They are called twice when first load, after first call and add loading view somehow the scroll is triggered and call again.
+    
+===============================================================================================
+98
+A:You could also post using the view. 
+
+   recyclerView.post(new Runnable() {
+        public void run() {
+            articleAdapter.notifyItemInserted(allArticles.size() - 1);
+        }
+    });
+
+    

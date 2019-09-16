@@ -1,0 +1,464 @@
+28
+Q:Background:
+
+I have a custom CursorLoader that works directly with SQLite Database instead of using a ContentProvider. This loader works with a ListFragment backed by a CursorAdapter. So far so good.
+
+To simplify things, lets assume there is a Delete button on the UI. When user clicks this, I delete a row from the DB, and also call onContentChanged() on my loader. Also, on onLoadFinished() callback, I call notifyDatasetChanged() on my adapter so as to refresh the UI.
+
+Problem:
+
+When the delete commands happen in rapid succession, meaning the onContentChanged() is called in rapid succession, bindView() ends up to be working with stale data. What this means is a row has been deleted, but the ListView is still attempting to display that row. This leads to Cursor exceptions.
+
+What am I doing wrong?
+
+Code:
+
+This is a custom CursorLoader (based on this advice by Ms. Diane Hackborn)
+
+/**
+ * An implementation of CursorLoader that works directly with SQLite database
+ * cursors, and does not require a ContentProvider.
+ * 
+ */
+public class VideoSqliteCursorLoader extends CursorLoader {
+
+    /*
+     * This field is private in the parent class. Hence, redefining it here.
+     */
+    ForceLoadContentObserver mObserver;
+
+    public VideoSqliteCursorLoader(Context context) {
+        super(context);
+        mObserver = new ForceLoadContentObserver();
+
+    }
+
+    public VideoSqliteCursorLoader(Context context, Uri uri,
+            String[] projection, String selection, String[] selectionArgs,
+            String sortOrder) {
+        super(context, uri, projection, selection, selectionArgs, sortOrder);
+        mObserver = new ForceLoadContentObserver();
+
+    }
+
+    /*
+     * Main logic to load data in the background. Parent class uses a
+     * ContentProvider to do this. We use DbManager instead.
+     * 
+     * (non-Javadoc)
+     * 
+     * @see android.support.v4.content.CursorLoader#loadInBackground()
+     */
+    @Override
+    public Cursor loadInBackground() {
+        Cursor cursor = AppGlobals.INSTANCE.getDbManager().getAllCameras();
+        if (cursor != null) {
+            // Ensure the cursor window is filled
+            int count = cursor.getCount();
+            registerObserver(cursor, mObserver);
+        }
+
+        return cursor;
+
+    }
+
+    /*
+     * This mirrors the registerContentObserver method from the parent class. We
+     * cannot use that method directly since it is not visible here.
+     * 
+     * Hence we just copy over the implementation from the parent class and
+     * rename the method.
+     */
+    void registerObserver(Cursor cursor, ContentObserver observer) {
+        cursor.registerContentObserver(mObserver);
+    }    
+}
+
+
+A snippet from my ListFragment class that shows the LoaderManager callbacks; as well as a refresh() method that I call whenever user adds/deletes a record.
+
+@Override
+public void onActivityCreated(Bundle savedInstanceState) {
+    super.onActivityCreated(savedInstanceState);
+    mListView = getListView();
+
+
+    /*
+     * Initialize the Loader
+     */
+    mLoader = getLoaderManager().initLoader(LOADER_ID, null, this);
+}
+
+@Override
+public Loader<Cursor> onCreateLoader(int id, Bundle args) {
+    return new VideoSqliteCursorLoader(getActivity());
+}
+
+@Override
+public void onLoadFinished(Loader<Cursor> loader, Cursor data) {
+
+    mAdapter.swapCursor(data);
+    mAdapter.notifyDataSetChanged();
+}
+
+@Override
+public void onLoaderReset(Loader<Cursor> loader) {
+    mAdapter.swapCursor(null);
+}
+
+public void refresh() {     
+    mLoader.onContentChanged();
+}
+
+
+My CursorAdapter is just a regular one with newView() being over-ridden to return newly inflated row layout XML and bindView() using the Cursor to bind columns to Views in the row layout.
+
+
+
+EDIT 1
+
+After digging into this a bit, I think the fundamental issue here is the way the CursorAdapter handles the underlying Cursor. I'm trying to understand how that works.
+
+Take the following scenario for better understanding.
+
+
+Suppose the CursorLoader has finished loading and it returns a Cursor that now has 5 rows.
+The Adapter starts displaying these rows. It moves the Cursor to the next position and calls getView()
+At this point, even as the list view is in the process of being rendered, a row (say, with _id = 2) is deleted from the database.
+This is where the issue is -  The CursorAdapter has moved the Cursor to a position which corresponds to a deleted row. The bindView() method still tries to access the columns for this row using this Cursor, which is invalid and we get exceptions.
+
+
+Question:
+
+
+Is this understanding correct? I am particularly interested in point 4 above where I am making the assumption that when a row gets deleted, the Cursor doesn't get refreshed unless I ask for it to be.
+Assuming this is right, how do I ask my CursorAdapter to discard/abort its rendering of the ListView even as it is in progress and ask it to use the fresh Cursor (returned through Loader#onContentChanged() and Adapter#notifyDatasetChanged()) instead?
+
+
+P.S. Question to moderators: Should this edit be moved to a separate question?
+
+
+
+EDIT 2
+
+Based on suggestion from various answers, it looks like there was a fundamental mistake in my understanding of how Loaders work. It turns out that:
+
+
+The Fragment or Adapter should not be directly operating on the Loader at all.
+The Loader should monitor for all changes in data and should just give the Adapter the new Cursor in onLoadFinished() whenever data changes.
+
+
+Armed with this understanding, I attempted the following changes.
+ - No operation on the Loader whatsoever. The refresh method does nothing now.
+
+Also, to debug what's going on inside the Loader and the ContentObserver, I came up with this:
+
+public class VideoSqliteCursorLoader extends CursorLoader {
+
+    private static final String LOG_TAG = "CursorLoader";
+    //protected Cursor mCursor;
+
+    public final class CustomForceLoadContentObserver extends ContentObserver {
+        private final String LOG_TAG = "ContentObserver";
+        public CustomForceLoadContentObserver() {
+            super(new Handler());
+        }
+
+        @Override
+        public boolean deliverSelfNotifications() {
+            return true;
+        }
+
+        @Override
+        public void onChange(boolean selfChange) {
+            Utils.logDebug(LOG_TAG, "onChange called; selfChange = "+selfChange);
+            onContentChanged();
+        }
+    }
+
+    /*
+     * This field is private in the parent class. Hence, redefining it here.
+     */
+    CustomForceLoadContentObserver mObserver;
+
+    public VideoSqliteCursorLoader(Context context) {
+        super(context);
+        mObserver = new CustomForceLoadContentObserver();
+
+    }
+
+    /*
+     * Main logic to load data in the background. Parent class uses a
+     * ContentProvider to do this. We use DbManager instead.
+     * 
+     * (non-Javadoc)
+     * 
+     * @see android.support.v4.content.CursorLoader#loadInBackground()
+     */
+    @Override
+    public Cursor loadInBackground() {
+        Utils.logDebug(LOG_TAG, "loadInBackground called");
+        Cursor cursor = AppGlobals.INSTANCE.getDbManager().getAllCameras();
+        //mCursor = AppGlobals.INSTANCE.getDbManager().getAllCameras();
+        if (cursor != null) {
+            // Ensure the cursor window is filled
+            int count = cursor.getCount();
+            Utils.logDebug(LOG_TAG, "Count = " + count);
+            registerObserver(cursor, mObserver);
+        }
+
+        return cursor;
+
+    }
+
+    /*
+     * This mirrors the registerContentObserver method from the parent class. We
+     * cannot use that method directly since it is not visible here.
+     * 
+     * Hence we just copy over the implementation from the parent class and
+     * rename the method.
+     */
+    void registerObserver(Cursor cursor, ContentObserver observer) {
+        cursor.registerContentObserver(mObserver);
+    }
+
+    /*
+     * A bunch of methods being overridden just for debugging purpose.
+     * We simply include a logging statement and call through to super implementation
+     * 
+     */
+
+    @Override
+    public void forceLoad() {
+        Utils.logDebug(LOG_TAG, "forceLoad called");
+        super.forceLoad();
+    }
+
+    @Override
+    protected void onForceLoad() {
+        Utils.logDebug(LOG_TAG, "onForceLoad called");
+        super.onForceLoad();
+    }
+
+    @Override
+    public void onContentChanged() {
+        Utils.logDebug(LOG_TAG, "onContentChanged called");
+        super.onContentChanged();
+    }
+}
+
+
+And here are snippets of my Fragment and LoaderCallback
+
+@Override
+public void onActivityCreated(Bundle savedInstanceState) {
+    super.onActivityCreated(savedInstanceState);
+    mListView = getListView();
+
+
+    /*
+     * Initialize the Loader
+     */
+    getLoaderManager().initLoader(LOADER_ID, null, this);
+}
+
+@Override
+public Loader<Cursor> onCreateLoader(int id, Bundle args) {
+    return new VideoSqliteCursorLoader(getActivity());
+}
+
+@Override
+public void onLoadFinished(Loader<Cursor> loader, Cursor data) {
+    Utils.logDebug(LOG_TAG, "onLoadFinished()");
+    mAdapter.swapCursor(data);
+}
+
+@Override
+public void onLoaderReset(Loader<Cursor> loader) {
+    mAdapter.swapCursor(null);
+}
+
+public void refresh() {
+    Utils.logDebug(LOG_TAG, "CamerasListFragment.refresh() called");
+    //mLoader.onContentChanged();
+}
+
+
+Now, whenever there is a change in the DB (row added/deleted), the onChange() method of the ContentObserver should be called - correct? I don't see this happening. My ListView never shows any change. The only time I see any change is if I explicitly call onContentChanged() on the Loader.
+
+What's going wrong here?
+
+
+
+EDIT 3
+
+Ok, so I re-wrote my Loader to extend directly from AsyncTaskLoader. I still don't see my DB changes being refreshed, nor the onContentChanged() method of my Loader being called when I insert/delete a row in the DB :-(
+
+Just to clarify a few things:
+
+
+I used the code for CursorLoader and just modified one single line that returns the Cursor. Here, I replaced the call to ContentProvider with my DbManager code (which in turn uses DatabaseHelper to perform a query and return the Cursor).
+
+Cursor cursor = AppGlobals.INSTANCE.getDbManager().getAllCameras();
+My inserts/updates/deletes on the database happen from elsewhere and not through the Loader. In most cases the DB operations are happening in a background Service, and in a couple of cases, from an Activity. I directly use my DbManager class to perform these operations.
+
+
+What I still don't get is - who tells my Loader that a row has been added/deleted/modified? In other words, where is ForceLoadContentObserver#onChange() called? In my Loader, I register my observer on the Cursor:
+
+void registerContentObserver(Cursor cursor, ContentObserver observer) {
+    cursor.registerContentObserver(mObserver);
+}
+
+
+This would imply that the onus is on the Cursor to notify mObserver when it has changed. But, then AFAIK, a 'Cursor' is not a "live" object that updates the data it is pointing to as and when data is modified in the DB.
+
+Here's the latest iteration of my Loader:
+
+import android.content.Context;
+import android.database.ContentObserver;
+import android.database.Cursor;
+import android.support.v4.content.AsyncTaskLoader;
+
+public class VideoSqliteCursorLoader extends AsyncTaskLoader<Cursor> {
+    private static final String LOG_TAG = "CursorLoader";
+    final ForceLoadContentObserver mObserver;
+
+    Cursor mCursor;
+
+    /* Runs on a worker thread */
+    @Override
+    public Cursor loadInBackground() {
+        Utils.logDebug(LOG_TAG , "loadInBackground()");
+        Cursor cursor = AppGlobals.INSTANCE.getDbManager().getAllCameras();
+        if (cursor != null) {
+            // Ensure the cursor window is filled
+            int count = cursor.getCount();
+            Utils.logDebug(LOG_TAG , "Cursor count = "+count);
+            registerContentObserver(cursor, mObserver);
+        }
+        return cursor;
+    }
+
+    void registerContentObserver(Cursor cursor, ContentObserver observer) {
+        cursor.registerContentObserver(mObserver);
+    }
+
+    /* Runs on the UI thread */
+    @Override
+    public void deliverResult(Cursor cursor) {
+        Utils.logDebug(LOG_TAG, "deliverResult()");
+        if (isReset()) {
+            // An async query came in while the loader is stopped
+            if (cursor != null) {
+                cursor.close();
+            }
+            return;
+        }
+        Cursor oldCursor = mCursor;
+        mCursor = cursor;
+
+        if (isStarted()) {
+            super.deliverResult(cursor);
+        }
+
+        if (oldCursor != null && oldCursor != cursor && !oldCursor.isClosed()) {
+            oldCursor.close();
+        }
+    }
+
+    /**
+     * Creates an empty CursorLoader.
+     */
+    public VideoSqliteCursorLoader(Context context) {
+        super(context);
+        mObserver = new ForceLoadContentObserver();
+    }
+
+    @Override
+    protected void onStartLoading() {
+        Utils.logDebug(LOG_TAG, "onStartLoading()");
+        if (mCursor != null) {
+            deliverResult(mCursor);
+        }
+        if (takeContentChanged() || mCursor == null) {
+            forceLoad();
+        }
+    }
+
+    /**
+     * Must be called from the UI thread
+     */
+    @Override
+    protected void onStopLoading() {
+        Utils.logDebug(LOG_TAG, "onStopLoading()");
+        // Attempt to cancel the current load task if possible.
+        cancelLoad();
+    }
+
+    @Override
+    public void onCanceled(Cursor cursor) {
+        Utils.logDebug(LOG_TAG, "onCanceled()");
+        if (cursor != null && !cursor.isClosed()) {
+            cursor.close();
+        }
+    }
+
+    @Override
+    protected void onReset() {
+        Utils.logDebug(LOG_TAG, "onReset()");
+        super.onReset();
+
+        // Ensure the loader is stopped
+        onStopLoading();
+
+        if (mCursor != null && !mCursor.isClosed()) {
+            mCursor.close();
+        }
+        mCursor = null;
+    }
+
+    @Override
+    public void onContentChanged() {
+        Utils.logDebug(LOG_TAG, "onContentChanged()");
+        super.onContentChanged();
+    }
+
+}
+
+    
+===============================================================================================
+13
+A:I'm not 100% sure based on the code you've provided, but a couple things stick out:
+
+
+The first thing that sticks out is that you've included this method in your ListFragment:
+
+public void refresh() {     
+    mLoader.onContentChanged();
+}
+
+
+When using the LoaderManager, it's rarely necessary (and is often dangerous) to manipulate your Loader directly. After the first call to initLoader, the LoaderManager has total control over the Loader and will "manage" it by calling its methods in the background. You have to be very careful when calling the Loaders methods directly in this case, as it could interfere with the underlying management of the Loader. I can't say for sure that your calls to onContentChanged() are incorrect, since you don't mention it in your post, but it should not be necessary in your situation (and neither should holding a reference to mLoader). Your ListFragment does not care how changes are detected... nor does it care how data is loaded. All it knows is that new data will magically be provided in onLoadFinished when it is available.
+You also shouldn't call mAdapter.notifyDataSetChanged() in onLoadFinished. swapCursor will do this for you.
+
+
+For the most part, the Loader framework should do all of the complicated things involving loading data and managing the Cursors. Your ListFragment code should be simple in comparison.
+
+
+
+Edit #1:
+
+From what I can tell, the CursorLoader relies on the ForceLoadContentObserver (a nested inner class provided in the Loader<D> implementation)... so it would seem that the problem here is that you are implementing your on custom ContentObserver, but nothing is set up to recognize it. A lot of the "self-notification" stuff is done in the Loader<D> and AsyncTaskLoader<D> implementation and is thus hidden away from the concrete Loaders (such as CursorLoader) that do the actual work (i.e. Loader<D> has no idea about CustomForceLoadContentObserver, so why should it ever receive any notifications?).
+
+You mentioned in your updated post that you can't access final ForceLoadContentObserver mObserver; directly, since it is a hidden field. Your fix was to implement your own custom ContentObserver and call registerObserver() in your overriden loadInBackground method (which will cause registerContentObserver to be called on your Cursor). This is why you aren't getting notifications... because you have used a custom ContentObserver that is never recognized by the Loader framework. 
+
+To fix the issue, you should have your class directly extend AsyncTaskLoader<Cursor> instead of CursorLoader (i.e. just copy and paste the parts that you are inheriting from CursorLoader into your class). This way you won't run into any issues with thie hidden ForceLoadContentObserver field.
+
+Edit #2:
+
+According to Commonsware, there isn't an easy way to set up global notifications coming from an SQLiteDatabase, which is why the SQLiteCursorLoader in his Loaderex library relies on the Loader calling onContentChanged() on itself each time a transaction is made. The easiest way to broadcast notifications straight from the data source is to implement a ContentProvider and use a CursorLoader. This way you can trust that notifications will be broadcasted to your CursorLoader each time your Service updates the underlying data source.
+
+I don't doubt that there are other solutions (i.e. perhaps by setting up a global ContentObserver... or maybe even by using the ContentResolver#notifyChange method without a ContentProvider), but the cleanest and simplest solution seems to be to just implement a private ContentProvider. 
+
+(p.s. make sure you set android:export="false" in the provider tag in your manifest so your ContentProvider can't be seen by other apps! :p)
+    

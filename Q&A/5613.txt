@@ -1,0 +1,168 @@
+44
+Q:I am trying to convert our Android application to a gradle build.  I have the project and it's libraries building successfully.   I am now trying to create separate apks for our various environments (dev/test/prod have different urls for the restful services they consume).
+
+In searching around, the best way that I feel to do this is with making different BuildConfig for each environment.   This is what I tried:
+
+import java.util.regex.Pattern
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:+'
+    }
+}
+
+apply plugin: 'android'
+
+task('increaseVersionCode') << {
+    def manifestFile = file("AndroidManifest.xml")
+    def pattern = Pattern.compile("versionCode=\\"(\\\\d+)\\"")
+    def manifestText = manifestFile.getText()
+    def matcher = pattern.matcher(manifestText)
+    matcher.find()
+    def versionCode = Integer.parseInt(matcher.group(1))
+    def manifestContent = matcher.replaceAll("versionCode=\\"" + ++versionCode + "\\"")
+    manifestFile.write(manifestContent)
+}
+
+tasks.whenTaskAdded { task ->
+    if (task.name == 'generateReleaseBuildConfig') {
+        task.dependsOn 'increaseVersionCode'
+    }
+}
+
+dependencies {
+    compile 'com.android.support:support-v4:19.0.0' 
+    compile files('libs/commons-io-2.4.jar',
+                  'libs/google-play-services.jar',
+                  'libs/gson-2.2.4.jar',
+                  'libs/universal-image-loader-1.8.6.jar',
+                  'libs/wakeful-1.0.1.jar')
+    compile project(':pulltorefresh_lib')
+    compile project(':edgeeffect_lib')
+    compile project(':viewpagerindicator_lib')        
+}
+
+android {
+    buildToolsVersion "18.1.1"
+    compileSdkVersion "Google Inc.:Google APIs:18"
+
+    defaultConfig { 
+       minSdkVersion 14
+       targetSdkVersion 18
+    }
+
+    buildTypes {
+        debug {
+            packageNameSuffix ".debug"
+        }
+        dev.initWith(buildTypes.debug)
+        dev {
+            buildConfigField "String", "URL_SEARCH", "\\"https://dev-search.example.com\\";"
+            buildConfigField "String", "URL_CONNECT", "\\"https://dev-connect.example.com\\";"
+            buildConfigField "String", "URL_SVC_NEWSLIST", "\\"https://dev-mobilenews.example.com/newslist\\";"
+            buildConfigField "String", "URL_SVC_NEWSDETAIL", "\\"https://dev-mobilenews.example.com/newsdetail\\";"
+            buildConfigField "String", "URL_SVC_REGISTERENDPOINTS", "\\"https://dev-mobilenews.example.com/registerendpoints\\";"
+        }
+        prod.initWith(buildTypes.release)
+        prod {
+            buildConfigField "String", "URL_SEARCH", "\\"https://search.example.com\\";"
+            buildConfigField "String", "URL_CONNECT", "\\"https://connect.example.com\\";"
+            buildConfigField "String", "URL_SVC_NEWSLIST", "\\"https://mobilenews.example.com/newslist\\";"
+            buildConfigField "String", "URL_SVC_NEWSDETAIL", "\\"https://mobilenews.example.com/newsdetail\\";"
+            buildConfigField "String", "URL_SVC_REGISTERENDPOINTS", "\\"https://mobilenews.pdc-np-cf.lmig.com/registerendpoints\\";"          
+        }
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['src']
+            resources.srcDirs = ['src']
+            res.srcDirs = ['res']
+            assets.srcDirs = ['assets']
+        }
+    }
+}
+
+
+The problem is that my BuildConfig.java doesn't seem to get the static variables injected, therefore I get errors similar to:
+
+/Users/path/to/project/MainActivity.java:348: error: cannot find symbol
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.URL_SEARCH)));
+                                                                              ^
+  symbol:   variable URL_SEARCH
+  location: class BuildConfig
+/Users/path/to/project/MainActivity.java:359: error: cannot find symbol
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.URL_CONNECT)));
+                                                                              ^
+  symbol:   variable URL_CONNECT
+  location: class BuildConfig
+/Users/path/to/project/MainActivity.java:600: error: cannot find symbol
+            HttpPost httpPost = new HttpPost(BuildConfig.URL_SVC_REGISTERENDPOINTS);
+                                                        ^
+  symbol:   variable URL_SVC_REGISTERENDPOINTS
+  location: class BuildConfig
+/Users/path/to/project/service/AlarmNotificationService.java:145: error: cannot find symbol
+        String requestUrl = BuildConfig.URL_SVC_NEWSLIST + "?"
+                                       ^
+  symbol:   variable URL_SVC_NEWSLIST
+  location: class BuildConfig
+/Users/path/to/project/service/NewsService.java:240: error: cannot find symbol
+        String requestUrl = BuildConfig.URL_SVC_NEWSLIST + "?"
+                                       ^
+  symbol:   variable URL_SVC_NEWSLIST
+  location: class BuildConfig
+/Users/path/to/project/service/NewsService.java:530: error: cannot find symbol
+            HttpPost httpPost = new HttpPost(BuildConfig.URL_SVC_NEWSDETAIL);
+                                                        ^
+  symbol:   variable URL_SVC_NEWSDETAIL
+  location: class BuildConfig
+6 errors
+
+
+My build/source/buildConfig/debug/com/.../BuildConfig.java file contains:
+
+/**
+ * Automatically generated file. DO NOT MODIFY
+ */
+package com....;
+
+public final class BuildConfig {
+  public static final boolean DEBUG = Boolean.parseBoolean("true");
+  public static final String PACKAGE_NAME = "com.....debug";
+  public static final String BUILD_TYPE = "debug";
+  public static final String FLAVOR = "";
+  public static final int VERSION_CODE = 5;
+}
+
+
+What am I doing wrong?
+    
+===============================================================================================
+54
+A:Please, be sure that you are building "dev" or "prod" variant. There is no BuildConfig definition in default "debug" and "release" variant. In Android Studio, you can select current variant in bottom left corner:
+
+
+
+To simplify your build.gradle file, you can define:
+
+buildTypes {
+    debug {
+        buildConfigField "String", "URL_SEARCH", "\\"https://dev-search.example.com\\""
+        // etc.
+    }
+    release {
+        buildConfigField "String", "URL_SEARCH", "\\"https://search.example.com\\""
+        // etc.      
+    }
+}
+
+
+and then just use default "debug" and "release" variants.
+
+At last, delete semicolon (sign: ';') from the value of buildConfigField parameter.
+    

@@ -1,0 +1,85 @@
+79
+Q:I'm trying to install apps from Google Play. I can understand that on opening the Google Play store URL, it opens the Google Play and when I press the back button, the activity resumes.
+
+Intent marketIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(appURL));
+marketIntent.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY | Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET);
+startActivity(marketIntent);
+
+
+When I went back to the activity, I tried calling this onResume() to check if the app is installed, but I receive an error:
+
+@Override
+protected void onResume() {
+    super.onResume();
+    boolean installed = false;
+    while (!installed) {
+        installed  =   appInstalledOrNot(APPPACKAGE);
+        if (installed) {
+             Toast.makeText(this, "App installed", Toast.LENGTH_SHORT).show();
+        }
+    }
+}
+
+private boolean appInstalledOrNot(String uri) {
+  PackageManager pm = getPackageManager();
+  boolean app_installed = false;
+  try {
+      pm.getPackageInfo(uri, PackageManager.GET_ACTIVITIES);
+      app_installed = true;
+  }
+  catch (PackageManager.NameNotFoundException e) {
+      app_installed = false;
+  }
+  return app_installed ;
+}
+
+
+The error is as follows:
+
+
+  E/AndroidRuntime(796): java.lang.RuntimeException: Unable to start
+  activity
+  ComponentInfo{com.example.appinstaller/com.example.appinstaller.MainActivity}:
+  android.content.ActivityNotFoundException:
+      No Activity found to handle Intent { act=android.intent.action.VIEW
+  dat=market://details?id=com.package.name flg=0x40080000 }
+
+
+I guess the activity is onPause(). Is there a better way to implement it? I'm trying to check if the app has finished installing.
+    
+===============================================================================================
+254
+A:Try this:
+
+private boolean isPackageInstalled(String packageName, PackageManager packageManager) {
+
+    boolean found = true;
+
+    try {
+
+        packageManager.getPackageInfo(packageName, 0);
+    } catch (PackageManager.NameNotFoundException e) {
+
+        found = false;
+    }
+
+    return found;
+}
+
+
+It attempts to fetch information about the package whose name you passed in. Failing that, if a NameNotFoundException was thrown, it means that no package with that name is installed, so we return false.
+
+Note that we pass in a PackageManager instead of a Context, so that the method is slightly more flexibly usable and doesn't violate the law of Demeter. You can use the method without access to a Context instance, as long as you have a PackageManager instance.
+
+Use it like this:
+
+public void someMethod() {
+    // ...
+
+    PackageManager pm = context.getPackageManager();
+    boolean isInstalled = isPackageInstalled("com.somepackage.name", pm);
+
+    // ...
+}
+
+    

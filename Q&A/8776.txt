@@ -1,0 +1,119 @@
+31
+Q:Lots of Intent actions, like ACTION_VIEW, take a Uri pointing to the content the action should be performed upon. If the content is backed by a file -- whether the Uri points directly to the file, or to a ContentProvider serving the file (see FileProvider) -- this generally works.
+
+There are scenarios in which developers do not want to have the content reside in a file for sharing with other apps. One common scenario is for encryption: the decrypted data should reside in RAM, not on disk, to minimize the risk of somebody getting at that decrypted data.
+
+My classic solution to sharing from RAM is to use ParcelFileDescriptor and createPipe(). However, when the activity responding to ACTION_VIEW (or whatever) gets an InputStream on that pipe, the resulting stream is limited compared to the streams you get when the ContentProvider is serving up content from a file. For example, this sample app works fine with Adobe Reader and crashes QuickOffice.
+
+Based on past related questions, my assumption is that createPipe() is truly creating a pipe, and that pipes are non-seekable. Clients that attempt to "rewind" or "fast forward" run into problems as a result.
+
+I am seeking a reliable solution for sharing in-memory content with a third-party app that gets around this limitation. Specifically:
+
+
+It has to use a Uri syntax that is likely to be honored by client apps (i.e., ACTION_VIEW implementers); solutions that involve something obtuse that client apps are unlikely to recognize (e.g., pass such-and-so via an Intent extra) do not qualify
+The data to be shared cannot be written to a file as part of the sharing (of course, the client app could wind up saving the received bytes to disk, but let's ignore that risk for the moment)
+Ideally it does not involve the app looking to share the data opening up a ServerSocket or otherwise exacerbating security risks
+
+
+Possible suggested ideas include:
+
+
+Some way to reconfigure createPipe() that results in a seekable pipe
+Some way to use a socket-based FileDescriptor that results in a seekable pipe
+Some kind of RAM disk or something else that feels like a file to the rest of Android but is not persistent
+
+
+A key critierion, if you will, of a working solution is if I can get a PDF served from RAM that QuickOffice can read.
+
+Any suggestions?
+
+Thanks!
+    
+===============================================================================================
+8
+A:You've posed a really difficult combination of requirements.
+
+Lets look at your ideas for solutions:
+
+
+  Possible suggested ideas include:
+  
+  
+  Some way to reconfigure createPipe() that results in a seekable pipe
+  Some way to use a socket-based FileDescriptor that results in a seekable pipe
+  Some kind of RAM disk or something else that feels like a file to the rest of Android but is not persistent
+  
+
+
+The first one won't work.  This issue is that the pipe primitive implemented by the OS is fundamentally non-seekable.  The reason is supporting seek that would require the OS to buffer the entire pipe "contents" ... until the reading end closes.  That is unimplementable ... unless you place a limit on the amount of data that can be sent through the pipe.
+
+The second one won't work either, for pretty much the same reason.  OS-level sockets are not seekable.
+
+At one level, the final idea (a RAM file system) works, modulo that such a capability is supported by the Android OS.  (A Ramfs file is seekable, after all.)  However, a file stream is not a pipe.  In particular the behaviour with respect to the end-of-file is different for a file stream and a pipe.  And getting a file stream to look like a pipe stream from the perspective of the reader would entail some special code on that side.  (The problem is similar to the problem of running tail -f on a log file ...)
+
+
+
+Unfortunately, I don't think there's any other way to get a file descriptor that behaves like a pipe with respect to end-of-file and is also seekable ... short of radically modifying the operating system.
+
+If you could change the application that is reading from the stream, you could work around this.  This is precluded by the fact that the fd needs to be read and seeked by QuickOffice which (I assume) you can't modify.  (But if you could change the application, there are ways to make this work ...)
+
+
+
+By the way, I think you'd have the some problems with these requirements on Linux or Windows.  And they are not Java specific.
+
+
+
+UPDATE
+
+There have been various interesting comments on this, and I want to address some here:
+
+
+The OP has explained the use-case that is motivating his question.  Basically, he wants a scheme where the data passing through the "channel" between the applications is not going to be vulnerable in the event that the users device is stolen (or confiscated) while the applications are actually running.
+
+Is that achievable?
+
+
+In theory, no.  If one postulates a high degree of technical sophistication (and techniques that the public may not know about ...) then the "bad guys" could break into the OS and read the data from shared memory while the "channel" remained active.
+I doubt that such attacks are (currently) possible in practice.  
+However, even if we assume that the "channel" writes nothing to "disc" there could still be traces of the channel in memory: e.g.
+
+
+a still mounted RAMfs or still active shared memory segments, or
+remnants of previous RAMfs / shared memory.
+
+
+In theory, this data could in theory be retrieved, provided that the "bad guy" doesn't turn of or reboot the device. 
+
+It has been suggested that ashmem could be used in this context:
+
+
+The issue of there being no public Java APIs could be addressed (by writing 3rd-party APIs, for example)
+The real stumbling block is the need for a stream API.  According the "ashmem" docs, they have a file-like API.  But I think that just means that they conform to the "file descriptor" model.  These FDs can be passed from one application to another (across fork / exec), and you use "ioctl" to operate on them.  But there is no indication that they implement "read" and "write" ... let alone "seek".
+Now, you could probably implement a read/write/seekable stream on top of ashmem, using native and Java libraries on both ends of the channel.  But both applications would need to be "aware" of this process, probably to the level of providing command line options to set up the channel.
+
+
+These issues also apply to old-style shmem ... except that the channel setup is probably more difficult.
+The other potential option is to use a RAM fs.  
+
+
+This is easier to implement.  The files in the RAMfs will behave like "normal" files; when opened by an application you get a file descriptor that can be read, written and seeked ... depending on how it was opened.  And (I think) you should be able to pass a seekable FD for a RAMfs file across a fork/exec.
+The problem is that the RAMfs needs to be "mounted" by the operating system in order to use it.  While it is mounted, another (privileged) application can also open and read files.  And the OS won't let you unmount the RAMfs while some application has open fds for RAMfs files.
+There is a (hypothetical) scheme that partly mitigates the above.
+
+
+The source application creates and mounts a "private" RAMfs.
+The source application creates/opens the file for read/write and then unlinks it.
+The source application writes the file using the fd from the open.
+The source application forks / execs the sink application, passing the fd.
+The sink application reads from the (I think) still seekable fd, seeking as required.
+When the source application notices that the (child) sink application process has exited, it unmounts and destroys the RAMfs.
+
+
+This would not require modifying the reading (sink) application.
+
+However, a third (privileged) application could still potentially get into the RAMfs, locate the unlinked file in memory, and read it.
+
+
+
+However, having re-reviewed all of the above, the most practical solution is still to modify the reading (sink) application to read the entire input stream into a byte[], then open a ByteArrayInputStream on the buffered data.  The core application can seek and reset it at will.
+    

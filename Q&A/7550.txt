@@ -1,0 +1,107 @@
+35
+Q:I am working on a subclass of FrameLayout that is supposed to rotate all of its children by 90 degrees. I am doing this to overcome the landscape-only camera limitation present in android 2.1 and below, by having the activity be in landscape, but placing my camera overlay into this framelayout overlay to cause it to appear as if it was portrait (this is how Layar does it) To accomplish this, I'm adapting Jeff Sharkey's code to rotate views. My problem is that I can rotate the Framelayout, but I cannot resize it to match the new dimensions. So on my g1, instead of a 320x480 portrait view over a 480x320 camera view in landscape, I get a 320x320 box in the middle showing my portrait view with the sides chopped off.
+
+Here is my code so far:
+
+public class RotateLayout extends FrameLayout {
+    private Matrix mForward = new Matrix();
+    private Matrix mReverse = new Matrix();
+    private float[] mTemp = new float[2];
+
+    public RotateLayout(Context context) {
+        super(context);
+    }
+
+    public RotateLayout(Context context, AttributeSet attrs) {
+        super(context, attrs);
+
+    }
+
+
+    /* (non-Javadoc)
+     * @see android.widget.FrameLayout#onMeasure(int, int)
+     */
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        //This didn't work:
+        //super.onMeasure(heightMeasureSpec, widthMeasureSpec);
+    }
+
+    /* (non-Javadoc)
+     * @see android.widget.FrameLayout#onSizeChanged(int, int, int, int)
+     */
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+    }
+
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        canvas.rotate(270, getWidth()/2, getHeight()/2);
+        //This code will stretch the canvas to accommodate the new screen size. This is not what I want.
+        //float scaleX=(float)getHeight()/getWidth();
+        //float scaleY=(float)getWidth()/getHeight();
+        //canvas.scale(scaleX, scaleY,  getWidth()/2, getHeight()/2);
+        mForward = canvas.getMatrix();
+        mForward.invert(mReverse);
+        canvas.save();
+        canvas.setMatrix(mForward); //This is the matrix we need to use for proper positioning of touch events
+        super.dispatchDraw(canvas);
+        canvas.restore();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        final float[] temp = mTemp;
+        temp[0] = event.getX();
+        temp[1] = event.getY();
+
+        mReverse.mapPoints(temp);
+
+        event.setLocation(temp[0], temp[1]);
+        return super.dispatchTouchEvent(event);
+    }
+}
+
+
+I have tried overriding OnMeasure to switch the X and Y dimensions of the View, but have not been able to get that to work.
+Any help you can provide is greatly appreciated.
+    
+===============================================================================================
+39
+A:I had the same problem and managed to solve it.
+Instead of rotating each view or the layout by hand, I used a LayoutAnimationController.
+
+First, place a file in /res/anim/ called rotation.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<rotate
+ xmlns:android="http://schemas.android.com/apk/res/android"
+    android:fromDegrees="0"
+    android:toDegrees="-90"
+    android:pivotX="50%"
+    android:pivotY="50%"
+    android:duration="0" android:fillAfter="true">
+</rotate>
+
+
+Then, in your Activity's onCreate, do
+
+  @Override
+  public void onCreate(Bundle icicle) {
+  super.onCreate(icicle);
+
+     setContentView(R.layout.myscreen);
+
+     Animation rotateAnim = AnimationUtils.loadAnimation(this, R.anim.rotation);
+     LayoutAnimationController animController = new LayoutAnimationController(rotateAnim, 0);
+     FrameLayout layout = (FrameLayout)findViewById(R.id.MyScreen_ContentLayout);
+     layout.setLayoutAnimation(animController);
+ }
+
+
+If you want to rotate elements that lie above your camera preview view (SurfaceHolder), simply place a FrameLayout above the SurfaceHolder, place all your elements in that FrameLayout and call the Layout "MyScreen_ContentLayout". Done.
+
+Hope that helped someone out, took me quite a while to get everything together.
+    

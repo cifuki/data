@@ -1,0 +1,269 @@
+143
+Q:I am trying to migrate a project from Eclipse but nothing I have tried is working. In Eclipse I have 3 projects (2 android app projects and 1 android library project). The 2 app projects depend on the library project. When I do the gradle export I get 3 projects that don't work. I am open to restructuring the project but haven't found any documentation on how this should be done.
+
+Is there a way to make the 3 projects that Eclipse exports work together? Am I better off restructuring things and if so is documentation for how this should be done?
+
+Update
+
+I have uploaded the entire project to GitHub https://github.com/respectTheCode/android-studio-library-example
+
+Update 1
+
+Based the suggestions from Padma Kumar this is what I have tried.
+
+
+Create a new Project called MyApp
+Click File > New Module, choose Android Library and name it MyLib
+Click Build > Make Project
+
+
+The build fails with this error
+
+Module "MyLib" was fully rebuilt due to project configuration/dependencies changes
+Compilation completed with 1 error and 0 warnings in 19 sec
+1 error
+0 warnings
+/.../MyApp/MyLib/build/bundles/debug/AndroidManifest.xml
+Gradle: <manifest> does not have package attribute.
+
+
+I then added a package attribute to the manifest making it
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.mylib" >
+
+
+After building I get this error
+
+Module "MyApp" was fully rebuilt due to project configuration/dependencies changes
+Compilation completed with 2 errors and 0 warnings in 13 sec
+2 errors
+0 warnings
+/.../MyApp/MyLib/src/main/java/com/example/mylib/MainActivity.java
+Gradle: package R does not exist
+Gradle: package R does not exist
+
+
+Adding dependency doesn't seem to have any impact on the error. Continuing from above
+
+
+Click File > Project Structure > Modules > MyApp-MyApp
+Switch to Dependencies Tab
+Click + > Module Dependency and pick MyLib
+Click Apply and OK
+Click Build > Make Project
+
+
+Update 2
+
+Based the suggestions from Ethan this is where we get
+
+The 2 sub project build.gradle seem to have all of the correct parts and the only difference is the plugin line bellow is the MyApp/build.gradle.
+
+buildscript {
+    repositories {
+        maven { url 'http://repo1.maven.org/maven2' }
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.4'
+    }
+}
+apply plugin: 'android'
+
+dependencies {
+    compile files('libs/android-support-v4.jar')
+}
+
+android {
+    compileSdkVersion 17
+    buildToolsVersion "17.0.0"
+
+    defaultConfig {
+        minSdkVersion 7
+        targetSdkVersion 16
+    }
+}
+
+
+The root project build.gradle was empty so I added the two projects like this
+
+dependencies {
+    compile project(":MyLib")
+    compile project(":MyApp")
+}
+
+
+I now get this error when building
+
+Gradle:
+FAILURE: Build failed with an exception.
+* Where:
+Build file '/Users/kevin/GitHub/AppPress/MyApp/build.gradle' line: 2
+* What went wrong:
+A problem occurred evaluating root project 'MyApp'.
+> Could not find method compile() for arguments [project ':MyLib'] on root project 'MyApp'.
+* Try:
+Run with --stacktrace option to get the stack trace. Run with --info or --debug option to get more log output.
+
+
+Update 3
+
+Big thanks Ethan for solving this.
+
+
+Add compile project(':SubProjects:MyLib') to the MyLib/build.gradle
+Remove compile files('libs/android-support-v4.jar') from the MyLib/build.gradle
+Close project and Import the root project from gradle
+
+
+Update 4
+
+As of 0.1.2 you can now include compile "com.android.support:support-v4:13.0.0" instead of compile files('libs/android-support-v4.jar'). Since it is coming from mavin now you can include this in multiple projects without problems.
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.4.2'
+    }
+}
+
+apply plugin: 'android'
+
+dependencies {
+    compile "com.android.support:support-v4:13.0.0"
+
+    compile project(':SubProjects:MyLib')
+}
+
+
+Update 5
+
+As of 0.1.3 there is now a "Sync Project" button in the toolbar. You can click that instead of reimporting your project after making changes to .gradle files.
+    
+===============================================================================================
+115
+A:Note: This answer is a pure Gradle answer, I use this in IntelliJ on a regular basis but I don't know how the integration is with Android Studio. I am a believer in knowing what is going on for me, so this is how I use Gradle and Android. 
+
+TL;DR Full Example - https://github.com/ethankhall/driving-time-tracker/
+
+Disclaimer: This is a project I am/was working on.
+
+Gradle has a defined structure ( that you can change, link at the bottom tells you how ) that is very similar to Maven if you have ever used it.
+
+Project Root
++-- src
+|   +-- main (your project)
+|   |   +-- java (where your java code goes)
+|   |   +-- res  (where your res go)
+|   |   +-- assets (where your assets go)
+|   |   \\-- AndroidManifest.xml
+|   \\-- instrumentTest (test project)
+|       \\-- java (where your java code goes)
++-- build.gradle
+\\-- settings.gradle
+
+
+If you only have the one project, the settings.gradle file isn't needed. However you want to add more projects, so we need it.
+
+Now let's take a peek at that build.gradle file. You are going to need this in it (to add the android tools)
+
+build.gradle
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.3'
+    }
+}
+
+
+Now we need to tell Gradle about some of the Android parts. It's pretty simple. A basic one (that works in most of my cases) looks like the following. I have a comment in this block, it will allow me to specify the version name and code when generating the APK.
+
+build.gradle
+
+apply plugin: "android"
+android {
+        compileSdkVersion 17
+        /*
+        defaultConfig {
+            versionCode = 1
+            versionName = "0.0.0"
+        }
+        */
+    }
+
+
+Something we are going to want to add, to help out anyone that hasn't seen the light of Gradle yet, a way for them to use the project without installing it.
+
+build.gradle
+
+task wrapper(type: org.gradle.api.tasks.wrapper.Wrapper) {
+    gradleVersion = '1.4'
+}
+
+
+So now we have one project to build. Now we are going to add the others. I put them in a directory, maybe call it deps, or subProjects. It doesn't really matter, but you will need to know where you put it. To tell Gradle where the projects are you are going to need to add them to the settings.gradle.
+
+Directory Structure:
+
+Project Root
++-- src (see above)
++-- subProjects (where projects are held)
+|   +-- reallyCoolProject1 (your first included project)
+|       \\-- See project structure for a normal app
+|   \\-- reallyCoolProject2 (your second included project)
+|       \\-- See project structure for a normal app
++-- build.gradle
+\\-- settings.gradle
+
+
+settings.gradle:
+
+include ':subProjects:reallyCoolProject1'
+include ':subProjects:reallyCoolProject2'
+
+
+The last thing you should make sure of is the subProjects/reallyCoolProject1/build.gradle has apply plugin: "android-library" instead of apply plugin: "android". 
+
+Like every Gradle project (and Maven) we now need to tell the root project about it's dependency. This can also include any normal Java dependencies that you want.
+
+build.gradle
+
+dependencies{
+    compile 'com.fasterxml.jackson.core:jackson-core:2.1.4'
+    compile 'com.fasterxml.jackson.core:jackson-databind:2.1.4'
+    compile project(":subProjects:reallyCoolProject1")
+    compile project(':subProjects:reallyCoolProject2')
+}
+
+
+I know this seems like a lot of steps, but they are pretty easy once you do it once or twice. This way will also allow you to build on a CI server assuming you have the Android SDK installed there.
+
+NDK Side Note: If you are going to use the NDK you are going to need something like below. Example build.gradle file can be found here: https://gist.github.com/khernyo/4226923
+
+build.gradle
+
+task copyNativeLibs(type: Copy) {
+    from fileTree(dir: 'libs', include: '**/*.so' )  into  'build/native-libs'
+}
+tasks.withType(Compile) { compileTask -> compileTask.dependsOn copyNativeLibs }
+
+clean.dependsOn 'cleanCopyNativeLibs'
+
+tasks.withType(com.android.build.gradle.tasks.PackageApplication) { pkgTask ->
+  pkgTask.jniDir new File('build/native-libs')
+}
+
+
+Sources: 
+
+
+http://tools.android.com/tech-docs/new-build-system/user-guide
+https://gist.github.com/khernyo/4226923
+https://github.com/ethankhall/driving-time-tracker/
+
+    

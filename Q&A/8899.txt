@@ -1,0 +1,109 @@
+30
+Q:I've seen answers about how this should work with the old DefaultHttpClient
+  but there's not a good example for HttpURLConnection
+
+
+I'm using HttpURLConnection to make requests to a web application. At the start of the my Android application, I use CookieHandler.setDefault(new CookieManager()) to automatically deal with the session cookies, and this is working fine.
+
+At some point after the login, I want to show live pages from the web application to the user with a WebView instead of downloading data behind the scenes with HttpURLConnection. However, I want to use the same session I established earlier to prevent the user from having to login again.
+
+How do I copy the cookies from java.net.CookieManager used by HttpURLConnection to android.webkit.CookieManager used by WebView so I can share the session?
+    
+===============================================================================================
+51
+A:I would like to suggest a completely different approach to your problem. Instead of copying cookies from one place to another (manual sync), let's make HttpURLConnection and WebViews use the same cookie storage.
+
+This completely eliminates the need for sync. Any cookie updated in any one of them, will be immediately and automatically reflected in the other.
+
+To do this, create your own implementation of java.net.CookieManager which forwards all requests to the WebViews' webkit android.webkit.CookieManager.
+
+Implementation:
+
+import java.io.IOException;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
+import java.net.CookieStore;
+import java.net.URI;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
+public class WebkitCookieManagerProxy extends CookieManager 
+{
+    private android.webkit.CookieManager webkitCookieManager;
+
+    public WebkitCookieManagerProxy()
+    {
+        this(null, null);
+    }
+
+    WebkitCookieManagerProxy(CookieStore store, CookiePolicy cookiePolicy)
+    {
+        super(null, cookiePolicy);
+
+        this.webkitCookieManager = android.webkit.CookieManager.getInstance();
+    }
+
+    @Override
+    public void put(URI uri, Map<String, List<String>> responseHeaders) throws IOException 
+    {
+        // make sure our args are valid
+        if ((uri == null) || (responseHeaders == null)) return;
+
+        // save our url once
+        String url = uri.toString();
+
+        // go over the headers
+        for (String headerKey : responseHeaders.keySet()) 
+        {
+            // ignore headers which aren't cookie related
+            if ((headerKey == null) || !(headerKey.equalsIgnoreCase("Set-Cookie2") || headerKey.equalsIgnoreCase("Set-Cookie"))) continue;
+
+            // process each of the headers
+            for (String headerValue : responseHeaders.get(headerKey))
+            {
+                this.webkitCookieManager.setCookie(url, headerValue);
+            }
+        }
+    }
+
+    @Override
+    public Map<String, List<String>> get(URI uri, Map<String, List<String>> requestHeaders) throws IOException 
+    {
+        // make sure our args are valid
+        if ((uri == null) || (requestHeaders == null)) throw new IllegalArgumentException("Argument is null");
+
+        // save our url once
+        String url = uri.toString();
+
+        // prepare our response
+        Map<String, List<String>> res = new java.util.HashMap<String, List<String>>();
+
+        // get the cookie
+        String cookie = this.webkitCookieManager.getCookie(url);
+
+        // return it
+        if (cookie != null) res.put("Cookie", Arrays.asList(cookie));
+        return res;
+    }
+
+    @Override
+    public CookieStore getCookieStore() 
+    {
+        // we don't want anyone to work with this cookie store directly
+        throw new UnsupportedOperationException();
+    }
+}
+
+
+and finally use it by doing this on your application initialization:
+
+android.webkit.CookieSyncManager.createInstance(appContext);
+// unrelated, just make sure cookies are generally allowed
+android.webkit.CookieManager.getInstance().setAcceptCookie(true);
+
+// magic starts here
+WebkitCookieManagerProxy coreCookieManager = new WebkitCookieManagerProxy(null, java.net.CookiePolicy.ACCEPT_ALL);
+java.net.CookieHandler.setDefault(coreCookieManager);
+
+    

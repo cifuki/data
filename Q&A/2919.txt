@@ -1,0 +1,94 @@
+74
+Q:I have a android program (Java + html in a webview). I can call from the javascript to the Java code. But the other way around stopped working (after updating in eclipse).
+
+So this is what I'm trying to do
+
+
+Make a webview   (worked)
+calling in javascript to AndroidFunction.test(); (worked)
+the java test() function call webView.loadUrl("javascript:helloBack()"); 
+(! not working anymore)
+
+
+I tried to let it work with the WebView in the MainActivity, but it didnt work.
+
+MainActivity.java
+
+public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        final WebView webView = (WebView)findViewById(R.id.webView);
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.setWebChromeClient(new WebChromeClient());
+        WebSettings webSettings = webView.getSettings();
+        webSettings.setJavaScriptEnabled(true);
+
+        javascr = new Javascript(this, webView);
+        webView.addJavascriptInterface(javascr, "AndroidFunction");
+        webView.loadUrl("file:///android_asset/www/index.html");
+
+        ....
+}
+
+
+Javascript.java
+
+public class Javascript {   
+    Context cont;
+    WebView webView;
+
+    Javascript(Context c, WebView w) {
+        cont = c;
+        webView = w;
+    }
+
+    // function called in the javascript by AndroidFunction.test();
+    public void test() {
+          // Breaking point!!!
+        webView.loadUrl("javascript:helloBack()");
+    }
+
+
+Error:
+
+03-24 11:47:50.103: W/WebView(21026):   at com.android.org.chromium.base.SystemMessageHandler.handleMessage(SystemMessageHandler.java:27)
+03-24 11:47:50.103: W/WebView(21026):   java.lang.Throwable: A WebView method was called on thread 'JavaBridge'. All WebView methods must be called on the same thread. (Expected Looper Looper{41ab68f8} called on Looper{41bb70a8}, FYI main Looper is Looper{41ab68f8})
+
+03-24 11:47:50.103: W/WebView(21026):   at android.webkit.WebView.checkThread(WebView.java:2063)
+03-24 11:47:50.103: W/WebView(21026):   at android.webkit.WebView.loadUrl(WebView.java:794)
+03-24 11:47:50.103: W/WebView(21026):   at com.example.hellobt.Javascript.test(Javascript.java:24)
+
+03-24 11:47:50.103: W/WebView(21026):   at com.android.org.chromium.base.SystemMessageHandler.nativeDoRunLoopOnce(Native Method)
+03-24 11:47:50.103: W/WebView(21026):   at com.android.org.chromium.base.SystemMessageHandler.handleMessage(SystemMessageHandler.java:27)
+03-24 11:47:50.103: W/WebView(21026):   at android.os.Handler.dispatchMessage(Handler.java:102)
+
+03-24 11:47:50.103: W/WebView(21026):   at android.os.Looper.loop(Looper.java:137)
+03-24 11:47:50.103: W/WebView(21026):   at android.os.HandlerThread.run(HandlerThread.java:61)
+
+
+Thanks for the answer. I edited the function in my Javascript file like this:
+
+private void test(final String s) {
+        webView.post(new Runnable() {
+            public void run() {
+                webView.loadUrl("javascript:" + s + ";");
+            }
+        });
+        System.out.println("javscript done..");
+    }
+
+    
+===============================================================================================
+192
+A:The JavaScript method is executed on a background (i.e. non-UI) thread. You need to call all Android View related methods on the UI thread. You can achieve what you need with:
+
+mWebView.post(new Runnable() {
+    @Override
+    public void run() {
+        mWebView.loadUrl(...).
+    }
+});
+
+
+Which will post the task to run on the UI thread.
+    

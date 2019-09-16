@@ -1,0 +1,185 @@
+44
+Q:I'm making a new Android project, with the standard 'app' module, as well as a library project (let's call it 'custom_lib'). In the app's build.gradle file, I link the module as such : 
+
+dependencies {
+    compile project(':custom_lib')
+}
+
+
+When I trigger the build process (Menu Build > Make Project), I get the following output in the Gradle console
+
+Executing tasks: [clean, :app:compileDebugSources, :custom_lib:compileDebugSources]
+
+Configuration on demand is an incubating feature.
+:app:clean
+:custom_lib:clean
+:app:preBuild
+:app:preDebugBuild
+:app:checkDebugManifest
+:app:preReleaseBuild
+:custom_lib:compileLint
+:custom_lib:copyReleaseLint UP-TO-DATE
+:custom_lib:mergeReleaseProguardFiles UP-TO-DATE
+:custom_lib:preBuild
+:custom_lib:preReleaseBuild
+:custom_lib:checkReleaseManifest
+:custom_lib:prepareReleaseDependencies
+:custom_lib:compileReleaseAidl
+:custom_lib:compileReleaseRenderscript
+:custom_lib:generateReleaseBuildConfig
+:custom_lib:generateReleaseAssets UP-TO-DATE
+:custom_lib:mergeReleaseAssets
+:custom_lib:generateReleaseResValues UP-TO-DATE
+:custom_lib:generateReleaseResources
+:custom_lib:packageReleaseResources
+:custom_lib:processReleaseManifest
+:custom_lib:processReleaseResources
+:custom_lib:generateReleaseSources
+:custom_lib:compileReleaseJava
+:custom_lib:processReleaseJavaRes UP-TO-DATE
+:custom_lib:packageReleaseJar
+:custom_lib:compileReleaseNdk
+:custom_lib:packageReleaseJniLibs UP-TO-DATE
+:custom_lib:packageReleaseLocalJar UP-TO-DATE
+:custom_lib:packageReleaseRenderscript UP-TO-DATE
+:custom_lib:bundleRelease
+:app:prepareComAndroidSupportAppcompatV72102Library
+:app:prepareComAndroidSupportSupportV42102Library
+:app:prepareTestDoubleBuildCustom_libUnspecifiedLibrary
+:app:prepareDebugDependencies
+:app:compileDebugAidl
+:app:compileDebugRenderscript
+:app:generateDebugBuildConfig
+:app:generateDebugAssets UP-TO-DATE
+:app:mergeDebugAssets
+:app:generateDebugResValues UP-TO-DATE
+:app:generateDebugResources
+:app:mergeDebugResources
+:app:processDebugManifest
+:app:processDebugResources
+:app:generateDebugSources
+:app:compileDebugJava
+:app:compileDebugNdk
+:app:compileDebugSources
+:custom_lib:preDebugBuild
+:custom_lib:checkDebugManifest
+:custom_lib:prepareDebugDependencies
+:custom_lib:compileDebugAidl
+:custom_lib:compileDebugRenderscript
+:custom_lib:generateDebugBuildConfig
+:custom_lib:generateDebugAssets UP-TO-DATE
+:custom_lib:mergeDebugAssets
+:custom_lib:generateDebugResValues UP-TO-DATE
+:custom_lib:generateDebugResources
+:custom_lib:packageDebugResources
+:custom_lib:processDebugManifest
+:custom_lib:processDebugResources
+:custom_lib:generateDebugSources
+:custom_lib:compileDebugJava
+:custom_lib:compileDebugNdk
+:custom_lib:compileDebugSources
+
+BUILD SUCCESSFUL
+
+Total time: 2.184 secs
+
+
+What puzzles me is that the build mechanism triggers a Debug build (as the first line says), but almost immediately, Gradle uses the task :app:preReleaseBuild which make my custom_lib module to be built with the Release configuration. 
+
+And then, after the app is fully built, Gradle compiles my module with the Debug configuration. 
+
+So my questions are : 
+
+
+Why is it doing this double build which seems incoherent ? 
+How can I make sure that the library is built with debug configuration when I launch a Debug build process ? 
+
+
+EDIT : 
+
+app/build.gradle : 
+
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 21
+    buildToolsVersion "21.1.1"
+
+    defaultConfig {
+        applicationId "com.deezer.testdoublebuild"
+        minSdkVersion 8
+        targetSdkVersion 21
+        versionCode 1
+        versionName "1.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_7
+        targetCompatibility JavaVersion.VERSION_1_7
+    }
+    buildTypes {
+        debug{
+            debuggable true
+        }
+        release {
+            debuggable false
+            minifyEnabled false
+        }
+    }
+}
+
+dependencies {
+    compile project(':custom_lib')
+}
+
+
+custom_lib/build.gradle : 
+
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion 21
+    buildToolsVersion "21.1.1"
+
+    defaultConfig {
+        applicationId "com.deezer.mylibrary"
+        minSdkVersion 8
+        targetSdkVersion 21
+        versionCode 1
+        versionName "1.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_7
+        targetCompatibility JavaVersion.VERSION_1_7
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+}
+
+
+Note : I'm using Android Studio 1.0 RC 1 / Gradle 2.2, and reproduced this issue by creating a new project from scratch, add an empty Android Library module, and "voila"
+    
+===============================================================================================
+21
+A:In the "Build Variants" panel window on the left, you should see both of your modules, and next to them the current "active" variants. For instance
+
+app          debug
+custom_lib   debug
+
+
+When calling Build > Make Project we are building every modules in the project in their current variant.
+
+However, due to a current Gradle limitation (https://code.google.com/p/android/issues/detail?id=52962), building app in debug will require building the release variant of custom_lib, and so you end up building both.
+
+I would recommend to not use Make Project but instead use the option below that says Make Module app. This option will change from app to lib based on the current selection in the Project panel or based on the current editor, and will always do only what's needed to build the current module.
+
+(Looking into this, we noticed that there isn't a shortcut for it, so we're adding one).
+    

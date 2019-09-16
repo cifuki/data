@@ -1,0 +1,217 @@
+333
+Q:I have this two classes. My main Activity and the one that extends the AsyncTask, Now in my main Activity I need to get the result from the OnPostExecute() in the AsyncTask. How can I pass or get the result to my main Activity?
+
+Here is the sample codes.
+
+My main Activity.
+
+public class MainActivity extends Activity{
+
+    AasyncTask asyncTask = new AasyncTask();
+
+    @Override
+    public void onCreate(Bundle aBundle) {
+        super.onCreate(aBundle);            
+
+        //Calling the AsyncTask class to start to execute.  
+        asyncTask.execute(a.targetServer); 
+
+        //Creating a TextView.
+        TextView displayUI = asyncTask.dataDisplay;
+        displayUI = new TextView(this);
+        this.setContentView(tTextView); 
+    }
+
+}
+
+
+This is the AsyncTask class
+
+public class AasyncTask extends AsyncTask<String, Void, String> {
+
+TextView dataDisplay; //store the data  
+String soapAction = "http://sample.com"; //SOAPAction header line. 
+String targetServer = "https://sampletargeturl.com"; //Target Server.
+
+//SOAP Request.
+String soapRequest = "<sample XML request>";    
+
+
+
+@Override
+protected String doInBackground(String... string) {
+
+String responseStorage = null; //storage of the response
+
+try {
+
+
+    //Uses URL and HttpURLConnection for server connection. 
+    URL targetURL = new URL(targetServer);
+    HttpURLConnection httpCon = (HttpURLConnection) targetURL.openConnection();
+    httpCon.setDoOutput(true);
+    httpCon.setDoInput(true);
+    httpCon.setUseCaches(false); 
+    httpCon.setChunkedStreamingMode(0);
+
+    //properties of SOAPAction header
+    httpCon.addRequestProperty("SOAPAction", soapAction);
+    httpCon.addRequestProperty("Content-Type", "text/xml; charset=utf-8"); 
+    httpCon.addRequestProperty("Content-Length", "" + soapRequest.length());
+    httpCon.setRequestMethod(HttpPost.METHOD_NAME);
+
+
+    //sending request to the server.
+    OutputStream outputStream = httpCon.getOutputStream(); 
+    Writer writer = new OutputStreamWriter(outputStream);
+    writer.write(soapRequest);
+    writer.flush();
+    writer.close();
+
+
+    //getting the response from the server
+    InputStream inputStream = httpCon.getInputStream(); 
+    BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
+    ByteArrayBuffer byteArrayBuffer = new ByteArrayBuffer(50);
+
+    int intResponse = httpCon.getResponseCode();
+
+    while ((intResponse = bufferedReader.read()) != -1) {
+        byteArrayBuffer.append(intResponse);
+    }
+
+    responseStorage = new String(byteArrayBuffer.toByteArray()); 
+
+    } catch (Exception aException) {
+    responseStorage = aException.getMessage(); 
+    }
+    return responseStorage;
+}
+
+protected void onPostExecute(String result) {
+
+    aTextView.setText(result);
+
+}       
+
+}   
+
+    
+===============================================================================================
+705
+A:Easy:
+
+
+Create interface class, where String output is optional, or can be whatever variables you want to return. 
+
+public interface AsyncResponse {
+    void processFinish(String output);
+}
+
+Go to your AsyncTask class, and declare interface AsyncResponse as a field :
+
+public class MyAsyncTask extends AsyncTask<Void, Void, String> {
+  public AsyncResponse delegate = null;
+
+    @Override
+    protected void onPostExecute(String result) {
+      delegate.processFinish(result);
+    }
+ }
+
+In your main Activity you need to implements interface AsyncResponse.
+
+public class MainActivity implements AsyncResponse{
+  MyAsyncTask asyncTask =new MyAsyncTask();
+
+  @Override
+  public void onCreate(Bundle savedInstanceState) {
+
+     //this to set delegate/listener back to this class
+     asyncTask.delegate = this;
+
+     //execute the async task 
+     asyncTask.execute();
+  }
+
+  //this override the implemented method from asyncTask
+  @Override
+  void processFinish(String output){
+     //Here you will receive the result fired from async class 
+     //of onPostExecute(result) method.
+   }
+ }
+
+
+
+
+
+UPDATE
+
+I didn't know this is such a favourite to many of you. So here's the simple and convenience way to use interface.
+
+still using same interface. FYI, you may combine this into AsyncTask class.
+
+in AsyncTask class :
+
+public class MyAsyncTask extends AsyncTask<Void, Void, String> {
+
+  // you may separate this or combined to caller class.
+  public interface AsyncResponse {
+        void processFinish(String output);
+  }
+
+  public AsyncResponse delegate = null;
+
+    public MyAsyncTask(AsyncResponse delegate){
+        this.delegate = delegate;
+    }
+
+    @Override
+    protected void onPostExecute(String result) {
+      delegate.processFinish(result);
+    }
+}
+
+
+do this in your Activity class
+
+public class MainActivity extends Activity {
+
+   MyAsyncTask asyncTask = new MyAsyncTask(new AsyncResponse(){
+
+     @Override
+     void processFinish(String output){
+     //Here you will receive the result fired from async class 
+     //of onPostExecute(result) method.
+     }
+  }).execute();
+
+ }
+
+
+Or, implementing the interface on the Activity again 
+
+public class MainActivity extends Activity 
+    implements AsyncResponse{
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+
+        //execute the async task 
+        new MyAsyncTask(this).execute();
+    }
+
+    //this override the implemented method from AsyncResponse
+    @Override
+    void processFinish(String output){
+        //Here you will receive the result fired from async class 
+        //of onPostExecute(result) method.
+    }
+}
+
+
+As you can see 2 solutions above, the first and third one, it needs to create method processFinish, the other one, the method is inside the caller parameter. The third  is more neat because there is no nested anonymous class. Hope this helps
+
+Tip: Change String output, String response, and String result to different matching types in order to get different objects. 
+    

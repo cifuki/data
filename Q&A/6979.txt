@@ -1,0 +1,87 @@
+37
+Q:I've seen in some applications the layout shifts when soft keyboard is shown. This is certainly not adjustPan because the whole layout (probably inner layout) shifts, not only the current EditText. This is for instance in Evernote login screen. Can you advice how this made? 
+    
+===============================================================================================
+66
+A:Here's a solution that works like the Evernote login screen:
+
+First, define a class that will be your special LinearLayout like this:
+
+public class MyLayout extends LinearLayout {
+
+public MyLayout(Context context, AttributeSet attrs) {
+    super(context, attrs);
+}
+
+public MyLayout(Context context) {
+    super(context);
+}
+
+private OnSoftKeyboardListener onSoftKeyboardListener;
+
+@Override
+protected void onMeasure(final int widthMeasureSpec, final int heightMeasureSpec) {
+    if (onSoftKeyboardListener != null) {
+        final int newSpec = MeasureSpec.getSize(heightMeasureSpec); 
+        final int oldSpec = getMeasuredHeight();
+        if (oldSpec > newSpec){
+            onSoftKeyboardListener.onShown();
+        } else {
+            onSoftKeyboardListener.onHidden();
+        }
+    }
+    super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+}
+
+public final void setOnSoftKeyboardListener(final OnSoftKeyboardListener listener) {
+    this.onSoftKeyboardListener = listener;
+}
+
+public interface OnSoftKeyboardListener {
+    public void onShown();
+    public void onHidden();
+}
+
+}
+
+
+This layout listens to measure changes, and if new measurements are < than the old ones, that means part of the screen is eaten by soft keyboard.
+
+Though, for it to work, in your manifest you need to set android:windowSoftInputMode="adjustResize" so the content will be resized and not just shifted.
+
+And the whole system works as follows:
+You have your layout:
+
+<MyLayout id="layout">
+  <SomeImage id="image"/>
+  <SomeText>
+  <SomeInput>
+</MyLayout>
+
+
+It's like evernotes login screen.
+Then, in your activity:
+
+((MyLayout)findViewById(R.id.layout)).setOnSoftKeyboardListener(new OnSoftKeyboardListener() {
+        @Override
+        public void onShown() {
+            findViewById(R.id.image).setVisibility(View.GONE);
+        }
+        @Override
+        public void onHidden() {
+            findViewById(R.id.image).setVisibility(View.VISIBLE);
+        }
+    });
+
+
+Then go to manifest.xml and set 
+
+android:windowSoftInputMode="adjustResize"
+
+
+What will happen, is when soft keyboard is shown, it'll hide the image and will resize the rest of content. (You can actually see how text is resized in Evernote)
+
+Image hide is, of course, one of the many things you can do. But you must be careful, since different layout changes will also call onMeasure.
+
+Of course it's a dirty variant. You need to check for orientation changes, and the right time when actually take the measurements, and maybe some more logic when comparing the new specs with the old ones. But i think this is the only way to do it.
+    

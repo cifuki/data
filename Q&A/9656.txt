@@ -1,0 +1,92 @@
+28
+Q:I have some shared preferences (latitude, longitude) that I want to access from a service, that is not subclassed from Activity. 
+
+In particular, when I try to access getPreferences, this function doesn't exist's on a service.  My code is posted below
+
+My goal here is to allow WRITE these shared preferences with my service. Any suggestions/examples that can help me along?
+
+public class MyService extends Service implements Runnable {
+
+    LocationManager mLocationManager;
+    Location mLocation;
+    MyLocationListener mLocationListener;
+    Location currentLocation = null;
+    static SharedPreferences settings;
+    static SharedPreferences.Editor configEditor;
+
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    public void onCreate() {
+        settings = this.getPreferences(MODE_WORLD_WRITEABLE);
+        configEditor = settings.edit();
+        writeSignalGPS();
+    }
+
+    private void setCurrentLocation(Location loc) {
+        currentLocation = loc;
+    }
+
+    private void writeSignalGPS() {
+        Thread thread = new Thread(this);
+        thread.start();
+    }
+
+    @Override
+    public void run() {
+        mLocationManager = (LocationManager)getSystemService(Context.LOCATION_SERVICE);
+        if (mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            Looper.prepare();
+            mLocationListener = new MyLocationListener();
+            mLocationManager.requestLocationUpdates(
+            LocationManager.GPS_PROVIDER, 1000, 0, mLocationListener);
+            Looper.loop();
+            //Looper.myLooper().quit();
+        } else {
+            Toast.makeText(getBaseContext(),
+              getResources().getString(R.string.gps_signal_not_found),
+              Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private Handler handler = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            if (currentLocation!=null) {
+                configEditor.putString("mylatitude", ""+currentLocation.getLatitude());
+                configEditor.putString("mylongitude", ""+currentLocation.getLongitude());
+                configEditor.commit();
+            }
+        }
+    };
+
+    private class MyLocationListener implements LocationListener {
+        @Override
+        public void onLocationChanged(Location loc) {
+            if (loc != null) {
+                Toast.makeText(getBaseContext(),
+                getResources().getString(R.string.gps_signal_found),
+                  Toast.LENGTH_LONG).show();
+                setCurrentLocation(loc);
+                handler.sendEmptyMessage(0);
+            }
+        }
+
+    @Override
+    public void onProviderDisabled(String provider) {}
+
+    @Override
+    public void onProviderEnabled(String provider) {}
+
+    @Override
+    public void onStatusChanged(String provider, int status, Bundle extras) {}
+}
+
+
+I get the error on the line settings = this.getPreferences(MODE_WORLD_WRITEABLE);
+    
+===============================================================================================
+45
+A:If you are only using one SharedPreferences for your application, have all your code get it via PreferenceManager.getDefaultSharedPreferences().
+    

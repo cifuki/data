@@ -1,0 +1,151 @@
+34
+Q:I have the following setup:
+
+final OkHttpClient okHttpClient = new OkHttpClient();
+okHttpClient.setReadTimeout(5, TimeUnit.SECONDS);
+okHttpClient.setConnectTimeout(5, TimeUnit.SECONDS);
+
+RestAdapter.Builder builder = new RestAdapter.Builder()
+        .setEndpoint(ROOT)
+        .setClient(new OkClient(okHttpClient))
+        .setLogLevel(RestAdapter.LogLevel.FULL);
+
+
+I am trying to handle the situation in which my server is down and the user gets a connection timeout exception, this is my logging:
+
+java.net.SocketTimeoutException: failed to connect to /192.168.0.53 (port 3000) after 5000ms
+
+
+Full logging: http://pastebin.com/gscCGb7x
+
+Is there a way to route this into the retrofit failure method so I can handle it over there?
+
+Thanks in advance!
+    
+===============================================================================================
+45
+A:For Retrofit 2
+
+Define a listener in your web service instance:
+
+public interface OnConnectionTimeoutListener {
+    void onConnectionTimeout();
+}
+
+
+Add an interceptor to your web service:
+
+public WebServiceClient() {
+    OkHttpClient client = new OkHttpClient();
+    client.setConnectTimeout(10, TimeUnit.SECONDS);
+    client.setReadTimeout(30, TimeUnit.SECONDS);
+    client.interceptors().add(new Interceptor() {
+        @Override
+        public Response intercept(Chain chain) throws IOException {
+            return onOnIntercept(chain);
+        }
+    });
+    Retrofit retrofit = new Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .client(client)
+            .build();
+    webService = retrofit.create(WebService.class);
+}
+
+
+Enclose your intercep code with try-catch block and notify listener when exception happens:
+
+private Response onOnIntercept(Chain chain) throws IOException {
+    try {
+        Response response = chain.proceed(chain.request());
+        String content = UtilityMethods.convertResponseToString(response);
+        Log.d(TAG, lastCalledMethodName + " - " + content);
+        return response.newBuilder().body(ResponseBody.create(response.body().contentType(), content)).build();
+    }
+    catch (SocketTimeoutException exception) {
+        exception.printStackTrace();
+        if(listener != null)
+            listener.onConnectionTimeout();
+    }
+
+    return chain.proceed(chain.request());
+}
+
+
+Kotlin
+
+If you want to use Retrofit in Kotlin follow below steps:
+
+Define your Retrofit interface:
+
+interface GitHubApi {
+
+    @GET("/users/{userName}/repos")
+    fun repos(@Path("userName") userName: String): Call<List<Repo>>
+}
+
+
+Implement your service:
+
+class Api(...) {
+
+    private val baseUrl = "https://api.github.com"
+    private val api: GitHubApi
+
+    private fun loggingInterceptor(...): HttpLoggingInterceptor {...}
+
+    private fun okHttpBuilder(): OkHttpClient {...}
+
+    init {...}
+
+    fun repos(
+        userName: String,
+        onSuccess: (list: List<Repo>?) -> Unit,
+        onFailure: (message: String?) -> Unit): Future<Unit> {
+        return runAsync(api.repos(userName), onSuccess, onFailure)
+    }
+
+    private fun <T> runAsync(
+        call: retrofit2.Call<T>,
+        onSuccess: (T?) -> Unit,
+        onFailure: (message: String?) -> Unit) : Future<Unit> {
+        return doAsync {
+            try {
+                val response = call.execute()
+                when {
+                    response.isSuccessful -> response.body()?.let {
+                        onSuccess(it)
+                    }
+                    else -> {
+                        onFailure(response.raw().message())
+                    }
+                }
+            } catch (e: IOException) {
+                if (e is SocketTimeoutException) {
+                    onFailure("Response time out!")
+                } else {
+                    onFailure(e.message)
+                }
+            }
+        }
+    }
+}
+
+
+Call your service in where you want:
+
+Api().repos("olcayertas",
+    onSuccess = {
+        Log.d("MainActivity", "Response:\
+" + toJson(it))
+    },
+    onFailure = {
+        Log.e("MainActivity", "Error: $it")
+    })
+
+
+You can handle any exception you want in runAsync function.
+
+You can get fully working example here.
+    

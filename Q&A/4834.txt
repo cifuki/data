@@ -1,0 +1,87 @@
+50
+Q:I have an ArrayList with custom objects that I would like to be able to save and restore on a screen rotate. 
+
+I know that this can be done with onSaveInstanceState and onRestoreInstanceState if I were to make the ArrayList its own class, which implements either Parcelable or Serializable... But is there a way to do this without creating another class?
+    
+===============================================================================================
+84
+A:You do not need to create a new class to pass an ArrayList of your custom objects. You should simply implement the Parcelable class for your object and use Bundle#putParcelableArrayList() in onSaveInstanceState() and onRestoreInstanceState(). This method will store an ArrayList of Parcelables by itself.
+
+
+
+Because the subject of Parcelables (and Serializables and Bundles) sometimes makes my head hurt, here is a basic example of an ArrayList containing custom Parcelable objects stored in a Bundle. (This is cut & paste runnable, no layout necessary.)
+
+Implementing Parcelable
+
+public class MyObject implements Parcelable {
+    String color;
+    String number;
+
+    public MyObject(String number, String color) {
+        this.color = color;
+        this.number = number;
+    }
+
+    private MyObject(Parcel in) {
+        color = in.readString();
+        number = in.readString();
+    }
+
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public String toString() {
+        return number + ": " + color;
+    }
+
+    public void writeToParcel(Parcel out, int flags) {
+        out.writeString(color);
+        out.writeString(number);
+    }
+
+    public static final Parcelable.Creator<MyObject> CREATOR = new Parcelable.Creator<MyObject>() {
+        public MyObject createFromParcel(Parcel in) {
+            return new MyObject(in);
+        }
+
+        public MyObject[] newArray(int size) {
+            return new MyObject[size];
+        }
+    };
+}
+
+
+Save / Restore States
+
+public class Example extends ListActivity {
+    ArrayList<MyObject> list;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        if(savedInstanceState == null || !savedInstanceState.containsKey("key")) {
+            String[] colors = {"black", "red", "orange", "cyan", "green", "yellow", "blue", "purple", "magenta", "white"};
+            String[] numbers = {"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"};
+
+            list = new ArrayList<MyObject>();
+            for(int i = 0; i < numbers.length; i++) 
+                list.add(new MyObject(numbers[i], colors[i]));
+        }
+        else {
+            list = savedInstanceState.getParcelableArrayList("key");
+        }
+
+        setListAdapter(new ArrayAdapter<MyObject>(this, android.R.layout.simple_list_item_1, list));
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        outState.putParcelableArrayList("key", list);
+        super.onSaveInstanceState(outState);
+    }
+}
+
+    

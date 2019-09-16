@@ -1,0 +1,57 @@
+37
+Q:I have been doing some testing for a custom push notification solution for Android devices using persistent sockets. I would like to share my findings and validate the results.
+
+Simple Description
+The applications runs a foreground service and establishes a connection with the server and maintains that connection via aggressive pinging (@ 10 secs interval). If the connection is ever detected as dead, the app keeps trying to reconnect indefinitely. The server sends notifications via duplex channel.
+
+Test 1 :
+
+Pinging is done using a timer at 10 second intervals.
+Server sends notification every minute.
+Applications acquires wifi and wake locks.
+Duration : 8 hours
+Battery loss : ~14%
+
+
+Test 2 :
+
+Pinging is done using AlarmManager at 10 second intervals.
+Server sends notification every minute.
+Application acquires only a wifilock
+Duration : 8 hours
+Battery loss : ~7%
+
+
+Assumptions: An incoming network packet automatically wakes up the CPU, thus no need for a wake lock. Using AlarmManager to ping(instead of timers) means we do not need a wakelock. 
+
+Removing that wakelock really seemed to help the battery. Surprisingly, the aggressive pinging on either solution did not affect the battery life as much as I would have expected. (We had many other tests including one where the application just held a wifilock and did nothing which caused around 4% to 5% battery loss over the same period)
+
+Since the application was able to successfully send all the ping requests and receive all the incoming messages, I believe my assumptions are correct. But I would love to get some confirmation from any experts.
+
+One more question:
+If the application was to instead listen for incoming connections. I would need to hold a wakelock in this case, correct? An incoming connection does not wake up the CPU? We are not going down this route, but just wanted to confirm.
+
+Also, please do not recommend GCM, it has been ruled out by company policy.
+
+Thanks.
+    
+===============================================================================================
+13
+A:Since there has been some interest in this question and no confirmations, I will just respond now. It has been a while since the tests were done, and a production level solution has been created and rigorously tested. Removing the wake lock still helped the battery and no other issues were found such as missing ping requests or incoming notifications, so that is the only validation that I received on the said assumptions.
+
+Additional Things to Note:
+
+
+In the OnReceive method of the BroadcastReceiver for the pinging alarm, if you are not directly calling on the socket (spawning a new thread or intent), you will need to hold a wake lock until the ping request is finished. Android holds a wake lock only until OnReceive returns, after that it is possible(but rare) that the CPU may sleep before the ping is finished.
+Use a High Performance Wifi Lock if the notifications are sensitive.
+There was one other device specific issue that affected the solution, it is covered here.
+
+
+Update
+
+Ran into the following issue with Android 5.1 : Android Issue
+
+Update 2
+
+Need to code around Doze mode for Android 6.0 : Doze Mode
+    

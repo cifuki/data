@@ -1,0 +1,88 @@
+49
+Q:The app I'm working on consists of a Navigation Drawer which is implemented in an Activity. The activity layout is as follows:
+
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+<android.support.v4.widget.DrawerLayout
+    android:id="@+id/drawer_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <android.support.design.widget.CoordinatorLayout
+        android:id="@+id/coordinator"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <FrameLayout
+            android:id="@+id/container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <include
+            android:id="@+id/appbar"
+            layout="@layout/appbar" />
+
+    </android.support.design.widget.CoordinatorLayout>
+
+    <android.support.design.widget.NavigationView
+        android:id="@+id/navigation_drawer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        app:headerLayout="@layout/header_drawer"
+        app:menu="@menu/menu_nav">
+    </android.support.design.widget.NavigationView>
+
+</android.support.v4.widget.DrawerLayout>
+
+</FrameLayout>
+
+
+This is a very common pattern, only thing that changes frequently is the Fragment inside the container layout.
+
+If any of the Fragment has a scrolling element, upon scrolling, the CoordinatorLayout will happily make position translations, including the Toolbar/AppBarLayout.
+
+The real problem here is, when the Fragment gets replaced, the position for the Toolbar remains the same, i.e., if the Toolbar is hidden, it will stay so 
+which isn't intended. 
+
+Result is this:
+
+This:
+
+
+
+Gets stuck:
+
+
+
+How can one reset the Toolbar position for this case?
+
+EDIT:
+A bug is probable, the AppBarLayout offset change listener gets called only when relaunching the app (press back button and open the app), and stops getting called again after an intense fling.
+    
+===============================================================================================
+46
+A:To reset the scroll state, just get the AppBarLayout.Behavior object
+
+CoordinatorLayout coordinator = (CoordinatorLayout) findViewById(R.id.coordinator);
+AppBarLayout appbar = (AppBarLayout) findViewById(R.id.appbar);
+CoordinatorLayout.LayoutParams params = (CoordinatorLayout.LayoutParams) appbar.getLayoutParams();
+AppBarLayout.Behavior behavior = (AppBarLayout.Behavior) params.getBehavior();       
+
+
+and call onNestedPreScroll method manually:
+
+int[] consumed = new int[2];
+behavior.onNestedPreScroll(coordinator, appbar, null, 0, -1000, consumed);
+
+
+If you would like to reset smoothly with an animation, you can try calling onNestedFling instead:
+
+behavior.onNestedFling(coordinator, appbar, null, 0, -1000, true);
+
+    

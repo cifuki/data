@@ -1,0 +1,70 @@
+34
+Q:The Maps v2 documentation states:
+
+
+  Because version 2 of the Google Maps Android API requires OpenGL ES
+  version 2, you must add a <uses-feature> element as a child of the
+  manifest element in AndroidManifest.xml:
+
+<uses-feature   
+   android:glEsVersion="0x00020000"  
+   android:required="true"/>` 
+
+  
+  This notifies external services of the
+  requirement. In particular, it has the effect of preventing Google
+  Play Store from displaying your app on devices that don't support
+  OpenGL ES version 2.
+
+
+In fact, it throws an exception if this is not in the manifest. I don't want to filter my app in the store, I plan to keep using the old maps for old devices, and only show the new maps if the required features are present, detected at runtime rather than before installation.
+
+So how do I do that? Does it have to be something like multiple APKs with different manifests?
+    
+===============================================================================================
+35
+A:Final Update
+
+As of 2013/12/20, the Android Dashboard shows that approximately 100% of devices now support OpenGL 2.0+ so this answer is no longer relevant. You may simply require OpenGL ES 2.0+ in your manifest.
+
+Update
+
+This is fixed as of rev 7 of the Google Play Services SDK add-on. It is safe to use <uses-feature android:glEsVersion="0x00020000" android:required="false"/> and to detect OpenGL ES 2.0 at runtime.
+
+Original answer
+
+It appears that the Google Maps Android API v2 requires an explicit <uses-feature android:glEsVersion="0x00020000" android:required="true/> declaration in AndroidManifest.xml so there is no way to deploy Google Maps Android API v2 services without excluding all OpenGL ES 1.x devices.  At the time of this writing, Google's Android Dashboard shows that, among 1.1 and 2.0 devices, 90.8% of devices support 2.0.
+
+On a particular device (Motorola XOOM), this code results in supportsEs2 = true:
+
+// Check if the system supports OpenGL ES 2.0.
+final ActivityManager activityManager = (ActivityManager)getSystemService(Context.ACTIVITY_SERVICE);
+final ConfigurationInfo configurationInfo = activityManager.getDeviceConfigurationInfo();
+final boolean supportsEs2 = configurationInfo.reqGlEsVersion >= 0x20000;
+
+
+However, when there is no <uses-feature> declaration in the manifest, MapFragment is throwing a RuntimeException:
+
+    Caused by: java.lang.RuntimeException: Google Maps Android API only supports OpenGL ES 2.0 andabove. Please add <uses-feature android:glEsVersion="0x00020000" android:required="true" /> into AndroidManifest.xml
+    at maps.y.ae.a(Unknown Source)
+    at maps.y.bu.a(Unknown Source)
+    at maps.y.p.onCreateView(Unknown Source)
+    at com.google.android.gms.maps.internal.IMapFragmentDelegate$Stub.onTransact(IMapFragmentDelegate.java:107)
+    at android.os.Binder.transact(Binder.java:297)
+    at com.google.android.gms.maps.internal.IMapFragmentDelegate$a$a.onCreateView(Unknown Source)
+    at com.google.android.gms.maps.SupportMapFragment$a.onCreateView(Unknown Source)
+    at com.google.android.gms.internal.c$4.a(Unknown Source)
+    at com.google.android.gms.internal.c.a(Unknown Source)
+    at com.google.android.gms.internal.c.onCreateView(Unknown Source)
+    at com.google.android.gms.maps.SupportMapFragment.onCreateView(Unknown Source)
+    at android.support.v4.app.Fragment.performCreateView(Fragment.java:1460)
+    at android.support.v4.app.FragmentManagerImpl.moveToState(FragmentManager.java:884)
+    at android.support.v4.app.FragmentManagerImpl.moveToState(FragmentManager.java:1066)
+    at android.support.v4.app.FragmentManagerImpl.addFragment(FragmentManager.java:1168)
+    at android.support.v4.app.FragmentActivity.onCreateView(FragmentActivity.java:280)
+    at android.view.LayoutInflater.createViewFromTag(LayoutInflater.java:669)
+    ... 22 more
+
+
+Here's to hoping that an update to the Maps library will remove this limitation so we can deploy a single APK and use runtime APIs to determine whether or not to load the new Google Maps v2 experience or fall back to another compatible solution.
+    

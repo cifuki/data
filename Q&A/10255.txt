@@ -1,0 +1,98 @@
+27
+Q:I need to be able to access the size of the view's canvas to perform some calculations. For some reason, the size of the view passed to onSizeChanged is different than the size of the canvas passed to onDraw. My current workaround uses a boolean flag to determine when I need to do the calculations.
+
+The ideal solution would allow me to do these calculations in the onSizeChanged method, so I'm wondering... is there any way I can get ahold of the Canvas object (or at least it's dimensions) outside of the onDraw method?
+
+My code is below. It is draws the radius of a circle at a given angle. When I use canvas.centerX() to determine the start points and end points for the radius, everything works perfectly. If I use the parameters passed into onSizeChanged, it isn't even remotely close to correct.
+
+@Override
+protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+  super.onSizeChanged(w, h, oldw, oldh);
+  mSizeChanged = true;
+}
+
+@Override
+protected void onDraw(Canvas canvas) {
+  super.onDraw(canvas);
+
+  if (mSizeChanged) {
+    RectF bounds = new RectF(canvas.getClipBounds());
+    float centerX = bounds.centerX();
+    float centerY = bounds.centerY();
+    float radianAngle = (float) Math.toRadians(mStartAngle);
+
+    mRadius[0] = center;
+    mRadius[1] = center;
+    mRadius[2] = center + center * FloatMath.cos(radianAngle);
+    mRadius[3] = center + center * FloatMath.sin(radianAngle);
+    mSizeChanged = false;
+  }
+
+  mPaint.setColor(0xFF330000);
+  mPaint.setStrokeWidth(1);
+  canvas.drawLines(mRadius, mPaint);
+}
+
+    
+===============================================================================================
+32
+A:For drawing purposes, you should not really use the dimensions of the Canvas object.
+
+Just use the dimensions provided to you in the onSizeChanged method. You can either store the dimensions for use in the onDraw method or resize/draw to a backing bitmap that you can draw with later.
+
+Update:
+
+Quickly whipped up some code, it looks like this works:
+
+public class CustomView extends View{
+    private Paint paint;
+    private int w;
+    private int h;
+
+    public CustomView(Context context, AttributeSet attr) {
+        super(context, attr);
+        paint = new Paint();
+        paint.setTextAlign(Align.CENTER);
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        this.w = w;
+        this.h = h;
+        super.onSizeChanged(w, h, oldw, oldh);
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        canvas.drawColor(Color.WHITE);
+        canvas.drawText("TEST", w/2, h/2, paint);   
+    }
+}
+
+
+Update 2
+
+Following the circle code update.
+
+We can do this:
+
+   @Override
+    protected void onDraw(Canvas canvas) {
+        canvas.drawColor(Color.WHITE);
+        float centerX = (float) w/2;
+        float centerY = (float) h/2;
+        float radianAngle = (float) Math.toRadians(startAngle);
+
+        radius[0] = centerX;
+        radius[1] = centerY;
+        radius[2] = centerX + centerX * FloatMath.cos(radianAngle);
+        radius[3] = centerY + centerY * FloatMath.sin(radianAngle);
+
+        paint.setColor(0xFF330000);
+        paint.setStrokeWidth(1);
+        canvas.drawLines(radius, paint);
+    }
+
+
+You'll see that this now works on any sized view.
+    

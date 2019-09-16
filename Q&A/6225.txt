@@ -1,0 +1,126 @@
+41
+Q:Android's JNI tips page mentions this FAQ: Why didn't FindClass find my class?
+They mention multiple solutions and the last option there is this one:
+
+
+  Cache a reference to the ClassLoader object somewhere handy, and issue
+  loadClass calls directly. This requires some effort.
+
+
+So, I tried to get it working and it seems that no matter what, this method simply does not work for me. Eventually, I figured how to use ClassLoader but it won't work if from a native thread I try to loadClass that hasn't been touched/loaded yet. Essentially, it's the identical to env->FindClass in behavior when called from a native thread, with the exception that it won't return 0 for classes that were already use in the app. Any idea if I didn't get it right, or it's impossible to access classes from a native thread that weren't used/loaded yet.
+
+
+EDIT: I'll give more info to explain what exactly I mean. There is regular JNI env->FindClass(className), and another one that I wrote myFindClass(env, className) that uses cached ClassLoader->loadClass.
+
+The class that I'm trying to access from native c/c++ is "com/noname/TestClient". Inside myFindClass I also use env->FindClass and log value that it returns:
+
+jclass myFindClass(JNIEnv * env, const char* name)
+{
+    ...
+    jclass c0 = env->FindClass(name);
+    jclass c1 = (jclass)env->CallObjectMethod(ClassLoader,
+        MID_loadClass, envNewStringUTF(name));
+    dlog("myFindClass(\\"%s\\") => c0:%p, c1:%p, c0 and c1 are same: %d",
+        name, c0, c1, env->IsSameObject(c0, c1));
+    ...
+}
+
+
+Then, I have these 3 combinations to explain the issue.
+
+1)
+
+//inside JNI_OnLoad thread
+myFindClass(env, "com/noname/TestClient");
+...
+
+//inside native thread created by pthread_create
+myFindClass(env, "com/noname/TestClient");
+
+
+I get this logcat:
+
+
+  myFindClass("com/noname/TestClent") => c0:0x41b64558, c1:0x41b64558,
+  c0 and c1 are same: 1 ...myFindClass("com/noname/TestClent") => c0:0,
+  c1:0x41b64558, c0 and c1 are same: 0
+
+
+2)
+
+//inside JNI_OnLoad thread
+env->FindClass("com/noname/TestClient");
+...
+
+//inside native thread created by pthread_create
+myFindClass("com/noname/TestClient");
+
+
+I get this logcat:
+
+
+  myFindClass("com/noname/TestClent") => c0:0, c1:0x41b64558, c0 and c1 are same: 0
+
+
+3)
+
+//inside JNI_OnLoad thread
+//"com/noname/TestClient" isn't touched from JNI_OnLoad.
+...
+
+//inside native thread created by pthread_create
+myFindClass(env, "com/noname/TestClient");
+
+
+I get this logcat:
+
+
+  myFindClass("com/noname/TestClent") => c0:0, c1:0, c0 and c1 are same: 1
+
+
+Basically, my issue is that ClassLoader doesn't find my class in the 3rd case. Is it a bug? What can be done to fix the problem?
+
+EDIT2:
+On top of that, it seems that ClassLoader::loadClass is plainly buggy. If I ask myFindClass("noname/TestClent") then it returns some garbage, and when I use that returned jclass in any way the app crashes.
+    
+===============================================================================================
+55
+A:After much trying and crashing of my app, a colleague and I managed to cache and succesfully use the class loader in another, native, thread. The code we used is shown below (C++11, but easily converted to C++2003), posted here since we couldn't find any examples of the aforementioned "Cache a reference to the ClassLoader object somewhere handy, and issue loadClass calls directly. This requires some effort.". Calling findClass worked perfectly when called from a thread different from the one of JNI_OnLoad. I hope this helps.
+
+JavaVM* gJvm = nullptr;
+static jobject gClassLoader;
+static jmethodID gFindClassMethod;
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *pjvm, void *reserved) {
+    gJvm = pjvm;  // cache the JavaVM pointer
+    auto env = getEnv();
+    //replace with one of your classes in the line below
+    auto randomClass = env->FindClass("com/example/RandomClass");
+    jclass classClass = env->GetObjectClass(randomClass);
+    auto classLoaderClass = env->FindClass("java/lang/ClassLoader");
+    auto getClassLoaderMethod = env->GetMethodID(classClass, "getClassLoader",
+                                             "()Ljava/lang/ClassLoader;");
+    gClassLoader = env->CallObjectMethod(randomClass, getClassLoaderMethod);
+    gFindClassMethod = env->GetMethodID(classLoaderClass, "findClass",
+                                    "(Ljava/lang/String;)Ljava/lang/Class;");
+
+    return JNI_VERSION_1_6;
+}
+
+jclass findClass(const char* name) {
+    return static_cast<jclass>(getEnv()->CallObjectMethod(gClassLoader, gFindClassMethod, getEnv()->NewStringUTF(name)));
+}
+
+JNIEnv* getEnv() {
+    JNIEnv *env;
+    int status = gJvm->GetEnv((void**)&env, JNI_VERSION_1_6);
+    if(status < 0) {    
+        status = gJvm->AttachCurrentThread(&env, NULL);
+        if(status < 0) {        
+            return nullptr;
+        }
+    }
+    return env;
+}
+
+    

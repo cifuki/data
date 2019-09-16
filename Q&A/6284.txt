@@ -1,0 +1,65 @@
+40
+Q:I want to show portrait orientation on Zxing's camera.
+
+How can this be done?
+    
+===============================================================================================
+106
+A:Here's how it works.
+
+Step 1: Add following lines to rotate data before buildLuminanceSource(..) in decode(byte[] data, int width, int height)
+
+DecodeHandler.java: 
+
+byte[] rotatedData = new byte[data.length];
+for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++)
+        rotatedData[x * height + height - y - 1] = data[x + y * width];
+}
+int tmp = width;
+width = height;
+height = tmp;
+
+PlanarYUVLuminanceSource source = activity.getCameraManager().buildLuminanceSource(rotatedData, width, height);
+
+
+
+
+Step 2: Modify getFramingRectInPreview().
+
+CameraManager.java
+
+rect.left = rect.left * cameraResolution.y / screenResolution.x;
+rect.right = rect.right * cameraResolution.y / screenResolution.x;
+rect.top = rect.top * cameraResolution.x / screenResolution.y;
+rect.bottom = rect.bottom * cameraResolution.x / screenResolution.y;
+
+
+
+
+Step 3: Disable the check for Landscape Mode in initFromCameraParameters(...)  
+
+CameraConfigurationManager.java
+
+//remove the following
+if (width < height) {
+  Log.i(TAG, "Display reports portrait orientation; assuming this is incorrect");
+  int temp = width;
+  width = height;
+  height = temp;
+}
+
+
+
+
+Step 4: Add following line to rotate camera insetDesiredCameraParameters(...)
+
+CameraConfigurationManager.java
+
+camera.setDisplayOrientation(90);
+
+
+
+
+Step 5: Do not forget to set orientation of activity to portrait. I.e: manifest
+    

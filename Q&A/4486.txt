@@ -1,0 +1,168 @@
+53
+Q:I have a multilingual app with primary language English and secondary language Arabic.
+
+As described in the documentation,
+
+
+I have added android:supportsRtl="true" in the manifest.
+I have changed all xml properties with left and right attributes to start and end respectively.
+I have added Arabic language strings in strings-ar (and similarly for other resources).
+
+
+The above setup works properly. After changing the Locale to ar-AE, Arabic text & resources are correctly displayed in my Activities.
+
+
+  However, every time I navigate to an Activity with a WebView
+  and/or a WebViewClient, the locale, text and layout direction
+  abruptly revert to the device default.
+
+
+Further hints:
+
+
+This is occurring only on a Nexus 6P with Android 7.0. Everything works properly on Android 6.0.1 and below.
+The abrupt shift in locale happens only when I navigate to an Activity that has a WebView and/or a WebViewClient (and I have several). It does not occur on any of the other Activities.
+
+
+Android 7.0 has multi-locale support, allowing the user to set more than one default locale. So if I set the primary locale to Locale.UK:
+
+
+
+
+  Then on navigating to the WebView, the locale changes from ar-AE
+  to en-GB.
+
+
+Android 7.0 API changes:
+
+As indicated in the list of API changes, new methods pertaining to locale have been added to the following classes in API 24:
+
+Locale:
+
+
+Locale.getDefault(...)
+Locale.setDefault(...)
+
+
+Configuration:
+
+
+getLocales()
+setLocales(...)
+
+
+
+  However, I am building my app with API 23, and am not using any of
+  these new methods.
+
+
+Furthermore ...
+
+
+The problem occurs on the Nexus 6P emulator as well.
+To get the default locale, I am using Locale.getDefault().
+To set the default locale, I am using the following code:
+
+public static void setLocale(Locale locale){
+    Locale.setDefault(locale);
+    Configuration config = new Configuration();
+    config.setLocale(locale);
+    Context context = MyApplication.getInstance();
+    context.getResources().updateConfiguration(config,
+            context.getResources().getDisplayMetrics());
+}
+
+
+
+Has anyone encountered this problem before? What is the reason for it, and how do I resolve this?
+
+References:
+
+1. Native RTL support in Android 4.2.
+
+2. Multilingual Support - Language and Locale.
+
+3. Be wary of the default locale.
+    
+===============================================================================================
+56
+A:Ted Hopp's answer managed to solve the problem, but he didn't address the question of why this occurs.
+
+The reason is the changes made to the WebView class and its support package in Android 7.0.
+
+Background:
+
+Android's WebView is built using WebKit. While it was originally a part of AOSP, from KitKat onwards a decision was made to spin off WebView into a separate component called Android System WebView. It is essentially an Android system app that comes pre-installed with Android devices. It is periodically updated, just like other system apps such as Google Play Services and the Play Store app. You can see it in your list of installed system apps:
+
+
+
+Android 7.0 changes:
+
+Starting with Android N, the Chrome app will be used to render any/all WebViews in third-party Android apps. In phones that have Android N out-of-the-box, the Android WebView System app is not present at all. In devices that have received an OTA update to Android N, the Android System WebView is disabled:
+
+
+
+and 
+
+
+
+Moreover, multi-locale support has been introduced, with devices having more than one default language:
+
+
+
+This has an important consequence for apps that have multiple languages. If your app has WebViews, then those are rendered using the Chrome app. Because Chrome is an Android app in itself, running in its own sandboxed process, it will not be bound to the locale set by your app. Instead, Chrome will revert to the primary device locale. For example, say your app locale is set to ar-AE, while the primary locale of the device is en-US. In this case, the locale of the Activity containing a WebView will change from ar-AE to en-US, and strings and resources from the corresponding locale folders will be displayed. You may see a mish-mash of LTR and RTL strings/resources on those Activitys that have WebViews.
+
+The Solution:
+
+The complete solution to this problem consists of two steps:
+
+STEP 1:
+
+First, reset the default locale manually in every Activity, or at least every Activity that has a WebView.
+
+public static void setLocale(Locale locale){
+    Context context = MyApplication.getInstance();
+    Resources resources = context.getResources();
+    Configuration configuration = resources.getConfiguration();
+    Locale.setDefault(locale);
+    configuration.setLocale(locale);
+
+    if (Build.VERSION.SDK_INT >= 25) {
+        context = context.getApplicationContext().createConfigurationContext(configuration);
+        context = context.createConfigurationContext(configuration);
+    }
+
+    context.getResources().updateConfiguration(configuration,
+            resources.getDisplayMetrics());
+}
+
+
+Call the above method before calling setContentView(...) in the onCreate() method of all your Activities. The locale parameter should be the default Locale that you wish to set. For example, if you wish to set Arabic/UAE as the default locale, you should pass new Locale("ar", "AE"). Or if you wish to set the default locale (i.e. the Locale that is automatically set by the operating system), you should pass Locale.US.
+
+STEP 2:
+
+Additionally, you need to add the following line of code:
+
+new WebView(this).destroy();
+
+
+in the onCreate() of your Application class (if you have one), and wherever else the user may be changing the language. This will take care of all kinds of edge cases that may occur on app restart after changing the language (you may have noticed strings in other languages or with the opposite alignment after changing the language on Activities that have WebViews on Android 7.0++).
+
+As an addendum, Chrome custom tabs are now the preferred way of rendering in-app web pages.
+
+References:
+
+1. Android 7.0 - changes for WebView.
+
+2. Understanding WebView and Android security patches.
+
+3. WebView for Android.
+
+4. WebView: From "Powered by Chrome" to straight up Chrome.
+
+5. Nougat WebView.
+
+6. Android 7.0 Nougat.
+
+7. Android N Mysteries, Part 1: Android System WebView is just "Chrome" Now?.
+    

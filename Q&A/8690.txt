@@ -1,0 +1,67 @@
+31
+Q:We're building a game for Android, which needs access to web services - so we wrote a RESTful API in PHP that runs on our own server. What the API offers is: creating user, logging in, downloading games, retrieving game list, submitting score... etc. Now I'm thinking, if some experienced user gets the URL format of the API - s/he will be able to trash the system in many ways:
+
+
+Create a script & run it to create automatic users  - I think I can prevent it by CAPTCHA or someting like that. But again, captcha will annoy game players.
+Malicious user logs in using his browser, downloads game & then submits score as he wish - all via calling the API by simply typing it from his browser. I assume malicious user somehow knows API urls to call - by sniffing when the application was making HTTP requests.
+I need to ensure that requests are made only from Android device that installed the game. (The game will be free)
+
+
+Now How do I prevent such abuses?
+    
+===============================================================================================
+34
+A:I think you will never be able to hide the urls being called by the application
+(if I am running a root-ed android phone, I should be able to spy on all network traffic)
+
+But your real problem is that you need to authenticate your api in some way.
+
+One way would be to implement OAUTH, but maybe this'd be overkill.
+
+If you want a simple mechanism, how about this;
+
+
+create a secret key
+build the api request (eg. https://my.example.com/users/23?fields=name,email)
+hash this request path + plus your secret key (eg. md5(url+secret_key) == "a3c2fe167")
+add this hash to your request (now it is https://.....?fields=name,email&hash=a3c2fe167)
+on the api end, do the same conversion (remove the hash param)
+check the md5 of the url and the secret key
+
+
+As long as the secret remains secret, no one can forge your requests.
+
+Example (in pseudo-code):
+
+Android side:
+
+SECRET_KEY = "abc123"
+
+def call_api_with_secret(url, params)
+  # create the hash to sign the request
+  hash = MD5.hash(SECRET_KEY, url, params)
+
+  # call the api with the added hash
+  call_api(url+"&hash=#{hash}", params)
+end
+
+
+Server side:
+
+SECRET_KEY = "abc123"
+
+def receive_from_api(url, params)
+  # retrieve the hash
+  url_without_hash, received_hash = retrieve_and_remove_hash(url)
+
+  # check the hash
+  expected_hash = MD5.hash(SECRET_KEY, url_without_hash, params)
+
+  if (expected_hash != received_hash)
+    raise our exception!
+  end
+
+  # now do the usual stuff
+end
+
+    

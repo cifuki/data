@@ -1,0 +1,73 @@
+33
+Q:I registered a receiver that listens to network events:
+
+<receiver 
+    android:label="NetworkConnection"
+    android:name=".ConnectionChangeReceiver" >
+    <intent-filter >
+        <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+    </intent-filter>
+</receiver>
+
+
+receiver is also very simple:
+
+public class ConnectionChangeReceiver extends BroadcastReceiver {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo activeNetInfo = connectivityManager.getActiveNetworkInfo();
+        if (activeNetInfo != null) {
+                Log.v("@@@","Receiver : " + activeNetInfo);
+        } else {
+            Log.v("@@@","Receiver : " + "No network");
+        }
+    }
+}
+
+
+The problem is, when Wifi is connected I receive 3 identical messages in a row, like this:
+
+Receiver : NetworkInfo: type: WIFI[], state: CONNECTED/CONNECTED, reason: (unspecified), extra: (none), roaming: false, failover: false, isAvailable: true
+Receiver : NetworkInfo: type: WIFI[], state: CONNECTED/CONNECTED, reason: (unspecified), extra: (none), roaming: false, failover: false, isAvailable: true
+Receiver : NetworkInfo: type: WIFI[], state: CONNECTED/CONNECTED, reason: (unspecified), extra: (none), roaming: false, failover: false, isAvailable: true
+
+
+They are all "CONNECTED/CONNECTED" (Shouldn't they be something like CONNECTING/OBTAINING_IPADDR, etc.), so the problem is how do I tell when It's really connected? I have some routines that I want to make when wifi is actually connected, and I dont want them to be called three times in a row. 
+
+PS: 3G sends only one message, so no problem here.
+
+Update: 
+
+Seems like it's device specific problem.
+
+For test I took 2 Desire HD, and 4 random android phones(different Aquos models and some no-name chinese stuff). On both DHD and one random phone on wifi connect I got 3 messages, on remaining phones I got only one message. WTF.
+    
+===============================================================================================
+56
+A:Receiving multiple broadcast is a device specific problem. Some phones just send one broadcast while other send 2 or 3. But there is a work around:
+
+Assuming you get the disconnect message when the wifi is disconnected, I would guess the first one is the correct one and the other 2 are just echoes for some reason.
+
+To know that the message has been called, you could have a static boolean that gets toggled between connect and disconnect and only call your sub-routines when you receive a connection and the boolean is true.  Something like:
+
+public class ConnectionChangeReceiver extends BroadcastReceiver {
+    private static boolean firstConnect = true;
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        final ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        final NetworkInfo activeNetInfo = connectivityManager.getActiveNetworkInfo();
+        if (activeNetInfo != null) {
+            if(firstConnect) { 
+                // do subroutines here
+                firstConnect = false;
+            }
+        }
+        else {
+            firstConnect= true;
+        }
+    }
+}
+
+    

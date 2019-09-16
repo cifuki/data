@@ -1,0 +1,153 @@
+30
+Q:I use a database with multiple tables in my application. I have an XML parser which needs to write data to two tables while parsing. I created two database adapters for both tables, but now I have a problem. When I'm working with one table, it's easy:
+
+FirstDBAdapter firstTable = new FirstDBAdapter(mycontext);
+firstTable.open(); // open and close it every time I need to insert something
+                   // may be hundreds of times while parsing
+                   // it opens not a table but whole DB     
+firstTable.insertItem(Item);        
+firstTable.close(); 
+
+
+Since it's a SAX parser, in my opinion (maybe I'm wrong), this will be even better:
+
+FirstDBAdapter firstTable = new FirstDBAdapter(mycontext);
+
+@Override
+public void startDocument() throws SAXException 
+{
+    firstTable.open(); // open and close only once
+}
+
+...
+firstTable.insertItem(Item);
+...
+
+@Override
+public void endDocument() throws SAXException 
+{
+    firstTable.close();
+}
+
+
+But how do I do it if I need to insert data to the second table? For example, if I have the second adapter, which  I think will be a bad idea:
+
+FirstDBAdapter firstTable = new FirstDBAdapter(mycontext);
+SecondDBAdapter secondTable = new SecondDBAdapter(mycontext);
+
+@Override
+public void startDocument() throws SAXException 
+{
+    firstTable.open();
+    secondTable.open(); 
+}
+
+
+Any thoughts on how to achieve this?
+    
+===============================================================================================
+15
+A:My database adapter. An instance is always stored in MyApplication which inherites from Application. Just think about a second table where I defined the first one... currently this is just a short version, in reality this adapter handles 7 tables in the database.
+
+public class MyDbAdapter {
+    private static final String LOG_TAG = MyDbAdapter.class.getSimpleName();
+
+    private SQLiteDatabase mDb;
+    private static MyDatabaseManager mDbManager;
+
+    public MyDbAdapter() {
+        mDbManager = new MyDatabaseManager(MyApplication.getApplication());
+        mDb = mDbManager.getWritableDatabase();
+    }
+
+    public static final class GameColumns implements BaseColumns {
+        public static final String TABLE = "game";
+        public static final String IMEI = "imei";
+        public static final String LAST_UPDATE = "lastupdate";
+        public static final String NICKNAME = "nickname";
+    }
+
+    public String getImei() {
+        checkDbState();
+        String retValue = "";
+        Cursor c = mDb.rawQuery("SELECT imei FROM " + GameColumns.TABLE, null);
+        if (c.moveToFirst()) {
+            retValue = c.getString(c.getColumnIndex(GameColumns.IMEI));
+        }
+        c.close();
+        return retValue;
+    }
+
+    public void setImei(String imei) {
+        checkDbState();
+        ContentValues cv = new ContentValues();
+        cv.put(GameColumns.IMEI, imei);
+        mDb.update(GameColumns.TABLE, cv, null, null);
+    }
+
+    public boolean isOpen() {
+        return mDb != null && mDb.isOpen();
+    }
+
+    public void open() {
+        mDbManager = new MyDatabaseManager(MyApplication.getApplication());
+        if (!isOpen()) {
+            mDb = mDbManager.getWritableDatabase();
+        }
+    }
+
+    public void close() {
+        if (isOpen()) {
+            mDb.close();
+            mDb = null;
+            if (mDbManager != null) {
+                mDbManager.close();
+                mDbManager = null;
+            }
+        }
+    }
+
+    private void checkDbState() {
+        if (mDb == null || !mDb.isOpen()) {
+            throw new IllegalStateException("The database has not been opened");
+        }
+    }
+
+    private static class MyDatabaseManager extends SQLiteOpenHelper {
+        private static final String DATABASE_NAME = "dbname";
+        private static final int DATABASE_VERSION = 7;
+
+        private MyDatabaseManager(Context context) {
+            super(context, DATABASE_NAME, null, DATABASE_VERSION);
+        }
+
+        @Override
+        public void onCreate(SQLiteDatabase db) {
+            createGameTable(db);
+        }
+
+        @Override
+        public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+            Log.w(LOG_TAG, "Upgrading database from version " + oldVersion + " to " + newVersion + "!");
+        }
+
+        private void dropDatabase(SQLiteDatabase db) {
+            db.execSQL("DROP TABLE IF EXISTS " + GameColumns.TABLE);
+        }
+
+        private void createGameTable(SQLiteDatabase db) {
+            db.execSQL("CREATE TABLE " + GameColumns.TABLE + " ("
+                    + GameColumns._ID + " INTEGER PRIMARY KEY,"
+                    + GameColumns.IMEI + " TEXT,"
+                    + GameColumns.LAST_UPDATE + " TEXT,"
+                    + GameColumns.NICKNAME + " TEXT);");
+            ContentValues cv = new ContentValues();
+            cv.put(GameColumns.IMEI, "123456789012345");
+            cv.put(GameColumns.LAST_UPDATE, 0);
+            cv.put(GameColumns.NICKNAME, (String) null);
+            db.insert(GameColumns.TABLE, null, cv);
+        }
+    }
+}
+
+    

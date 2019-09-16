@@ -1,0 +1,316 @@
+35
+Q:I need to implement SSL Certificate Pinning in my react native application.
+
+I know very little about SSL/TLS let alone pinning.
+I am also not a native mobile developer, though I know Java and learned Objective-C on this project enough to get around.
+
+I started searching for how to execute this task.
+
+Doesn't React Native already implement this?
+
+No, My initial search lead me to this proposal which has received no activity since August 2nd 2016.
+
+From it I learned that react-native uses OkHttp which does support Pinning, but I wouldn't be able to pull it off from Javascript, which is not really a requirement but a plus.
+
+Implement it in Javascript.
+
+While react seems like it uses the nodejs runtime, it is more like a browser than node, meaning it does not support all native modules, specifically the https module, for which I had implemented certificate pinning following this article. Thus could not carry it into react native.
+
+I tried using rn-nodeify but the modules didn't work. This has been true since RN 0.33 to RN 0.35 which I'm currently on.
+
+Implement using phonegap plugin
+
+I thought of using a phongape-plugin however since I have a dependency on libraries that require react 0.32+ I can't use react-native-cordova-plugin
+
+Just do it natively
+
+While I'm not a native app developer I can always take a crack at it, only a matter of time.
+
+Android has certificate pinning
+
+I learned that android supports SSL Pinning however was unsuccessful as it seems that this approach does not work Prior to Android 7. As well as only working for android.
+
+The bottom line
+
+I have exhausted several directions and will continue to pursue more native implementation, maybe figure out how to configure OkHttp and RNNetworking then maybe bridging back to react-native.
+
+But is there already any implementations or guide for IOS and android?
+    
+===============================================================================================
+45
+A:After exhausting the current spectrum of available options from Javascript I decided to simply implement certificate pinning natively it all seems so simple now that I'm done.
+
+
+  Skip to headers titled Android Solution and IOS Solution if you don't want to read through the process of reaching the solution.
+
+
+Android
+
+Following Kudo's recommendation I thought out to implement pinning using okhttp3.
+
+client = new OkHttpClient.Builder()
+        .certificatePinner(new CertificatePinner.Builder()
+            .add("publicobject.com", "sha1/DmxUShsZuNiqPQsX2Oi9uv2sCnw=")
+            .add("publicobject.com", "sha1/SXxoaOSEzPC6BgGmxAt/EAcsajw=")
+            .add("publicobject.com", "sha1/blhOM3W9V/bVQhsWAcLYwPU6n24=")
+            .add("publicobject.com", "sha1/T5x9IXmcrQ7YuQxXnxoCmeeQ84c=")
+            .build())
+        .build();
+
+
+I first started by learning how to create a native android bridge with react nativecreating a toast module. I then extended it with a method for sending a simple request
+
+@ReactMethod
+public void showURL(String url, int duration) {
+    try {
+        Request request = new Request.Builder()
+        .url(url)
+        .build();
+        Response response = client.newCall(request).execute();
+        Toast.makeText(getReactApplicationContext(), response.body().string(), duration).show();
+    } catch (IOException e) {
+        Toast.makeText(getReactApplicationContext(), e.getMessage(), Toast.LENGTH_SHORT).show();
+    }
+}
+
+
+Succeeding in sending a request I then turned to sending a request pinned.
+
+I used these packages in my file
+
+import com.facebook.react.bridge.NativeModule;
+import com.facebook.react.bridge.ReactApplicationContext;
+import com.facebook.react.bridge.ReactContext;
+import com.facebook.react.bridge.ReactContextBaseJavaModule;
+import com.facebook.react.bridge.ReactMethod;
+import com.facebook.react.bridge.Callback;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.CertificatePinner;
+import java.io.IOException;
+
+import java.util.Map;
+import java.util.HashMap;
+
+
+Kudo's approach wasn't clear on where I would get the public keys or how to generate them. luckily okhttp3 docs in addition to providing a clear demonstration of how to use the CertificatePinner stated that to get the public keys all I would need to do is send a request with an incorrect pin, and the correct pins will appear in the error message.
+
+After taking a moment to realise that OkHttpClent.Builder() can be chained and I can include the CertificatePinner before the build, unlike the misleading example in Kudo's proposal (probably and older version) I came up with this method.
+
+@ReactMethod
+public void getKeyChainForHost(String hostname, Callback errorCallbackContainingCorrectKeys,
+  Callback successCallback) {
+    try {
+        CertificatePinner certificatePinner = new CertificatePinner.Builder()
+             .add(hostname, "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+             .build();
+        OkHttpClient client = (new OkHttpClient.Builder()).certificatePinner(certificatePinner).build();
+
+        Request request = new Request.Builder()
+             .url("https://" + hostname)
+             .build();
+        Response response =client.newCall(request).execute();
+        successCallback.invoke(response.body().string());
+    } catch (Exception e) {
+        errorCallbackContainingCorrectKeys.invoke(e.getMessage());
+    }
+}
+
+
+Then replacing the public keychains I got in the error yielded back the page's body, indicating I had made a successful request, I change one letter of the key to make sure it was working and I knew I was on track.
+
+I finally had this method in my ToastModule.java file
+
+@ReactMethod
+public void getKeyChainForHost(String hostname, Callback errorCallbackContainingCorrectKeys,
+  Callback successCallback) {
+    try {
+        CertificatePinner certificatePinner = new CertificatePinner.Builder()
+             .add(hostname, "sha256/+Jg+cke8HLJNzDJB4qc1Aus14rNb6o+N3IrsZgZKXNQ=")
+             .add(hostname, "sha256/aR6DUqN8qK4HQGhBpcDLVnkRAvOHH1behpQUU1Xl7fE=")
+             .add(hostname, "sha256/HXXQgxueCIU5TTLHob/bPbwcKOKw6DkfsTWYHbxbqTY=")
+             .build();
+        OkHttpClient client = (new OkHttpClient.Builder()).certificatePinner(certificatePinner).build();
+
+        Request request = new Request.Builder()
+             .url("https://" + hostname)
+             .build();
+        Response response =client.newCall(request).execute();
+        successCallback.invoke(response.body().string());
+    } catch (Exception e) {
+        errorCallbackContainingCorrectKeys.invoke(e.getMessage());
+    }
+}
+
+
+Android Solution Extending React Native's OkHttpClient
+
+Having figured out how to send pinned http request was good, now I can use the method I created, but ideally I thought it would be best to extend the existing client, so as to immediately gain the benefit of implementing.
+
+This solution is valid as of RN0.35 and I don't know how it will fair in the future.
+
+While looking into ways of extending the OkHttpClient for RN I came across this article explaining how to add TLS 1.2 support through replacing the SSLSocketFactory.
+
+reading it I learned react uses an OkHttpClientProvider for creating the OkHttpClient instance used by the XMLHttpRequest Object and therefore if we replace that instance we would apply pinning to all the app.
+
+I added a file called OkHttpCertPin.java to my android/app/src/main/java/com/dreidev folder
+
+package com.dreidev;
+
+import android.util.Log;
+
+import com.facebook.react.modules.network.OkHttpClientProvider;
+import com.facebook.react.modules.network.ReactCookieJarContainer;
+
+
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.CertificatePinner;
+
+public class OkHttpCertPin {
+    private static String hostname = "*.efghermes.com";
+    private static final String TAG = "OkHttpCertPin";
+
+    public static OkHttpClient extend(OkHttpClient currentClient){
+      try {
+        CertificatePinner certificatePinner = new CertificatePinner.Builder()
+             .add(hostname, "sha256/+Jg+cke8HLJNzDJB4qc1Aus14rNb6o+N3IrsZgZKXNQ=")
+             .add(hostname, "sha256/aR6DUqN8qK4HQGhBpcDLVnkRAvOHH1behpQUU1Xl7fE=")
+             .add(hostname, "sha256/HXXQgxueCIU5TTLHob/bPbwcKOKw6DkfsTWYHbxbqTY=")
+             .build();
+        Log.d(TAG, "extending client");
+        return currentClient.newBuilder().certificatePinner(certificatePinner).build();
+      } catch (Exception e) {
+        Log.e(TAG, e.getMessage());
+      }
+     return currentClient;
+   }
+}
+
+
+This package has a method extend which takes an existing OkHttpClient and rebuilds it adding the certificatePinner and returns the newly built instance.
+
+I then modified my MainActivity.java file following this answer's advice by adding the following methods
+
+.
+.
+.
+import com.facebook.react.ReactActivity;
+import android.os.Bundle;
+
+import com.dreidev.OkHttpCertPin;
+import com.facebook.react.modules.network.OkHttpClientProvider;
+import okhttp3.OkHttpClient;
+
+public class MainActivity extends ReactActivity {
+
+  @Override
+  public void onCreate(Bundle savedInstanceState) {
+     super.onCreate(savedInstanceState);
+     rebuildOkHtttp();
+  }
+
+  private void rebuildOkHtttp() {
+      OkHttpClient currentClient = OkHttpClientProvider.getOkHttpClient();
+      OkHttpClient replacementClient = OkHttpCertPin.extend(currentClient);
+      OkHttpClientProvider.replaceOkHttpClient(replacementClient);
+  }
+.
+.
+.
+
+
+This solution was carried out in favor of completely reimplementing the OkHttpClientProvider createClient method, as inspecting the provider I realized that the master version had implemented TLS 1.2 support but was not yet an available option for me to use, and so rebuilding was found to be the best means of extending the client. I'm wondering how this approach will fair as I upgrade but for now it works well.
+
+Update It seems that starting 0.43 this trick no longer works. For timebound reasons I will freeze my project at 0.42 for now, until the reason for why rebuilding stopped working is clear.
+
+Solution IOS
+
+For IOS I had thought I would need to follow a similar method, again starting with Kudo's proposal as my lead.
+
+Inspecting the RCTNetwork module I learned that NSURLConnection was used, so instead of trying to create a completely new module with AFNetworking as suggested in the proposal I discovered TrustKit
+
+following its Getting Started Guide I simply added
+
+pod 'TrustKit'
+
+
+to my podfile and ran pod install
+
+the GettingStartedGuide explained how I can configure this pod from my pList.file but preferring to use code than configuration files I added the following lines to my AppDelegate.m file
+
+.
+.
+.
+#import <TrustKit/TrustKit.h>
+.
+.
+.
+@implementation AppDelegate
+
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
+{
+
+
+  // Initialize TrustKit
+  NSDictionary *trustKitConfig =
+    @{
+    // Auto-swizzle NSURLSession delegates to add pinning validation
+    kTSKSwizzleNetworkDelegates: @YES,
+
+    kTSKPinnedDomains: @{
+
+       // Pin invalid SPKI hashes to *.yahoo.com to demonstrate pinning failures
+       @"efghermes.com" : @{
+           kTSKEnforcePinning:@YES,
+           kTSKIncludeSubdomains:@YES,
+           kTSKPublicKeyAlgorithms : @[kTSKAlgorithmRsa2048],
+
+           // Wrong SPKI hashes to demonstrate pinning failure
+           kTSKPublicKeyHashes : @[
+              @"+Jg+cke8HLJNzDJB4qc1Aus14rNb6o+N3IrsZgZKXNQ=",
+              @"aR6DUqN8qK4HQGhBpcDLVnkRAvOHH1behpQUU1Xl7fE=",
+              @"HXXQgxueCIU5TTLHob/bPbwcKOKw6DkfsTWYHbxbqTY="
+              ],
+
+          // Send reports for pinning failures
+          // Email info@datatheorem.com if you need a free dashboard to see your App's reports
+          kTSKReportUris: @[@"https://overmind.datatheorem.com/trustkit/report"]
+          },
+
+     }
+  };
+
+  [TrustKit initializeWithConfiguration:trustKitConfig];
+.
+.
+.
+
+
+I got the public key hashes from my android implementation and it just worked (the version of TrustKit I received in my pods is 1.3.2)
+
+I was glad IOS turned out to be a breath
+
+
+  As a side note TrustKit warned that it's Auto-swizzle won't work if the NSURLSession and Connection are already swizzled. that said it seems to be working well so far.
+
+
+Conclusion
+
+This answer presents the solution for both Android and IOS, given I was able to implement this in native code.
+
+One possible improvement may be to implement a common platform module where setting public keys and configuring the Network providers of both android and IOS can be managed in javascript.
+
+Kudo's proposal mentioned simply adding the public keys to the js bundle may however expose a vulnerability, where somehow the bundle file can be replaced.
+
+I don't know how that attack vector can function, but certainly the extra step of signing the bundle.js as proposed may protect the js bundle.
+
+Another approach may be to simply encode the js bundle into a 64 bit string and include it in the native code directly as mentioned in this issue's conversation. This approach has the benefit of obfuscating as well hardwiring the js bundle into the app, making it inaccessible for attackers or so I think.
+
+If you read this far I hope I enlightened you on your quest for fixing your bug and wish you enjoy a sunny day.
+    

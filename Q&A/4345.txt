@@ -1,0 +1,71 @@
+54
+Q:Using Firebase Library to send data to the server in the form Message(String, String) added to the HashMap<String, Message>   
+
+Example:
+
+Firebase fb = new Firebase(URL);
+Firebase msgRef = fb.child("finished");
+HashMap<String, Message> msgList = new HashMap<>();
+Message msg = new Message(m, n);
+msgList.put(HASHKEY, msg);
+msgRef.push().setValue(msgList);
+
+
+While receiving data with Firebase method addValueEventListener() getting String in this Form 
+
+{ key = finished, value = {
+    -Js9Rn0uttjYIGdcv8I1={Moosa={message=email, name=Kamran}},
+    -Js9Vsmv6BnVzOzpl2L8={Moosa={message=msgs, name=Imran}}, 
+    -Js9WtQ8yeDwVxQMFCZb={Moosa={message=samsung, name=Samad}}, 
+    -Js9RarxoJPKn4RO2HaM={Moosa={message=Message, name=Moosa}}, 
+    -Js9b6f75lwwbsqQNJz0={Moosa={message=Qmobile, name=Bilal}}, 
+    -Js9aDxt8TlgTGUccuxu={Moosa={message=last, name=Moosa}}} }
+
+
+How can I convert it into Message Object.....????
+    
+===============================================================================================
+117
+A:There are two more way to get your data out of the Firebase DataSnapshot that don't require using a Map<String, Object>.
+
+First appoach is to use the methods of DataSnapshot to traverse the children:
+
+ref = new Firebase("https://my.firebaseio.com/messages").limitToLast(10);
+ref.addValueEventListener(new ValueEventListener() {
+    @Override
+    public void onDataChange(DataSnapshot dataSnapshot) {
+        for (DataSnapshot messageSnapshot: dataSnapshot.getChildren()) {
+            String name = (String) messageSnapshot.child("name").getValue();
+            String message = (String) messageSnapshot.child("message").getValue();
+        }
+    }
+
+    @Override
+    public void onCancelled(FirebaseError firebaseError) { }
+});
+
+
+In the above snippet we use getChildren() to get an Iterable of your messages. Then we use child("name") to get each specific child property.
+
+The second approach is to use the built-in JSON-to-POJO serializer/deserializer. When you're sending the message list, the Message objects inside it are serialized to JSON and stored in Firebase.
+
+To get them out of it again, you have to do the inverse:
+
+ref = new Firebase("https://my.firebaseio.com/messages").limitToLast(10);
+ref.addValueEventListener(new ValueEventListener() {
+    @Override
+    public void onDataChange(DataSnapshot dataSnapshot) {
+        for (DataSnapshot messageSnapshot: dataSnapshot.getChildren()) {
+            Message message = messageSnapshot.getValue(Message.class);
+        }
+    }
+
+    @Override
+    public void onCancelled(FirebaseError firebaseError) { }
+});
+
+
+In this second snippet, we're still using getChildren() to get at the messages, but now we deserialize them from JSON straight back into a Message object.
+
+For a simple sample application using that last approach, have a look at Firebase's AndroidChat sample. It also shows how to efficiently deal with the list of messages (hint: FirebaseListAdapter).
+    

@@ -1,0 +1,79 @@
+124
+Q:I am trying to do a HTTP POST to server using Retrofit 2.0
+
+MediaType MEDIA_TYPE_TEXT = MediaType.parse("text/plain");
+MediaType MEDIA_TYPE_IMAGE = MediaType.parse("image/*");
+
+ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+    imageBitmap.compress(Bitmap.CompressFormat.JPEG,90,byteArrayOutputStream);
+profilePictureByte = byteArrayOutputStream.toByteArray();
+
+Call<APIResults> call = ServiceAPI.updateProfile(
+        RequestBody.create(MEDIA_TYPE_TEXT, emailString),
+        RequestBody.create(MEDIA_TYPE_IMAGE, profilePictureByte));
+
+call.enqueue();
+
+
+The server returns an error saying the file is not valid. 
+
+This is weird because I have tried to upload the same file with the same format on iOS(using other library), but it uploads successfully.
+
+I am wondering what is the proper way to upload an image using Retrofit 2.0?  
+
+Should I save it to disk first before uploading?
+
+P.S.: I have used retrofit for other Multipart request that does not include image and they completed successfully. The problem is when I am trying to include a byte to the body.
+    
+===============================================================================================
+157
+A:I am highlighting the solution in both 1.9 and 2.0 since it is useful for some
+
+In 1.9, I think the better solution is to save the file to disk and use it as Typed file like:
+
+RetroFit 1.9
+
+(I don't know about your server-side implementation) have an  API interface method similar to this
+
+@POST("/en/Api/Results/UploadFile")
+void UploadFile(@Part("file")TypedFile file,@Part("folder")String folder,Callback<Response> callback);
+
+
+And use it like
+
+TypedFile file = new TypedFile("multipart/form-data", new File(path));
+
+
+For RetroFit 2 Use the following method
+
+RetroFit 2.0 ( This was a workaround for an issue in RetroFit 2 which is fixed now, for the correct method refer jimmy0251's answer)
+
+API Interface:
+
+public interface ApiInterface {
+    @Multipart
+    @POST("/api/Accounts/editaccount")
+    Call<User> editUser (@Header("Authorization") String authorization, @Part("file\\"; filename=\\"pp.png\\" ") RequestBody file , @Part("FirstName") RequestBody fname, @Part("Id") RequestBody id);
+}
+
+
+Use it like:
+
+File file = new File(imageUri.getPath());
+RequestBody fbody = RequestBody.create(MediaType.parse("image/*"), file);
+RequestBody name = RequestBody.create(MediaType.parse("text/plain"), firstNameField.getText().toString());
+RequestBody id = RequestBody.create(MediaType.parse("text/plain"), AZUtils.getUserId(this));
+Call<User> call = client.editUser(AZUtils.getToken(this), fbody, name, id);
+call.enqueue(new Callback<User>() {
+    @Override
+    public void onResponse(retrofit.Response<User> response, Retrofit retrofit) {
+        AZUtils.printObject(response.body());
+    }
+
+    @Override
+    public void onFailure(Throwable t) {
+        t.printStackTrace();
+    }
+});
+
+    

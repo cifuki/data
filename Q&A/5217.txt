@@ -1,0 +1,107 @@
+47
+Q:I have an issue with the following error in Android:
+
+
+  CalledFromWrongThreadException;: Only
+  the original thread that created a
+  view hierarchy can touch its views
+
+
+It appears to happen when I try to update a Textview in my Activity, the call to update the TextView is from within my Activity but I still get the above error.
+
+I have it like this:
+
+onCreate()
+-sets up the buttons and the text view.
+
+onStateChange() - a listener for notifications about state changes, when this gets notification if changes the TextView to say some different text.
+
+When I get notification of a new text I try to change the TextView as so:
+
+((TextView)findViewById(R.id.title)).setText("Some Text");
+
+
+But I get the above Error.
+
+From googling it, it appears I should use a handler to change the TextView or maybe use AsyncTask?
+
+Could anyone explain which one would be better to use and why?
+
+EDIT: ADDED CODE SNIPPETS:
+
+
+
+     public void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+
+            requestWindowFeature(Window.FEATURE_CUSTOM_TITLE);  
+
+            setContentView(R.layout.my);
+
+            getWindow().setFeatureInt(Window.FEATURE_CUSTOM_TITLE, R.layout.my_title);  
+
+            ((TextView)findViewById(R.id.time)).setText("Hello Text");
+
+
+            findViewById(R.id.keyboardimage).setOnClickListener(new OnClickListener() {
+                public void onClick(View v) {
+
+                    Intent dialIntent = new Intent(Intent.ACTION_DIAL, Uri.parse("tel:"));
+                    startActivity(dialIntent);
+
+                        dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.FLAG_SOFT_KEYBOARD));
+                        dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK));       
+                }
+        });
+
+     }
+
+
+
+
+//CallBacks from running Service
+
+private final ICallDialogActivity.Stub iCallDialogActivity = new ICallDialogActivity.Stub(){
+
+@Override
+public void onStateChanged(int callState)
+                throws RemoteException {    
+            switch(callState){
+            case GlobalData.CALL_STATUS_IDLE:
+
+                break;
+
+            case GlobalData.CALL_STATUS_DISCONNECTING:
+                byeSetup();
+                break;
+    } 
+
+};
+
+
+
+
+public void byeSetup(){
+
+            ((TextView)findViewById(R.id.time)).setText("Bye Text");
+
+            findViewById(R.id.keyboardimage).setOnClickListener(new OnClickListener() {
+                public void onClick(View v) {
+                    //Void the Button
+                }});
+}
+
+    
+===============================================================================================
+75
+A:Look like you are on the wrong thread. Try using a Handler to update the GUI on the right thread. See Handling Expensive Operations in the UI Thread example from android.com. Basically you would wrap byeSetup in a Runnable and invoke it with a Handler instance.
+
+Handler refresh = new Handler(Looper.getMainLooper());
+refresh.post(new Runnable() {
+    public void run()
+    {
+        byeSetup();
+    }
+});
+
+    

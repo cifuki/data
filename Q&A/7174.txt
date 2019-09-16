@@ -1,0 +1,149 @@
+36
+Q:How do I replace the following lines of code with an Asynctask ? 
+How do you "get back" the Bitmap from the Asynctask ? Thank you.
+
+ImageView mChart = (ImageView) findViewById(R.id.Chart);
+String URL = "http://www...anything ...";
+
+mChart.setImageBitmap(download_Image(URL));
+
+public static Bitmap download_Image(String url) {
+
+        //---------------------------------------------------
+        Bitmap bm = null;
+        try {
+            URL aURL = new URL(url);
+            URLConnection conn = aURL.openConnection();
+            conn.connect();
+            InputStream is = conn.getInputStream();
+            BufferedInputStream bis = new BufferedInputStream(is);
+            bm = BitmapFactory.decodeStream(bis);
+            bis.close();
+            is.close();
+        } catch (IOException e) {
+            Log.e("Hub","Error getting the image from server : " + e.getMessage().toString());
+        } 
+        return bm;
+        //---------------------------------------------------
+
+    }
+
+
+I thought about something like this :
+
+replace :
+
+mChart.setImageBitmap(download_Image(graph_URL));
+
+
+by something like :
+
+mChart.setImageBitmap(new DownloadImagesTask().execute(graph_URL));
+
+
+and 
+
+public class DownloadImagesTask extends AsyncTask<String, Void, Bitmap> {
+
+@Override
+protected Bitmap doInBackground(String... urls) {
+    return download_Image(urls[0]);
+}
+
+@Override
+protected void onPostExecute(Bitmap result) {
+    mChart.setImageBitmap(result);              // how do I pass a reference to mChart here ?
+}
+
+
+private Bitmap download_Image(String url) {
+    //---------------------------------------------------
+    Bitmap bm = null;
+    try {
+        URL aURL = new URL(url);
+        URLConnection conn = aURL.openConnection();
+        conn.connect();
+        InputStream is = conn.getInputStream();
+        BufferedInputStream bis = new BufferedInputStream(is);
+        bm = BitmapFactory.decodeStream(bis);
+        bis.close();
+        is.close();
+    } catch (IOException e) {
+        Log.e("Hub","Error getting the image from server : " + e.getMessage().toString());
+    } 
+    return bm;
+    //---------------------------------------------------
+}
+
+
+}
+
+
+but How do I pass a reference to mChart in onPostExecute(Bitmap result) ???
+Do I need to pass it with the URL in some way ?
+I would like to replace all my lines of code :
+
+mChart1.setImageBitmap(download_Image(URL_1));
+mChart2.setImageBitmap(download_Image(URL_2));
+
+
+with something similar ... but in Asynctask way !
+
+mChart1.setImageBitmap(new DownloadImagesTask().execute(graph_URL_1));
+mChart2.setImageBitmap(new DownloadImagesTask().execute(graph_URL_2));
+
+
+Is there an easy solution for this ?
+Do I get something wrong here ?
+    
+===============================================================================================
+74
+A:If there is no good reason to download the image yourself then I would recommend to use Picasso.
+
+Picasso saves you all the problems with downloading, setting and caching images. 
+The whole code needed for a simple example is: 
+
+Picasso.with(context).load(url).into(imageView);
+
+
+If you really want to do everything yourself use my older answer below.
+
+
+
+If the image is not that big you can just use an anonymous class for the async task. 
+This would like this: 
+
+ImageView mChart = (ImageView) findViewById(R.id.imageview);
+String URL = "http://www...anything ...";
+
+mChart.setTag(URL);
+new DownloadImageTask.execute(mChart);
+
+
+The Task class:
+
+public class DownloadImagesTask extends AsyncTask<ImageView, Void, Bitmap> {
+
+ImageView imageView = null;
+
+@Override
+protected Bitmap doInBackground(ImageView... imageViews) {
+    this.imageView = imageViews[0];
+    return download_Image((String)imageView.getTag());
+}
+
+@Override
+protected void onPostExecute(Bitmap result) {
+    imageView.setImageBitmap(result);
+}
+
+
+private Bitmap download_Image(String url) {
+   ...
+}
+
+
+Hiding the URL in the tag is a bit tricky but it looks nicer in the calling class if you have a lot of imageviews that you want to fill this way. It also helps if you are using the ImageView inside a ListView and you want to know if the ImageView was recycled during the download of the image.
+
+I wrote if you Image is not that big because this will result in the task having a implicit pointer to the underlying activity causing the garbage collector to hold the whole activity in memory until the task is finished. If the user moves to another screen of your app while the bitmap is downloading the memory can't be freed and it may make your app and the whole system slower. 
+    

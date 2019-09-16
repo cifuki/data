@@ -1,0 +1,88 @@
+46
+Q:I'm just trying this little sample project, all it does:
+Activity one has a Button that sends a Broadcast. Activity two displays a toast when received.
+Below is the code, the Broadcast is never received. What do I do wrong?
+
+Sending the Broadcast
+
+public class SendBroadcast extends Activity {
+
+    public static String BROADCAST_ACTION = "com.unitedcoders.android.broadcasttest.SHOWTOAST";
+
+    /** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+    }
+
+    public void sendBroadcast(View v){
+        Intent broadcast = new Intent();
+        broadcast.setAction(BROADCAST_ACTION);
+        sendBroadcast(broadcast);
+    }
+}
+
+
+Receiving it
+
+public class ToastDisplay extends Activity {
+
+    private BroadcastReceiver receiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Toast.makeText(getApplicationContext(), "received", Toast.LENGTH_SHORT);
+        }
+    };
+
+    @Override
+    protected void onResume() {
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(SendBroadcast.BROADCAST_ACTION);
+        registerReceiver(receiver, filter);
+        super.onResume();
+    }
+
+    @Override
+    protected void onPause() {
+        unregisterReceiver(receiver);
+        super.onPause();
+    }
+}
+
+
+Manifest
+
+<application android:icon="@drawable/icon" android:label="@string/app_name">
+    <activity android:name=".SendBroadcast" android:label="@string/app_name">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+    </activity>
+    <activity android:name=".ToastDisplay">
+        <intent-filter>
+            <action android:name="com.unitedcoders.android.broadcasttest.SHOWTOAST"></action>
+        </intent-filter>
+    </activity>
+</application>
+
+    
+===============================================================================================
+40
+A:What do I do wrong?
+
+
+The source code of ToastDisplay is OK (mine is similar and works), but it will only receive something, if it is currently in foreground (you register receiver in onResume). But it can not receive anything if a different activity (in this case SendBroadcast activity) is shown.
+
+Instead you probably want to startActivity ToastDisplay from the first activity?
+
+BroadcastReceiver and Activity make sense in a different use case. In my application I need to receive notifications from a background GPS tracking service and show them in the activity (if the activity is in the foreground).
+
+There is no need to register the receiver in the manifest. It would be even harmful in my use case - my receiver manipulates the UI of the activity and the UI would not be available during onReceive if the activity is not currently shown. Instead I register and unregister the receiver for activity in onResume and onPause as described in 
+BroadcastReceiver documentation:
+
+
+  You can either dynamically register an instance of this class with Context.registerReceiver() or statically publish an implementation through the  tag in your AndroidManifest.xml.
+
+    

@@ -1,0 +1,70 @@
+106
+Q:I'm seeing the following exception in crash logs:
+
+android.app.RemoteServiceException: Bad notification posted from package com.my.package: Couldn't create icon: StatusBarIcon(pkg=com.my.package user=0 id=0x7f02015d level=0 visible=true num=0 )
+    at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1456)
+    at android.os.Handler.dispatchMessage(Handler.java:102)
+    at android.os.Looper.loop(Looper.java:146)
+    at android.app.ActivityThread.main(ActivityThread.java:5487)
+    at java.lang.reflect.Method.invokeNative(Native Method)
+    at java.lang.reflect.Method.invoke(Method.java:515)
+    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1283)
+    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1099)
+    at dalvik.system.NativeStart.main(Native Method)
+
+
+I'm posting my Notification from an IntentService from a PendingIntent set via the AlarmManager using the following method.  All values passed in here are from the bundle extras in the PendingIntent / IntentService.
+
+/**
+ * Notification 
+ *
+ * @param c
+ * @param intent
+ * @param notificationId
+ * @param title
+ * @param message
+ * @param largeIcon
+ * @param smallIcon
+ */
+public static void showNotification(Context c, Intent intent,
+        int notificationId, String title, String message, int largeIcon,
+        int smallIcon) {
+    PendingIntent detailsIntent = PendingIntent.getActivity(c,
+            notificationId, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+    // BUILD
+    NotificationCompat.Builder mNotifyBuilder = new NotificationCompat.Builder(
+            c);
+    // TITLE
+    mNotifyBuilder.setContentTitle(title).setContentText(message);
+
+    // ICONS
+    mNotifyBuilder.setSmallIcon(smallIcon);
+    if (Util.isAndroidOSAtLeast(Build.VERSION_CODES.HONEYCOMB)) {
+        Bitmap large_icon_bmp = ((BitmapDrawable) c.getResources()
+                .getDrawable(largeIcon)).getBitmap();
+        mNotifyBuilder.setLargeIcon(large_icon_bmp);
+    }
+
+    mNotifyBuilder.setContentIntent(detailsIntent);
+    mNotifyBuilder.setVibrate(new long[] { 500, 1500 });
+    mNotifyBuilder.setTicker(message);
+    mNotifyBuilder.setContentText(message);
+
+    // NOTIFY
+    NotificationManager nm = (NotificationManager) c
+            .getSystemService(Context.NOTIFICATION_SERVICE);
+    nm.notify(notificationId, mNotifyBuilder.build());
+}
+
+
+From what I've seen of other answers - the exception I'm seeing happens when setSmallIcon() is not called properly.
+
+I've checked and double checked that the Resource IDs being passed are all correct.
+    
+===============================================================================================
+94
+A:What was happening was, I was including the integer reference to the icon in the PendingIntent bundle, and that integer was later being referenced while being posted to the NotificationManager.
+
+In between getting the integer reference and the pending intent going off, the app was updated and all of the drawable references changed.  The integer that used to reference the correct drawable now referenced either the incorrect drawable or none at all (none at all - causing this crash)
+    

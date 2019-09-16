@@ -1,0 +1,66 @@
+28
+Q:I have an abstract class extending ActionBarActivity. In the onCreate, I have:
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    supportRequestWindowFeature(Window.FEATURE_INDETERMINATE_PROGRESS);
+    ...
+}
+
+
+The app crashes due to the requestFeature() before content error, specifically on the line super.onCreate(savedInstanceState). After reading some of the similar posts, I came up with this solution:
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    requestWindowFeature(Window.FEATURE_INDETERMINATE_PROGRESS);
+    super.onCreate(savedInstanceState);
+    ...
+}
+
+
+My question is: Why does it crash on the super call? Also, I'm not settingContentView in the classes that extend this class until AFTER I call super.onCreate. It's still occasionally crashing.
+
+java.lang.RuntimeException: Unable to start activity ComponentInfo{com.myapp/com.myapp.cycle.Cycle}: android.util.AndroidRuntimeException: requestFeature() must be called before adding content
+at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2351)
+at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2387)
+at android.app.ActivityThread.access$600(ActivityThread.java:151)
+at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1331)
+at android.os.Handler.dispatchMessage(Handler.java:99)
+at android.os.Looper.loop(Looper.java:155)
+at android.app.ActivityThread.main(ActivityThread.java:5454)
+at java.lang.reflect.Method.invokeNative(Native Method)
+at java.lang.reflect.Method.invoke(Method.java:511)
+at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1029)
+at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:796)
+at dalvik.system.NativeStart.main(Native Method)
+
+Caused by: android.util.AndroidRuntimeException: requestFeature() must be called before adding content
+at com.android.internal.policy.impl.PhoneWindow.requestFeature(PhoneWindow.java:320)
+at android.app.Activity.requestWindowFeature(Activity.java:3283)
+at android.support.v7.app.ActionBarActivityDelegateICS.onCreate(ActionBarActivityDelegateICS.java:63)
+at android.support.v7.app.ActionBarActivity.onCreate(ActionBarActivity.java:98)
+at com.myapp.core.activity.MyActivity.onCreate(MyActivity.java:83)
+at com.myapp.cycle.Cycle.onCreate(Cycle.java:55)
+at android.app.Activity.performCreate(Activity.java:5066)
+at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1101)
+at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2307)
+... 11 more
+
+    
+===============================================================================================
+23
+A:Because android.support.v7.app.ActionBarActivity alters the window content by adding an ActionBar.
+Please take a look at the code starting with 
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    mImpl = ActionBarActivityDelegate.createDelegate(this);
+    super.onCreate(savedInstanceState);
+    mImpl.onCreate(savedInstanceState);
+}
+
+
+and on at https://android.googlesource.com/platform/frameworks/support/+/master/v7/appcompat/src/android/support/v7/app/ActionBarActivity.java for details.
+And what the FEATURE_INDETERMINATE_PROGRESS looks like depends on whether an ActionBar is present or not. So that needs to be set before the super call.
+    

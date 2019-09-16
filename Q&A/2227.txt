@@ -1,0 +1,180 @@
+90
+Q:As of 15/2/2012 I have yet to find a good explanation to nor a reason why this does not work. The closest to a solution is to use the traditional Thread approach, but then why include a class that does not (seem to) work in the Android SDK?
+
+Evenin' SO!
+
+I have an AsyncTask subclass:
+
+// ParseListener had a callback which was called when an item was parsed in a
+// RSS-xml, but as stated further down it is not used at all right now.
+private class xmlAsync extends AsyncTask<String, RSSItem, Void> implements ParseListener
+
+
+That is executed like this:
+
+xmlAsync xmlThread = new xmlAsync();
+
+xmlThread.execute("http://www.nothing.com");
+
+
+Now this subclass has run into a little error. Previously it did some xml-parsing, but when I noticed that it's doInBackground() wasn't called I stripped it down, line by line, finally ending up with just this:
+
+@Override
+protected Void doInBackground(String... params) 
+{
+    Log.v(TAG, "doInBackground");
+        return null;
+}
+
+
+Which, for some reason, logged nothing. However, I added this:
+
+@Override
+protected void onPreExecute() 
+{
+        Log.v(TAG, "onPreExecute");
+        super.onPreExecute();
+}
+
+
+And that line is indeed logged when executing the thread. So somehow onPreExecute() is called but not doInBackground(). I have another AsyncTask running in the background at the same time which works just fine.
+
+I'm currently running the app on an emulator, SDK Version 15, Eclipse, Mac OS X 10.7.2, close to the North Pole.
+
+EDIT:
+
+@Override
+    protected void onProgressUpdate(RSSItem... values) {
+
+        if(values[0] == null)
+        {
+                            // activity function which merely creates a dialog
+            showInputError();
+        }
+        else
+        {
+
+            Log.v(TAG, "adding "+values[0].toString());
+            _tableManager.addRSSItem(values[0]);
+        }
+
+
+        super.onProgressUpdate(values);
+    }
+
+
+_tableManager.addRSSItem() more or less adds a row to a SQLiteDatabase, initialized with the activity's context. publishProgress() is called by the Interface ParseListener's callback. However, since I don't even do anything except log.v in doInBackground() I first found this unnecessary to even bring up.
+
+EDIT 2:
+
+Alright, just to be perfectly clear, this is the other AsyncTask, executing in the same activity and working perfectly fine.
+
+private class dbAsync extends AsyncTask<Void, RSSItem, Void>
+{
+    Integer prevCount;
+    boolean run;
+
+    @Override
+    protected void onPreExecute() {
+        run = true;
+        super.onPreExecute();
+    }
+
+    @Override
+    protected Void doInBackground(Void... params) {
+        // TODO Auto-generated method stub
+        run = true;
+        prevCount = 0;
+
+        while(run)
+        {
+            ArrayList<RSSItem> items = _tableManager.getAllItems();
+
+            if(items != null)
+            {
+                if(items.size() > prevCount)
+                {
+                    Log.v("db Thread", "Found new item(s)!");
+                    prevCount = items.size();
+
+                    RSSItem[] itemsArray = new RSSItem[items.size()];
+
+                    publishProgress(items.toArray(itemsArray));
+                }
+            }               
+
+            SystemClock.sleep(5000);
+        }
+
+        return null;
+    }
+
+    @Override
+    protected void onProgressUpdate(RSSItem... values) {
+
+        ArrayList<RSSItem> list = new ArrayList<RSSItem>();
+
+        for(int i = 0; i < values.length; i++)
+        {
+            list.add(i, values[i]);
+        }
+
+        setItemsAndUpdateList(list);
+
+        super.onProgressUpdate(values);
+    }
+
+    @Override
+    protected void onCancelled() {
+        run = false;
+
+        super.onCancelled();
+    }
+}
+
+
+EDIT 3:
+
+Sigh, sorry I'm bad at asking questions. But here is the initialization of the Tasks.
+
+xmlAsync _xmlParseThread;
+dbAsync _dbLookup;
+
+/** Called when the activity is first created. */
+@Override
+public void onCreate(Bundle savedInstanceState) {
+super.onCreate(savedInstanceState);
+setContentView(R.layout.main);
+
+_dbLookup = new dbAsync();
+_dbLookup.execute();
+
+_xmlParseThread = new xmlAsync();       
+_xmlParseThread.execute("http://www.nothing.com", null);
+}
+
+    
+===============================================================================================
+106
+A:Matthieu's solution will work fine for most, but some can face problem; unless digging in many links provided here or from web, like Anders G\xc3\xb6ransson's explanation.
+I am trying to summarize some other reads right here and quickly explain solution if executeOnExecutor is still working in single thread...
+
+Behavior of AsyncTask().execute(); has changed through Android versions. Before Donut (Android:1.6 API:4) tasks were executed serially, from Donut to Gingerbread (Android:2.3 API:9) tasks executed paralleled; since Honeycomb (Android:3.0 API:11) execution was switched back to sequential; a new method AsyncTask().executeOnExecutor(Executor) however, was added for parallel execution.
+
+In sequential processing all Async tasks run in a single thread and thus have to wait before the previous task ends. If you need to execute code immediately, you need tasks to be processed in parallel in separate threads.
+
+With AsyncTask serial execution is not available between Donut and Honeycomb versions, while parallel execution is not available before Donut.
+
+For parallel processing after Donut: Check the Build version and based on that use .execute() or .executeOnExecutor() method. Following code can help...
+
+AsyncTask<Void,Void,Void> myTask = new AsyncTask<Void,Void,Void>() { ... }; // ... your AsyncTask code goes here
+if (Build.VERSION.SDK_INT>=Build.VERSION_CODES.HONEYCOMB)
+    myTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+else
+    myTask.execute();
+
+
+NOTE: Function .executeOnExecutor() has checks if targetSdkVersion of project is less than or equal to HONEYCOMB_MR1 (Android:2.1  API:7) then it forces the executor to be THREAD_POOL_EXECUTOR (which runs Tasks sequentially in post Honeycomb).
+If you have not defined a targetSdkVersion then minSdkVersion is automatically considered to be the targetSdkVersion.
+Hence for running your AsyncTask in parallel on post Honeycomb you cannot leave targetSdkVersion empty.
+    

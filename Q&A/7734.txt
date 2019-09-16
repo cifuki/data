@@ -1,0 +1,109 @@
+34
+Q:With Sony's Xperia Home, certain apps have the ability to display a count bubble or badge on the app icon. Facebook and Facebook Messenger both do this, as well as the built in Email app. 
+
+This has been solved for Samsung's launcher, but I have not come across any documentation on how to do it for Sony's launcher. 
+
+How can it be done?
+    
+===============================================================================================
+47
+A:After having seen Daniel Ochoa's solution for Samsung's launcher, which uses a BadgeProvider to handle the badges, I set out to do the same for Sony's Xperia Home. This answer is taken directly from my blog.
+
+How I figured it out - For anyone interested
+
+I stumbled upon Sony's AppXplore and used it to check out the permission's of the Facebook app.
+The Facebook app requests the following permission, which is the key to displaying badges on Sony devices:
+
+
+  com.sonyericsson.home.permission.BROADCAST_BADGE
+
+
+Next, I had a look through all available content providers but I found nothing related to app icon badges there.
+I ran the command in this answer to get a system dump file and searched for "badge" using Notepad++. I found this:
+
+
+  com.sonyericsson.home.action.UPDATE_BADGE:
+  41be9a90 com.sonyericsson.home/.BadgeService$BadgeReceiver filter 41be9858
+
+
+So, it's handled using a BroadcastReciever on Sony as opposed to Samsung's Content Provider. So, I created a dummy BroadcastReciever of my own, listening for the action com.sonyericsson.home.action.UPDATE_BADGE, and found the extras passed to Sony's BadgeService.
+For this, I also needed a permission, but that was easy to find in the dump file:
+
+
+  com.sonyericsson.home.permission.RECEIVE_BADGE
+
+
+The extras sent by Facebook, the Email app, etc, are:
+
+
+com.sonyericsson.home.intent.extra.badge.ACTIVITY_NAME - The
+name of your app's main activity, android.intent.action.MAIN. This is
+so the launcher knows which icon to show the badge on.
+com.sonyericsson.home.intent.extra.badge.SHOW_MESSAGE - a
+boolean indicating if we want to show the badge or not (which we do!)
+com.sonyericsson.home.intent.extra.badge.MESSAGE - a string
+(not an integer - that took me a while to realize...) with the number
+to show.
+com.sonyericsson.home.intent.extra.badge.PACKAGE_NAME - The name of your application package.
+
+
+
+
+How to show badges on your app's launcher icon on Sony Xperia devices
+
+So, it turns out it's very simple to show a badge on your application icon in the launcher. IMO it's much more straight-forward than for Samsung's launcher.
+Here's a step-by-step-guide (and it's not long!)
+
+
+Declare the com.sonyericsson.home.permission.BROADCAST_BADGE permission in your manifest file:
+
+Broadcast an Intent to the BadgeReceiver:
+
+Intent intent = new Intent();
+
+intent.setAction("com.sonyericsson.home.action.UPDATE_BADGE");
+intent.putExtra("com.sonyericsson.home.intent.extra.badge.ACTIVITY_NAME", "com.yourdomain.yourapp.MainActivity");
+intent.putExtra("com.sonyericsson.home.intent.extra.badge.SHOW_MESSAGE", true);
+intent.putExtra("com.sonyericsson.home.intent.extra.badge.MESSAGE", "99");
+intent.putExtra("com.sonyericsson.home.intent.extra.badge.PACKAGE_NAME", "com.yourdomain.yourapp");
+
+sendBroadcast(intent);
+
+Done. Once this Intent is broadcast the launcher should show a badge on your application icon.
+To remove the badge again, simply send a new broadcast, this time with SHOW_MESSAGE set to false:
+
+intent.putExtra("com.sonyericsson.home.intent.extra.badge.SHOW_MESSAGE", false);
+
+
+
+
+
+Good to know
+
+The message is a string!
+
+Since MESSAGE is a String, you can actually add words to the badge:
+
+intent.putExtra("com.sonyericsson.home.intent.extra.badge.MESSAGE", "Testing");
+
+
+But I wouldn't do that 'cause it just looks weird.
+
+You have access to all apps!
+
+The BROADCAST_BADGE permission does not only give you access to your own app's icon, but to ALL of them. For example, here's how you can set Facebook's badge:
+
+Intent intent = new Intent();
+intent.setAction("com.sonyericsson.home.action.UPDATE_BADGE");
+intent.putExtra("com.sonyericsson.home.intent.extra.badge.ACTIVITY_NAME", "com.facebook.katana.LoginActivity");
+intent.putExtra("com.sonyericsson.home.intent.extra.badge.SHOW_MESSAGE", true);
+intent.putExtra("com.sonyericsson.home.intent.extra.badge.MESSAGE", "99");
+intent.putExtra("com.sonyericsson.home.intent.extra.badge.PACKAGE_NAME", "com.facebook.katana");
+
+sendBroadcast(intent);
+
+
+
+
+I hope this has been of help to someone! :)
+    

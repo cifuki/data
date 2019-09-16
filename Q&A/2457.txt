@@ -1,0 +1,150 @@
+84
+Q:I'm working on a Smartphone / Tablet app, using only one APK, and loading resources as is needed depending on screen size, the best design choice seemed to be using Fragments via the ACL.
+
+This app has been working fine until now being only activity based. This is a mock class of how I handle AsyncTasks and ProgressDialogs in the Activities in order to have them work even when the screen is rotated or a configuration change occurs mid communication.
+
+I will not change the manifest to avoid recreation of the Activity, there are many reasons why I dont want to do it, but mainly because the official docs say it isnt recomended and I've managed without it this far, so please dont recomend that route.
+
+public class Login extends Activity {
+
+    static ProgressDialog pd;
+    AsyncTask<String, Void, Boolean> asyncLoginThread;
+
+    @Override
+    public void onCreate(Bundle icicle) {
+        super.onCreate(icicle);
+        setContentView(R.layout.login);
+        //SETUP UI OBJECTS
+        restoreAsyncTask();
+    }
+
+    @Override
+    public Object onRetainNonConfigurationInstance() {
+        if (pd != null) pd.dismiss();
+        if (asyncLoginThread != null) return (asyncLoginThread);
+        return super.onRetainNonConfigurationInstance();
+    }
+
+    private void restoreAsyncTask();() {
+        pd = new ProgressDialog(Login.this);
+        if (getLastNonConfigurationInstance() != null) {
+            asyncLoginThread = (AsyncTask<String, Void, Boolean>) getLastNonConfigurationInstance();
+            if (asyncLoginThread != null) {
+                if (!(asyncLoginThread.getStatus()
+                        .equals(AsyncTask.Status.FINISHED))) {
+                    showProgressDialog();
+                }
+            }
+        }
+    }
+
+    public class LoginThread extends AsyncTask<String, Void, Boolean> {
+        @Override
+        protected Boolean doInBackground(String... args) {
+            try {
+                //Connect to WS, recieve a JSON/XML Response
+                //Place it somewhere I can use it.
+            } catch (Exception e) {
+                return true;
+            }
+            return true;
+        }
+
+        protected void onPostExecute(Boolean result) {
+            if (result) {
+                pd.dismiss();
+                //Handle the response. Either deny entry or launch new Login Succesful Activity
+            }
+        }
+    }
+}
+
+
+This code is working fine, I have around 10.000 users without complaint, so it seemed logical to just copy this logic into the new Fragment Based Design, but, of course, it isnt working.
+
+Here is the LoginFragment:
+
+public class LoginFragment extends Fragment {
+
+    FragmentActivity parentActivity;
+    static ProgressDialog pd;
+    AsyncTask<String, Void, Boolean> asyncLoginThread;
+
+    public interface OnLoginSuccessfulListener {
+        public void onLoginSuccessful(GlobalContainer globalContainer);
+    }
+
+    public void onSaveInstanceState(Bundle outState){
+        super.onSaveInstanceState(outState);
+        //Save some stuff for the UI State
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        //setRetainInstance(true);
+        //If I setRetainInstance(true), savedInstanceState is always null. Besides that, when loading UI State, a NPE is thrown when looking for UI Objects.
+        parentActivity = getActivity();
+    }
+
+    @Override
+    public void onAttach(Activity activity) {
+        super.onAttach(activity);
+        try {
+            loginSuccessfulListener = (OnLoginSuccessfulListener) activity;
+        } catch (ClassCastException e) {
+            throw new ClassCastException(activity.toString() + " must implement OnLoginSuccessfulListener");
+        }
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState) {
+        RelativeLayout loginLayout = (RelativeLayout) inflater.inflate(R.layout.login, container, false);
+        return loginLayout;
+    }
+
+    @Override
+    public void onActivityCreated(Bundle savedInstanceState) {
+        super.onActivityCreated(savedInstanceState);
+        //SETUP UI OBJECTS
+        if(savedInstanceState != null){
+            //Reload UI state. Im doing this properly, keeping the content of the UI objects, not the object it self to avoid memory leaks.
+        }
+    }
+
+    public class LoginThread extends AsyncTask<String, Void, Boolean> {
+            @Override
+            protected Boolean doInBackground(String... args) {
+                try {
+                    //Connect to WS, recieve a JSON/XML Response
+                    //Place it somewhere I can use it.
+                } catch (Exception e) {
+                    return true;
+                }
+                return true;
+            }
+
+            protected void onPostExecute(Boolean result) {
+                if (result) {
+                    pd.dismiss();
+                    //Handle the response. Either deny entry or launch new Login Succesful Activity
+                }
+            }
+        }
+    }
+}
+
+
+I cant use onRetainNonConfigurationInstance() since it has to be called from the Activity and not the Fragment, same goes with getLastNonConfigurationInstance(). I've read some similar questions here with no answer.
+
+I understand that it might require some working around to get this stuff organized properly in fragments, that being said, I would like to maintain the same basic design logic.
+
+What would be the proper way to retain the AsyncTask during a configuration change, and if its still runing, show a progressDialog, taking into consideration that the AsyncTask is a inner class to the Fragment and it is the Fragment itself who invokes the AsyncTask.execute()?
+    
+===============================================================================================
+75
+A:Fragments can actually make this a lot easier.  Just use the method Fragment.setRetainInstance(boolean) to have your fragment instance retained across configuration changes.  Note that this is the recommended replacement for Activity.onRetainnonConfigurationInstance() in the docs.
+
+If for some reason you really don't want to use a retained fragment, there are other approaches you can take.  Note that each fragment has a unique identifier returned by Fragment.getId().  You can also find out if a fragment is being torn down for a config change through Fragment.getActivity().isChangingConfigurations().  So, at the point where you would decide to stop your AsyncTask (in onStop() or onDestroy() most likely), you could for example check if the configuration is changing and if so stick it in a static SparseArray under the fragment's identifier, and then in your onCreate() or onStart() look to see if you have an AsyncTask in the sparse array available.
+    

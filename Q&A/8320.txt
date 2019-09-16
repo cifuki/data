@@ -1,0 +1,155 @@
+32
+Q:Hi I am working on one application, In that I am using Android WebView.
+Whenever I launch webview activity, loading data in string html format from test.txt file.
+test.txt file contains nearly 2.5 MB data, after loading test.txt file, if slide screen to end to read all data and press back.
+Then subsequent launch of webview activity taking more time to render data. In first launch of webview its taking minimal time.
+I am not getting any error/exception/crash in between launching this activity.
+
+I am using Android API level 18 and above
+
+Note: I did lot of research on this issue. I tried Solution from Android webview slow and Android WebView performance no use.
+
+I can't make android:hardwareAccelerated="true" <-- why because it has lot of side effects (Still I used this one, but no changes I found on this issue). 
+
+I can't use 
+webview.getSettings().setRenderPriority(RenderPriority.HIGH);
+
+setRenderPriority() --> This method was deprecated in API level 18. 
+                        It is not recommended to adjust thread priorities, and this will not be supported in future versions.
+
+My DataLoader.java class
+
+public class DataLoader extends Activity {
+
+    private WebView webView = null;
+    // Progress Dialog
+    private ProgressDialog progressDialog;
+
+    String dataContent = null;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        setContentView(R.layout.web_view);
+        webView = (WebView)findViewById(R.id.text);
+
+        // Loading webview in Background Thread
+        new LoadWebView().execute();
+    }
+
+    class LoadWebView extends AsyncTask<String, String, String> {
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            progressDialog = new ProgressDialog(DataLoader.this);
+            progressDialog.setTitle("Loading...");
+            progressDialog.setMessage("Please wait.");
+            progressDialog.setCancelable(false);
+            progressDialog.setIndeterminate(true);
+            progressDialog.show();
+        }
+
+        protected String doInBackground(String... args) {
+            // AssetFileReader read the txt file and return data in the form of string
+            dataContent = AssetFileReader.read(getApplicationContext(), "test.txt");
+
+            return null;
+        }
+
+        protected void onPostExecute(String str) {
+            // dismiss the dialog
+            progressDialog.dismiss();
+
+            if (dataContent != null) {
+                // updating UI from Background Thread
+                runOnUiThread(new Runnable() {
+                    public void run() {
+
+                        WebSettings s = webView.getSettings();
+                        s.setUseWideViewPort(true);
+                        s.setSupportZoom(true);
+                        s.setBuiltInZoomControls(true);
+                        s.setDisplayZoomControls(false);
+                        s.setJavaScriptEnabled(true);
+                        webView.loadData(dataContent, "text/html", "utf-8");
+                    }
+                });
+            }
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        webView.clearCache(true);
+        webView.clearHistory();
+    }
+}
+
+
+my web_view.xml file
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <WebView
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent"
+        android:id="@+id/text">
+    </WebView>
+
+</LinearLayout>
+
+
+please let me know if you have any work around on this issue.
+    
+===============================================================================================
+57
+A:I think the following works best:
+
+if (Build.VERSION.SDK_INT >= 19) {
+    webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+}       
+else {
+    webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+}
+
+
+Android 19 has Chromium engine for WebView. I guess it works better with hardware acceleration.  
+
+For more info Android 4.4 KitKat, the browser and the Chrome WebView
+
+Hardware Acceleration also do's the trick.You can use it in different levels in your application.
+
+Application level
+
+<application android:hardwareAccelerated="true" ...>
+
+
+Activity level
+
+<application android:hardwareAccelerated="true">
+    <activity ... />
+    <activity android:hardwareAccelerated="false" />
+</application>
+
+
+Window level
+
+getWindow().setFlags(
+    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+
+
+View level
+
+myView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
+
+But as already mentioned in your question can you elaborate the side effects for this ?
+    

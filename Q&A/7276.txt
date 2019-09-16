@@ -1,0 +1,76 @@
+36
+Q:I know how to setting proxy manually and to use it in my WebView.
+
+Settings -> Wireless Networks ->mobile networks-> access point names->telkila. Now enter the proxy server address and port (which will be 80).
+WebView.enablePlatformNotifications();
+
+But can i set the proxy setting from code?
+So my user didn't have to set manually?
+
+Thanks
+    
+===============================================================================================
+23
+A:There is no legal way to change your webview proxy settings programmatically. But it's possible to use java reflection to change mProxyHost value from android.net.http.RequestQueue class. It's private value and there is no setters for it, so reflection seems to be the only possible variant. I used it in my project and it works. Here is the sample of my method:
+
+    private boolean setProxyHostField(HttpHost proxyServer) {
+    // Getting network      
+    Class networkClass = null;
+    Object network = null;
+    try {
+        networkClass = Class.forName("android.webkit.Network");
+        Field networkField = networkClass.getDeclaredField("sNetwork");
+        network = getFieldValueSafely(networkField, null);
+    } catch (Exception ex) {
+        Log.e(ProxyManager.class.getName(), "error getting network");
+        return false;
+    }
+    if (network == null) {
+        Log.e(ProxyManager.class.getName(), "error getting network : null");
+        return false;
+    }
+    Object requestQueue = null;
+    try {
+        Field requestQueueField = networkClass
+                .getDeclaredField("mRequestQueue");
+        requestQueue = getFieldValueSafely(requestQueueField, network);
+    } catch (Exception ex) {
+        Log.e(ProxyManager.class.getName(), "error getting field value");
+        return false;
+    }
+    if (requestQueue == null) {
+        Log.e(ProxyManager.class.getName(), "Request queue is null");
+        return false;
+    }
+    Field proxyHostField = null;
+    try {
+        Class requestQueueClass = Class.forName("android.net.http.RequestQueue");
+        proxyHostField = requestQueueClass
+                .getDeclaredField("mProxyHost");
+    } catch (Exception ex) {
+        Log.e(ProxyManager.class.getName(), "error getting proxy host field");
+        return false;
+    }       
+    synchronized (synchronizer) {
+        boolean temp = proxyHostField.isAccessible();
+        try {
+            proxyHostField.setAccessible(true);
+            proxyHostField.set(requestQueue, proxyServer);
+        } catch (Exception ex) {
+            Log.e(ProxyManager.class.getName(), "error setting proxy host");
+        } finally {
+            proxyHostField.setAccessible(temp);
+        }
+    }
+    return true;
+}
+
+private Object getFieldValueSafely(Field field, Object classInstance) throws IllegalArgumentException, IllegalAccessException {
+    boolean oldAccessibleValue = field.isAccessible();
+    field.setAccessible(true);
+    Object result = field.get(classInstance);
+    field.setAccessible(oldAccessibleValue);
+    return result;      
+}
+
+    

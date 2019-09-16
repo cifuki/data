@@ -1,0 +1,77 @@
+43
+Q:I want to geocode address as soon as map center has been changed.
+
+How can I handle map moveend with new Google Maps for Android V2? (I'm talking about the case then user drags map by finger)
+    
+===============================================================================================
+27
+A:Here is a possible workaround for determining drag start and drag end events:
+
+You have to extend SupportMapFragment or MapFragment. In onCreateView you have to wrap your MapView in a customized FrameLayout (in example below it is the class "TouchableWrapper"), in which you intercepts touch events and recognizes whether the map is tapped or not. If your "onCameraChange" gets called, just check whether the map view is pressed or not (in example below this is the variable "mMapIsTouched").
+
+Example code:
+
+UPDATE 1: 
+
+
+return original created view in getView()
+use dispatchTouchEvent() instead of onInterceptTouchEvent()
+
+
+Customized FrameLayout:
+
+private class TouchableWrapper extends FrameLayout {
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+
+        switch (ev.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                mMapIsTouched = true;
+                break;
+            case MotionEvent.ACTION_UP:
+                mMapIsTouched = false;
+                break;
+        }
+
+        return super.dispatchTouchEvent(ev);
+
+    }
+
+}
+
+
+In your customized MapFragment:
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup parent, 
+        Bundle savedInstanceState) {
+    mOriginalContentView = super.onCreateView(inflater, parent, 
+            savedInstanceState);
+
+    mTouchView = new TouchableWrapper(getActivity());
+    mTouchView.addView(mOriginalContentView);
+
+    return mTouchView;
+}
+
+@Override
+public View getView() {
+    return mOriginalContentView;
+}
+
+
+In your camera change callback method:
+
+private final OnCameraChangeListener mOnCameraChangeListener = 
+        new OnCameraChangeListener() {
+
+    @Override
+    public void onCameraChange(CameraPosition cameraPosition) {
+        if (!mMapIsTouched) {
+            refreshClustering(false);
+        }
+    }
+};
+
+    

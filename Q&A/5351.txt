@@ -1,0 +1,155 @@
+46
+Q:Android 3.3 API 18
+
+
+Hello,
+
+I am developing my first App using android. The App will have to connect to an online database to store user data.
+
+I am looking for a cloud storage with a MySQL database included. However, can my App connect directly to this MySQL database and push and pull data from it? Or is there other things I need to do?
+
+Many thanks for any suggestions,
+    
+===============================================================================================
+73
+A:Yes you can do that.
+
+Materials you need:
+
+
+WebServer 
+A Database Stored in the webserver
+And a little bit android knowledge :)
+Webservices (json ,Xml...etc) whatever you are comfortable with 
+
+
+1. First set the internet permissions in your manifest file
+
+ <uses-permission android:name="android.permission.INTERNET" />
+
+
+2. Make a class to make an HTTPRequest from the server 
+(i am using json parisng to get the values)
+
+for eg:
+
+    public class JSONfunctions {
+
+    public static JSONObject getJSONfromURL(String url) {
+        InputStream is = null;
+        String result = "";
+        JSONObject jArray = null;
+
+        // Download JSON data from URL
+        try {
+            HttpClient httpclient = new DefaultHttpClient();
+            HttpPost httppost = new HttpPost(url);
+            HttpResponse response = httpclient.execute(httppost);
+            HttpEntity entity = response.getEntity();
+            is = entity.getContent();
+
+        } catch (Exception e) {
+            Log.e("log_tag", "Error in http connection " + e.toString());
+        }
+
+        // Convert response to string
+        try {
+            BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    is, "iso-8859-1"), 8);
+            StringBuilder sb = new StringBuilder();
+            String line = null;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line + "\
+");
+            }
+            is.close();
+            result = sb.toString();
+        } catch (Exception e) {
+            Log.e("log_tag", "Error converting result " + e.toString());
+        }
+
+        try {
+
+            jArray = new JSONObject(result);
+        } catch (JSONException e) {
+            Log.e("log_tag", "Error parsing data " + e.toString());
+        }
+
+        return jArray;
+    }
+}
+
+
+3. In your MainActivity Make an object of the class JsonFunctions and pass the url as an argument from where you want to get the data 
+
+eg:
+
+JSONObject jsonobject;
+
+
+jsonobject = JSONfunctions.getJSONfromURL("http://YOUR_DATABASE_URL");
+
+4. And then finally read the jsontags and store the values in an arraylist and later show it in listview if you want 
+
+and if you have any problem you can follow this blog
+he gives excellent android tutorials AndroidHive 
+
+Since the above answer i wrote was long back and now HttpClient, HttpPost,HttpEntity have been removed in Api 23. You can use the below code in the build.gradle(app-level) to still continue using org.apache.httpin your project.
+
+android {
+    useLibrary 'org.apache.http.legacy'
+    signingConfigs {}
+    buildTypes {}
+}
+
+
+or You can use HttpURLConnection like below to get your response from server
+
+public String getJSON(String url, int timeout) {
+HttpURLConnection c = null;
+try {
+    URL u = new URL(url);
+    c = (HttpURLConnection) u.openConnection();
+    c.setRequestMethod("GET");
+    c.setRequestProperty("Content-length", "0");
+    c.setUseCaches(false);
+    c.setAllowUserInteraction(false);
+    c.setConnectTimeout(timeout);
+    c.setReadTimeout(timeout);
+    c.connect();
+    int status = c.getResponseCode();
+
+    switch (status) {
+        case 200:
+        case 201:
+            BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream()));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line+"\
+");
+            }
+            br.close();
+            return sb.toString();
+    }
+
+} catch (MalformedURLException ex) {
+    Logger.getLogger(getClass().getName()).log(Level.SEVERE, null, ex);
+} catch (IOException ex) {
+    Logger.getLogger(getClass().getName()).log(Level.SEVERE, null, ex);
+} finally {
+   if (c != null) {
+      try {
+          c.disconnect();
+      } catch (Exception ex) {
+         Logger.getLogger(getClass().getName()).log(Level.SEVERE, null, ex);
+      }
+   }
+}
+return null;
+
+
+}
+
+or You can use 3rd party Library like Volley, Retrofit to call the webservice api and get the response and later parse it with using FasterXML-jackson, google-gson.
+    

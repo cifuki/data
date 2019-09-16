@@ -1,0 +1,43 @@
+110
+Q:I've upgraded to Android Studio 3.1 today, which seems to have added a few more lint checks. One of these lint checks is for one-shot RxJava2 subscribe() calls that are not stored in a variable. For example, getting a list of all players from my Room database:
+
+Single.just(db)
+            .subscribeOn(Schedulers.io())
+            .subscribe(db -> db.playerDao().getAll());
+
+
+Results in a big yellow block and this tooltip:
+
+
+  The result of subscribe is not used
+
+
+
+
+What is the best practice for one-shot Rx calls like this? Should I keep hold of the Disposable and dispose() on complete? Or should I just @SuppressLint and move on?
+
+This only seems to affect RxJava2 (io.reactivex), RxJava (rx) does not have this lint.
+    
+===============================================================================================
+101
+A:The IDE does not know what potential effects your subscription can have when it's not disposed, so it treats it as potentially unsafe. For example, your Single may contain a network call, which could cause a memory leak if your Activity is abandoned during its execution. 
+
+A convenient way to manage a large amount of Disposables is to use a CompositeDisposable; just create a new CompositeDisposable instance variable in your enclosing class, then add all your Disposables to the CompositeDisposable (with RxKotlin you can just append addTo(compositeDisposable) to all of your Disposables). Finally, when you're done with your instance, call compositeDisposable.dispose(). 
+
+This will get rid of the lint warnings, and ensure your Disposables are managed properly. 
+
+In this case, the code would look like: 
+
+CompositeDisposable compositeDisposable = new CompositeDisposable();
+
+Disposable disposable = Single.just(db)
+        .subscribeOn(Schedulers.io())
+        .subscribe(db -> db.get(1)));
+
+compositeDisposable.add(disposable); //IDE is satisfied that the Disposable is being managed. 
+disposable.addTo(compositeDisposable); //Alternatively, use this RxKotlin extension function.
+
+
+compositeDisposable.dispose(); //Placed wherever we'd like to dispose our Disposables (i.e. in onDestroy()).
+
+    

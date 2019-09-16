@@ -1,0 +1,134 @@
+27
+Q:I need a way to control the camera flash on an Android device while it is recording video. I'm making a strobe light app, and taking videos with a flashing strobe light would result in the ability to record objects that are moving at high speeds, like a fan blade.
+
+The flash can only be enabled by starting a video preview and setting FLASH_MODE_TORCH in the camera's parameters. That would look like this:
+
+Camera c = Camera.open();
+Camera.Parameters p = c.getParameters();
+p.setFlashMode(Camera.Parameters.FLASH_MODE_TORCH);
+c.setParameters(p);
+c.startPreview();
+
+
+Once the preview has started, I can flip that parameter back and forth to turn the light on and off. This works well until I try to record a video. The trouble is that in order to give the camera to the MediaRecorder, I first have to unlock it.
+
+MediaRecorder m = new MediaRecorder();
+c.unlock();     // the killer
+m.setCamera(c);
+
+
+After that unlock, I can no longer change the camera parameters and therefore have no way to change the flash state.
+
+I do not know if it is actually possible to do this since I'm not the best at java-hacking, but here is what I do know:
+
+
+Camera.unlock() is a native method, so I can't really see the mechanism behind the way it locks me out
+Camera.Parameter has a HashMap that contains all of its parameters
+Camera.setParameters(Parameters) takes the HashMap, converts it to a string, and passes it to a native method
+I can eliminate all the parameters but TORCH-MODE from the HashMap and the Camera will still accept it
+
+
+So, I can still access the Camera, but it won't listen to anything I tell it. (Which is kind of the purpose of Camera.unlock())
+
+Edit:
+
+After examining the native code, I can see that in CameraService.cpp my calls to Camera.setParameters(Parameters) get rejected because my Process ID does not match the Process ID the camera service has on record. So it would appear that that is my hurdle.
+
+Edit2:
+
+It would appear that the MediaPlayerService is the primary service that takes control of the camera when a video is recording. I do not know if it is possible, but if I could somehow start that service in my own process, I should be able to skip the Camera.unlock() call.
+
+Edit3:
+
+One last option would be if I could somehow get a pointer to the CameraHardwareInterface. From the looks of it, this is a device specific interface and probably does not include the PID checks. The main problem with this though is that the only place that I can find a pointer to it is in CameraService, and CameraService isn't talking.
+
+Edit4: (several months later)
+
+At this point, I don't think it is possible to do what I originally wanted. I don't want to delete the question on the off chance that someone does answer it, but I'm not actively seeking an answer. (Though, receiving a valid answer would be awesome.)
+    
+===============================================================================================
+12
+A:I encountered a similar issue. The user should be able to change the flash mode during recording to meet their needs depending on the light situation. After some investigative research i came to the following solution:
+
+I assume, that you've already set up a proper SurfaceView and a SurfaceHolder with its necessary callbacks. The first thing i did was providing this code (not declared variables are globals):
+
+public void surfaceCreated(SurfaceHolder holder) {
+    try {
+        camera = Camera.open();
+
+        parameters = camera.getParameters();
+        parameters.setFlashMode(Parameters.FLASH_MODE_OFF);
+
+        camera.setParameters(parameters);
+        camera.setPreviewDisplay(holder);
+        camera.startPreview();
+
+        recorder = new MediaRecorder();
+    } catch (IOException e) {
+        e.printStackTrace();
+    }       
+}
+
+
+My next step was initializing and preparing the recorder:
+
+private void initialize() {
+    camera.unlock();
+
+    recorder.setCamera(camera);
+    recorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER);
+    recorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+    recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+    recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+    recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+    recorder.setVideoFrameRate(20);
+    recorder.setOutputFile(filePath);
+
+    try {
+        recorder.prepare();
+    } catch (IllegalStateException e) {
+        e.printStackTrace();
+        finish();
+    } catch (IOException e) {
+        e.printStackTrace();
+        finish();
+    }
+}
+
+
+It's important to note, that camera.unlock() has to be called BEFORE the whole initialization process of the media recorder. That said also be aware of the proper order of each set property, otherwise you'll get an IllegalStateException when calling prepare() or start(). When it comes to recording, i do this. This will usually be triggered by a view element:
+
+public void record(View view) {
+    if (recording) {
+        recorder.stop();
+
+        //TODO: do stuff....
+
+        recording = false;
+    } else {
+        recording = true;
+
+        initialize();
+        recorder.start();
+    }
+}
+
+
+So now, i finally can record properly. But what's with that flash? Last but not least, here comes the magic behind the scenes:
+
+public void flash(View view) {
+    if(!recording) {
+        camera.lock();
+    }
+
+    parameters.setFlashMode(parameters.getFlashMode().equals(Parameters.FLASH_MODE_TORCH) ? Parameters.FLASH_MODE_OFF : Parameters.FLASH_MODE_TORCH);
+    camera.setParameters(parameters);
+
+    if(!recording) {
+        camera.unlock();
+    }
+}
+
+
+Everytime i call that method via an onClick action i can change the flash mode, even during recording. Just take care of properly locking the camera. Once the lock is aquired by the media recorder during recording, you don't have to lock/unlock the camera again. It doesn't even work. This was tested on a Samsung Galaxy S3 with Android-Version 4.1.2. Hope this approach helps.
+    

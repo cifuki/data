@@ -1,0 +1,99 @@
+28
+Q:I'm developing an application that has the following requisite: If there is a headset plugged in the device and the user removes it, I need to mute all streams. To do that I need to listen to the AudioManager.ACTION_AUDIO_BECOMING_NOISY Broadcast. This is ok! Not problem here.
+
+But when the user plugs the headset again, I need to un-mute the device. But there isn't a AudioManager.ACTION_AUDIO_BECOMING_NOISY opposite broadcast. I cannot know when the headset is plugged again.
+
+One solution is to periodically see if AudioManager.isWiredHeadsetOn() is true but this don't appear to be a good solution to me.
+
+Is there a way to detect when the user plugs a headset on the device?
+
+Edited: I tried to use Intent.ACTION_HEADSET_PLUG this way, but it didn't work.
+
+In the manifest.xml I put:
+
+<receiver android:name=".MusicIntentReceiver" >
+    <intent-filter>
+        <action android:name="android.intent.action.HEADSET_PLUG" />
+    </intent-filter>
+</receiver>
+
+
+And here is the code of my MusicIntentReceiver.java:
+
+public class MusicIntentReceiver extends BroadcastReceiver {
+
+    public void onReceive(Context ctx, Intent intent) {
+        AudioManager audioManager = (AudioManager)ctx.getSystemService(Context.AUDIO_SERVICE);
+        if (intent.getAction().equals(Intent.ACTION_HEADSET_PLUG)) {
+            Log.d("Let's turn the sound on!");
+            //other things to un-mute the streams
+        }
+    }
+}
+
+
+Any other solution to try?
+    
+===============================================================================================
+85
+A:How about this call:
+http://developer.android.com/reference/android/content/Intent.html#ACTION_HEADSET_PLUG
+which I found at
+Droid Incredible Headphones Detection
+?
+
+The updated code I see in your question now isn't enough. That broadcast happens when the plugged state changes, and sometimes when it doesn't, according to Intent.ACTION_HEADSET_PLUG is received when activity starts so I would write:
+
+package com.example.testmbr;
+
+import android.os.Bundle;
+import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.util.Log;
+
+public class MainActivity extends Activity  {
+private static final String TAG = "MainActivity";
+private MusicIntentReceiver myReceiver;
+
+@Override protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+    myReceiver = new MusicIntentReceiver();
+}
+
+@Override public void onResume() {
+    IntentFilter filter = new IntentFilter(Intent.ACTION_HEADSET_PLUG);
+    registerReceiver(myReceiver, filter);
+    super.onResume();
+}
+
+private class MusicIntentReceiver extends BroadcastReceiver {
+    @Override public void onReceive(Context context, Intent intent) {
+        if (intent.getAction().equals(Intent.ACTION_HEADSET_PLUG)) {
+            int state = intent.getIntExtra("state", -1);
+            switch (state) {
+            case 0:
+                Log.d(TAG, "Headset is unplugged");
+                break;
+            case 1:
+                Log.d(TAG, "Headset is plugged");
+                break;
+            default:
+                Log.d(TAG, "I have no idea what the headset state is");
+            }
+        }
+    }
+}
+
+@Override public void onPause() {
+    unregisterReceiver(myReceiver);
+    super.onPause();
+}
+}
+
+
+The AudioManager.isWiredHeadsetOn() call which I earlier recommended turns out to be deprecated since API 14, so I replaced it with extracting the state from the broadcast intent. It's possible that there could be multiple broadcasts for each plugging or unplugging, perhaps because of contact bounce in the connector.
+    

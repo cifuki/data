@@ -1,0 +1,127 @@
+27
+Q:I want to tint my tabhost's icons using xml, instead of doing it programatically (I wasn't able to do that anyway)... So I found this thread on SO: Android imageview change tint to simulate button click
+
+That seems to be a pretty good solution, but I wasn't able to adapt it correctly in my project... I did the following changes:
+
+public class TintableImageView extends ImageView {
+private ColorStateList tint;
+
+public TintableImageView(Context context) {
+    super(context);
+}
+
+//this is the constructor that causes the exception
+public TintableImageView(Context context, AttributeSet attrs) {
+    super(context, attrs);
+    init(context, attrs, 0);
+}
+
+public TintableImageView(Context context, AttributeSet attrs, int defStyle) {
+    super(context, attrs, defStyle);
+    init(context, attrs, defStyle);
+}
+
+//here, obtainStyledAttributes was asking for an array
+private void init(Context context, AttributeSet attrs, int defStyle) {
+    TypedArray a = context.obtainStyledAttributes(attrs, new int[]{R.styleable.TintableImageView_tint}, defStyle, 0);
+    tint = a.getColorStateList(R.styleable.TintableImageView_tint);
+    a.recycle();
+}
+
+@Override
+protected void drawableStateChanged() {
+    super.drawableStateChanged();
+    if (tint != null && tint.isStateful())
+        updateTintColor();
+}
+
+public void setColorFilter(ColorStateList tint) {
+    this.tint = tint;
+    super.setColorFilter(tint.getColorForState(getDrawableState(), 0));
+}
+
+private void updateTintColor() {
+    int color = tint.getColorForState(getDrawableState(), 0);
+    setColorFilter(color);
+}
+
+}
+
+
+I also wasn't able to reference @drawable/selector.xml at android:tint, so I did this at colors.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+<color name="azulPadrao">#2e7cb4</color>
+<drawable name="tab_icon_selector">@drawable/tab_icon_selector</drawable>
+</resources>
+
+
+My selector:
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+<item android:state_selected="true" android:tint="#007AFF" />
+<item android:state_focused="true" android:tint="#007AFF" />
+<item android:state_pressed="true" android:tint="#007AFF" />
+<item android:tint="#929292" />
+</selector>
+
+
+My tab layout:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+          android:orientation="vertical" android:id="@+id/TabLayout"
+          android:layout_width="fill_parent" android:layout_height="fill_parent"
+          android:gravity="center" android:background="@drawable/tab_bg_selector">
+
+<com.myapp.TintableImageView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/imageView" android:layout_gravity="center" android:tint="@drawable/tab_icon_selector"/>
+<TextView android:id="@+id/TabTextView" android:text="Text"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content" android:textColor="@drawable/tab_text_selector"
+          android:textSize="10dip"
+          android:textStyle="bold" android:layout_marginTop="2dip"/>
+
+</LinearLayout>
+
+
+Any suggestions? Thanks in advance
+
+[EDIT] I was getting a NumberFormatException for using android:tint, when the correct was app:tint (after setting xmlns:app="http://schemas.android.com/apk/res/com.myapp")... but now I think I'm using my selector in a wrong way, because the icons are all black, no matter the state...
+I've tried setting <drawable name="tab_icon_selector">@drawable/tab_icon_selector</drawable> from within colors.xml, didn't work
+
+[/EDIT]
+    
+===============================================================================================
+11
+A:In reference to my solution at https://stackoverflow.com/a/18724834/2136792, there are a few things you're missing:
+
+TintableImageView.java
+
+@Override
+protected void drawableStateChanged() {
+    super.drawableStateChanged();
+    if (tint != null && tint.isStateful())
+        updateTintColor();
+}
+
+public void setColorFilter(ColorStateList tint) {
+    this.tint = tint;
+    super.setColorFilter(tint.getColorForState(getDrawableState(), 0));
+}
+
+private void updateTintColor() {
+    int color = tint.getColorForState(getDrawableState(), 0);
+    setColorFilter(color);
+}
+
+
+drawableStateChanged() must be overridden for the tint to be updated when the element's state changes.
+
+I'm not sure if referencing a drawable from a drawable might cause an issue, but you can simply move your selector.xml into a folder "/res/color" to reference it with "@color/selector.xml" (aapt merges both /res/values/colors.xml and the /res/color folder).
+    

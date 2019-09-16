@@ -1,0 +1,131 @@
+38
+Q:I'm the perfectionist type, I already got web API calls working fine with Google Places API (just as an example), but I feel it's sometimes slow or maybe I'm not doing it right. Some blogs are saying I should use AndroidHttpClient, but I'm not, should I ?
+
+The web API calls i'm using return json and I don't run them on the UI thread, hence using AsyncTask (is AsyncTask the most efficient way to run on background thread or should I use something else ?)
+
+Please see my code and tell me how could it be more efficient in anyway
+
+public static class NearbySearchRequest extends AsyncTask<String, Void, JSONObject>
+{
+    Exception mException = null;
+
+    @Override
+    protected void onPreExecute()
+    {
+        super.onPreExecute();
+        this.mException = null;
+    }
+
+    @Override
+    protected JSONObject doInBackground(String... params)
+    {
+        StringBuilder urlString = new StringBuilder();
+        urlString.append("https://maps.googleapis.com/maps/api/place/nearbysearch/json?");
+        urlString.append("key=").append(Constants.GOOGLE_SIMPLE_API_KEY);
+        urlString.append("&location=").append(params[0]);
+        urlString.append("&sensor=").append("true");
+        urlString.append("&language=").append("en-GB");
+        urlString.append("&name=").append(params[1]);
+        urlString.append("&rankby=").append("distance");
+
+        LogHelper.Log(urlString.toString());
+
+        HttpURLConnection urlConnection = null;
+        URL url = null;
+        JSONObject object = null;
+
+        try
+        {
+            url = new URL(urlString.toString());
+            urlConnection = (HttpURLConnection) url.openConnection();
+            urlConnection.setRequestMethod("GET");
+            urlConnection.setDoOutput(true);
+            urlConnection.setDoInput(true);
+            urlConnection.connect();
+            InputStream inStream = null;
+            inStream = urlConnection.getInputStream();
+            BufferedReader bReader = new BufferedReader(new InputStreamReader(inStream));
+            String temp, response = "";
+            while ((temp = bReader.readLine()) != null)
+                response += temp;
+            bReader.close();
+            inStream.close();
+            urlConnection.disconnect();
+            object = (JSONObject) new JSONTokener(response).nextValue();
+        }
+        catch (Exception e)
+        {
+            this.mException = e;
+        }
+
+        return (object);
+    }
+
+    @Override
+    protected void onPostExecute(JSONObject result)
+    {
+        super.onPostExecute(result);
+
+        if (this.mException != null)
+            ErrorHelper.report(this.mException, "Error # NearbySearchRequest");
+    }
+}
+
+    
+===============================================================================================
+43
+A:The Http engine you're using seems the best choice. Actually any other 3-rd party engines are based either on Apache, either on HttpUrlConnection. I prefer to use Spring for Android as that API provide an abstraction over Http Engine and you don't really need to care how about what API to use based on API level. Or you can use Volley - a very fashionable library.
+
+I would touch however some of your code:
+
+
+What if there is an exception while reading the stream? Then the stream remains open and also the connection. So I would suggest to have a finally block where the streams and connection is closed no matter if you get an exception or not:
+
+HttpURLConnection urlConnection = null;
+URL url = null;
+JSONObject object = null;
+InputStream inStream = null;
+try {
+    url = new URL(urlString.toString());
+    urlConnection = (HttpURLConnection) url.openConnection();
+    urlConnection.setRequestMethod("GET");
+    urlConnection.setDoOutput(true);
+    urlConnection.setDoInput(true);
+    urlConnection.connect();
+    inStream = urlConnection.getInputStream();
+    BufferedReader bReader = new BufferedReader(new InputStreamReader(inStream));
+    String temp, response = "";
+    while ((temp = bReader.readLine()) != null) {
+        response += temp;
+    }
+    object = (JSONObject) new JSONTokener(response).nextValue();
+} catch (Exception e) {
+    this.mException = e;
+} finally {
+    if (inStream != null) {
+        try {
+            // this will close the bReader as well
+            inStream.close();
+        } catch (IOException ignored) {
+        }
+    }
+    if (urlConnection != null) {
+        urlConnection.disconnect();
+    }
+}
+
+JSON parsing: you're using the Android standard way of parsing JSON, but that's not the fastest and easiest to work with. GSON and Jackson are better to use. To make a comparison when it comes for JSON parsers, I would go for Jackson. Here's another SO topic on this comparison.
+Don't concatenate strings like that as concatenating strings will create each time another string. Use a StringBuilder instead. 
+Exception handling (this is anyway a long-debate subject in all programming forums). First of all you have to log it (Use Log class not System.out.printXXX). Then you need to either inform the user: either you toast a message, either you show a label or notification. The decision depends on the user case and how relevant is the call you're making.
+
+
+These are the topics I see in you code.
+
+EDIT I realize I didn't answer this: is AsyncTask the most efficient way to run on background thread or should I use something else? 
+
+The short answer I would give is: if you're supposed to perform a short time lived request, then AsyncTask is perfect. However, if you need to get some data and display it - but you don't want to worry about whether to download again if the screen is rotated and so on, I would strongly recommend using an AsyncTaskLoader and Loaders in general.
+
+If you need to download some big data, then either you use an IntentService or, for heavy-weight operations, DownloadManager.
+
+Enjoy coding!
+    

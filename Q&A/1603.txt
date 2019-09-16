@@ -1,0 +1,154 @@
+114
+Q:Using the compatibility package to target 2.2 using Fragments.
+
+After recoding an activity to use fragments in an app I could not get the orientation changes/state management working so I've created a small test app with a single FragmentActivity and a single Fragment.
+
+The logs from the orientation changes are weird, with multiple calls to the fragments OnCreateView.
+
+I'm obviously missing something - like detatching the fragment and reattaching it rather than creating a new instance, but I can't see any documentation which would indicate where I'm going wrong.
+
+Can anyone shed some light on what I'm doing wrong here please.
+Thanks
+
+The log is as follows after orientation changes.
+
+Initial creation
+12-04 11:57:15.808: D/FragmentTest.FragmentTestActivity(3143): onCreate
+12-04 11:57:15.945: D/FragmentTest.FragmentOne(3143): OnCreateView
+12-04 11:57:16.081: D/FragmentTest.FragmentOne(3143): OnCreateView->SavedInstanceState null
+
+
+Orientation Change 1
+12-04 11:57:39.031: D/FragmentTest.FragmentOne(3143): onSaveInstanceState
+12-04 11:57:39.031: D/FragmentTest.FragmentTestActivity(3143): onCreate
+12-04 11:57:39.031: D/FragmentTest.FragmentOne(3143): OnCreateView
+12-04 11:57:39.031: D/FragmentTest.FragmentOne(3143): OnCreateView->SavedInstanceState not null
+12-04 11:57:39.031: D/FragmentTest.FragmentOne(3143): OnCreateView
+12-04 11:57:39.167: D/FragmentTest.FragmentOne(3143): OnCreateView->SavedInstanceState null
+
+
+Orientation Change 2
+12-04 11:58:32.162: D/FragmentTest.FragmentOne(3143): onSaveInstanceState
+12-04 11:58:32.162: D/FragmentTest.FragmentOne(3143): onSaveInstanceState
+12-04 11:58:32.361: D/FragmentTest.FragmentTestActivity(3143): onCreate
+12-04 11:58:32.361: D/FragmentTest.FragmentOne(3143): OnCreateView
+12-04 11:58:32.361: D/FragmentTest.FragmentOne(3143): OnCreateView->SavedInstanceState not null
+12-04 11:58:32.361: D/FragmentTest.FragmentOne(3143): OnCreateView
+12-04 11:58:32.361: D/FragmentTest.FragmentOne(3143): OnCreateView->SavedInstanceState not null
+12-04 11:58:32.498: D/FragmentTest.FragmentOne(3143): OnCreateView
+12-04 11:58:32.498: D/FragmentTest.FragmentOne(3143): OnCreateView->SavedInstanceState null
+
+
+Main Activity (FragmentActivity)
+
+public class FragmentTestActivity extends FragmentActivity {
+/** Called when the activity is first created. */
+
+private static final String TAG = "FragmentTest.FragmentTestActivity";
+
+
+FragmentManager mFragmentManager;
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.main);
+
+    Log.d(TAG, "onCreate");
+
+    mFragmentManager = getSupportFragmentManager();
+    FragmentTransaction fragmentTransaction = mFragmentManager.beginTransaction();
+
+    FragmentOne fragment = new FragmentOne();
+
+    fragmentTransaction.add(R.id.fragment_container, fragment);
+    fragmentTransaction.commit();
+}
+
+
+And the fragment
+
+public class FragmentOne extends Fragment {
+
+private static final String TAG = "FragmentTest.FragmentOne";
+
+EditText mEditText;
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container,
+        Bundle savedInstanceState) {
+
+    Log.d(TAG, "OnCreateView");
+
+    View v = inflater.inflate(R.layout.fragmentonelayout, container, false);
+
+    // Retrieve the text editor, and restore the last saved state if needed.
+    mEditText = (EditText)v.findViewById(R.id.editText1);
+
+    if (savedInstanceState != null) {
+
+        Log.d(TAG, "OnCreateView->SavedInstanceState not null");
+
+        mEditText.setText(savedInstanceState.getCharSequence("text"));
+    }
+    else {
+        Log.d(TAG,"OnCreateView->SavedInstanceState null");
+    }
+    return v;
+}
+
+@Override
+public void onSaveInstanceState(Bundle outState) {
+    super.onSaveInstanceState(outState);
+
+    Log.d(TAG, "FragmentOne.onSaveInstanceState");
+
+    // Remember the current text, to restore if we later restart.
+    outState.putCharSequence("text", mEditText.getText());
+}
+
+
+Manifest
+
+<uses-sdk android:minSdkVersion="8" />
+
+<application
+    android:icon="@drawable/ic_launcher"
+    android:label="@string/app_name" >
+    <activity
+        android:label="@string/app_name"
+        android:name=".activities.FragmentTestActivity" 
+        android:configChanges="orientation">
+        <intent-filter >
+            <action android:name="android.intent.action.MAIN" />
+
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+    </activity>
+</application>
+
+    
+===============================================================================================
+182
+A:You're layering your Fragments one on top of the other.
+
+When a config change occurs the old Fragment adds itself to the new Activity when it's recreated. This is a massive pain in the rear most of the time.
+
+You can stop errors occurring by using the same Fragment rather than recreating a new one. Simply add this code:
+
+if (savedInstanceState == null) {
+    // only create fragment if activity is started for the first time
+    mFragmentManager = getSupportFragmentManager();
+    FragmentTransaction fragmentTransaction = mFragmentManager.beginTransaction();
+
+    FragmentOne fragment = new FragmentOne();
+
+    fragmentTransaction.add(R.id.fragment_container, fragment);
+    fragmentTransaction.commit();
+} else {        
+    // do nothing - fragment is recreated automatically
+}
+
+
+Be warned though: problems will occur if you try and access Activity Views from inside the Fragment as the lifecycles will subtly change. (Getting Views from a parent Activity from a Fragment isn't easy).
+    

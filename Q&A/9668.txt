@@ -1,0 +1,121 @@
+28
+Q:Just need to know the proper way to implement Google analytics to track when a user is on a fragment in real time this is what is do now
+
+@Override
+public void onResume() {
+    super.onResume();
+    Tracker myTracker = parentActivity.getTracker();
+    myTracker.setCustomMetric(1, (long) 1);               
+    myTracker.sendView("Music View"); 
+}
+
+
+the getTracker class is in my main activity and just returns the instance of tracker in the main activity
+
+Any help would be much appreciated! 
+    
+===============================================================================================
+46
+A:Mochini's answer uses Google Analytics V2. Bellow you can see how to do it on V4 and V3:
+
+
+V4:
+
+
+Application:
+
+public class YourApplication extends Application
+{
+    public synchronized Tracker getTracker() {
+
+        try {
+            final GoogleAnalytics googleAnalytics = GoogleAnalytics.getInstance(this);
+            return googleAnalytics.newTracker(R.xml.analytics);
+
+        }catch(final Exception e){
+            Log.e(TAG, "Failed to initialize Google Analytics V4");
+        }
+
+        return null;
+    }
+}
+
+
+res/xml/analytics.xml (you can name it anything, it does not need to be called "analytics")
+
+<?xml version="1.0" encoding="utf-8" ?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="TypographyDashes">
+
+  <!--Replace placeholder ID with your tracking ID-->
+  <string name="ga_trackingId">UA-XXXXXXXX-X</string>
+
+  <!--Enable automatic activity tracking-->
+  <bool name="ga_autoActivityTracking">true</bool>
+
+  <!--Disable automatic exception tracking-->
+  <bool name="ga_reportUncaughtExceptions">false</bool>
+
+</resources>
+
+
+build.gradle:
+
+compile 'com.google.android.gms:play-services:7.3.0'
+
+
+Fragment superclass:
+
+public abstract class TrackedFragment extends Fragment{
+
+    @Override
+    public void onResume() {
+
+        super.onResume();
+
+        final Tracker tracker = yourApplicationInstance.getTracker();
+        if(tracker != null){
+
+            tracker.setScreenName(getClass().getSimpleName());
+            tracker.send(new HitBuilders.ScreenViewBuilder().build());
+        }
+    }
+}
+
+
+
+V3
+
+import android.os.Bundle;
+import android.support.v4.app.Fragment;
+
+import com.google.analytics.tracking.android.EasyTracker;
+import com.google.analytics.tracking.android.Fields;
+import com.google.analytics.tracking.android.MapBuilder;
+import com.google.analytics.tracking.android.Tracker;
+
+public abstract class TrackedFragment extends Fragment{
+
+     private Tracker tracker;
+
+     @Override
+     public void onActivityCreated(final Bundle savedInstanceState) {
+
+         super.onActivityCreated(savedInstanceState);
+
+         this.tracker = EasyTracker.getInstance(getActivity());
+     }
+
+     @Override
+     public void onResume() {
+
+         super.onResume();
+
+         this.tracker.set(Fields.SCREEN_NAME, getClass().getSimpleName());
+         this.tracker.send( MapBuilder.createAppView().build() );
+     }
+}
+
+
+
+Source: https://developers.google.com/analytics/devguides/collection/android/v3/migration
+    

@@ -1,0 +1,83 @@
+32
+Q:I want to give the user the choice between a few different themes, and was wondering if this is an alright way of doing things. I did a little test with this method and it worked, but I think there may be better ways and think it may cause some problems later on, so wanted to ask.
+
+I was thinking of creating a different layout for each theme, and in onCreate just having a switch for the setContentView() method. I'd load a saved SharedPreference value (integer) first and depending on what that value was display the corresponding layout. Obviously the user could change the SharedPreference value with a button or something.
+
+As these layouts would be basically the same but with different colours, I'd want to use the same IDs for my TextViews and other Views in each layout file. My main question is would this cause problems?
+
+Sorry for the wall of text with no code. I'd just like to get a general idea of good practice for this situation. Thanks in advance.
+    
+===============================================================================================
+45
+A:I actually have this feature in my application and additionally, I allow users to change theme at runtime. As reading a value from preferences takes some time, I'm getting a theme id via globally accessible function which holds cached value.
+
+As already pointed out - create some Android themes, using this guide. You will have at least two <style> items in your styles.xml file. For example:
+
+<style name="Theme.App.Light" parent="@style/Theme.Light">...</style>
+<style name="Theme.App.Dark" parent="@style/Theme">...</style>
+
+
+Now, you have to apply one of these styles to your activities. I'm doing this in activitie's onCreate method, before any other call:
+
+setTheme(MyApplication.getThemeId());
+
+
+getThemeId is a method which returns cached theme ID:
+
+public static int getThemeId()
+{
+    return themeId;
+}
+
+
+This field is being updated by another method:
+
+public static void reloadTheme()
+{
+    themeSetting = PreferenceManager.getDefaultSharedPreferences(context).getString("defaultTheme", "0");
+    if(themeSetting.equals("0"))
+        themeId = R.style.Theme_Light;
+    else
+        themeId = R.style.Theme_Dark;
+}
+
+
+Which is being called whenever preferences are changed (and, on startup of course). These two methods reside in MyApplication class, which extends Application. The preference change listener is described at the end of this post and resides in main activity class.
+
+The last and pretty important thing - theme is applied, when an activity starts. Assuming, you can change a theme only in preference screen and that there's only one way of getting there, i.e. from only one (main) activity, this activity won't be restarted when you will exit preference screen - the old theme still will be used. Here's the fix for that (restarts your main activity):
+
+@Override
+protected void onResume() {
+    super.onResume();
+    if(schduledRestart)
+    {
+        schduledRestart = false;
+        Intent i = getBaseContext().getPackageManager().getLaunchIntentForPackage( getBaseContext().getPackageName() );
+        i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(i);
+    }
+}
+
+
+scheduledRestart is a boolean variable, initially set to false. It's set to true when theme is changed by this listener, which also updates cached theme ID mentioned before:
+
+private class themeListener implements OnSharedPreferenceChangeListener{
+
+    @Override
+    public void onSharedPreferenceChanged(SharedPreferences spref, String key) {
+        if(key.equals("defaultTheme") && !spref.getString(key, "0").equals(MyApplication.getThemeSetting()))
+        {
+            MyApplication.reloadTheme();
+            schduledRestart = true;
+        }
+    }
+
+
+sp = PreferenceManager.getDefaultSharedPreferences(this);
+
+listener = new themeListener();
+sp.registerOnSharedPreferenceChangeListener(listener);
+
+
+Remember to hold a reference to the listener object, otherwise it will be garbage colleted (and will cease to work).
+    

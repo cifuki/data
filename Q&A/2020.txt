@@ -1,0 +1,150 @@
+97
+Q:How do I maintain the new Immersive Mode when my activities display a custom Dialog?
+
+I am using the code below to maintain the Immersive Mode in Dialogs, but with that solution, the NavBar appears for less than a second when I start my custom Dialog, then it disappears.
+
+The following video explains the issue better (look at the bottom of the screen when the NavBar appears): http://youtu.be/epnd5ghey8g
+
+How do I avoid this behavior?
+
+CODE
+
+The father of all activities in my application:
+
+public abstract class ImmersiveActivity extends Activity {
+
+    @SuppressLint("NewApi")
+    private void disableImmersiveMode() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_FULLSCREEN
+            );
+        }
+    }
+
+    @SuppressLint("NewApi")
+    private void enableImmersiveMode() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+            getWindow().getDecorView().setSystemUiVisibility(
+                      View.SYSTEM_UI_FLAG_LAYOUT_STABLE 
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION 
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN 
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN 
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY 
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            );
+        }
+    }
+
+
+    /**
+     * Set the Immersive mode or not according to its state in the settings:
+     * enabled or not.
+     */
+    protected void updateSystemUiVisibility() {
+        // Retrieve if the Immersive mode is enabled or not.
+        boolean enabled = getSharedPreferences(Util.PREF_NAME, 0).getBoolean(
+                "immersive_mode_enabled", true);
+
+        if (enabled) enableImmersiveMode();
+        else disableImmersiveMode();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        updateSystemUiVisibility();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        updateSystemUiVisibility();
+    }
+
+}
+
+
+
+
+
+
+All my custom Dialogs call this method in their onCreate(. . .) method:
+
+/**
+ * Copy the visibility of the Activity that has started the dialog {@link mActivity}. If the
+ * activity is in Immersive mode the dialog will be in Immersive mode too and vice versa.
+ */
+@SuppressLint("NewApi")
+private void copySystemUiVisibility() {
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+        getWindow().getDecorView().setSystemUiVisibility(
+                mActivity.getWindow().getDecorView().getSystemUiVisibility()
+        );
+    }
+}
+
+
+
+
+
+
+EDIT - THE SOLUTION (thanks to Beaver6813, look his answer for more details) :
+
+All my custom dialogs override the show method in this way:
+
+/**
+ * An hack used to show the dialogs in Immersive Mode (that is with the NavBar hidden). To
+ * obtain this, the method makes the dialog not focusable before showing it, change the UI
+ * visibility of the window like the owner activity of the dialog and then (after showing it)
+ * makes the dialog focusable again.
+ */
+@Override
+public void show() {
+    // Set the dialog to not focusable.
+    getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+
+    copySystemUiVisibility();
+
+    // Show the dialog with NavBar hidden.
+    super.show();
+
+    // Set the dialog to focusable again.
+    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+}
+
+    
+===============================================================================================
+151
+A:After a lot of research into the issue there is a hacky fix for this, which involved tearing apart the Dialog class to find. The navigation bar is shown when the dialog window is added to the Window Manager even if you set the UI visibility before adding it to the manager. In the Android Immersive example it's commented that:
+
+// * Uses semi-transparent bars for the nav and status bars
+// * This UI flag will *not* be cleared when the user interacts with the UI.
+// When the user swipes, the bars will temporarily appear for a few seconds and then
+// disappear again.
+
+
+I believe that's what we're seeing here (that a user-interaction is being triggered when a new, focusable, window view is added to the manager).
+
+How can we work around this? Make the Dialog non-focusable when we create it (so we don't trigger a user-interaction) and then make it focusable after it's displayed.
+
+//Here's the magic..
+//Set the dialog to not focusable (makes navigation ignore us adding the window)
+dialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+
+//Show the dialog!
+dialog.show();
+
+//Set the dialog to immersive
+dialog.getWindow().getDecorView().setSystemUiVisibility(
+context.getWindow().getDecorView().getSystemUiVisibility());
+
+//Clear the not focusable flag from the window
+dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+
+
+Clearly this is not ideal but it seems to be an Android bug, they should check if the Window has immersive set.
+
+I've updated my working test code (forgive the hacky messiness) to Github. I've tested on the Nexus 5 emulator, it will probably blow up with anything less than KitKat but its for proof-of-concept only.
+    

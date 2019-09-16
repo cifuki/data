@@ -1,0 +1,125 @@
+43
+Q:I am building an Android application that uses the custom-built TwoDScrollView found here:
+
+http://blog.gorges.us/2010/06/android-two-dimensional-scrollview/
+
+This same class can be found referenced at several other websites, and others on Stack Overflow have asked questions with regard to it.  I was using it in a previous Android application that I was building using Java/Eclipse, and I was having success.
+
+With my current application, I wanted to use C# and MonoDroid.  I decided to rewrite the entire TwoDScrollView class in C#.  After rewriting it, and then using it in some layout XML, I get the following exceptions when trying to run my code:
+
+
+  System.NotSupportedException has been thrown.  Unable to activate
+  instance of type MyProject.TwoDScrollView from native handle 44f4d310.
+  
+  System.Exception: No constructor found for
+  MyProject.TwoDScrollView::.ctor(System.IntPtr,
+  Android.Runtime.JniHandleOwnership) ......with more text that
+  follows....
+
+
+My layout XML is as follows:
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"  
+    android:orientation="vertical"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    >
+
+<myproject.TwoDScrollView
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent">
+
+</myproject.TwoDScrollView>
+
+</RelativeLayout>
+
+
+Per the instructions at the following link on using custom views in layout XML in MonoDroid:  http://docs.xamarin.com/android/advanced_topics/using_custom_views_in_a_layout
+
+The constructors to the TwoDScrollView class look as follows:
+
+public TwoDScrollView(Context context) 
+    : base(context)
+{
+    initTwoDScrollView();
+}
+
+public TwoDScrollView(Context context, IAttributeSet attrs) 
+    : base(context, attrs)
+{
+    initTwoDScrollView();
+}
+
+public TwoDScrollView(Context context, IAttributeSet attrs, int defStyle) 
+    : base(context, attrs, defStyle)
+{
+    initTwoDScrollView();
+}
+
+
+The same constructors exist in the C# version as in the Java version (which you can find at the above link).  Any idea on what could be going wrong?  I can post the full C# code of my TwoDScrollView if anyone would like to see it.  It's essentially the same as the Java code bit for bit - except rewritten in C#.
+
+Thanks for any help!
+    
+===============================================================================================
+87
+A:Congratulations! You've hit a leaky abstraction. :-/
+
+The problem is this: for better or worse, virtual method calls from constructors invoke the most derived method implementation. C# is the same as Java in this respect; consider the following program:
+
+using System;
+
+class Base {
+    public Base ()
+    {
+        Console.WriteLine ("Base..ctor");
+        M ();
+    }
+
+    public virtual void M ()
+    {
+        Console.WriteLine ("Base.M");
+    }
+}
+
+class Derived : Base {
+
+    public Derived ()
+    {
+        Console.WriteLine ("Derived..ctor");
+    }
+
+    public override void M ()
+    {
+        Console.WriteLine ("Derived.M");
+    }
+}
+
+static class Demo {
+    public static void Main ()
+    {
+        new Derived ();
+    }
+}
+
+
+When run, the output is:
+
+Base..ctor
+Derived.M
+Derived..ctor
+
+
+That is, the Derived.M() method is invoked before the Derived constructor has executed.
+
+In Mono for Android, things get more...complicated. The Android Callable Wrapper (ACW)'s constructor is invoked by Java and is responsible for creating the peer C# instance and mapping the Java instance to the C# instance. However, if a virtual method is invoked from the Java constructor, then the method will be dispatched before there is a C# instance to invoke the method upon!
+
+Let that sink in a bit.
+
+I don't know which method is triggering the scenario for your specific code (the code fragment you provided works fine), but we do have a sample which hits this scenario: LogTextBox overrides the TextView.DefaultMovementMethod property, and the TextView constructor invokes the getDefaultMovementMethod() method. The result is that Android tries to invoke LogTextBox.DefaultMovementMethod before a LogTextBox instance even exists.
+
+So what does Mono for Android do? Mono for Android created the ACW, and thus knows which C# type the getDefaultMovementMethod() method should be delegated to. What it doesn't have is an instance, because one hasn't been created. So Mono for Android creates an instance of the appropriate type...via the (IntPtr, JniHandleOwnership) constructor, and generates an error if this constructor cannot be found.
+
+Once the (in this case) TextView constructor finishes executing, the LogTextBox's ACW constructor will execute, at which point Mono for Android will go "aha! we've already created a C# instance for this Java instance", and will then invoke the appropriate constructor on the already created instance. Meaning that for a single instance, two constructors will be executed: the (IntPtr, JniHandleOwnership) constructor, and (later) the (Context, IAttributeSet, int) constructor.
+    

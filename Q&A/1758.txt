@@ -1,0 +1,83 @@
+107
+Q:I read many threads how to add a *.so library to Android Studio, but none of them works, especially when it comes to the point of text: This does not work with the newer xxx (Android Studio, gradle, ...)
+
+Can we make a fresh start please. I got:
+
+Android Studio 0.6.0
+
+From Project Structure I see:
+
+SDK Location:
+
+/usr/share/android-studio/data/sdk
+/usr/lib/jvm/default-java
+
+
+Project:
+
+Gradle version 1.10
+Android Plugin Version 0.11.+
+
+
+Modules/app:
+Properties:
+
+Compile Sdk Version 19
+Build Tools Version 19.1.0
+
+Dependencies:
+
+{dir=libs, include=[*.jar]} Compile
+
+{dir=libs, include=[*.so]}  Provided
+
+m com.android.support: appcompat -v7:19.+   Compile
+
+
+I got the *.so files pre-compiled and at the demo app they are working. I have to change the source code of the app, so I need to rebuild with the same *.so files.
+    
+===============================================================================================
+88
+A:Current Solution
+
+Create the folder project/app/src/main/jniLibs, and then put your *.so files within their abi folders in that location. E.g.,
+
+project/
+\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80libs/
+|  \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 *.jar       <-- if your library has jar files, they go here
+\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80src/
+   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 main/
+       \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 AndroidManifest.xml
+       \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 java/
+       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 jniLibs/ 
+           \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 arm64-v8a/                       <-- ARM 64bit
+           \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 yourlib.so
+           \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 armeabi-v7a/                     <-- ARM 32bit
+           \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 yourlib.so
+           \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 x86/                             <-- Intel 32bit
+               \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 yourlib.so
+
+
+Deprecated solution
+
+Add both code snippets in your module gradle.build file as a dependency:
+
+compile fileTree(dir: "$buildDir/native-libs", include: 'native-libs.jar')
+
+
+How to create this custom jar:
+
+task nativeLibsToJar(type: Jar, description: 'create a jar archive of the native libs') {
+    destinationDir file("$buildDir/native-libs")
+    baseName 'native-libs'
+    from fileTree(dir: 'libs', include: '**/*.so')
+    into 'lib/'
+}
+
+tasks.withType(JavaCompile) {
+    compileTask -> compileTask.dependsOn(nativeLibsToJar)
+}
+
+
+Same answer can also be found in related question: Include .so library in apk in android studio
+    

@@ -1,0 +1,401 @@
+44
+Q:I have a RecyclerView with a GridLayoutManager that displays Card Views. I want the cards to rearrange according to the screen size (the Google Play app does this kind of thing with its app cards). Here is an example:
+
+
+
+
+
+Here is how my app looks at the moment:
+
+
+
+
+
+As you can see the cards just stretch and don't fit the empty space that is made from the orientation change. So how can I do this?
+
+Code:
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Android.Media;
+using Android.App;
+using Android.Support.V4.App;
+using Android.Support.V4.Content.Res;
+using Android.Support.V4.Widget;
+using Android.Support.V7.Widget;
+using Android.Content;
+using Android.OS;
+using Android.Runtime;
+using Android.Util;
+using Android.Views;
+using Android.Widget;
+using Android.Net;
+using Android.Views.Animations;
+using Android.Graphics;
+using Android.Graphics.Drawables;
+using Newtonsoft.Json;
+using *******.Adapters;
+using *******.Models;
+
+namespace *******.Fragments {
+    public class Dashboard : GridLayoutBase {
+        private ISharedPreferences pref;
+        private SessionManager session;
+        private string cookie;
+        private DeviceModel deviceModel;
+        private RecyclerView recyclerView;
+        private RecyclerView.Adapter adapter;
+//      private RecyclerView.LayoutManager layoutManager;
+        private GridLayoutManager gridLayoutManager;
+        private List<ItemData> itemData;
+        private Bitmap lastPhotoBitmap;
+        private Drawable lastPhotoDrawable;
+        private static Activity activity;
+        private ProgressDialog progressDialog;
+        private TextView noData;
+        private const string URL_DASHBOARD = "http://192.168.1.101/appapi/getdashboard";
+        private const string URL_DATA = "http://192.168.1.101/appapi/getdata";
+
+        public override void OnCreate(Bundle bundle) {
+            base.OnCreate(bundle);
+
+            activity = Activity;
+            session = new SessionManager();
+            pref = activity.GetSharedPreferences("UserSession", FileCreationMode.Private);
+            cookie = pref.GetString("PHPSESSID", string.Empty);
+        }
+
+        public async override void OnStart() {
+            base.OnStart();
+
+            progressDialog = ProgressDialog.Show(activity, String.Empty, GetString(Resource.String.loading_text));
+            progressDialog.Window.ClearFlags(WindowManagerFlags.DimBehind);
+
+            await GetDevicesInfo();
+
+            if (deviceModel.Error == "true" && deviceModel.ErrorType == "noSensors") {
+                recyclerView.Visibility = ViewStates.Gone;
+                noData.Visibility = ViewStates.Visible;
+
+                progressDialog.Hide();
+
+                return;
+            } else {
+                recyclerView.Visibility = ViewStates.Visible;
+                noData.Visibility = ViewStates.Gone;
+
+                await PopulateSensorStates();
+            }
+
+//          DisplayLastPhoto();
+
+            adapter = new ViewAdapter(itemData);
+
+            new System.Threading.Thread(new System.Threading.ThreadStart(() => {
+                activity.RunOnUiThread(() => {
+                    recyclerView.SetAdapter(adapter);
+                });
+            })).Start();
+
+            progressDialog.Hide();
+        }
+
+        public async Task GetDevicesInfo() {
+            var jsonFetcher = new JsonFetcher();
+            JsonValue jsonDashboard = await jsonFetcher.FetchDataWithCookieAsync(URL_DASHBOARD, cookie);
+            deviceModel = new DeviceModel();
+            deviceModel = JsonConvert.DeserializeObject<DeviceModel>(jsonDashboard);
+        }
+
+        // Shows sensor states
+        public async Task PopulateSensorStates() {
+            itemData = new List<ItemData>();
+            string lastValue = String.Empty;
+
+            foreach (var sensor in this.deviceModel.Sensors) {
+                var sensorImage = ResourcesCompat.GetDrawable(Resources, Resource.Drawable.smoke_red, null);
+
+                switch (sensor.Type) {
+                case "2":
+                    var jsonFetcher = new JsonFetcher();
+                    JsonValue jsonData = await jsonFetcher.FetchSensorDataAsync(URL_DATA, sensor.Id, "DESC", "1", cookie);
+                    var deviceModel = new DeviceModel();
+                    deviceModel = JsonConvert.DeserializeObject<DeviceModel>(jsonData);
+                    lastValue = deviceModel.SensorData.Last().Value;
+                    break;
+                case "4":
+                    await RenderLastCameraPhoto();
+                    sensorImage = new BitmapDrawable(Resources, lastPhotoBitmap);
+                    break;
+                }
+
+                itemData.Add(new ItemData() {
+                    id = sensor.Id,
+                    value = lastValue,
+                    type = sensor.Type,
+                    image = sensorImage,
+                    title = sensor.Name.First().ToString().ToUpper() + sensor.Name.Substring(1).ToLower(),
+                });
+            }
+        }
+
+        // Shows the last camera photo
+        public async Task RenderLastCameraPhoto() {
+            if (deviceModel.Error == "true" && deviceModel.ErrorType == "noPhoto") {
+                //TODO: Show a "No photo" picture
+            } else {
+                string url = deviceModel.LastPhotoLink;
+                lastPhotoBitmap = await new ImageDownloader().GetImageBitmapFromUrlAsync(url, activity, 300, 300);
+            }
+        }
+
+        public async void UpdateData(bool isSwipeRefresh) {
+            await GetDevicesInfo();
+
+            if (deviceModel.Error == "true" && deviceModel.ErrorType == "noSensors") {
+                recyclerView.Visibility = ViewStates.Gone;
+                noData.Visibility = ViewStates.Visible;
+
+                return;
+                } else {
+                recyclerView.Visibility = ViewStates.Visible;
+                noData.Visibility = ViewStates.Gone;
+
+                await PopulateSensorStates();
+            }
+
+            adapter = new ViewAdapter(itemData);
+
+            new System.Threading.Thread(new System.Threading.ThreadStart(() => {
+                activity.RunOnUiThread(() => {
+                    recyclerView.SetAdapter(adapter);
+                });
+            })).Start();
+
+            adapter.NotifyDataSetChanged();
+        }
+
+        public override View OnCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+            View view = inflater.Inflate(Resource.Layout.Dashboard, container, false);
+            noData = view.FindViewById<TextView>(Resource.Id.no_data_title);
+
+            SwipeRefreshLayout swipeRefreshLayout = view.FindViewById<SwipeRefreshLayout>(Resource.Id.swipe_container);
+            //          swipeRefreshLayout.SetColorSchemeResources(Color.LightBlue, Color.LightGreen, Color.Orange, Color.Red);
+
+            // On refresh button press/swipe, updates the recycler view with new data
+            swipeRefreshLayout.Refresh += (sender, e) => {
+                UpdateData(true);
+
+                swipeRefreshLayout.Refreshing = false;
+            };
+
+            var gridLayoutManager = new GridLayoutManager(activity, 2);
+
+            recyclerView = view.FindViewById<RecyclerView>(Resource.Id.dashboard_recycler_view);
+            recyclerView.HasFixedSize = true;
+            recyclerView.SetLayoutManager(gridLayoutManager);
+            recyclerView.SetItemAnimator(new DefaultItemAnimator());
+            recyclerView.AddItemDecoration(new SpaceItemDecoration(15));
+
+            return view;
+        }
+
+        public class ViewAdapter : RecyclerView.Adapter {
+            private List<ItemData> itemData;
+            public string sensorId;
+            public string sensorType;
+            private ImageView imageId;
+            private TextView sensorValue;
+            private TextView sensorTitle;
+
+            public ViewAdapter(List<ItemData> itemData) {
+                this.itemData = itemData;
+            }
+
+            public class ItemView : RecyclerView.ViewHolder {
+                public View mainView { get; set; }
+
+                public string id { get; set; }
+
+                public string type { get; set; }
+
+                public ImageView image { get; set; }
+
+                //              public TextView value { get; set; }
+
+                public TextView title { get; set; }
+
+                public ItemView(View view) : base(view) {
+                    mainView = view;
+                }
+            }
+
+            public override RecyclerView.ViewHolder OnCreateViewHolder(ViewGroup parent, int viewType) {
+                View itemLayoutView = LayoutInflater.From(parent.Context).Inflate(Resource.Layout.DashboardItems, null);
+                CardView cardView = itemLayoutView.FindViewById<CardView>(Resource.Id.dashboard_card_view);
+                imageId = itemLayoutView.FindViewById<ImageView>(Resource.Id.sensor_image);
+//              sensorValue = itemLayoutView.FindViewById<TextView>(Resource.Id.sensor_value);
+                sensorTitle = itemLayoutView.FindViewById<TextView>(Resource.Id.sensor_title);
+
+                var viewHolder = new ItemView(itemLayoutView) {
+                    id = sensorId,
+                    type = sensorType,
+                    image = imageId,
+//                  value = sensorValue,
+                    title = sensorTitle
+                };
+
+                return viewHolder;
+            }
+
+            public override void OnBindViewHolder(RecyclerView.ViewHolder viewHolder, int position) {
+                ItemView itemHolder = viewHolder as ItemView;
+
+                itemHolder.image.SetImageDrawable(itemData[position].image);
+
+                if (itemData[position].type == "2") { // Temperature
+                    itemHolder.title.Text = itemData[position].title + ": " + itemData[position].value;
+                } else {
+                    itemHolder.title.Text = itemData[position].title;
+                }
+
+                var bundle = new Bundle();
+                var dualColumnList = new DualColumnList();
+                var gallery = new Gallery();
+
+                EventHandler clickUpdateViewEvent = ((sender, e) => {
+                    bundle.PutString("id", itemData[position].id);
+                    gallery.Arguments = bundle;
+                    dualColumnList.Arguments = bundle;
+
+                    if (itemData[position].type == "4") { // Camera
+                        ((FragmentActivity)activity).ShowFragment(gallery, itemData[position].title, itemData[position].type, true);
+                    } else {
+                        ((FragmentActivity)activity).ShowFragment(dualColumnList, itemData[position].title, itemData[position].type, true);
+                    }
+                });
+
+                itemHolder.image.Click += clickUpdateViewEvent;
+//              itemHolder.value.Click += clickUpdateViewEvent;
+                itemHolder.title.Click += clickUpdateViewEvent;
+            }
+
+            public override int ItemCount {
+                get { return itemData.Count; }
+            }
+        }
+
+        public class ItemData {
+            public string id { get; set; }
+
+            public string type { get; set; }
+
+            public Drawable image { get; set; }
+
+            public string value { get; set; }
+
+            public string title { get; set; }
+        }
+    }
+}
+
+
+Fragment Layout:
+
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.v4.widget.SwipeRefreshLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/swipe_container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_horizontal"
+        android:weightSum="1">
+        <RelativeLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="0.9"
+            android:scrollbars="vertical">
+            <android.support.v7.widget.RecyclerView
+                android:id="@+id/dashboard_recycler_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+            <TextView
+                android:text="@string/no_data_text"
+                android:id="@+id/no_data_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="30sp"
+                android:gravity="center"
+                android:layout_centerInParent="true" />
+        </RelativeLayout>
+    </LinearLayout>
+</android.support.v4.widget.SwipeRefreshLayout>
+
+
+Fragment Items Layout:
+
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.v7.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/dashboard_card_view"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:foreground="?android:attr/selectableItemBackground">
+        <ImageView
+            android:id="@+id/sensor_image"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:paddingTop="5dp"
+            android:layout_alignParentTop="true" />
+    <!--        <TextView
+            android:id="@+id/sensor_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="30sp"
+            android:layout_below="@id/sensor_image"
+            android:gravity="center" />-->
+        <TextView
+            android:id="@+id/sensor_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="23sp"
+            android:layout_below="@id/sensor_image"
+            android:gravity="center"
+            android:layout_alignParentBottom="true" />
+    </LinearLayout>
+</android.support.v7.widget.CardView>
+
+    
+===============================================================================================
+101
+A:You can calculate available number of columns, given a desired column width, and load the image as calculated. Define a static funtion to calculate as:
+
+public class Utility {
+    public static int calculateNoOfColumns(Context context, float columnWidthDp) { // For example columnWidthdp=180
+        DisplayMetrics displayMetrics = context.getResources().getDisplayMetrics();
+        float screenWidthDp = displayMetrics.widthPixels / displayMetrics.density;
+        int noOfColumns = (int) (screenWidthDp / columnWidthDp + 0.5); // +0.5 for correct rounding to int.
+        return noOfColumns;
+    }
+}
+
+
+And then when using it in the activity or fragment you can do like this :
+
+int mNoOfColumns = Utility.calculateNoOfColumns(getApplicationContext());
+
+............
+mGridLayoutManager = new GridLayoutManager(this, mNoOfColumns);
+
+    

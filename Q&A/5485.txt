@@ -1,0 +1,122 @@
+45
+Q:I'm trying to make Camera App to store the output to my internal storage. I also understand that third party apps are not able to access the Internal Storage of my application BUT we are able to do so by exposing the internal directory through FileProvider. I have followed the guide here:
+
+
+Camera Intent not saving photo
+https://developer.android.com/reference/android/support/v4/content/FileProvider.html
+
+
+I specify my AndroidManifest.xml in the following way:
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.stackoverflow.test.camerawithfileprovider" >
+
+    <application>
+        <activity
+            ...
+        </activity>
+
+        <provider
+            android:name="android.support.v4.content.FileProvider"
+            android:authorities="com.stackoverflow.test.camerawithfileprovider.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true" >
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_path" />
+        </provider>
+    </application>
+
+</manifest>
+
+
+I created a xml file named file_provider_path.xml in /res/xml/:
+
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="image_capture" path="public/" />
+</paths>
+
+
+This is how I create and call the Camera Intent:
+
+private static final int CAMERA_REQUEST_CODE = 5000;
+private static final String CAMERA_FP_AUTHORITY = "com.stackoverflow.test.camerawithfileprovider.fileprovider";
+
+Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+
+Context context = MainActivity.this;
+File imagePath = new File(context.getFilesDir(), "public");
+if (!imagePath.exists()) imagePath.mkdirs();
+File newFile = new File(imagePath, "tmp.jpg");
+
+Uri imageUri = FileProvider.getUriForFile(context, CAMERA_FP_AUTHORITY, newFile);
+//context.grantUriPermission("com.google.android.GoogleCamera", imageUri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+Log.d("YouQi", "Image URI Passing to Camera: " + imageUri.toString());
+
+intent.putExtra(MediaStore.EXTRA_OUTPUT, imageUri);
+startActivityForResult(intent, CAMERA_REQUEST_CODE);
+
+
+When I run the application, I can get the below Logcat result:
+
+    11-11 20:07:39.581 18303-18303/com.stackoverflow.test.camerawithfileprovider D/YouQi: Image URI Passing to Camera: content://com.stackoverflow.test.camerawithfileprovider.fileprovider/image_capture/tmp.jpg
+
+
+Right at the moment when the camera closes, I hit the below Exception:
+
+com.google.android.GoogleCamera E/AndroidRuntime: FATAL EXCEPTION: main
+com.google.android.GoogleCamera E/AndroidRuntime: Process: com.google.android.GoogleCamera, PID: 19420
+com.google.android.GoogleCamera E/AndroidRuntime: java.lang.SecurityException: Permission Denial: opening provider android.support.v4.content.FileProvider from ProcessRecord{42e44f70 19420:com.google.android.GoogleCamera/u0a83} (pid=19420, uid=10083) that is not exported from uid 10312
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.os.Parcel.readException(Parcel.java:1465)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.os.Parcel.readException(Parcel.java:1419)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.app.ActivityManagerProxy.getContentProvider(ActivityManagerNative.java:2882)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.app.ActivityThread.acquireProvider(ActivityThread.java:4544)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.app.ContextImpl$ApplicationContentResolver.acquireUnstableProvider(ContextImpl.java:2274)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.content.ContentResolver.acquireUnstableProvider(ContentResolver.java:1425)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.content.ContentResolver.openAssetFileDescriptor(ContentResolver.java:906)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.content.ContentResolver.openOutputStream(ContentResolver.java:669)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.content.ContentResolver.openOutputStream(ContentResolver.java:645)
+com.google.android.GoogleCamera E/AndroidRuntime:     at com.android.camera.PhotoModule.onCaptureDone(PhotoModule.java:1281)
+com.google.android.GoogleCamera E/AndroidRuntime:     at com.android.camera.PhotoModule$8.onClick(PhotoModule.java:593)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.view.View.performClick(View.java:4445)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.view.View$PerformClick.run(View.java:18446)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.os.Handler.handleCallback(Handler.java:733)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.os.Handler.dispatchMessage(Handler.java:95)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.os.Looper.loop(Looper.java:136)
+com.google.android.GoogleCamera E/AndroidRuntime:     at android.app.ActivityThread.main(ActivityThread.java:5146)
+com.google.android.GoogleCamera E/AndroidRuntime:     at java.lang.reflect.Method.invokeNative(Native Method)
+com.google.android.GoogleCamera E/AndroidRuntime:     at java.lang.reflect.Method.invoke(Method.java:515)
+com.google.android.GoogleCamera E/AndroidRuntime:     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:732)
+com.google.android.GoogleCamera E/AndroidRuntime:     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:566)
+com.google.android.GoogleCamera E/AndroidRuntime:     at dalvik.system.NativeStart.main(Native Method)
+
+
+Can anyone help to explain why the problem happen? I have created a sample project of my problem: http://www.axzae.com/downloads/CameraWithFileProvider.zip
+
+Anyway, the app will work if I explicitly specify:
+
+context.grantUriPermission(
+    "com.google.android.GoogleCamera",
+    imageUri,
+    Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION
+);
+
+
+But this will only work for nexus/cyanogen devices. Samsung camera app might use a different package name.
+    
+===============================================================================================
+106
+A:Please do not try to put exported="true" as pointed out by pskink, your app will crash the moment it loads. FileProvider is not meant to work in this state.
+Tried intent.addFlags solution by CommonsWare. Not working. probably will only works with ACTION_SEND kind of intent.
+I found the answer in this post. Apparently the manual granting way is the only solution. But we can always loop thru the list of candidate packages and grantPermission to all of them.
+
+List<ResolveInfo> resInfoList = context.getPackageManager().queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY);
+for (ResolveInfo resolveInfo : resInfoList) {
+    String packageName = resolveInfo.activityInfo.packageName;
+    context.grantUriPermission(packageName, uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+}
+
+
+    

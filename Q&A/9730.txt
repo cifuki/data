@@ -1,0 +1,99 @@
+28
+Q:Here is my custom CursorAdapter:
+
+public class TasksAdapter extends CursorAdapter implements Filterable {
+
+    private final Context context;
+
+    public TasksAdapter(Context context, Cursor c) {
+        super(context, c);
+        this.context = context;
+    }
+
+    /**
+     * @see android.widget.CursorAdapter#newView(android.content.Context, android.database.Cursor, android.view.ViewGroup)
+     */
+    @Override
+    public View newView(Context context, Cursor cursor, ViewGroup parent) {
+        LayoutInflater inflater = LayoutInflater.from(context);
+        View v = inflater.inflate(android.R.layout.simple_list_item_checked, parent, false);        
+
+        ViewHolder holder = new ViewHolder();
+        holder.textview = (CheckedTextView)v.findViewById(android.R.id.text1);
+        v.setTag(holder);
+
+        return v;
+    }
+
+    /**  
+     * @see android.widget.CursorAdapter#bindView(android.view.View, android.content.Context, android.database.Cursor)
+     */
+    @Override
+    public void bindView(View view, Context context, Cursor cursor) {
+
+        ViewHolder holder = (ViewHolder)view.getTag();
+        int titleCol = cursor.getColumnIndexOrThrow(Tasks.TITLE);
+        int completedCol = cursor.getColumnIndexOrThrow(Tasks.COMPLETED);
+
+        String title = cursor.getString(titleCol);
+        boolean completed = Util.intToBool(cursor.getInt(completedCol));
+
+        holder.textview.setText(title);
+        holder.textview.setChecked(completed);
+    }
+
+    /**
+     * @see android.widget.CursorAdapter#runQueryOnBackgroundThread(java.lang.CharSequence)
+     */
+    @Override
+    public Cursor runQueryOnBackgroundThread(CharSequence constraint) {
+
+        StringBuffer buffer = null;
+        String[] args = null;
+
+        if (constraint != null) {
+            buffer = new StringBuffer();
+            buffer.append("UPPER (");
+            buffer.append(Tasks.TITLE);
+            buffer.append(") GLOB ?");
+            args = new String[] { "*" + constraint.toString().toUpperCase() + "*" };
+        }
+
+        Cursor c = context.getContentResolver().query(Tasks.CONTENT_URI,
+            null, (buffer == null ? null : buffer.toString()), args,
+            Tasks.DEFAULT_SORT_ORDER);
+
+        c.moveToFirst();
+        return c;
+    }
+
+    /**
+     * @see android.widget.CursorAdapter#convertToString(android.database.Cursor)
+     */
+    @Override
+    public CharSequence convertToString(Cursor cursor) {
+        final int titleCol = cursor.getColumnIndexOrThrow(Tasks.TITLE);
+        String title = cursor.getString(titleCol);
+        return title;
+    }
+
+    static class ViewHolder {
+        CheckedTextView textview;
+    }
+
+}
+
+
+Does this fall into the constraints of the ViewHolder pattern? I wasn't sure because this was a CursorAdapter, where there was no getView. If there are any problems or suggestions, could you please point them out.
+    
+===============================================================================================
+46
+A:CursorAdapter won't call the newView each time it needs a new row; if it already has a View, it will call the bindView, so the created view is actually reused.
+
+That said, as pointed out by Joseph in the comments, you can still use ViewHolder in order to avoid calling findViewById repeatedly.
+
+If you are still concerned about efficiency then take a look at the SimpleCursorAdapter implementation, which uses a WeakHashMap (a map of WeakReferences):
+
+WeakHashMap<View, View[]> mHolders = new WeakHashMap<View, View[]>();
+
+    

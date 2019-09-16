@@ -1,0 +1,65 @@
+27
+Q:I'm attempting to bridge over the Android functionality of keeping the screen on to React Native. I figured I could do this with a simple module, however I don't know how to get access to the current Android Activity from said module.
+
+I need the Activity reference so I can call .getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); on it
+
+I tried to get the activity via casting like so ((Activity)getReactApplicationContext().getBaseContext()), but this throws a "cannot be cast to Android.app.Activity" error
+    
+===============================================================================================
+35
+A:CustomReactPackage.java:
+
+public class CustomReactPackage implements ReactPackage {
+
+    private Activity mActivity = null;
+
+    public CustomReactPackage(Activity activity) {
+        mActivity = activity;
+    }
+
+    @Override
+    public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
+        List<NativeModule> modules = new ArrayList<>();
+        // Add native modules here
+        return modules;
+    }
+
+    public List<Class<? extends JavaScriptModule>> createJSModules() {
+        return Collections.emptyList();
+    }
+
+    public List<ViewManager> createViewManagers(ReactApplicationContext reactContext) {
+        List<ViewManager> modules = new ArrayList<>();
+        // Add native UI components here
+        modules.add(new LSPlayerManager(mActivity));
+        return modules;
+    }
+}
+
+
+LSPlayerManager is my native UI component. I define a constructor so that I can pass in the activity:
+
+public LSPlayerManager(Activity activity) {
+    mActivity = activity;
+}
+
+
+And finally in MainActivity.java where the ReactInstanceManager is defined, we can pass the activity to our custom React package:
+
+mReactInstanceManager = ReactInstanceManager.builder()
+        .setApplication(getApplication())
+        .setBundleAssetName("index.android.bundle")
+        .setJSMainModuleName("src/index.android")
+        .addPackage(new MainReactPackage())
+        .addPackage(new CustomReactPackage(this)) // <--- LIKE THIS!
+        .setUseDeveloperSupport(BuildConfig.DEBUG)
+        .setInitialLifecycleState(LifecycleState.RESUMED)
+        .build();
+
+
+
+
+UPDATE FOR REACT NATIVE 0.29.0
+
+This is no longer how you access activity in a native module. See https://github.com/facebook/react-native/releases/tag/v0.29.0 for migration instructions
+    

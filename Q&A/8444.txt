@@ -1,0 +1,341 @@
+32
+Q:I've juste added some flavors (or productFlavors if you want) to my project. 
+
+The fact is that when I publish the library to bintray, all flavors are uploaded (which is great), but I'm unable to use them. The plugin used is the official one here. 
+
+The uploaded aar:  
+
+ androidsdk-0.0.4-fullRelease.aar
+ androidsdk-0.0.4-fullDebug.aar
+ androidsdk-0.0.4-lightRelease.aar
+ androidsdk-0.0.4-lightDebug.aar
+
+
+As you noted, the fullRelease is named as the classifier, see doc chapter 23.4.1.3. 
+
+I am searching for a solution to choose which flavors that I want to upload. 
+
+I've already looked at bintray examples (here and here) and this, with also other examples but I'm still stuck. 
+
+Here is my current script: 
+
+apply plugin: 'com.android.library'
+apply plugin: 'com.github.dcendents.android-maven'
+apply plugin: 'com.jfrog.bintray'
+
+buildscript {
+    repositories {
+        jcenter()
+    }
+}
+
+android {
+    compileSdkVersion 23
+    buildToolsVersion "23.0.1"
+
+    defaultConfig {
+        minSdkVersion 9
+        targetSdkVersion 23
+        versionCode 64
+        versionName "0.0.4"
+    }
+
+    publishNonDefault true
+
+    productFlavors {
+        full {
+        }
+        light {
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile 'com.android.support:appcompat-v7:23.1.1'
+    compile 'com.android.support:recyclerview-v7:23.1.1'
+    fullCompile 'com.squareup.picasso:picasso:2.5.0'
+}
+
+version = android.defaultConfig.versionName
+
+uploadArchives {
+    repositories.mavenDeployer {
+        pom.project {
+
+            packaging 'aar'
+
+        }
+    }
+}
+
+////////////////////////////////
+// Bintray Upload configuration
+
+Properties properties = new Properties()
+properties.load(project.rootProject.file('local.properties').newDataInputStream())
+
+bintray {
+    user = properties.getProperty("bintray.user")
+    key = properties.getProperty("bintray.apikey")
+
+    configurations = ['archives']
+    pkg {
+        repo = "MyRepo" // repo name
+        userOrg = 'hugo'
+        name = "AndroidSDK" // Package name
+        websiteUrl = siteUrl
+        vcsUrl = gitUrl
+        publish = true
+    }
+}
+
+
+To import the library I'm currently using this: 
+
+compile ('com.example.lib:sdk:0.0.8:fullRelease@aar') {
+    transitive = true;
+}
+
+    
+===============================================================================================
+12
+A:I faced the same challenge, and here's the best I could make yet:
+
+Using mavenPublications and the gradle maven-publish plugin along the bintray plugin, you can publish any variant to mavenLocal and bintray.
+
+Here's the publish.gradle file I apply at the end of all my project's library modules I want to publish:
+
+def pomConfig = {
+    licenses {
+        license {
+            name 'The Apache Software License, Version 2.0'
+            url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+        }
+    }
+    developers {
+        developer {
+            id 'louiscad'
+            name 'Louis CAD'
+            email 'louis.cognault@gmail.com'
+        }
+    }
+    scm {
+        connection 'https://github.com/LouisCAD/Splitties.git'
+        developerConnection 'https://github.com/LouisCAD/Splitties.git'
+        url siteUrl
+    }
+}
+
+def publicationNames = []
+publishing.publications {
+    android.libraryVariants.all { variant ->
+        if (variant.buildType.name == "debug") return // Prevents publishing debug library
+
+        def flavored = !variant.flavorName.isEmpty()
+
+        /**
+         * Translates "_" in flavor names to "-" for artifactIds, because "-" in flavor name is an
+         * illegal character, but is well used in artifactId names.
+         */
+        def variantArtifactId = flavored ? variant.flavorName.replace('_', '-') : project.name
+
+        /**
+         * If the javadoc destinationDir wasn't changed per flavor, the libraryVariants would
+         * overwrite the javaDoc as all variants would write in the same directory
+         * before the last javadoc jar would have been built, which would cause the last javadoc
+         * jar to include classes from other flavors that it doesn't include.
+         *
+         * Yes, tricky.
+         *
+         * Note that "${buildDir}/docs/javadoc" is the default javadoc destinationDir.
+         */
+        def javaDocDestDir = file("${buildDir}/docs/javadoc ${flavored ? variantArtifactId : ""}")
+
+        /**
+         * Includes
+         */
+        def sourceDirs = variant.sourceSets.collect {
+            it.javaDirectories // Also includes kotlin sources if any.
+        }
+        def javadoc = task("${variant.name}Javadoc", type: Javadoc) {
+            description "Generates Javadoc for ${variant.name}."
+            source = variant.javaCompile.source // Yes, javaCompile is deprecated,
+            // but I didn't find any working alternative. Please, tweet @Louis_CAD if you find one.
+            destinationDir = javaDocDestDir
+            classpath += files(android.getBootClasspath().join(File.pathSeparator))
+            classpath += files(configurations.compile)
+            options.links("http://docs.oracle.com/javase/7/docs/api/");
+            options.links("http://d.android.com/reference/");
+            exclude '**/BuildConfig.java'
+            exclude '**/R.java'
+            failOnError false
+        }
+        def javadocJar = task("${variant.name}JavadocJar", type: Jar, dependsOn: javadoc) {
+            description "Puts Javadoc for ${variant.name} in a jar."
+            classifier = 'javadoc'
+            from javadoc.destinationDir
+        }
+        def sourcesJar = task("${variant.name}SourcesJar", type: Jar) {
+            description "Puts sources for ${variant.name} in a jar."
+            from sourceDirs
+            classifier = 'sources'
+        }
+
+        def publicationName = "splitties${variant.name.capitalize()}Library"
+        publicationNames.add(publicationName)
+
+        "$publicationName"(MavenPublication) {
+            artifactId variantArtifactId
+            group groupId
+            version libraryVersion
+
+            artifact variant.outputs[0].packageLibrary // This is the aar library
+            artifact sourcesJar
+            artifact javadocJar
+
+            pom {
+                packaging 'aar'
+                withXml {
+                    def root = asNode()
+                    root.appendNode("name", 'Splitties')
+                    root.appendNode("url", siteUrl)
+                    root.children().last() + pomConfig
+                    def depsNode = root["dependencies"][0] ?: root.appendNode("dependencies")
+
+                    def addDep = {
+                        if (it.group == null) return // Avoid empty dependency nodes
+                        def dependencyNode = depsNode.appendNode('dependency')
+                        dependencyNode.appendNode('groupId', it.group)
+                        dependencyNode.appendNode('artifactId', it.name)
+                        dependencyNode.appendNode('version', it.version)
+                        if (it.hasProperty('optional') && it.optional) {
+                            dependencyNode.appendNode('optional', 'true')
+                        }
+                    }
+
+                    // Add deps that everyone has
+                    configurations.compile.allDependencies.each addDep
+                    // Add flavor specific deps
+                    if (flavored) {
+                        configurations["${variant.flavorName}Compile"].allDependencies.each addDep
+                    }
+                    // NOTE: This library doesn't use builtTypes specific dependencies, so no need to add them.
+                }
+            }
+        }
+    }
+}
+
+group = groupId
+version = libraryVersion
+
+afterEvaluate {
+    bintray {
+        user = bintray_user
+        key = bintray_api_key
+        publications = publicationNames
+
+        override = true
+        pkg {
+            repo = 'splitties'
+            name = project.name
+            desc = libraryDesc
+            websiteUrl = siteUrl
+            issueTrackerUrl = 'https://github.com/LouisCAD/Splitties/issues'
+            vcsUrl = gitUrl
+            licenses = ['Apache-2.0']
+            labels = ['aar', 'android']
+            publicDownloadNumbers = true
+            githubRepo = 'LouisCAD/Splitties'
+        }
+    }
+}
+
+
+In order for this to work, I need to have the bintray_user and bintray_api_key properties defined. I personally just have them in my ~/.gradle/gradle.properties file like this:
+
+bintray_user=my_bintray_user_name
+bintray_api_key=my_private_bintray_api_key
+
+
+I also need to define the following ext properties I used in the publish.gradle file in my root project's build.gradle file:
+
+allprojects {
+    ...
+    ext {
+        ...
+        // Libraries
+        groupId = "xyz.louiscad.splitties"
+        libraryVersion = "1.2.1"
+        siteUrl = 'https://github.com/LouisCAD/Splitties'
+        gitUrl = 'https://github.com/LouisCAD/Splitties.git'
+    }
+}
+
+
+And now, I can finally use it in my android library module, where I have multiple productFlavors. Here's a snippet from a publishable library module's build.gradle file:
+
+plugins {
+    id "com.jfrog.bintray" version "1.7.3" // Enables publishing to bintray
+    id "com.github.dcendents.android-maven" version "1.5" // Allows aar in mavenPublications
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'maven-publish' // Used for mavenPublications
+
+android {
+    ...
+    defaultPublishConfig "myLibraryDebug" // Allows using this library in another
+    // module in this project without publishing to mavenLocal or Bintray.
+    // Useful for debug purposes, or for your library's sample app.
+    defaultConfig {
+        ...
+        versionName libraryVersion
+        ...
+    }
+    ...
+    productFlavors {
+        myLibrary
+        myLibrary_logged // Here, the "_" will be replaced "-" in artifactId when publishing.
+        myOtherLibraryFlavor
+    }
+    ...
+}
+
+dependencies {
+    ...
+    // Timber, a log utility.
+    myLibrary_loggedCompile "com.jakewharton.timber:timber:${timberVersion}"; // Just an example
+}
+...
+
+ext {
+    libraryDesc = "Delegates for kotlin on android that check UI thread"
+}
+
+apply from: '../publish.gradle' // Makes this library publishable
+
+
+When you have all of this setup properly, with the name of your library instead of mine's (which you can use as an example), you can try publishing a version of your flavored library by trying to first publishing to mavenLocal.
+To do so, run this command:
+
+myLibrary $ ../gradlew publishToMavenLocal
+
+
+You can then try adding mavenLocal in your app's repositories (example here) and try adding your library as a dependency (artifactId should be the flavor name, with "_" replaced with "-") and building it.
+You can also check with your file explorer (use cmd+shift+G on Mac in Finder to access hidden folder) the directory ~/.m2 and look for your library.
+
+When it's time to publish to bintray/jcenter, you just have to run this command:
+
+myLibrary $ ../gradlew bintrayUpload
+
+
+Important:
+
+Before you publish your library to mavenLocal, Bintray or another maven repository, you'll usually want to try your library against a sample app which uses the library. This sample app, which should be another module in the same project just need to have the project dependency, which should look like this: compile project(':myLibrary'). However, since your library has multiple productFlavors, you'll want to test all of them. Unfortunately, it's currently impossible to specify which configuration you want to use from your sample app's build.gradle file (unless, you use publishNonDefault true in your library's build.gradle file, which breaks maven and bintray publications), but you can specify the default configuration (i.e. buildVariant) in your library's module as such: defaultPublishConfig "myLibraryDebug" in the android closure. You can see the available build variants for your library in the "Build Variants" tool Windows in Android Studio.
+
+Feel free to explore my library "Splitties" here if you need an example. The flavored module is named concurrency, but I use my script for unflavored library modules too, and I tested it throughly on all the library modules in my project.
+
+You can reach me out if you need help setting it up for you.
+    

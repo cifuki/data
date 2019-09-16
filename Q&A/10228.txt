@@ -1,0 +1,50 @@
+27
+Q:I've just implemented a CursorLoader and it works great! In fact, I didn't believe that my ListView would automatically update when the underlying data changed until I tested it. This apparently is the magic of setNotificationUri.
+
+My question is, how does it know when the data in the cursor has changed? Say I quietly insert an additional row somewhere. Does the underlying mechanism constantly query the database and compare it with the past data? Won't that be horribly inefficient if the datasets are large?
+
+Before I used cursorloaders, I would manually refresh when necessary. It's great that I don't have to do this anymore, but is it efficient to let the CursorLoader to this in the background?
+    
+===============================================================================================
+38
+A:Please, correct me if I'm wrong somewhere.
+
+ContentProvider calls something like this in query(\xe2\x80\xa6) method:
+
+// Tell the cursor what uri to watch, so it knows when its source data changes
+cursor.setNotificationUri(getContext().getContentResolver(), uri);
+
+
+CursorLoader get cursor back and registers an observer.
+
+/* Runs on a worker thread */
+@Override
+public Cursor loadInBackground() {
+    Cursor cursor = getContext().getContentResolver().query(mUri, mProjection,
+            mSelection, mSelectionArgs, mSortOrder);
+    if (cursor != null) {
+        // Ensure the cursor window is filled
+        cursor.getCount();
+        registerContentObserver(cursor, mObserver);
+    }
+    return cursor;
+}
+
+/**
+ * Registers an observer to get notifications from the content provider
+ * when the cursor needs to be refreshed.
+ */
+void registerContentObserver(Cursor cursor, ContentObserver observer) {
+    cursor.registerContentObserver(mObserver);
+}
+
+
+When someone modifies data, ContentProvider notifies ContentResolver about changes:
+
+getContext().getContentResolver().notifyChange(uri, null);
+
+
+ContentResolver in its turn notifies all registered observers.
+
+Observer, registered by CursorLoader, forces it to load new data.
+    

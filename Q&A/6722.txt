@@ -1,0 +1,159 @@
+38
+Q:I want to use Android Data Binding and has configured according to the official document.
+
+the error message is :
+error: cannot find symbol import net.juude.droidviews.BR;
+
+the top level build.gradle file is:
+
+buildscript {
+    repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:1.3.0-beta2"
+        classpath 'me.tatarka:gradle-retrolambda:3.0.1'
+        classpath 'com.neenbedankt.gradle.plugins:android-apt:1.4'
+        classpath "com.android.databinding:dataBinder:1.0-rc0"
+    }
+}
+allprojects {
+    repositories {
+        jcenter()
+        mavenCentral()
+    }
+}
+
+
+and the build.gradle file in app module is
+
+apply plugin: 'com.android.application'
+apply plugin: 'me.tatarka.retrolambda'
+apply plugin: 'com.neenbedankt.android-apt'
+apply plugin: 'com.android.databinding'
+
+
+android {
+    compileSdkVersion 22
+    buildToolsVersion "22.0.1"
+
+    lintOptions {
+        abortOnError false
+    }
+
+    defaultConfig {
+        applicationId "net.juude.droidviews"
+        minSdkVersion 15
+        targetSdkVersion 22 
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+        }
+    }
+    retrolambda {
+        println("JAVA_HOME: " + System.getenv("JAVA_HOME"))
+        println("JAVA7_HOME: " + System.getenv("JAVA7_HOME"))
+        println("JAVA8_HOME: " + System.getenv("JAVA8_HOME"))
+        javaVersion JavaVersion.VERSION_1_7
+    }
+}
+
+dependencies {
+    compile project(':ptr-lib-debug')
+    compile project(':library')
+    compile 'com.android.support:support-v4:22.1.0'
+    compile 'com.mcxiaoke.volley:library:1.0.+'
+    compile files('libs/droidmocks.jar')
+    compile 'com.android.support:support-annotations:22.1.1'
+    compile 'com.facebook.fresco:fresco:0.5.0'
+    compile 'com.android.support:recyclerview-v7:22.1.1'
+    compile 'io.reactivex:rxandroid:0.24.0'
+    compile 'io.reactivex:rxjava:1.0.6'
+    compile 'com.google.dagger:dagger:2.0'
+    apt 'com.google.dagger:dagger-compiler:2.0'
+}
+
+
+the layout file is 
+
+<layout xmlns:android="http://schemas.android.com/apk/res/android">
+    <data>
+        <variable name="user" type=" net.juude.droidviews.databinding.User" />
+    </data>
+    <LinearLayout
+        android:orientation="vertical" android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <TextView
+            android:id="@+id/user_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@{user.mName}"/>
+
+        <TextView
+            android:id="@+id/user_sex"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@{user.sex}"/>
+
+    </LinearLayout>
+</layout>
+
+
+the fragment is
+
+package net.juude.droidviews.databinding;
+
+import android.databinding.DataBindingUtil;
+import android.databinding.ViewDataBinding;
+import android.os.Bundle;
+import android.support.annotation.Nullable;
+import android.support.v4.app.Fragment;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+
+import net.juude.droidviews.BR;
+import net.juude.droidviews.R;
+
+/**
+ * Created by juude on 15-6-9.
+ */
+public class DataBindingFragment extends Fragment{
+    @Nullable
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        ViewDataBinding dataBinding = DataBindingUtil.inflate(inflater, R.layout.fragment_data_binding, container, false);
+        //dataBinding.setVariable(BR.)
+        User user = new User();
+        user.setSex("\xe7\x94\xb7");
+        user.setName("Juude");
+        dataBinding.setVariable(BR.user, user);
+        return dataBinding.getRoot();
+    }
+}
+
+
+since I did not get syntax error in Android Studio\xef\xbc\x8c I can assume that the Android Studio can recognize the BR class;
+
+But when I compile the project, It tells me that 
+error:cannot find symbol class BR.
+
+so I want to know what should I do to make it generate the right BR.java file?
+    
+===============================================================================================
+22
+A:It is a problem caused by android-apt plugin. It ignores the provided dependency that data binding plugin adds.
+
+https://bitbucket.org/hvisser/android-apt/issue/38/android-apt-breaks-brand-new-data-binding#comment-18504545
+
+You can work around it by adding:
+apt 'com.android.databinding:compiler:1.0-rc0 to your gradle file.
+    

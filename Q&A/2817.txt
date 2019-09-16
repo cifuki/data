@@ -1,0 +1,98 @@
+76
+Q:I am using android Volley for making a request. So I use this code. I don't understand one thing. I check in my server that params is always null. I consider that getParams() not working. What should I do to solve this issue.
+
+ RequestQueue queue = MyVolley.getRequestQueue();
+        JsonObjectRequest jsObjRequest = new JsonObjectRequest(Request.Method.POST,SPHERE_URL,null,
+                new Response.Listener<JSONObject>() {
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        System.out.println(response);
+                        hideProgressDialog();
+                    }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                      hideProgressDialog();
+                    }
+                }) {
+            protected Map<String, String> getParams() throws AuthFailureError {
+                Map<String, String> params = new HashMap<String, String>();
+                params.put("id","1");
+                params.put("name", "myname");
+                return params;
+            };
+        };
+        queue.add(jsObjRequest);
+
+    
+===============================================================================================
+127
+A:try to use this helper class    
+
+import java.io.UnsupportedEncodingException;
+import java.util.Map;    
+import org.json.JSONException;
+import org.json.JSONObject;    
+import com.android.volley.NetworkResponse;
+import com.android.volley.ParseError;
+import com.android.volley.Request;
+import com.android.volley.Response;
+import com.android.volley.Response.ErrorListener;
+import com.android.volley.Response.Listener;
+import com.android.volley.toolbox.HttpHeaderParser;
+
+public class CustomRequest extends Request<JSONObject> {
+
+    private Listener<JSONObject> listener;
+    private Map<String, String> params;
+
+    public CustomRequest(String url, Map<String, String> params,
+            Listener<JSONObject> reponseListener, ErrorListener errorListener) {
+        super(Method.GET, url, errorListener);
+        this.listener = reponseListener;
+        this.params = params;
+    }
+
+    public CustomRequest(int method, String url, Map<String, String> params,
+            Listener<JSONObject> reponseListener, ErrorListener errorListener) {
+        super(method, url, errorListener);
+        this.listener = reponseListener;
+        this.params = params;
+    }
+
+    protected Map<String, String> getParams()
+            throws com.android.volley.AuthFailureError {
+        return params;
+    };
+
+    @Override
+    protected Response<JSONObject> parseNetworkResponse(NetworkResponse response) {
+        try {
+            String jsonString = new String(response.data,
+                    HttpHeaderParser.parseCharset(response.headers));
+            return Response.success(new JSONObject(jsonString),
+                    HttpHeaderParser.parseCacheHeaders(response));
+        } catch (UnsupportedEncodingException e) {
+            return Response.error(new ParseError(e));
+        } catch (JSONException je) {
+            return Response.error(new ParseError(je));
+        }
+    }
+
+    @Override
+    protected void deliverResponse(JSONObject response) {
+        // TODO Auto-generated method stub
+        listener.onResponse(response);
+    }
+}
+
+
+In activity/fragment do use  this
+
+RequestQueue requestQueue = Volley.newRequestQueue(getActivity());
+CustomRequest jsObjRequest = new CustomRequest(Method.POST, url, params, this.createRequestSuccessListener(), this.createRequestErrorListener());
+
+requestQueue.add(jsObjRequest);
+
+    

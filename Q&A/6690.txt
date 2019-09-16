@@ -1,0 +1,142 @@
+38
+Q:I am having the following problem:
+
+I know how to set up a toolbar to show a back button icon instead of a burger button icon.
+
+From this:
+
+
+
+to this:
+
+
+
+using: getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+
+Now, I want to do the reverse action, I want to go from back button icon to burger icon:
+
+
+
+to here:
+
+
+
+How can I do this?
+
+Update:
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    setSupportActionBar(mToolbar);
+    getSupportActionBar().setDisplayShowTitleEnabled(false);
+}
+
+private void enableViews(boolean enable) {
+    if(enable) {
+        // Enables back button icon
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+    } else {
+        // TODO: Enables burger icon
+    }
+}
+
+    
+===============================================================================================
+112
+A:If I assume you're using android.support.v4.widget.DrawerLayout in your layout, then this approach may work for you; I've only tested on API 21 but given it's mostly using the support libraries, it should work (famous last words) on lower or higher targets.
+
+import android.support.v7.app.ActionBarDrawerToggle
+import android.support.v4.widget.DrawerLayout
+
+    ActionBarDrawerToggle mDrawerToggle;
+    DrawerLayout drawerLayout;
+    private boolean mToolBarNavigationListenerIsRegistered = false;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        setSupportActionBar(mToolbar);
+        getSupportActionBar().setDisplayShowTitleEnabled(false);
+        // Get DrawerLayout ref from layout
+        drawerLayout = (DrawerLayout)findViewById(R.id.drawer);
+        // Initialize ActionBarDrawerToggle, which will control toggle of hamburger.
+        // You set the values of R.string.open and R.string.close accordingly.
+        // Also, you can implement drawer toggle listener if you want.
+        mDrawerToggle = new ActionBarDrawerToggle (this, drawerLayout, mToolbar, R.string.open, R.string.close);
+        // Setting the actionbarToggle to drawer layout
+        drawerLayout.setDrawerListener(mDrawerToggle);
+        // Calling sync state is necessary to show your hamburger icon...
+        // or so I hear. Doesn't hurt including it even if you find it works
+        // without it on your test device(s)
+        mDrawerToggle.syncState();
+    }
+
+    /**
+     * To be semantically or contextually correct, maybe change the name
+     * and signature of this function to something like:
+     *
+     * private void showBackButton(boolean show)
+     * Just a suggestion.
+     */
+     private void enableViews(boolean enable) {
+
+        // To keep states of ActionBar and ActionBarDrawerToggle synchronized,
+        // when you enable on one, you disable on the other.
+        // And as you may notice, the order for this operation is disable first, then enable - VERY VERY IMPORTANT.
+        if(enable) {
+            //You may not want to open the drawer on swipe from the left in this case  
+            drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
+            // Remove hamburger
+            mDrawerToggle.setDrawerIndicatorEnabled(false);
+            // Show back button
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+            // when DrawerToggle is disabled i.e. setDrawerIndicatorEnabled(false), navigation icon
+            // clicks are disabled i.e. the UP button will not work.
+            // We need to add a listener, as in below, so DrawerToggle will forward
+            // click events to this listener.
+            if(!mToolBarNavigationListenerIsRegistered) {
+                mDrawerToggle.setToolbarNavigationClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        // Doesn't have to be onBackPressed
+                        onBackPressed();
+                    }
+                });
+
+                mToolBarNavigationListenerIsRegistered = true;
+            }
+
+        } else {
+            //You must regain the power of swipe for the drawer. 
+            drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED);
+
+            // Remove back button
+            getSupportActionBar().setDisplayHomeAsUpEnabled(false);
+            // Show hamburger 
+            mDrawerToggle.setDrawerIndicatorEnabled(true);
+            // Remove the/any drawer toggle listener
+            mDrawerToggle.setToolbarNavigationClickListener(null);
+            mToolBarNavigationListenerIsRegistered = false;
+        }
+
+        // So, one may think "Hmm why not simplify to:
+        // .....
+        // getSupportActionBar().setDisplayHomeAsUpEnabled(enable);
+        // mDrawer.setDrawerIndicatorEnabled(!enable);
+        // ......
+        // To re-iterate, the order in which you enable and disable views IS important #dontSimplify.
+    }
+
+
+
+The solution uses ActionBarDrawerToggle.setDrawerIndicatorEnabled to toggle the visibility of the hamburger icon and ActionBar.setDisplayHomeAsUpEnabled for visibility of the Up button, essentially making use of their respective drawable resources.
+
+Other assumptions
+
+
+Your Activity theme extends Theme.AppCompat.Light.NoActionBar.
+
+    

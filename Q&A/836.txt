@@ -1,0 +1,93 @@
+174
+Q:How can you filter out specific apps when using the ACTION_SEND intent?  This question has been asked in various ways, but I haven't been able to gather a solution based on the answers given. Hopefully someone can help. I would like to provide the ability to share within an app. Following Android Dev Alexander Lucas' advice, I'd prefer to do it using intents and not using the Facebook/Twitter APIs. 
+
+
+
+Sharing using the ACTION_SEND intent is great, but the problem is (1) I don't want every sharing option there, I'd rather limit it to FB, Twitter, and Email, and (2) I don't want to share the same thing to each sharing app. For example, in my twitter share I'm going to include some mentions and hashtags limited it to 140 chars or less, while the facebook share is going to include a link and a feature image.
+
+Is it possible to limit the options for ACTION_SEND (share) intent? I've seen something about using PackageManager and queryIntentActivities, but haven't been able to figure out the connection between the PackageManager and the ACTION_SEND intent.
+
+OR
+
+Rather than filter the sharing apps, my problem could also be solved if I could use the ACTION_SEND intent to go directly to facebook or twitter rather than popping up the dialog. If that were the case then I could create my own dialog and when they click "Facebook" create a Facebook-specific intent and just send them all the way to Facebook. Same with Twitter.
+
+OR is it not possible? Are the Facebook and Twitter APIs the only way?
+    
+===============================================================================================
+306
+A:To my knowledge, StackOverflow has lots of people asking this question in various ways, but nobody has answered it completely yet.
+
+My spec called for the user to be able to choose email, twitter, facebook, or SMS, with custom text for each one. Here is how I accomplished that:
+
+public void onShareClick(View v) {
+    Resources resources = getResources();
+
+    Intent emailIntent = new Intent();
+    emailIntent.setAction(Intent.ACTION_SEND);
+    // Native email client doesn't currently support HTML, but it doesn't hurt to try in case they fix it
+    emailIntent.putExtra(Intent.EXTRA_TEXT, Html.fromHtml(resources.getString(R.string.share_email_native)));
+    emailIntent.putExtra(Intent.EXTRA_SUBJECT, resources.getString(R.string.share_email_subject));
+    emailIntent.setType("message/rfc822");
+
+    PackageManager pm = getPackageManager();
+    Intent sendIntent = new Intent(Intent.ACTION_SEND);     
+    sendIntent.setType("text/plain");
+
+
+    Intent openInChooser = Intent.createChooser(emailIntent, resources.getString(R.string.share_chooser_text));
+
+    List<ResolveInfo> resInfo = pm.queryIntentActivities(sendIntent, 0);
+    List<LabeledIntent> intentList = new ArrayList<LabeledIntent>();        
+    for (int i = 0; i < resInfo.size(); i++) {
+        // Extract the label, append it, and repackage it in a LabeledIntent
+        ResolveInfo ri = resInfo.get(i);
+        String packageName = ri.activityInfo.packageName;
+        if(packageName.contains("android.email")) {
+            emailIntent.setPackage(packageName);
+        } else if(packageName.contains("twitter") || packageName.contains("facebook") || packageName.contains("mms") || packageName.contains("android.gm")) {
+            Intent intent = new Intent();
+            intent.setComponent(new ComponentName(packageName, ri.activityInfo.name));
+            intent.setAction(Intent.ACTION_SEND);
+            intent.setType("text/plain");
+            if(packageName.contains("twitter")) {
+                intent.putExtra(Intent.EXTRA_TEXT, resources.getString(R.string.share_twitter));
+            } else if(packageName.contains("facebook")) {
+                // Warning: Facebook IGNORES our text. They say "These fields are intended for users to express themselves. Pre-filling these fields erodes the authenticity of the user voice."
+                // One workaround is to use the Facebook SDK to post, but that doesn't allow the user to choose how they want to share. We can also make a custom landing page, and the link
+                // will show the <meta content ="..."> text from that page with our link in Facebook.
+                intent.putExtra(Intent.EXTRA_TEXT, resources.getString(R.string.share_facebook));
+            } else if(packageName.contains("mms")) {
+                intent.putExtra(Intent.EXTRA_TEXT, resources.getString(R.string.share_sms));
+            } else if(packageName.contains("android.gm")) { // If Gmail shows up twice, try removing this else-if clause and the reference to "android.gm" above
+                intent.putExtra(Intent.EXTRA_TEXT, Html.fromHtml(resources.getString(R.string.share_email_gmail)));
+                intent.putExtra(Intent.EXTRA_SUBJECT, resources.getString(R.string.share_email_subject));               
+                intent.setType("message/rfc822");
+            }
+
+            intentList.add(new LabeledIntent(intent, packageName, ri.loadLabel(pm), ri.icon));
+        }
+    }
+
+    // convert intentList to array
+    LabeledIntent[] extraIntents = intentList.toArray( new LabeledIntent[ intentList.size() ]);
+
+    openInChooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, extraIntents);
+    startActivity(openInChooser);       
+}
+
+
+I found bits of how to do this in various places, but I haven't seen all of it in one place anywhere else.
+
+Note that this method also hides all the silly options that I don't want, like sharing over wifi and bluetooth.
+
+Hope this helps someone.
+
+Edit: 
+In a comment, I was asked to explain what this code is doing. Basically, it's creating an ACTION_SEND intent for the native email client ONLY, then tacking other intents onto the chooser. Making the original intent email-specific gets rid of all the extra junk like wifi and bluetooth, then I grab the other intents I want from a generic ACTION_SEND of type plain-text, and tack them on before showing the chooser.
+
+When I grab the additional intents, I set custom text for each one.
+
+Edit2: It's been awhile since I posted this, and things have changed a bit. If you are seeing gmail twice in the list of options, try removing the special handling for "android.gm" as suggested in a comment by @h_k below.
+
+Since this one answer is the source of nearly all my stackoverflow reputation points, I have to at least try to keep it up to date.
+    

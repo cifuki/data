@@ -1,0 +1,140 @@
+48
+Q:I am trying to convert my app to use the v21 AppCompat library, so I started to use Toolbar instead of ActionBar. In all my regular activities (which extend ActionBarActivity) everything is fine. but in my SettingsActivity which extends PreferenceActivity, and therefore I can't use the setSupportActionBar(actionbar) call I need to use a "standalone" toolbar. The toolbar shows up, but I can't figure out how could I add the "home / up" button to the toolbar.
+
+SettingsActivity.java:
+
+public class SettingsActivity extends PreferenceActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_settings);
+        Toolbar actionbar = (Toolbar) findViewById(R.id.actionbar);
+        if (null != actionbar) {
+
+            // In every other activity that extends ActionBarActivity I simply use:
+            // setSupportActionBar(actionbar);
+            // final ActionBar supportActionBar = getSupportActionBar();
+            // supportActionBar.setDisplayHomeAsUpEnabled(true);
+
+            // but in PreferenceActivity you need to add a standalone toolbar:    
+            actionbar.setTitle(R.string.title_activity_settings);
+            actionbar.setNavigationOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    SettingsActivity.this.finish();
+                }
+            });
+
+            // Inflate a menu to be displayed in the toolbar
+            actionbar.inflateMenu(R.menu.settings);
+        }
+    }
+}
+
+
+layout/activity_settings.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools"
+              tools:context=".SettingsActivity"
+              tools:menu="settings"
+              tools:actionBarNavMode="standard"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical">
+
+    <include
+        layout="@layout/actionbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <ListView
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent"
+        android:id="@android:id/list" />
+</LinearLayout>
+
+
+layout/actionbar.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.v7.widget.Toolbar
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/actionbar"
+    android:layout_height="wrap_content"
+    android:layout_width="match_parent"
+    android:minHeight="?attr/actionBarSize"
+    android:background="?attr/colorPrimaryDark"
+    app:theme="@style/AppTheme"
+    />
+
+
+menu/settings.xml:
+
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context="com.fletech.android.redalert.SettingsActivity" >
+</menu>
+
+
+I tried to add actionBarStyle and displayOptions to my theme as explained in Show up/back button on android nested PreferenceScreen?, but in other places people said that actionBarStyle won't be used when I use Toolbar, and they seem to be right.
+
+values/themes.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="AppTheme.Base"/>
+
+    <style name="AppTheme.Base" parent="Theme.AppCompat">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimary</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="windowActionBar">false</item>
+        <item name="windowActionModeOverlay">true</item>
+
+        <!-- Set AppCompat\xe2\x80\x99s actionBarStyle -->
+        <item name="actionBarStyle">@style/MyActionBar</item>
+    </style>
+
+    <style name="MyActionBar" parent="Widget.AppCompat.ActionBar">
+        <item name="displayOptions">showHome|homeAsUp|showTitle</item>
+    </style>
+<resources>
+
+    
+===============================================================================================
+58
+A:@Pedro Oliveira's solution worked. I could even find the drawable that the AppCompat library uses (and therefore is already included in the apk). What more it's also mirrored, so it works both for ltr, rtl locales:
+
+actionbar.setNavigationIcon(R.drawable.abc_ic_ab_back_mtrl_am_alpha);
+
+
+and this is it alltogether, with the correction from @VictorYakunin
+
+public class SettingsActivity extends PreferenceActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_settings);
+        Toolbar actionbar = (Toolbar) findViewById(R.id.actionbar);
+        if (null != actionbar) {
+            actionbar.setNavigationIcon(R.drawable.abc_ic_ab_back_mtrl_am_alpha);
+
+            actionbar.setTitle(R.string.title_activity_settings);
+            actionbar.setNavigationOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    NavUtils.navigateUpFromSameTask(SettingsActivity.this);
+                }
+            });
+
+            // Inflate a menu to be displayed in the toolbar
+            actionbar.inflateMenu(R.menu.settings);
+        }
+    }
+}
+
+    

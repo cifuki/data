@@ -1,0 +1,128 @@
+31
+Q:So I'm Stuck on this frustrating issue.
+I am quite new to Google Auth on Firebase but I done everything the firebase docs instructed in how to integrate the Google SignIn Auth, yet I'm still receiving this weird Error in the console consisted of two parts:
+
+12-03 11:07:40.090 2574-3478/com.google.android.gms E/TokenRequestor: You have wrong OAuth2 related configurations, please check. Detailed error: UNREGISTERED_ON_API_CONSOLE
+
+
+and also
+
+Google sign in failed com.google.android.gms.common.api.ApiException: 10:
+
+
+Before Anyone attempts to point out similar questions that have previously been asked on stack overflow, Here's what I have done till now after seen all the available solutions and yet non has resolved the error
+
+
+I have my SHA1 fingerprint for my project
+I have my OAuth 2.0 client ID, both, the android client id and the web client and in the requestIdToken() I have put the web client id.
+I did not publish my project's APK on google play store. which means I did not accidentally generate another SHA1 fingerprint.
+I have followed step by step the Google Sign in Auth firebase docs.
+
+
+here is my code snippet:
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_signup);
+    ButterKnife.bind(this);
+
+    String webClientId = getString(R.string.web_client_id);
+
+
+    GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestIdToken(webClientId)
+            .build();
+
+    mGoogleApiClient = new GoogleApiClient.Builder(this)
+            .enableAutoManage(this /* FragmentActivity */, this /* OnConnectionFailedListener */)
+            .addApi(Auth.GOOGLE_SIGN_IN_API, gso)
+            .build();
+
+    mGoogleSignInClient = GoogleSignIn.getClient(this, gso);
+
+
+    GoogleSignInAccount account = GoogleSignIn.getLastSignedInAccount(this);
+
+
+    googleLoginBtn.setOnClickListener(new View.OnClickListener() {
+        @Override
+        public void onClick(View view) {
+            Intent signInIntent = mGoogleSignInClient.getSignInIntent();
+            startActivityForResult(signInIntent, RC_SIGN_IN);
+        }
+    });
+
+}
+
+
+
+@Override
+public void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+
+    // Result returned from launching the Intent from GoogleSignInClient.getSignInIntent(...);
+    if (requestCode == RC_SIGN_IN) {
+        // The Task returned from this call is always completed, no need to attach
+        // a listener.
+        Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
+
+        try{
+
+            GoogleSignInAccount account = task.getResult(ApiException.class);
+            firebaseAuthWithGoogle(account);
+
+        } catch (ApiException e) {
+            // Google Sign In failed, update UI appropriately
+            Log.w(TAG, "Google sign in failed", e);
+            // [START_EXCLUDE]
+            Toast.makeText(this, "Gooogle Auth failed", Toast.LENGTH_LONG);
+            // [END_EXCLUDE]
+        }
+
+    }
+}
+
+
+
+private void firebaseAuthWithGoogle(GoogleSignInAccount acct) {
+    Log.d(TAG, "firebaseAuthWithGoogle:" + acct.getId());
+    // [START_EXCLUDE silent]
+    //showProgressDialog();
+    // [END_EXCLUDE]
+
+    AuthCredential credential = GoogleAuthProvider.getCredential(acct.getIdToken(), null);
+    mAuth.signInWithCredential(credential)
+            .addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
+                @Override
+                public void onComplete(@NonNull Task<AuthResult> task) {
+                    if (task.isSuccessful()) {
+                        // Sign in success, update UI with the signed-in user's information
+                        Log.d(TAG, "signInWithCredential:success");
+                        FirebaseUser user = mAuth.getCurrentUser();
+                        Toast.makeText(LoginActivity.this, "Successful Auth", Toast.LENGTH_LONG).show();
+                    } else {
+                        // If sign in fails, display a message to the user.
+                        Log.w(TAG, "signInWithCredential:failure", task.getException());
+                        Toast.makeText(LoginActivity.this, "Authentication failed.",
+                                Toast.LENGTH_SHORT).show();
+                        //updateUI(null);
+                    }
+
+                    // [START_EXCLUDE]
+                    //hideProgressDialog();
+                    // [END_EXCLUDE]
+                }
+            });
+}
+
+    
+===============================================================================================
+49
+A:Basically problem is in the SHA1 key put on console please regenerate it and put again properly same project.
+
+1)As the answers, make sure that your actual signed Android apk has the same SHA1 fingerprint as what you specified in the console of your Firebase project's Android integration section (the page where you can download the google-services.json)
+
+2)On top of that go to the Settings of your firebase project (gear icon right to the Overview at the top-left area. Then switch to Account Linking tab. On that tab link the Google Play to your project.
+    

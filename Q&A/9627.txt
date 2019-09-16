@@ -1,0 +1,155 @@
+28
+Q:com.android.dex.DexException: Multiple dex files define Lorg/hamcrest/Description
+
+occurring while trying to do a debug build/test either via Android Studio or via Gradle command-line on my application.
+
+The release build (without tests) works fine but as soon as testing is included (hamcrest being a testing library), the build fails with the above error. 
+
+I've checked my module dependencies and there's no duplicate requirements which gradle -q dependencies corroborates.
+
+
+
+Project settings.gradle
+
+include ':[library module]'
+include ':[main module]'
+
+
+
+
+Project build.gradle
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.9.+'
+        classpath 'org.robolectric.gradle:gradle-android-test-plugin:0.9.+'
+    }
+}
+
+allprojects {
+    repositories {
+        mavenCentral()
+    }
+}
+
+
+
+
+[library module] build.gradle
+
+apply plugin: 'android-library'
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "19.0.0"
+
+    defaultConfig {
+        minSdkVersion 14
+        targetSdkVersion 19
+    }
+
+    packagingOptions {
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE.txt'
+    }
+}
+
+dependencies {
+    compile 'com.google.zxing:core:3.0.+'
+    compile 'com.bugsnag:bugsnag-android:2.1.1+'
+}
+
+
+
+
+[main module] build.gradle
+
+apply plugin: 'android'
+
+android {
+    signingConfigs {
+    release {
+        [...]
+    }
+}
+
+    sourceSets {
+        main {
+            manifest.srcFile 'src/main/AndroidManifest.xml'
+            res.srcDirs = ['src/main/res']
+        }
+        androidTest {
+            setRoot('src/test')
+        }
+        instrumentTest {
+        }
+    }
+
+    compileSdkVersion 19
+    buildToolsVersion '19.0.0'
+
+    defaultConfig {
+        minSdkVersion 14
+        targetSdkVersion 19
+        testPackageName "[main.packageName].tests"
+    }
+
+    buildTypes {
+        release {
+            runProguard false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+        }
+    }
+
+    packagingOptions {
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE.txt'
+    }
+}
+
+apply plugin: 'android-test'
+
+
+
+androidTest {
+    // configure the set of classes for JUnit tests
+    include '**/*Test.class'
+
+    // configure max heap size of the test JVM
+    maxHeapSize = "2048m"
+}
+
+repositories {
+    maven { url 'https://repo.commonsware.com.s3.amazonaws.com' }
+    maven { url 'https://oss.sonatype.org/content/repositories/snapshots/' }
+}
+
+dependencies {
+    androidTestCompile 'junit:junit:4.10'
+    androidTestCompile 'org.robolectric:robolectric:2.3-SNAPSHOT'
+    androidTestCompile 'com.squareup:fest-android:1.0.+'
+    compile project(':[library module]')
+    compile 'com.github.gabrielemariotti.changeloglib:library:1.4.+'
+    compile 'com.google.code.gson:gson:2.2.4'
+    compile 'com.google.android.gms:play-services:+'
+    compile 'com.android.support:appcompat-v7:+'
+    compile ('de.keyboardsurfer.android.widget:crouton:1.8.+') {
+        exclude group: 'com.google.android', module: 'support-v4'
+    }
+    compile files('libs/CWAC-LoaderEx.jar')
+    compile 'com.squareup.okhttp:okhttp:1.5.+'
+    compile 'com.octo.android.robospice:robospice:1.4.11'
+    compile 'com.octo.android.robospice:robospice-cache:1.4.11'
+    compile 'com.octo.android.robospice:robospice-retrofit:1.4.11'
+    compile 'com.commonsware.cwac:security:0.1.+'
+    compile 'com.readystatesoftware.sqliteasset:sqliteassethelper:+'
+}
+
+    
+===============================================================================================
+10
+A:Robolectric 2.3 depends on JUnit 4.8.1 (version explicit). You're importing JUnit 4.10 (version explicit). Hamcrest is probably simply the first of many duplicates that dex is choking on - try changing your JUnit requirement version to 4.8+ (or excluding JUnit from the Robolectric dependency).
+    

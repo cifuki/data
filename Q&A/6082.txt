@@ -1,0 +1,251 @@
+41
+Q:I have an android app that has 3 activities :
+
+
+A login activity
+A tasks acivity where all tasks pertaining to a user are displayed (Populated using an Array Adapter)
+A task_details activity which results from clicking a task on the list
+
+
+I have to consume REST Apis. The research I have done so far directs me to use Retrofit. I checked how to use it and found out that :
+
+
+Set the base URL in the Main Activity (Mine is  the Login Activity)
+I need to create a API class and define my functions using annotations.
+Use the class Rest Adapter in the Activity and define Callbacks.
+
+
+Had my app been a single activity app, I would have crunched everything in my MainActivity.java but I don't know how and where to put all the code from steps 1,2,3 for use in my 3 activities.Could you please help by telling how to use Retrofit in my app. Thanks a lot.
+
+Specifically, I need network calls to :
+1. Login the user
+2. Get all the tasks of the user. 
+And for both I would be using a given REST api.
+
+*********************************************
+          Calling Api USing Retrofit
+*********************************************
+**Dependancies** :-
+      implementation 'com.android.support:recyclerview-v7:27.1.1'
+        implementation 'com.squareup.picasso:picasso:2.5.2'
+        implementation 'com.android.support:cardview-v7:27.1.1'
+    enter code here
+**Model**
+use the Pozo class
+
+**Api Call**
+ -> getLogin()    // use the method
+
+
+
+  //API call for Login
+    private void getLogin()
+    {
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
+        AsyncHttpClient client = new AsyncHttpClient();
+        RequestParams requestParams = new RequestParams();
+        requestParams.put("email_id", edit_email.getText().toString());
+        requestParams.put("password", edit_password.getText().toString());
+        Log.e("", "LOGIN URL==>" + Urls.LOGIN + requestParams);
+        Log.d("device_token", "Device_ Token" + FirebaseInstanceId.getInstance().getToken());
+        client.post(Urls.LOGIN, requestParams, new JsonHttpResponseHandler() {
+            @Override
+            public void onStart() {
+                super.onStart();
+                ShowProgress();
+            }
+
+            @Override
+            public void onFinish() {
+                super.onFinish();
+                Hideprogress();
+
+            }
+
+            @Override
+            public void onSuccess(int statusCode, Header[] headers, JSONObject response) {
+                super.onSuccess(statusCode, headers, response);
+                Log.e("", "Login RESPONSE-" + response);
+                Login login = new Gson().fromJson(String.valueOf(response), Login.class);
+                edit_email.setText("");
+                edit_password.setText("");
+                if (login.getStatus().equals("true")) {
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
+                    MDToast mdToast = MDToast.makeText(SignInActivity.this, String.valueOf("User Login Successfully!"),
+                            MDToast.LENGTH_SHORT, MDToast.TYPE_SUCCESS);
+                    mdToast.show();
+                    Utils.WriteSharePrefrence(SignInActivity.this, Util_Main.Constant.EMAIL, login.getData().getEmailId());
+                    Utils.WriteSharePrefrence(SignInActivity.this, Constant.USERID, login.getData().getId());
+
+                    Utils.WriteSharePrefrence(SignInActivity.this, Constant.USERNAME, login.getData().getFirstName());
+                    Utils.WriteSharePrefrence(SignInActivity.this, Constant.PROFILE, login.getData().getProfileImage());
+                    hideKeyboard(SignInActivity.this);
+                    Intent intent = new Intent(SignInActivity.this, DashboardActivity.class);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                    startActivity(intent);
+                    finish();
+                } else {
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
+                    MDToast mdToast = MDToast.makeText(SignInActivity.this, String.valueOf("Login Denied"),
+                            MDToast.LENGTH_SHORT, MDToast.TYPE_ERROR);
+                    mdToast.show();
+                }
+            }
+
+            @Override
+            public void onFailure(int statusCode, Header[] headers, String responseString, Throwable throwable) {
+                super.onFailure(statusCode, headers, responseString, throwable);
+                Log.e("", throwable.getMessage());
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
+                MDToast mdToast = MDToast.makeText(SignInActivity.this, "Something went wrong",
+                        MDToast.LENGTH_SHORT, MDToast.TYPE_ERROR);
+                mdToast.show();
+            }
+        });
+    }
+
+    
+===============================================================================================
+97
+A:Using Retrofit is quite simple and straightforward. 
+
+First of all you need to add retrofit to your project, as example with Gradle build sytem. 
+
+compile 'com.squareup.retrofit:retrofit:1.7.1' |
+
+
+another way you can download .jar and place it to your libs folder. 
+
+Then you need to define interfaces that will be used by Retrofit to make API calls to your REST endpoints. For example for users:  
+
+public interface YourUsersApi {
+
+   //You can use rx.java for sophisticated composition of requests 
+   @GET("/users/{user}")
+   public Observable<SomeUserModel> fetchUser(@Path("user") String user);
+
+   //or you can just get your model if you use json api
+   @GET("/users/{user}")
+   public SomeUserModel fetchUser(@Path("user") String user);
+
+   //or if there are some special cases you can process your response manually 
+   @GET("/users/{user}")
+   public Response fetchUser(@Path("user") String user);
+
+}
+
+
+Ok. Now you have defined your API interface an you can try to use it. 
+
+To start you need to create an instance of RestAdapter and set base url of your API back-end. It's also quite simple: 
+
+RestAdapter restAdapter = new RestAdapter.Builder()
+   .setEndpoint("https://yourserveraddress.com")
+    .build();
+
+YourUsersApi yourUsersApi = restAdapter.create(YourUsersApi.class);
+
+
+Here Retrofit will read your information from interface and under the hood it will create RestHandler according to meta-info your provided which actually will perform HTTP  requests. 
+
+Then under the hood, once response is received, in case of json api your data will be transformed to your model using Gson library so you should be aware of that fact that limitations that are present in Gson are actually there in Retrofit. 
+
+To extend/override process of serialisers/deserialisation your response data to your models you might want to provide your custom serialisers/deserialisers to retrofit.
+
+Here you need to implement Converter interface and implement 2 methods fromBody() and toBody().
+
+Here is example: 
+
+public class SomeCustomRetrofitConverter implements Converter {
+
+    private GsonBuilder gb;
+
+    public SomeCustomRetrofitConverter() {
+        gb = new GsonBuilder();
+
+        //register your cursom custom type serialisers/deserialisers if needed
+        gb.registerTypeAdapter(SomeCutsomType.class, new SomeCutsomTypeDeserializer());
+    }
+
+    public static final String ENCODING = "UTF-8";
+
+    @Override
+    public Object fromBody(TypedInput body, Type type) throws ConversionException {
+        String charset = "UTF-8";
+        if (body.mimeType() != null) {
+            charset = MimeUtil.parseCharset(body.mimeType());
+        }
+        InputStreamReader isr = null;
+        try {
+           isr = new InputStreamReader(body.in(), charset);
+           Gson gson = gb.create();
+           return gson.fromJson(isr, type);
+        } catch (IOException e) {
+            throw new ConversionException(e);
+        } catch (JsonParseException e) {
+            throw new ConversionException(e);
+        } finally {
+            if (isr != null) {
+                   try {
+                      isr.close();
+                   } catch (IOException ignored) {
+                }
+            }
+        }
+    }
+
+    @Override
+    public TypedOutput toBody(Object object) {
+        try {
+            Gson gson = gb.create();
+            return new JsonTypedOutput(gson.toJson(object).getBytes(ENCODING), ENCODING);
+        } catch (UnsupportedEncodingException e) {
+            throw new AssertionError(e);
+        }
+     }
+
+    private static class JsonTypedOutput implements TypedOutput {
+        private final byte[] jsonBytes;
+        private final String mimeType;
+
+        JsonTypedOutput(byte[] jsonBytes, String encode) {
+            this.jsonBytes = jsonBytes;
+            this.mimeType = "application/json; charset=" + encode;
+        }
+
+        @Override
+        public String fileName() {
+            return null;
+        }
+
+       @Override
+       public String mimeType() {
+           return mimeType;
+       }
+
+       @Override
+       public long length() {
+          return jsonBytes.length;
+       }
+
+       @Override
+       public void writeTo(OutputStream out) throws IOException {
+           out.write(jsonBytes);
+       }
+    }
+ }
+
+
+And now you need to enable your custom adapters, if it was needed by using setConverter() on building RestAdapter 
+
+Ok. Now you are aware how you can get your data from server to your Android application. But you need somehow mange your data and invoke REST call in right place. 
+There I would suggest to use android Service or AsyncTask or loader or rx.java that would query your data on background thread in order to not block your UI. 
+
+So now you can find the most appropriate place to call  
+
+SomeUserModel yourUser = yourUsersApi.fetchUser("someUsers")
+
+
+to fetch your remote data.
+    

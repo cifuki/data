@@ -1,0 +1,83 @@
+43
+Q:I have some problems with implementation of Json Deserialization in my Android application (with Gson library)
+
+I've made class like this
+
+public class MyJson<T>{
+    public List<T> posts;
+}
+
+
+And Deserialization call is:
+
+public class JsonDownloader<T> extends AsyncTask<Void, Void, MyJson<T>> {
+...
+protected MyJson<T> doInBackground(Void... params) {
+  ...
+    Reader reader = new InputStreamReader(content);
+    GsonBuilder gson = new GsonBuilder();
+    Type collectionType = new TypeToken<MyJson<T>>() {}.getType();
+    result = gson.create().fromJson(reader, collectionType);
+  ...
+  }
+}
+
+
+Problem is that result.posts list after call holds one Array of LinkedTreeMap Objects(with correct values so problem is Deserialization) instead of MyJson Objects. When I use MyObject instead of T everything is running fine and MyObject is correct.
+
+So is there any way to implement deserialization call without creating custom deserializer?
+    
+===============================================================================================
+30
+A:You have to specify the type of T at the time of deserialization. How would your List of posts get created if Gson didn't know what Type to instantiate? It can't stay T forever. So, you would provide the type T as a Class parameter.
+
+Now assuming, the type of posts was String you would deserialize MyJson<String> as (I've also added a String json parameter for simplicity; you would read from your reader as before):
+
+doInBackground(String.class, "{posts: [\\"article 1\\", \\"article 2\\"]}");
+
+protected MyJson<T> doInBackground(Class<T> type, String json, Void... params) {
+
+    GsonBuilder gson = new GsonBuilder();
+    Type collectionType = new TypeToken<MyJson<T>>(){}.getType();
+
+    MyJson<T> myJson = gson.create().fromJson(json, collectionType);
+
+    System.out.println(myJson.getPosts()); // ["article 1", "article 2"]
+    return myJson;
+}
+
+
+Similarly, to deserialize a MyJson of Boolean objects
+
+doInBackground(Boolean.class, "{posts: [true, false]}");
+
+protected MyJson<T> doInBackground(Class<T> type, String json, Void... params) {
+
+    GsonBuilder gson = new GsonBuilder();
+    Type collectionType = new TypeToken<MyJson<T>>(){}.getType();
+
+    MyJson<T> myJson = gson.create().fromJson(json, collectionType);
+
+    System.out.println(myJson.getPosts()); // [true, false]
+    return myJson;
+}
+
+
+I've assumed MyJson<T> for my examples to be as
+
+public class MyJson<T> {
+
+    public List<T> posts;
+
+    public List<T> getPosts() {
+        return posts;
+    }
+}
+
+
+So, if you were looking for to deserialize a List<MyObject> you would invoke the method as
+
+// assuming no Void parameters were required
+MyJson<MyObject> myJson = doInBackground(MyObject.class);
+
+    

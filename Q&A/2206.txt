@@ -1,0 +1,91 @@
+91
+Q:I have been searching everywhere for a proper solution to my problem and I can't seem to find one yet. I have an ActionBar (ActionBarSherlock) with a menu that is inflated from an XML file and that menu contains one item and that one item is shown as an ActionItem. 
+
+menu:
+
+<menu xmlns:android="http://schemas.android.com/apk/res/android" >    
+    <item
+        android:id="@+id/menu_refresh"       
+        android:icon="@drawable/ic_menu_refresh"
+        android:showAsAction="ifRoom"
+        android:title="Refresh"/>    
+</menu>
+
+
+activity:
+
+[...]
+  @Override
+  public boolean onCreateOptionsMenu(Menu menu) {
+    getSupportMenuInflater().inflate(R.menu.mymenu, menu);
+    return true;
+  }
+[...]
+
+
+The ActionItem is displayed with an icon and no text however when a user clicks on the ActionItem, I want the icon to begin animating, more specifically, rotating in place. The icon in question is a refresh icon.
+
+I realize that ActionBar has support for using custom views (Adding an Action View) however this custom view is expanded to cover the entire area of the ActionBar and actually blocks everything except the app icon, which in my case is not what I was looking for. 
+
+So my next attempt was to try to use AnimationDrawable and define my animation frame-by-frame, set the drawable as the icon for the menu item, and then in onOptionsItemSelected(MenuItem item) get the icon and begin animating using ((AnimationDrawable)item.getIcon()).start(). This however was unsuccessful. Does anyone know of any way to accomplish this effect?
+    
+===============================================================================================
+172
+A:You're on the right track. Here is how the GitHub Gaug.es app will be implementing it.
+
+First they define an animation XML:
+
+<rotate xmlns:android="http://schemas.android.com/apk/res/android"
+    android:fromDegrees="0"
+    android:toDegrees="360"
+    android:pivotX="50%"
+    android:pivotY="50%"
+    android:duration="1000"
+    android:interpolator="@android:anim/linear_interpolator" />
+
+
+Now define a layout for the action view:
+
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:src="@drawable/ic_action_refresh"
+    style="@style/Widget.Sherlock.ActionButton" />
+
+
+All we need to do is enable this view whenever the item is clicked:
+
+ public void refresh() {
+     /* Attach a rotating ImageView to the refresh item as an ActionView */
+     LayoutInflater inflater = (LayoutInflater) getActivity().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+     ImageView iv = (ImageView) inflater.inflate(R.layout.refresh_action_view, null);
+
+     Animation rotation = AnimationUtils.loadAnimation(getActivity(), R.anim.clockwise_refresh);
+     rotation.setRepeatCount(Animation.INFINITE);
+     iv.startAnimation(rotation);
+
+     refreshItem.setActionView(iv);
+
+     //TODO trigger loading
+ }
+
+
+When the loading is done, simply stop the animation and clear the view:
+
+public void completeRefresh() {
+    refreshItem.getActionView().clearAnimation();
+    refreshItem.setActionView(null);
+}
+
+
+And you're done!
+
+Some additional things to do:
+
+
+Cache the action view layout inflation and animation inflation. They are slow so you only want to do them once.
+Add null checks in completeRefresh()
+
+
+Here's the pull request on the app: https://github.com/github/gauges-android/pull/13/files
+    

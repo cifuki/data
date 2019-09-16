@@ -1,0 +1,179 @@
+32
+Q:I am developing an app-engine connected android project using the eclipse plugin. One aspect of the app is to allow user Alpha to send pictures to user Bravo. To do that I have the following setup:
+
+User Alpha posting:
+
+
+send image to my app engine server through endpoints
+server stores image in blob store
+server stores blobkey in datastore
+
+
+User Bravo getting:
+
+
+server gets blobkey from datastore
+server gets image using blob key
+server sends image to android app using endpoints
+
+
+This setup takes upward of two (2) minutes from when my android app sends an image to when I can see it in the blob sore. Needless to say this is completely unacceptable.
+
+My server is processing the image programmatically, thru the following code:
+
+public static BlobKey toBlobstore(Blob imageData) throws FileNotFoundException, FinalizationException, LockException, IOException {
+        if (null == imageData)
+            return null;
+
+        // Get a file service
+        FileService fileService = FileServiceFactory.getFileService();
+
+        // Create a new Blob file with mime-type "image/png"
+        AppEngineFile file = fileService.createNewBlobFile("image/jpeg");// png
+
+        // Open a channel to write to it
+        boolean lock = true;
+        FileWriteChannel writeChannel = fileService.openWriteChannel(file, lock);
+
+        // This time we write to the channel directly
+        writeChannel.write(ByteBuffer.wrap
+            (imageData.getBytes()));
+
+        // Now finalize
+        writeChannel.closeFinally();
+        return fileService.getBlobKey(file);
+    }
+
+
+Does anyone know how I can either adapt the official example to use endpoints (in the case where I must use my app-engine instances) or use getServingUrl (bypassing my instances) to store and serve my blobs? Please, instead of words, include the code. Thanks.
+    
+===============================================================================================
+32
+A:I'll share how I'm doing this. I'm not using the google-cloud-endpoints, but just my own rest based api, but it should be the same idea either way.
+
+I'll lay it out step by step with code, hopefully it will be clear. 
+You'd simply adapt the way you send your requests to use endpoints instead of doing it more generic like in this example. I'm including some boilerplate, but excluding try/catch,error checking etc for brevity.
+
+Step 1 (client)
+
+First client requests an upload url from server:
+
+HttpClient httpclient = new DefaultHttpClient();    
+HttpConnectionParams.setConnectionTimeout(httpclient.getParams(), 10000); //Timeout Limit
+
+HttpGet httpGet = new HttpGet("http://example.com/blob/getuploadurl");
+response = httpclient.execute(httpGet);
+
+
+Step 2 (server)
+
+On the server side the upload request servlet would look something like this:
+
+String blobUploadUrl = blobstoreService.createUploadUrl("/blob/upload");
+
+res.setStatus(HttpServletResponse.SC_OK);
+res.setContentType("text/plain");
+
+PrintWriter out = res.getWriter();
+out.print(blobUploadUrl);
+out.flush();
+out.close();
+
+
+note the argument to createUploadUrl. This is where the client will be
+ redirected once the actual upload has been completed. That's where 
+ you'll handle storing the blobkey and/or serving url and returning it to the client. You'll have to map a servlet to that url, which will handle step 4
+
+Step 3 (client)
+Back to the client again to send the actual file to the upload url using the url returned from step 2. 
+
+HttpClient httpclient = new DefaultHttpClient();
+HttpPost httppost = new HttpPost(uploadUrlReturnedFromStep2);
+
+FileBody fileBody  = new FileBody(thumbnailFile);
+MultipartEntity reqEntity = new MultipartEntity();
+
+reqEntity.addPart("file", fileBody);
+
+httppost.setEntity(reqEntity);
+HttpResponse response = httpclient.execute(httppost)
+
+
+Once this request is sent to the servlet in step 2, it will be redirected to the servlet you specified in the createUploadUrl() earlier
+
+Step 4 (server)
+
+Back to the server side:
+This is the servlet handling the url mapped to blob/upload. We will here return the blobkey and serving url to the client in a json object:
+
+List<BlobKey> blobs = blobstoreService.getUploads(req).get("file");
+BlobKey blobKey = blobs.get(0);
+
+ImagesService imagesService = ImagesServiceFactory.getImagesService();
+ServingUrlOptions servingOptions = ServingUrlOptions.Builder.withBlobKey(blobKey);
+
+String servingUrl = imagesService.getServingUrl(servingOptions);
+
+res.setStatus(HttpServletResponse.SC_OK);
+res.setContentType("application/json");
+
+JSONObject json = new JSONObject();
+json.put("servingUrl", servingUrl);
+json.put("blobKey", blobKey.getKeyString());
+
+PrintWriter out = res.getWriter();
+out.print(json.toString());
+out.flush();
+out.close();
+
+
+Step 5 (client)
+
+We'll get the blobkey and serving url from the json and then send it along with user id etc to store in the datastore entity.
+
+JSONObject resultJson = new JSONObject(resultJsonString);
+
+String blobKey = resultJson.getString("blobKey");
+String servingUrl = resultJson.getString("servingUrl");
+
+List<NameValuePair> nameValuePairs = new ArrayList<NameValuePair>(2);
+
+nameValuePairs.add(new BasicNameValuePair("userId", userId));
+nameValuePairs.add(new BasicNameValuePair("blobKey",blobKey));
+nameValuePairs.add(new BasicNameValuePair("servingUrl",servingUrl));
+
+HttpClient httpclient = new DefaultHttpClient();
+HttpConnectionParams.setConnectionTimeout(httpclient.getParams(), 10000);
+
+HttpPost httppost = new HttpPost(url);
+httppost.setEntity(new UrlEncodedFormEntity(nameValuePairs));
+HttpResponse response = httpclient.execute(httppost);
+
+// Continue to store the (immediately available) serving url in local storage f.ex
+
+
+Step 6 (server)
+Actually storing everything in the datastore (using objectify in this example)
+
+final String userId   = req.getParameter("userId");
+final String blobKey  = req.getParameter("blobKey");
+final String servingUrl = req.getParameter("servingUrl");
+
+ExampleEntity entity = new ExampleEntity();
+entity.setUserId(userId);
+entity.setBlobKey(blobKey);
+entity.setServingUrl(servingUrl);
+
+ofy().save().entity(entity);
+
+
+I hope this makes things more clear. If someone wants to edit the answer to use cloud endpoints instead of this more generic example, feel free :)
+
+About the serving url
+
+The serving url is a great way to serve images to your clients, because of the way it can dynamically scale images on the fly. For example you can send smaller images to your LDPI users by simply appending =sXXX at the end of the serving url. Where XXX is the pixel size of the largest dimension of your image. You completely avoid your instances and only pay for bandwidth, and the user only downloads what she needs.
+
+PS!
+
+It should be possible to stop at step 4 and just store it directly there, by passing along userId f.ex in step 3. Any parameters are supposed to be sent along to Step 4, but I did not get that to work, so this is how I do it at the moment, so I'm sharing it this way since i know it works.
+    

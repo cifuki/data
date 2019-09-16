@@ -1,0 +1,267 @@
+40
+Q:I've been searching for a while on how to change between the drawer open/close icon (going from a hamburger to the arrow) to a simple back arrow. My application at the moment only has one Activity which switches between several fragments. At one point, I want to transition between one of the main fragments (ie, one of the fragments in the drawer) to a fragment that hierarchically is under the previous fragment (ie, an "Add New " fragment). In this new fragment, I want to have the Toolbar to show the back button instead of the drawer button.
+
+I've been looking around and trying different solutions for quite a while. Here are the most notable:
+
+
+Change drawer icon back to back arrow - I successfully removed the drawer icon, but in place there's.... nothing. No up caret, no back button, no icon. I suspect this is because my Activity has no parent, but other than a cheap work around (create another Activity that acts as a parent which launches the main Activity), I'm at a lost of what to do.
+Switching between Android Navigation Drawer image and Up caret when using fragments - Similar to the above, yet has far more detail. Ultimately, the icon still doesn't turn into a back button.
+Android lollipop toolbar switch between open/close drawer and back button - I find this hard to follow, but ultimately the drawer icon can be tapped and does nothing (although I believe I know how to make it act as a back press). However, the icon doesn't change.
+
+
+At the moment, I'm thinking of a long, arduous method of creating a custom icon that I hide and show (and hide/show the native drawer icon). However, is there a better way to switch between the drawer and back buttons? 
+
+As a side yet related question, I've been looking at the Material Design docs, and a few examples have an X in the top left corner. How different is that to implement than implementing the drawer vs back/up buttons?
+
+Thanks~
+
+Edit:
+
+I can figure out how to replace the icon, but how would I get the click event?
+
+So far, this was my best lead:
+
+
+Cannot catch toolbar home button click event
+
+
+What I've tried now:
+
+
+Disabled the DrawerToggle when necessary (ie, mDrawerToggle.setDrawerIndicatorEnabled(useDrawer);)
+Added logs in onOptionsItemSelected in my NavigationDrawerFragment, my Activity, as well as the DialogFragment I'm currently testing which run if item.getItemId() == android.R.id.home is true. None of these log statements go off
+
+
+For better context, I now have a full screen fragment which adds a "Save" button to the menu and changes the drawer icon to an "X". The fragment can get the save menu event, yet not even the Activity and Drawer can get when the X is tapped.
+
+Edit2:
+
+As requested, here is some code. Note that this is all from this Github repo, which I'm actively working on (note that I have a few useless functions here or there from rapid testing).
+
+ActivityMain:
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    // Add the toolbar
+    mToolbar = (Toolbar) findViewById(R.id.toolbar);
+    if (mToolbar != null) {
+        setSupportActionBar(mToolbar);
+    }
+
+    // Initialize the drawer
+    mNavigationDrawerFragment = (NavigationDrawerFragment)
+            getSupportFragmentManager().findFragmentById(R.id.navigation_drawer);
+
+    // Set up the drawer
+    mNavigationDrawerFragment.setUp(
+            R.id.navigation_drawer,
+            (DrawerLayout) findViewById(R.id.drawer_layout),
+            mToolbar);
+
+    // TODO: Check if this helps to catch the main toolbar button click
+    getSupportActionBar().setDisplayShowHomeEnabled(true);
+
+    // Get the titles for the Toolbar
+    mTitles = getResources().getStringArray(R.array.drawer_items);
+
+    mDrawerPosition = -1;
+    if (savedInstanceState == null) {
+        // If there was no saved position, then the default, starting position should be used
+        forceChangeItemSelected(0);
+    }
+    else {
+        // Otherwise, get the saved position from the bundle
+        int position = savedInstanceState.getInt(KEY_DRAWERPOS);
+        mNavigationDrawerFragment.setSelectedItem(position);
+        // Title needs to be re-set
+        getSupportActionBar().setTitle(mTitles[position]);
+    }
+
+    // If I include the below bit, then the DrawerToggle doesn't function
+        // I don't know how to switch it back and forth
+    mToolbar.setNavigationOnClickListener(new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            Log.d(LOG_TAG, "Navigation was clicked");
+
+        }
+    });
+}
+
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {
+    // Handle action bar item clicks here. The action bar will
+    // automatically handle clicks on the Home/Up button, so long
+    // as you specify a parent activity in AndroidManifest.xml.
+    Log.d(LOG_TAG, "Activity responding to menu click...");
+    if(item.getItemId() == android.R.id.home) Log.d(LOG_TAG, "Activity got it....");
+
+    // If the fragment is supposed to handle things, then let it
+    if(mIsFragmentHandlingMenus) return false;
+
+    int id = item.getItemId();
+    if(id == R.id.save) {
+        // This isn't implemented! If chosen, then there's a bug!
+        Log.e(LOG_TAG, "onOptionsItemSelected: Save was selected!");
+    }
+
+    return super.onOptionsItemSelected(item);
+}
+
+@Override
+public void fragmentHandlingMenus(boolean isFragmentHandlingMenus) {
+    // Simply store the setting
+    mIsFragmentHandlingMenus = isFragmentHandlingMenus;
+
+    // Toggle the drawer as necessary
+    mNavigationDrawerFragment.toggleDrawerUse(!isFragmentHandlingMenus);
+}
+
+
+NavigationDrawerFragment:
+
+public void toggleDrawerUse(boolean useDrawer) {
+    // Enable/Disable the icon being used by the drawer
+    mDrawerToggle.setDrawerIndicatorEnabled(useDrawer);
+
+    // TODO: Enable/Disable the drawer even being able to open/close
+}
+
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {
+    Log.d(LOGTAG, "Drawer responding to menu click...");
+    if(item.getItemId() == android.R.id.home) Log.d(LOGTAG, "Drawer got it....");
+    if (mDrawerToggle.onOptionsItemSelected(item)) {
+        return true;
+    }
+
+    return super.onOptionsItemSelected(item);
+}
+
+
+GoalAdderFragment:
+
+@Override
+public void onActivityCreated(Bundle savedInstanceState) {
+    super.onActivityCreated(savedInstanceState);
+    // Allow this fragment to handle toolbar menu items
+    setHasOptionsMenu(true);
+
+    // Set up the toolbar
+    ((ActionBarActivity) getActivity()).getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+    ((ActionBarActivity) getActivity()).getSupportActionBar().setHomeAsUpIndicator(android.R.drawable.ic_menu_close_clear_cancel);
+    ((ActionBarActivity) getActivity()).getSupportActionBar().setTitle(getResources().getString(R.string.title_addgoal));
+}
+
+@Override
+public void onAttach(Activity activity) {
+    super.onAttach(activity);
+
+    // Cache the Activity as the frag handler if necessary
+    if(mFragHandler == null)
+        mFragHandler = (TransactionHandler.FragmentTransactionHandler) getActivity();
+    // Tell the Activity to let fragments handle the menu events
+    mFragHandler.fragmentHandlingMenus(true);
+}
+
+@Override
+public void onDetach() {
+    super.onDetach();
+
+    // Tell the Activity that it can now handle menu events once again
+    mFragHandler.fragmentHandlingMenus(false);
+}
+
+@Override
+public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+    inflater.inflate(R.menu.save_menu, menu);
+}
+
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {
+    Log.d(LOGTAG, "Item id: " + item.getItemId() + " | Save id: " + R.id.save);
+    Toast.makeText(getActivity(), "Fragment activated!", Toast.LENGTH_SHORT).show();
+
+    switch (item.getItemId()) {
+        case R.id.save:
+            return true;
+        case android.R.id.home:
+            return true;
+        default:
+            break;
+    }
+
+    return false;
+}
+
+
+Solution:
+
+This is the ultimate solution I ended up on, with the help of the accepted answer below:
+
+NavigationDrawerFragment:
+
+private View.OnClickListener mOriginalListener;
+
+public void setUp(int fragmentId, DrawerLayout drawerLayout, Toolbar toolbar) {
+     /* Rest of setting up code */
+
+     // Save the default listener after setting everything else up
+     mOriginalListener = mDrawerToggle.getToolbarNavigationClickListener();
+}
+
+// Tells the toolbar+drawer to switch to the up button or switch back to the normal drawer
+public void toggleDrawerUse(boolean useDrawer) {
+    // Enable/Disable the icon being used by the drawer
+    mDrawerToggle.setDrawerIndicatorEnabled(useDrawer);
+
+    // Switch between the listeners as necessary
+    if(useDrawer)
+        mDrawerToggle.setToolbarNavigationClickListener(mOriginalListener);
+    else
+        mDrawerToggle.setToolbarNavigationClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Toast.makeText(getActivity(), "Custom listener", Toast.LENGTH_SHORT).show();
+            }
+        });
+}
+
+    
+===============================================================================================
+12
+A:That's probably not what you would like to hear, but even from a conceptual point of view I would go for a new activity rather than a fragment. 
+
+Your main activity is strictly linked to the drawer, so loading a new fragment without any access to the drawer makes no sense to me (but feel free wait for other answers if you think so). A new activity would solve both problems, since it would have no drawer and could be a child of the main one.
+
+Your side question looks spot on also. A "Add New" activity could nicely fit into the "full-screen dialog" visual pattern from the guidelines. See:
+
+http://www.google.com/design/spec/components/dialogs.html#dialogs-full-screen-dialogs
+
+This pattern has a "save", positive button on top-right, and a X. Conceptually, the X button is to cancel/abort a process, rather than navigating up some backstack. It means you are dismissing something without letting any action happen. This fits well for what you want to do.
+
+From a design point of view, it's easily made by a new Activity, that can stay on top of others. Also, if the point of fragments is basically being able to represent two or more at once in tablets and bigger screen - again - I wouldn't be so happy with an old fragment on my left and an "Add New" fragment on the right.
+
+Rather - on tablets - I would go for a floating dialog, as suggested by the guidelines.
+
+http://www.google.com/design/spec/components/dialogs.html#dialogs-confirmation-dialogs
+
+So full-screen activity with a X button for phones, and floating dialog (with buttons at the bottom) for tablets. This, to me, is the most guidelines-coherent approach.
+
+
+
+I recommend reading the whole link. On the difference between <- and X,
+
+
+  The X differs from an Up arrow, which is used when the view\xe2\x80\x99s state is constantly being saved or when apps have draft or autosave capabilities. For example, an Up arrow is used in Settings because all changes are committed immediately. 
+
+
+And also
+
+
+  Touching the X in this Settings example will discard all changes. Changes will be saved only upon touching Save.
+
+    

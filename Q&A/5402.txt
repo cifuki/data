@@ -1,0 +1,86 @@
+46
+Q:My app has ability to select photo from library. Exactly I want file path from this selection.
+
+This is the code to create intent for selecting photo:
+
+    Intent photoPickerIntent = new Intent(Intent.ACTION_PICK,
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+    photoPickerIntent.setType("image/*");
+    startActivityForResult(photoPickerIntent, INTENT_REQUEST_CODE_SELECT_PHOTO);
+
+
+This is the code that gets file path from URI:
+
+    Cursor cursor = null;
+    String path = null;
+    try {
+        String[] projection = { MediaStore.Images.Media.DATA };
+        cursor = context.getContentResolver().query(contentUri, projection, null, null, null);
+        int columnIndex = cursor.getColumnIndexOrThrow(projection[0]);
+        cursor.moveToFirst();
+        path = cursor.getString(columnIndex);
+    } finally {
+        if (cursor != null) {
+            cursor.close();
+        }
+    }
+    return path;
+
+
+Before yesterday's update of Google Photos app everything worked perfectly fine.
+Now path is null after parsing URI.
+
+URI is similar to this: content://com.google.android.apps.photos.contentprovider/0/1/content%3A%2F%2Fmedia%2Fexternal%2Fimages%2Fmedia%2F75209/ACTUAL
+
+I also tried to create intent with Intent.ACTION_GET_CONTENT action - no luck.
+    
+===============================================================================================
+47
+A:Below code is working for me to get content URI on latest Google Photos as well. 
+What i have tried is writing to temp file and return temp image URI, if it has authority in content URI.
+
+You can try same:
+
+private static String getImageUrlWithAuthority(Context context, Uri uri)
+{
+    InputStream is = null;
+
+    if (uri.getAuthority() != null)
+    {
+        try
+        {
+            is = context.getContentResolver().openInputStream(uri);
+            Bitmap bmp = BitmapFactory.decodeStream(is);
+            return writeToTempImageAndGetPathUri(context, bmp).toString();
+        }
+        catch (FileNotFoundException e)
+        {
+            e.printStackTrace();
+        }
+        finally
+        {
+            try
+            {
+                if (is != null)
+                {
+                    is.close();
+                }
+            }
+            catch (IOException e)
+            {
+                e.printStackTrace();
+            }
+        }
+    }
+    return null;
+}
+
+private static Uri writeToTempImageAndGetPathUri(Context inContext, Bitmap inImage)
+{
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    inImage.compress(Bitmap.CompressFormat.JPEG, 100, bytes);
+    String path = MediaStore.Images.Media.insertImage(inContext.getContentResolver(), inImage, "Title", null);
+    return Uri.parse(path);
+}
+
+    

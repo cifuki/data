@@ -1,0 +1,85 @@
+40
+Q:I'm trying to use Kotlin in my Android project. I need to create custom view class. Each custom view has two important constructors:
+
+public class MyView extends View {
+    public MyView(Context context) {
+        super(context);
+    }
+
+    public MyView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+}
+
+
+MyView(Context) is used to instantiate view in code, and MyView(Context, AttributeSet) is called by layout inflater when inflating layout from XML.
+
+Answer to this question suggests that I use constructor with default values or factory method. But here's what we have:
+
+Factory method:
+
+fun MyView(c: Context) = MyView(c, attrs) //attrs is nowhere to get
+class MyView(c: Context, attrs: AttributeSet) : View(c, attrs) { ... }
+
+
+or  
+
+fun MyView(c: Context, attrs: AttributeSet) = MyView(c) //no way to pass attrs.
+                                                        //layout inflater can't use 
+                                                        //factory methods
+class MyView(c: Context) : View(c) { ... }
+
+
+Constructor with default values:
+
+class MyView(c: Context, attrs: AttributeSet? = null) : View(c, attrs) { ... }
+//here compiler complains that 
+//"None of the following functions can be called with the arguments supplied."
+//because I specify AttributeSet as nullable, which it can't be.
+//Anyway, View(Context,null) is not equivalent to View(Context,AttributeSet)
+
+
+How can this puzzle be resolved?
+
+
+
+UPDATE: Seems like we can use View(Context, null) superclass constructor instead of View(Context), so factory method approach seems to be the solution. But even then I can't get my code to work:
+
+fun MyView(c: Context) = MyView(c, null) //compilation error here, attrs can't be null
+class MyView(c: Context, attrs: AttributeSet) : View(c, attrs) { ... }
+
+
+or 
+
+fun MyView(c: Context) = MyView(c, null) 
+class MyView(c: Context, attrs: AttributeSet?) : View(c, attrs) { ... }
+//compilation error: "None of the following functions can be called with 
+//the arguments supplied." attrs in superclass constructor is non-null
+
+    
+===============================================================================================
+41
+A:Kotlin supports multiple constructors since M11 which was released 19.03.2015. The syntax is as follows:
+
+class MyView : View {
+    constructor(context: Context, attrs: AttributeSet, defStyle: Int) : super(context, attrs, defStyle) {
+        // ...
+    }
+
+    constructor(context: Context, attrs: AttributeSet) : this(context, attrs, 0) {}
+}
+
+
+More info here and here.
+
+Edit: you can also use @JvmOverloads annotation so that Kotlin auto-generates the required constructors for you:
+
+class MyView @JvmOverloads constructor(
+    context: Context, 
+    attrs: AttributeSet? = null, 
+    defStyle: Int = 0
+) : View(context, attrs, defStyle)
+
+
+Beware, though, as this approach may sometimes lead to the unexpected results, depending on how the class you inherit from defines its constructors. Good explanation of what might happen is given in that article.
+    

@@ -1,0 +1,64 @@
+28
+Q:I am using FCM to provide notifications in my app. Everything worked well, but now I realised that, when I install my application using Android Studio (not from GooglePlay) the token is null at first run. When I close my app and restart it, the token is not null anymore. What cause this problem and how can I avoid it?
+
+InstanceIDService:
+
+public class InstanceIDService extends FirebaseInstanceIdService {
+
+    @Override
+    public void onTokenRefresh() {
+
+        String token = FirebaseInstanceId.getInstance().getToken();
+        registerToken(token);
+    }
+
+    private void registerToken(String token) {
+
+        OkHttpClient client = new OkHttpClient();
+        RequestBody body = new FormBody.Builder()
+                .add("Token",token)
+                .build();
+
+        Request request = new Request.Builder()
+                .url("url_to_registration_script")
+                .post(body)
+                .build();
+
+        try {
+            client.newCall(request).execute();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+
+In MainActivity:
+
+FirebaseMessaging.getInstance().subscribeToTopic("topic");
+String token = FirebaseInstanceId.getInstance().getToken();
+Log.d("TOKEN", token);
+
+
+Last log returns null when app is installed and started for the first time
+
+Registration script:
+
+ <?php 
+ if (isset($_POST["Token"])) {
+
+       $_uv_Token=$_POST["Token"];
+       $conn = mysqli_connect("localhost","user","pass","db") or die("Error connecting");
+       $q="INSERT INTO users (Token) VALUES ( '$_uv_Token') "
+          ." ON DUPLICATE KEY UPDATE Token = '$_uv_Token';";
+
+  mysqli_query($conn,$q) or die(mysqli_error($conn));
+  mysqli_close($conn);
+}
+?>
+
+    
+===============================================================================================
+30
+A:The token is fetched asynchronously on first app start. You have to wait for onTokenRefresh() to be called in your FirebaseInstanceIdService before the token can be accessed.
+    

@@ -1,0 +1,124 @@
+27
+Q:I'm using Android MVVM architecture with LiveData. I have an object like this
+
+public class User {
+    private String firstName;
+    private String lastName;
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public void setFirstName(String firstName) {
+        this.firstName = firstName;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public void setLastName(String lastName) {
+        this.lastName = lastName;
+    }
+}
+
+
+And my view model looks like this 
+
+public class InfoViewModel extends AndroidViewModel {
+    MutableLiveData<User> user = new MutableLiveData<>();
+
+    public InfoViewModel(@NonNull Application application) {
+        super(application);
+        User user = new User();
+        user.setFirstName("Alireza");
+        user.setLastName("Ahmadi");
+
+        this.user.setValue(user);
+    }
+
+    public LiveData<User> getUser(){
+        return user;
+    }
+
+    public void change(){
+        user.getValue().setFirstName(user.getValue().getFirstName() + " A ");
+    }
+}
+
+
+How can I make sure when some filed in user object changes observers get notified? BTW it is important to me to keep this data in the separate object and not use primary values like Strings in my ViewModel.
+    
+===============================================================================================
+32
+A:I don't think there is any best practice as such recommended by android for this. I would suggest you to use the approach which uses cleaner & less boilerplate code. 
+
+If you are using android data binding along with LiveData you can go with the following approach:
+
+Your POJO object would look something like this 
+
+public class User extends BaseObservable {
+    private String firstName;
+    private String lastName;
+
+    @Bindable
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public void setFirstName(String firstName) {
+        this.firstName = firstName;
+        notifyPropertyChanged(BR.firstName);
+    }
+
+    @Bindable
+    public String getLastName() {
+        return lastName;
+    }
+
+    public void setLastName(String lastName) {
+        this.lastName = lastName;
+        notifyPropertyChanged(BR.lastName);
+    }
+}
+
+
+So you would be already having a class which notifies whenever its property changes. So you can just make use of this property change callback in your MutableLiveData to notify its observer. You can create a custom MutableLiveData for this
+
+public class CustomMutableLiveData<T extends BaseObservable>
+        extends MutableLiveData<T> {
+
+
+    @Override
+    public void setValue(T value) {
+        super.setValue(value);
+
+        //listen to property changes
+        value.addOnPropertyChangedCallback(callback);
+    }
+
+    Observable.OnPropertyChangedCallback callback = new Observable.OnPropertyChangedCallback() {
+        @Override
+        public void onPropertyChanged(Observable sender, int propertyId) {
+
+            //Trigger LiveData observer on change of any property in object
+            setValue(getValue());
+
+        }
+    };
+
+
+}
+
+
+Then all you need to do is use this CustomMutableLiveData instead of MutableLiveData in your View Model
+
+public class InfoViewModel extends AndroidViewModel {
+
+    CustomMutableLiveData<User> user = new CustomMutableLiveData<>();
+-----
+-----
+
+
+So by doing this you can notify both view & LiveData observer with little change to existing code. Hope it helps
+    

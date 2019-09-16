@@ -1,0 +1,79 @@
+58
+Q:How do I set the maximum width of a ViewGroup? I am using a Theme.Dialog activity, however, this does not look so good when resized to bigger screens, it's also sort of lightweight and I don't want it taking up the whole screen.
+
+I tried this suggestion to no avail. Also, there is no android:maxWidth property like some views.
+
+Is there a way to restrict the root LinearLayout so that it is only (for example) 640 dip? I am willing to change to another ViewGroup for this.
+
+Any suggestions?
+    
+===============================================================================================
+88
+A:One option which is what I did is to extend LinearLayout and override the onMeasure function. For example: 
+
+public class BoundedLinearLayout extends LinearLayout {
+
+    private final int mBoundedWidth;
+
+    private final int mBoundedHeight;
+
+    public BoundedLinearLayout(Context context) {
+        super(context);
+        mBoundedWidth = 0;
+        mBoundedHeight = 0;
+    }
+
+    public BoundedLinearLayout(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.BoundedView);
+        mBoundedWidth = a.getDimensionPixelSize(R.styleable.BoundedView_bounded_width, 0);
+        mBoundedHeight = a.getDimensionPixelSize(R.styleable.BoundedView_bounded_height, 0);
+        a.recycle();
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        // Adjust width as necessary
+        int measuredWidth = MeasureSpec.getSize(widthMeasureSpec);
+        if(mBoundedWidth > 0 && mBoundedWidth < measuredWidth) {
+            int measureMode = MeasureSpec.getMode(widthMeasureSpec);
+            widthMeasureSpec = MeasureSpec.makeMeasureSpec(mBoundedWidth, measureMode);
+        }
+        // Adjust height as necessary
+        int measuredHeight = MeasureSpec.getSize(heightMeasureSpec);
+        if(mBoundedHeight > 0 && mBoundedHeight < measuredHeight) {
+            int measureMode = MeasureSpec.getMode(heightMeasureSpec);
+            heightMeasureSpec = MeasureSpec.makeMeasureSpec(mBoundedHeight, measureMode);
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+    }
+}
+
+
+Then you XML would use the custom class:
+
+<com.yourpackage.BoundedLinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="fill_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    app:bounded_width="900dp">
+
+    <TextView
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+    />
+</com.youpackage.BoundedLinearLayout>
+
+
+And the attr.xml file entry
+
+<declare-styleable name="BoundedView">
+    <attr name="bounded_width" format="dimension" />
+    <attr name="bounded_height" format="dimension" />
+</declare-styleable>
+
+
+EDIT: This is the actual code I am using now. This is still not complete but works in most cases. 
+    

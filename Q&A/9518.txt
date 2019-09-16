@@ -1,0 +1,120 @@
+29
+Q:Please see each section below for a description of my problem described in three separate ways. Hopefully should help people to answer.
+
+Problem: How do you find a pair of coordinate expressed in canvas/userspace when you only have the coordinate expressed in terms of a zoomed image, given the original scale point & scale factor?
+
+Problem in practice:
+
+I'm currently trying to replicate the zoom functionality used in apps such as the gallery / maps, when you can pinch to zoom/zoom out with the zoom moving towards the midpoint of the pinch. 
+
+On down I save the centre point of the zoom (which is in X,Y coordinates based on the current screen). I then have this function act when a "scale" gesture is detected:
+
+class ImageScaleGestureDetector extends SimpleOnScaleGestureListener {
+    @Override
+    public boolean onScale(ScaleGestureDetector detector) {
+        if(mScaleAllowed) 
+            mCustomImageView.scale(detector.getScaleFactor(), mCenterX, mCenterY);
+        return true;
+    }
+}   
+
+
+The scale function of the CustomImageView look like this:
+
+public boolean scale(float scaleFactor, float focusX, float focusY) {
+    mScaleFactor *= scaleFactor;
+
+    // Don't let the object get too small or too large.
+    mScaleFactor = Math.max(MINIMUM_SCALE_VALUE, Math.min(mScaleFactor, 5.0f));
+
+    mCenterScaleX = focusX;
+    mCenterScaleY = focusY;
+
+    invalidate();
+
+    return true;
+}
+
+
+The drawing of the scaled image is achieved by overriding the onDraw method which scales the canvas around the centre ands draw's the image to it.
+
+@Override
+public void onDraw(Canvas canvas) {
+    super.onDraw(canvas);
+
+    canvas.save();
+    canvas.translate(mCenterScaleX, mCenterScaleY);
+    canvas.scale(mScaleFactor, mScaleFactor);
+    canvas.translate(-mCenterScaleX, -mCenterScaleY);
+    mIcon.draw(canvas);
+    canvas.restore();
+}
+
+
+This all works fine when scaling from ScaleFactor 1, this is because the initial mCenterX and mCenterY are coordinates which are based on the device screen. 10, 10 on the device is 10, 10 on the canvas.
+
+After you have already zoomed however, then next time you click position 10, 10 it will no longer correspond to 10, 10 in the canvas because of the scaling & transforming that has already been performed.
+
+Problem in abstraction:
+
+The image below is an example of a zoom operation around centre point A. Each box represents the position and size of the view when at that scale factor (1, 2, 3, 4, 5).
+
+
+
+In the example if you scaled by a factor of 2 around A then you clicked on position B, the X, Y reported as B would be based on the screen position - not on the position relative to 0,0 of the initial canvas.
+
+I need to find a way of getting the absolute position of B.
+    
+===============================================================================================
+14
+A:So, after redrawing the problem I've found the solution I was looking for. It's gone through a few iteration's but here's how I worked it out:
+
+
+
+
+  B - Point, Center of the scale operation
+  
+  A1, A2, A3 - Points, equal in user-space but different in canvas-space.
+
+
+You know the values for Bx and By because they are always constant no matter what the scale factor (You know this value in both canvas-space and in user-space). 
+
+You know Ax & Ay in user-space so you can find the distance between Ax to Bx and Ay to By. This measurement is in user-space, to convert it to a canvas-space measurement simply divide it by the scale factor. (Once converted to canvas-space, you can see these lines in red, orange and yellow).
+
+As point B is constant, the distance between it and the edges are constant (These are represented by Blue Lines). This value is equal in user-space and canvas-space.
+
+You know the width of the Canvas in canvas-space so by subtracting these two canvas space measurements (Ax to Bx and Bx to Edge) from the total width you are left with the coordinates for point A in canvas-space:
+
+public float[] getAbsolutePosition(float Ax, float Ay) {
+
+    float fromAxToBxInCanvasSpace = (mCenterScaleX - Ax) / mScaleFactor;
+    float fromBxToCanvasEdge = mCanvasWidth - Bx;
+    float x = mCanvasWidth - fromAxToBxInCanvasSpace - fromBxToCanvasEdge;
+
+    float fromAyToByInCanvasSpace = (mCenterScaleY - Ay) / mScaleFactor;
+    float fromByToCanvasEdge = mCanvasHeight - By;
+    float y = mCanvasHeight - fromAyToByInCanvasSpace - fromByToCanvasEdge;
+
+    return new float[] { x, y };
+}
+
+
+The above code and image describe when you're clicking to the top left of the original centre. I used the same logic to find A no matter which quadrant it was located in and refactored to the following:
+
+public float[] getAbsolutePosition(float Ax, float Ay) {
+
+    float x = getAbsolutePosition(mBx, Ax);
+    float y = getAbsolutePosition(mBy, Ay); 
+
+    return new float[] { x, y };
+}
+
+private float getAbsolutePosition(float oldCenter, float newCenter, float mScaleFactor) {
+    if(newCenter > oldCenter) {
+        return oldCenter + ((newCenter - oldCenter) / mScaleFactor);
+    } else {
+        return oldCenter - ((oldCenter - newCenter) / mScaleFactor);
+    }
+}
+
+    

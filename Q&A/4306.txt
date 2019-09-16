@@ -1,0 +1,118 @@
+55
+Q:I want to be able to discover Android devices on my network and possibly retrieve some device information about them.  This is very easy with Apple devices since they run Bonjour services.  However, I can't seem to find any similar service running on Android.  
+
+This must work without modifying the Android device, installing some service, or opening some port.  It's meant to work with vanilla Android devices in the way that Bonjour helps you find vanilla Apple devices.  Even being able to just verify that the device is running Android would be sufficient.
+
+
+
+Chosen Answer:  Although it's not the top rated answer (yet), please take a look at the response by Luis.  As he mentions, you can use a DNS lookup (using your local DNS server) to discover Android devices.  I have found this to have a 100% success rate, as Android forces devices to use a hostname of android-_____.  This is apparently difficult to change on the phone, even if it is rooted.  So I think this is a pretty accurate method.  Thanks, Luis!
+
+Example:
+$ nslookup 192.168.1.104 192.168.1.1
+Server:     192.168.1.1
+Address:    192.168.1.1#53
+
+104.1.168.192.in-addr.arpa  name = android-711c129e251f14cf.\\001.
+
+
+
+
+Sample Code: If you wanted to implement this in Java (e.g., to run on Android), you can't easily use getHostName() because it uses the external DNS servers.  You want to use the local DNS server on your router, for example.  Luis mentions below that you could modify the DNS servers of the Wifi connection, but that could possibly break other things.  Instead, I've found the dnsjava library to be extremely helpful to send targeted DNS requests.  Here is some sample code using the library:
+
+        String ipAddress = "104.1.168.192";
+        String dnsblDomain = "in-addr.arpa";
+        Record[] records;
+        Lookup lookup = new Lookup(ipAddress + "." + dnsblDomain, Type.PTR);
+        SimpleResolver resolver = new SimpleResolver();
+        resolver.setAddress(InetAddress.getByName("192.168.1.1"));
+        lookup.setResolver(resolver);
+        records = lookup.run();
+
+        if(lookup.getResult() == Lookup.SUCCESSFUL) {
+              for (int i = 0; i < records.length; i++) {
+                if(records[i] instanceof PTRRecord) {
+                  PTRRecord ptr = (PTRRecord) records[i];
+                  System.out.println("DNS Record: " + records[0].rdataToString());
+                }
+              }
+        } else {
+            System.out.println("Failed lookup");
+        }
+
+    } catch(Exception e) { 
+        System.out.println("Exception: " + e);
+    }
+
+
+This gives me the output:
+
+DNS Record: android-711c129e251f14cf.\\001.
+
+
+Bingo.
+    
+===============================================================================================
+31
+A:There is an very simple approach that gave me positive results in few different devices.
+
+When a device connects to your router it receives an IP (i.e. DHCP) and register a name in DNS. The name that is registered seems to be always in the form android_nnnnnnnn.
+
+Of cource, you can name any computer with the same approach and trick the check, resulting in false positives ...
+
+Also, I can't ensure that all device suppliers are following the same approach, but I've found it to work correctly in a few devices from different brands (including different SDK levels) that I've tested.
+
+--EDITED--
+
+How to do it
+
+It depends on where you would be running the code to discovery the android devices. Assuming that you would be running the code in a Android device:
+
+
+First discover devices responding to Ping in your network. You can use the code in my answer to this post: execComd() to run a ping command.
+Get the name of responding devices using the code:
+
+InetAddress inetAddress = InetAddress.getByName(string_with_ip_addr);
+
+String name = inetAddress.getCanonicalHostName();
+
+
+--EDIT 2--
+
+Proof of concept
+
+The method bellow is just a prof of concept for what I've wrote above.
+
+I'm using isReachable() method to generate the ICMP request, which is being said in many posts that only works with rooted devices, which is the case for the device used for testing it. However, I didn't give root permissions for the application running this code, so I believe it couldn't set the SIUD bit, which is the reason why some clain this method fails. I would like to here from someone testing it on a non-rooted device.
+
+To call use:
+
+ArrayList<String> hosts = scanSubNet("192.168.1.");
+
+
+It returns in hostsa list of names for devices responding to ping request.
+
+private ArrayList<String> scanSubNet(String subnet){
+    ArrayList<String> hosts = new ArrayList<String>();
+
+    InetAddress inetAddress = null;
+    for(int i=1; i<10; i++){
+        Log.d(TAG, "Trying: " + subnet + String.valueOf(i));
+        try {
+            inetAddress = InetAddress.getByName(subnet + String.valueOf(i));
+            if(inetAddress.isReachable(1000)){
+                hosts.add(inetAddress.getHostName());
+                Log.d(TAG, inetAddress.getHostName());
+            }
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    return hosts;
+}
+
+
+Regards.
+    

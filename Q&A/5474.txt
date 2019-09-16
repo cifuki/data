@@ -1,0 +1,408 @@
+45
+Q:in my app i am downloading kml file from webserver.I have set the permission for external storage and internet in my android manifest file.I am new to android, your help is greatly appreciated
+
+MainActivity.java
+
+package com.example.demo;
+
+import java.io.DataInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.os.Environment;
+import android.util.Log;
+import android.view.Menu;
+
+public class MainActivity extends Activity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        DownloadFiles();
+    }
+    public void DownloadFiles(){
+
+            try {
+                URL u = new URL("http://www.qwikisoft.com/demo/ashade/20001.kml");
+                InputStream is = u.openStream();
+
+                DataInputStream dis = new DataInputStream(is);
+
+                byte[] buffer = new byte[1024];
+                int length;
+
+                FileOutputStream fos = new FileOutputStream(new File(Environment.getExternalStorageDirectory() + "/" + "data/test.kml"));
+                while ((length = dis.read(buffer))>0) {
+                  fos.write(buffer, 0, length);
+                }
+
+              } catch (MalformedURLException mue) {
+                Log.e("SYNC getUpdate", "malformed url error", mue);
+              } catch (IOException ioe) {
+                Log.e("SYNC getUpdate", "io error", ioe);
+              } catch (SecurityException se) {
+                Log.e("SYNC getUpdate", "security error", se);
+              }
+    }
+}
+
+
+Android Manifest File
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.demo"
+    android:versionCode="1"
+    android:versionName="1.0" >
+
+    <uses-sdk
+        android:minSdkVersion="8"
+        android:targetSdkVersion="16" />
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme" >
+
+        <activity
+            android:name="com.example.demo.MainActivity"
+            android:label="@string/app_name" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
+
+
+Logcat error:
+
+FATAL EXCEPTION: main
+java.lang.RuntimeException: Unable to start activity ComponentInfo{com.example.demo/com.example.demo.MainActivity}: android.os.NetworkOnMainThreadException
+at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:1956)
+at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:1981)
+at android.app.ActivityThread.access$600(ActivityThread.java:123)
+at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1147)
+at android.os.Handler.dispatchMessage(Handler.java:99)
+at android.os.Looper.loop(Looper.java:137)
+at android.app.ActivityThread.main(ActivityThread.java:4424)
+at java.lang.reflect.Method.invokeNative(Native Method)
+at java.lang.reflect.Method.invoke(Method.java:511)
+at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:784)
+at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:551)
+at dalvik.system.NativeStart.main(Native Method)
+Caused by: android.os.NetworkOnMainThreadException
+at android.os.StrictMode$AndroidBlockGuardPolicy.onNetwork(StrictMode.java:1099)
+at java.net.InetAddress.lookupHostByName(InetAddress.java:391)
+at java.net.InetAddress.getAllByNameImpl(InetAddress.java:242)
+at java.net.InetAddress.getAllByName(InetAddress.java:220)
+at libcore.net.http.HttpConnection.<init>(HttpConnection.java:71)
+at libcore.net.http.HttpConnection.<init>(HttpConnection.java:50)
+at libcore.net.http.HttpConnection$Address.connect(HttpConnection.java:351)
+at libcore.net.http.HttpConnectionPool.get(HttpConnectionPool.java:86)
+at libcore.net.http.HttpConnection.connect(HttpConnection.java:128)
+at libcore.net.http.HttpEngine.openSocketConnection(HttpEngine.java:308)
+at libcore.net.http.HttpEngine.connect(HttpEngine.java:303)
+at libcore.net.http.HttpEngine.sendSocketRequest(HttpEngine.java:282)
+at libcore.net.http.HttpEngine.sendRequest(HttpEngine.java:232)
+at libcore.net.http.HttpURLConnectionImpl.getResponse(HttpURLConnectionImpl.java:273)
+at libcore.net.http.HttpURLConnectionImpl.getInputStream(HttpURLConnectionImpl.java:168)
+at java.net.URL.openStream(URL.java:462)
+at com.example.demo.MainActivity.DownloadFiles(MainActivity.java:30)
+at com.example.demo.MainActivity.onCreate(MainActivity.java:24)
+at android.app.Activity.performCreate(Activity.java:4465)
+at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1049)
+at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:1920)
+
+
+EDIT
+
+package com.example.demo;
+
+import java.io.BufferedInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URL;
+import java.net.URLConnection;
+
+import android.app.Activity;
+import android.app.Dialog;
+import android.app.ProgressDialog;
+import android.os.AsyncTask;
+import android.os.Bundle;
+import android.os.Environment;
+import android.util.Log;
+
+public class MainActivity extends Activity {
+
+    private ProgressDialog pDialog;
+    public static final int progress_bar_type = 0;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        new DownloadFileFromURL().execute("http://www.qwikisoft.com/demo/ashade/20001.kml");
+
+    }
+
+    @Override
+    protected Dialog onCreateDialog(int id) {
+        switch (id) {
+        case progress_bar_type: // we set this to 0
+            pDialog = new ProgressDialog(this);
+            pDialog.setMessage("Downloading file. Please wait...");
+            pDialog.setIndeterminate(false);
+            pDialog.setMax(100);
+            pDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+            pDialog.setCancelable(true);
+            pDialog.show();
+            return pDialog;
+        default:
+            return null;
+        }
+    }
+
+
+    class DownloadFileFromURL extends AsyncTask<String, String, String> {
+
+        /**
+         * Before starting background thread Show Progress Bar Dialog
+         * */
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            showDialog(progress_bar_type);
+        }
+
+        /**
+         * Downloading file in background thread
+         * */
+        @Override
+        protected String doInBackground(String... f_url) {
+            int count;
+            try {
+                URL url = new URL(f_url[0]);
+                URLConnection conection = url.openConnection();
+                conection.connect();
+
+                // this will be useful so that you can show a tipical 0-100%
+                // progress bar
+                int lenghtOfFile = conection.getContentLength();
+
+                // download the file
+                InputStream input = new BufferedInputStream(url.openStream(),
+                        8192);
+
+                // Output stream
+                OutputStream output = new FileOutputStream(Environment
+                        .getExternalStorageDirectory().toString()
+                        + "/data/downloadedfile.kml");
+
+                byte data[] = new byte[1024];
+
+                long total = 0;
+
+                while ((count = input.read(data)) != -1) {
+                    total += count;
+                    // publishing the progress....
+                    // After this onProgressUpdate will be called
+                    publishProgress("" + (int) ((total * 100) / lenghtOfFile));
+
+                    // writing data to file
+                    output.write(data, 0, count);
+                }
+
+                // flushing output
+                output.flush();
+
+                // closing streams
+                output.close();
+                input.close();
+
+            } catch (Exception e) {
+                Log.e("Error: ", e.getMessage());
+            }
+
+            return null;
+        }
+
+        /**
+         * Updating progress bar
+         * */
+        protected void onProgressUpdate(String... progress) {
+            // setting progress percentage
+            pDialog.setProgress(Integer.parseInt(progress[0]));
+        }
+
+        /**
+         * After completing background task Dismiss the progress dialog
+         * **/
+        @Override
+        protected void onPostExecute(String file_url) {
+            // dismiss the dialog after the file was downloaded
+            dismissDialog(progress_bar_type);
+
+        }
+    }
+}
+
+
+When i run this code in the emulator the code still doesnot work..the file is not downloaded.
+    
+===============================================================================================
+70
+A:Using Async task. (if not work in 4.0 then add 
+
+StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
+StrictMode.setThreadPolicy(policy); 
+
+
+)
+
+call when you want to download file : new DownloadFileFromURL().execute(file_url);
+
+public class MainActivity extends Activity {
+
+    // Progress Dialog
+    private ProgressDialog pDialog;
+    public static final int progress_bar_type = 0;
+
+    // File url to download
+    private static String file_url = "http://www.qwikisoft.com/demo/ashade/20001.kml";
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        setContentView(R.layout.activity_main);
+
+        new DownloadFileFromURL().execute(file_url);
+
+    }
+
+    /**
+     * Showing Dialog
+     * */
+
+    @Override
+    protected Dialog onCreateDialog(int id) {
+        switch (id) {
+        case progress_bar_type: // we set this to 0
+            pDialog = new ProgressDialog(this);
+            pDialog.setMessage("Downloading file. Please wait...");
+            pDialog.setIndeterminate(false);
+            pDialog.setMax(100);
+            pDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+            pDialog.setCancelable(true);
+            pDialog.show();
+            return pDialog;
+        default:
+            return null;
+        }
+    }
+
+    /**
+     * Background Async Task to download file
+     * */
+    class DownloadFileFromURL extends AsyncTask<String, String, String> {
+
+        /**
+         * Before starting background thread Show Progress Bar Dialog
+         * */
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            showDialog(progress_bar_type);
+        }
+
+        /**
+         * Downloading file in background thread
+         * */
+        @Override
+        protected String doInBackground(String... f_url) {
+            int count;
+            try {
+                URL url = new URL(f_url[0]);
+                URLConnection conection = url.openConnection();
+                conection.connect();
+
+                // this will be useful so that you can show a tipical 0-100%
+                // progress bar
+                int lenghtOfFile = conection.getContentLength();
+
+                // download the file
+                InputStream input = new BufferedInputStream(url.openStream(),
+                        8192);
+
+                // Output stream
+                OutputStream output = new FileOutputStream(Environment
+                        .getExternalStorageDirectory().toString()
+                        + "/2011.kml");
+
+                byte data[] = new byte[1024];
+
+                long total = 0;
+
+                while ((count = input.read(data)) != -1) {
+                    total += count;
+                    // publishing the progress....
+                    // After this onProgressUpdate will be called
+                    publishProgress("" + (int) ((total * 100) / lenghtOfFile));
+
+                    // writing data to file
+                    output.write(data, 0, count);
+                }
+
+                // flushing output
+                output.flush();
+
+                // closing streams
+                output.close();
+                input.close();
+
+            } catch (Exception e) {
+                Log.e("Error: ", e.getMessage());
+            }
+
+            return null;
+        }
+
+        /**
+         * Updating progress bar
+         * */
+        protected void onProgressUpdate(String... progress) {
+            // setting progress percentage
+            pDialog.setProgress(Integer.parseInt(progress[0]));
+        }
+
+        /**
+         * After completing background task Dismiss the progress dialog
+         * **/
+        @Override
+        protected void onPostExecute(String file_url) {
+            // dismiss the dialog after the file was downloaded
+            dismissDialog(progress_bar_type);
+
+        }
+
+    }
+}
+
+    

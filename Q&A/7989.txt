@@ -1,0 +1,87 @@
+33
+Q:I want to make a simple timer in Android that updates a TextView every second. It simply counts seconds like in Minesweeper.
+
+The problem is when i ignore the tvTime.setText(...) (make it //tvTime.setText(...), in LogCat will be printed the following number every second.
+But when i want to set this number to a TextView (created in another Thread), the program crashes.
+
+Does anyone have an idea how to solve this easily?
+
+Here's the code (method is called on startup):
+
+private void startTimerThread() {
+    Thread th = new Thread(new Runnable() {
+        private long startTime = System.currentTimeMillis();
+        public void run() {
+            while (gameState == GameState.Playing) {
+                System.out.println((System.currentTimeMillis() - this.startTime) / 1000);
+                tvTime.setText("" + ((System.currentTimeMillis() - this.startTime) / 1000));
+                try {
+                    Thread.sleep(1000);
+                }
+                catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    });
+    th.start();
+}
+
+
+EDIT:
+
+Finally, I got it.
+Here is the solution, for those who are interested in.
+
+private void startTimerThread() {       
+    Thread th = new Thread(new Runnable() {
+        private long startTime = System.currentTimeMillis();
+        public void run() {
+            while (gameState == GameState.Playing) {                
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        tvTime.setText(""+((System.currentTimeMillis()-startTime)/1000));
+                    }
+                });
+                try {
+                    Thread.sleep(1000);
+                } 
+                catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    });
+    th.start();
+}
+
+    
+===============================================================================================
+49
+A:The UserInterface can only be updated by the UI Thread. You need a Handler, to post to the UI Thread:
+
+private void startTimerThread() {
+    Handler handler = new Handler();
+    Runnable runnable = new Runnable() {
+        private long startTime = System.currentTimeMillis();
+        public void run() {
+            while (gameState == GameState.Playing) {  
+                try {
+                    Thread.sleep(1000);
+                }    
+                catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                handler.post(new Runnable(){
+                    public void run() {
+                       tvTime.setText("" + ((System.currentTimeMillis() - this.startTime) / 1000));
+                }
+            });
+            }
+        }
+    };
+    new Thread(runnable).start();
+}
+
+    

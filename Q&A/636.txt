@@ -1,0 +1,68 @@
+212
+Q:Before KitKat (or before the new Gallery) the Intent.ACTION_GET_CONTENT returned a URI like this
+
+
+  content://media/external/images/media/3951.
+
+
+Using the ContentResolver and quering for
+MediaStore.Images.Media.DATA returned the file URL.
+
+In KitKat however the Gallery returns a URI (via "Last") like this:
+
+
+  content://com.android.providers.media.documents/document/image:3951
+
+
+How do I handle this?
+    
+===============================================================================================
+108
+A:Try this:  
+
+if (Build.VERSION.SDK_INT <19){
+    Intent intent = new Intent(); 
+    intent.setType("image/jpeg");
+    intent.setAction(Intent.ACTION_GET_CONTENT);
+    startActivityForResult(Intent.createChooser(intent, getResources().getString(R.string.select_picture)),GALLERY_INTENT_CALLED);
+} else {
+    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+    intent.addCategory(Intent.CATEGORY_OPENABLE);
+    intent.setType("image/jpeg");
+    startActivityForResult(intent, GALLERY_KITKAT_INTENT_CALLED);
+}
+
+@Override
+public void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    if (resultCode != Activity.RESULT_OK) return;
+    if (null == data) return;
+    Uri originalUri = null;
+    if (requestCode == GALLERY_INTENT_CALLED) {
+        originalUri = data.getData();
+    } else if (requestCode == GALLERY_KITKAT_INTENT_CALLED) {
+        originalUri = data.getData();
+        final int takeFlags = data.getFlags()
+                & (Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        // Check for the freshest data.
+        getContentResolver().takePersistableUriPermission(originalUri, takeFlags);
+    }
+
+    loadSomeStreamAsynkTask(originalUri);
+
+}
+
+
+Probably need 
+
+
+  @SuppressLint("NewApi")
+
+
+for 
+
+
+  takePersistableUriPermission
+
+    

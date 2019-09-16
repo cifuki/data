@@ -1,0 +1,49 @@
+39
+Q:I'm currently attempting to minimize audio latency for a simple application:
+
+I have a video on a PC, and I'm transmitting the video's audio through RTP to a mobile client. With a very similar buffering algorithm, I can achieve 90ms of latency on iOS, but a dreadful \xc2\xb1180ms on Android.
+
+I'm guessing the difference stems from the well-known latency issues on Android.
+
+However, after reading around for a bit, I came upon this article, which states that:
+
+
+Low-latency audio is available since Android 4.1/4.2 in certain devices.
+Low-latency audio can be achieved using libpd, which is Pure Data library for Android.
+
+
+I have 2 questions, directly related to those 2 statements:
+
+
+Where can I find more information on the new low-latency audio in Jellybean? This is all I can find but it's sorely lacking in specific information. Should the changes be transparent to me, or is there some new class/API calls I should be implementing for me to notice any changes in my application? I'm using the AudioTrack API, and I'm not even sure if it should reap benefits from this improvement or if I should be looking into some other mechanism for audio playback.
+Should I look into using libpd? It seems to me like it's the only chance I have of achieving lower latencies, but since I've always thought of PD as an audio synthesis utility, is it really suited for a project that just grabs frames from a network stream and plays them back? I'm not really doing any synthesizing. Am I following the wrong trail?
+
+
+As an additional note, before someone mentions OpenSL ES, this article makes it quite clear that no improvements in latency should be expected from using it:
+
+
+  "As OpenSL ES is a native C API, non-Dalvik application threads which
+  call OpenSL ES have no Dalvik-related overhead such as garbage
+  collection pauses. However, there is no additional performance benefit
+  to the use of OpenSL ES other than this. In particular, use of OpenSL
+  ES does not result in lower audio latency, higher scheduling priority,
+  etc. than what the platform generally provides."
+
+    
+===============================================================================================
+66
+A:For lowest latency on Android as of version 4.2.2, you should do the following, ordered from least to most obvious:
+
+
+Pick a device that supports FEATURE_AUDIO_PRO if possible, or FEATURE_AUDIO_LOW_LATENCY if not. ("Low latency" is 50ms one way; pro is <20ms round trip.)
+Use OpenSL. The Dalvik GC has a low amortized cost, but when it runs it takes more time than a low-latency audio thread can allow.
+Process audio in a buffer queue callback. The system runs buffer queue callbacks in a thread that has more favorable scheduling than normal user-mode threads.
+Make your buffer size a multiple of AudioManager.getProperty(PROPERTY_OUTPUT_FRAMES_PER_BUFFER). Otherwise your callback will occasionally get two calls per timeslice rather than one. Unless your CPU usage is really light, this will probably end up glitching. (On Android M, it is very important to use EXACTLY the system buffer size, due to a bug in the buffer handling code.)
+Use the sample rate provided by AudioManager.getProperty(PROPERTY_OUTPUT_SAMPLE_RATE). Otherwise your buffers take a detour through the system resampler.
+Never make a syscall or lock a synchronization object inside the buffer callback. If you must synchronize, use a lock-free structure. For best results, use a completely wait-free structure such as a single-reader single-writer ring buffer. Loads of developers get this wrong and end up with glitches that are unpredictable and hard to debug.
+Use vector instructions such as NEON, SSE, or whatever the equivalent instruction set is on your target processor.
+Test and measure your code. Track how long it takes to run--and remember that you need to know the worst-case performance, not the average, because the worst case is what causes the glitches. And be conservative. You already know that if it takes more time to process your audio than it does to play it, you'll never get low latency. But on Android this is even more important, because the CPU frequency fluctuates so much. You can use perhaps 60-70% of CPU for audio, but keep in mind that this will change as the device gets hotter or cooler, or as the wifi or LTE radios start and stop, and so on. 
+
+
+Low-latency audio is no longer a new feature for Android, but it still  requires device-specific changes in the hardware, drivers, kernel, and framework to pull off. This means that there's a lot of variation in the latency you can expect from different devices, and given how many different price points Android phones sell at, there probably will always be differences. Look for FEATURE_AUDIO_PRO or FEATURE_AUDIO_LOW_LATENCY to identify devices that meet the latency criteria your app requires.
+    

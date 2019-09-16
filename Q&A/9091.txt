@@ -1,0 +1,71 @@
+30
+Q:I am getting back to work on an app I worked on a while ago, when I had everything built around Android 2.2 Froyo.
+
+I have updated my SDK for the latest APIs and noticed that the ClipboardManager features I was using are deprecated. I updated the code to use the newer ClipData model and tried it out on my Froyo phone and, of course, I get a NoClassDefFoundError in the new code.
+
+I've had a look around SO and haven't found any real discussions of general strategy for maintaining backwards compatibility.
+
+I'm not entirely sure how I should handle this and other situations where the API differs, because I want users of all versions to be able to use my app.
+
+Should I be doing a check as follows?
+
+if(version == old){
+   use old API;
+} else {
+   use new API;
+}
+
+
+If so, I have deprecated code in my class and Eclipse will have the warning there forever.
+
+On the other hand, I could just build against an old version of the API and hope that new versions will handle it okay. But then I run the risk of building against buggy or low-performance code when a better alternative is available.
+
+What is the best way to deal with this?
+    
+===============================================================================================
+17
+A:You can do that (checking the API version).
+
+You can also use reflection to call the newer classes.
+
+I wouldn't worry about using deprecated methods as all Android versions are backwards compatible, saying that you want to watch when things are for 3.0 Honeycomb as these are a little different.
+
+Here's an explanation of how to use reflection: (yes it's been on SO before, so maybe search for reflection)
+
+http://www.youtube.com/watch?v=zNmohaZYvPw&feature=player_detailpage#t=2087s
+
+I'm looking at making the project this is in available but until then here's some code:
+
+(You could do this in a class that extends Application i.e. one time setup)
+
+ public static Method getExternalFilesDir;
+
+    static {
+            try {
+                    Class<?> partypes[] = new Class[1];
+                    partypes[0] = String.class;
+                    getExternalFilesDir = Context.class.getMethod("getExternalFilesDir", partypes);
+            } catch (NoSuchMethodException e) {
+                    Log.e(TAG, "getExternalFilesDir isn't available in this devices api");
+            }
+    } 
+
+
+Now getExternalFilesDir() is only available on API level 8 or above, so I want to use this if they have (Froyo), but otherwise I need another method.
+
+Now I have my test for the method I can go ahead and attempt to use it:
+
+  if(ClassThatExtendsApplication.getExternalFilesDir != null){
+            Object arglist[] = new Object[1];
+            arglist[0] = null;  
+            File path = (File) ClassThatExtendsApplication.getExternalFilesDir.invoke(context, arglist);
+           // etc etc
+  } else {
+      // Not available do something else (like your deprecated methods / or load a different class / or notify they should get a newer version of Android to enhance your app ;-))
+  }
+
+
+Hope that helps and shortcuts a lot of googling :-)
+
+P.S. if in the else you want to use your deprectated methods still, just add the @SuppressWarnings("deprecation")  annotation above it, This will get rid of the warning and you have done it for the right reasons as you are using the latest API's when possible.
+    

@@ -1,0 +1,72 @@
+29
+Q:What do we have out there available to us (if anything) that we can call for QR data discovery and extraction on an image?
+
+While there have been plenty of posts thus far referencing the ZXing library for QRCode scanning, I haven't found that to be a solution that works for me. Several others have been asking for QRCode scanning alternatives and I have not seen useful feedback. I thought I might ask the community once more what the other options might be for a QR code library that does not launch an activity and call outside our own applications. It should scan images from the Camera2 API in a very simplistic manner.  It shouldn't be a complicated library. I hadn't seen examples or individuals speaking of it in this manner.
+
+It actually puzzles me as to why there hasn't been native implementations of the QRCode functionality added into perhaps the Camera library or similar place within the Google SDK natively within the operating system.
+
+Calling and requiring another application (or even requesting a download) is not an elegant solution and no users should be succumbed to doing such thing.  As developers we should have access to a library capable of extracting a QRCode from an image or frame that we can then remove encoded data from.
+    
+===============================================================================================
+9
+A:While Sean Owen and others that have worked on the original Zxing library had provided an approach to work with the barcode libraries for the past several years, Google has finally put out an official release with Google Play Services for handling qr and barcodes.
+
+The barcode detection library is described here.  The inclusion of these libraries will make for a smooth integration.  I'll repost with some sample code for achieving these results from a captured image.  At the moment, I wanted to update my answer for this official release.  If this indeed does provide a nice way to get at this information (without jumping through hoops and complications), then I'll update with the source and check this off as an accepted answer.
+
+The detection library that Google has provided within the past year has been a much easier library to work with.  It allows for quick integration with the camera APIs and extracts the information with simplicity.  This would be the component that I would suggest going forward with recognition.  A quick snippet is demonstrated below for handling a Qr-code.  A handful of pseudocode is left in there as well.
+
+public final void analyzeFrameForQrCode(byte[] qrCodePictureF, int imageFormatF, XriteSize previewWindowSizeF)
+{
+    if(!qrCodeDetectionPossible() || qrCodePictureF == null || mIsAnalyzingQrCodeFrame)
+    {
+        return;
+    }
+
+    ... //Bitmap conversion code
+
+    Frame frame = new Frame.Builder().setBitmap(pictureTaken).build();
+    SparseArray<Barcode> barcodes = mBarcodeDetector.detect(frame);
+    if(barcodes != null && barcodes.size() != 0)
+    {
+        Barcode qrCode = barcodes.valueAt(0);//barcodes.get(Barcode.QR_CODE);
+        if(qrCode != null)
+        {
+             if(extractInformationFromQrCode(qrCode.rawValue)) {
+                    mIsRequestingBarcodeDetection = false;
+                    vibrateForQrCodeDiscovery();
+                    ((Activity)mContext).runOnUiThread(new Runnable() {
+                        @Override
+                        public void run()
+                        {
+                            hideBarcodeDetection(true);
+                        }
+                    });
+                }
+            }
+        }
+
+     ... //Cleanup and code beyond Qr related material
+
+   } 
+}
+
+
+There are of course other calls available that can be taken advantage of.  But there are really only a couple lines in there.  The service for analyzing the frames with the library are not there by default on devices however.  So, you should check whether or not the library is available (such as when internet is not available) before calculating as well.  This is a slight nuisance of it.  I had assumed it would be available as updates for devices going forward as part of the support library or Google Services going out to all devices.  But it needs the communication first with an external service to use these library calls.  Once it does this one time then that device is good from that moment on.
+
+In my small example, I pop a toast up after a check and then back out of the activity and let the user check their connection.  This can be done with a small amount of sample code as well.
+
+if(!mBarcodeDetector.isOperational())
+{
+    updateUserInstructions("The barcode library cannot be downloaded");
+    return false;
+}
+
+
+Edit (Update):
+
+A considerable amount of time has passed since working with the latest Google Play Services Vision libraries available for barcode detection.  While the limitation for needing to download the library over the wifi is indeed a limitation, it is a one time process.  And lets be honest...
+
+...our devices will have a connection.  The library itself is downloaded in the background so you don't even notice it happening unless there is trouble downloading it and then you would have to report an appropriate corrective measure such as enabling a connection to the internet for it.
+
+One additional tidbit is that it is a little tricky sometimes with how you integrate the library into your application.  Using it as a library project worked on some devices and then failed on others.  Adding the jar to the build path worked across a broader number of devices (it could be all, but it solved a problem).  So as such, I would do it using the secondary method when including it in your projects for now.
+    

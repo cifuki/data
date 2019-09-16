@@ -1,0 +1,80 @@
+36
+Q:I have a GridView to display some objects, and visually each of the objects will have an image icon and a text label. I also want the image icon to have some "push and pop" effect when clicked, that is, when pressed, the image will move a small distance to the bottom right direction, and when released get back to its original position.
+The objects (and their image icons) are from some dynamic sources. My intuition is to create a StateListDrawable for each item, which will have two states: pressed or not. For GridView item view, I would use a Button, which can accomodate a Drawable and a label, that perfectly satisfies my requirment. 
+I defined an item class to wrap up the original object:
+
+public class GridItem<T> {
+
+    public static final int ICON_OFFSET = 4;
+
+    private StateListDrawable mIcon;
+    private String mLabel;
+    private T mObject;
+
+    public Drawable getIcon() {
+        return mIcon;
+    }
+
+    public void setIcon(Drawable d) {
+        if (null == d) {
+            mIcon = null;
+        }else if(d instanceof StateListDrawable) {
+            mIcon = (StateListDrawable) d;
+        } else {
+            InsetDrawable d1 = new InsetDrawable(d, 0, 0, ICON_OFFSET, ICON_OFFSET);
+            InsetDrawable d2 = new InsetDrawable(d, ICON_OFFSET, ICON_OFFSET, 0, 0);
+            mIcon = new StateListDrawable();
+            mIcon.addState(new int[] { android.R.attr.state_pressed }, d2);
+            mIcon.addState(StateSet.WILD_CARD, d1);
+            //This won't help either: mIcon.addState(new int[]{}, d1);
+        }
+    }
+
+    public String getLabel() {
+        return mLabel;
+    }
+
+    public void setLabel(String l) {
+        mLabel = l;
+    }
+
+    public T getObject() {
+        return mObject;
+    }
+
+    public void setObject(T o) {
+        mObject = o;
+    }
+
+}
+
+
+Now the problem is, when I touch a grid item, the icon "moves" quite as I have expected, but it won't restore its original position when my finger lifts up leaving the item.
+My question is: how to programmatically create a StateListDrawable equivalent to one inflated from an XML resource like
+
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true"
+          android:drawable="@drawable/image_pressed" />  
+    <item android:drawable="@drawable/image_normal" />
+</selector>
+
+
+?
+    
+===============================================================================================
+40
+A:if your drawables are just bitmaps, you could draw them programmatically, for now it should help, however I wonder what is the problem with InsetDrawable usage here, basically use prepared BitmapDrawables that are drawn programatically, you would need to modify your method to accept bitmaps b
+
+        Bitmap bc1 = Bitmap.createBitmap(b.getWidth() + ICON_OFFSET, b.getHeight() + ICON_OFFSET, Bitmap.Config.ARGB_8888);
+        Canvas c1 = new Canvas(bc1);
+        c1.drawBitmap(b, 0, 0, null);
+        Bitmap bc2 = Bitmap.createBitmap(b.getWidth() + ICON_OFFSET, b.getHeight() + ICON_OFFSET, Bitmap.Config.ARGB_8888);
+        Canvas c2 = new Canvas(bc2);
+        c2.drawBitmap(b, ICON_OFFSET, ICON_OFFSET, null);
+
+        mIcon = new StateListDrawable();
+        mIcon.addState(new int[] { android.R.attr.state_pressed },  new BitmapDrawable(bc2));
+        mIcon.addState(StateSet.WILD_CARD, new BitmapDrawable(bc1));
+
+    

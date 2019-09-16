@@ -1,0 +1,95 @@
+27
+Q:Fail To Destroy WebView
+
+Firstly, a lot of example i had been tried for destroy the webview in Android. 
+
+For example:
+Memory Leak in Android
+
+Although i was destroying webview in the onDestroy() and declared a webview programmatically, but the memory leak problem also will be occurred in my Android device.
+
+Below is my coding..
+
+public class MainActivity extends Activity {
+private FrameLayout mWebContainer;
+private WebView mWebView;
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    setContentView(R.layout.your_layout);
+
+    mWebContainer = (FrameLayout) findViewById(R.id.web_container);
+    mWebView = new WebView(getApplicationContext());
+    mWebContainer.addView(mWebView);
+}
+
+@Override
+protected void onDestroy() {
+    super.onDestroy();
+
+    mWebContainer.removeAllViews();
+    mWebView.clearHistory();
+    mWebView.clearCache(true);
+    mWebView.clearView();
+    mWebView.destroy();
+    mWebView = null;        
+}
+
+
+Someone help me please.. thank you..
+    
+===============================================================================================
+43
+A:The WebView might not be destroyed because you are removing the view in the onDestroy(), which can be called in a few different occasions: when the user exits the app via the back button, when the user presses the home button and then swipes the app from recents, or when the system kills your app to make room for other apps. It may be problematic to destroy the WebView in onDestroy().
+
+Old Answer:
+To remove the WebView from memory, override the finish() method and place the code you have in onDestroy() in finish(). finish is called when the app is exited via the back button, so this will ensure that the WebView is destroyed.
+
+New Answer: I was originally wrong about when the onDestroy method was called, so I and others have edited the question to remove the parts that were wrong. However, this also changes slightly what I would do to destroy the WebView. It may be that there is not enough time to destroy the WebView in onDestroy, or it could be that the Activity is getting destroyed multiple times, which would result in the crash, since the WebView would get destroyed multiple times and that would crash it (see the documentation quote at the bottom of this answer). The solution is to be more explicit when destroying the WebView and also to set the WebView to null so you can be sure that it wasn't destroyed before trying to destroy it.
+
+When you use WebView.destroy(), internally the WebView will destroy itself, but the problem is that there is no way to determine if you've called destroy on an existing WebView object or not. This is problematic, because calling methods on the WebView after destroying it will result in a crash. The solution is to set the WebView to null after destroying it.
+
+Your full code to kill the view should look like this (some things are optional):
+
+public void destroyWebView() {
+
+    // Make sure you remove the WebView from its parent view before doing anything.
+    mWebContainer.removeAllViews();
+
+    mWebView.clearHistory();
+
+    // NOTE: clears RAM cache, if you pass true, it will also clear the disk cache.
+    // Probably not a great idea to pass true if you have other WebViews still alive.
+    mWebView.clearCache(true);
+
+    // Loading a blank page is optional, but will ensure that the WebView isn't doing anything when you destroy it.
+    mWebView.loadUrl("about:blank");
+
+    mWebView.onPause();
+    mWebView.removeAllViews();
+    mWebView.destroyDrawingCache();
+
+    // NOTE: This pauses JavaScript execution for ALL WebViews, 
+    // do not use if you have other WebViews still alive. 
+    // If you create another WebView after calling this, 
+    // make sure to call mWebView.resumeTimers().
+    mWebView.pauseTimers();
+
+    // NOTE: This can occasionally cause a segfault below API 17 (4.2)
+    mWebView.destroy();
+
+    // Null out the reference so that you don't end up re-using it.
+    mWebView = null;
+}
+
+
+This method should then be called somewhere, preferably in finish() since that will be explicitly called by the user, but it should work in onDestroy() as well.
+
+NOTE: I should add that calling mWebView.onDestroy() twice may crash the browser. The docs state: 
+
+
+  No other methods may be called on this WebView after destroy.
+
+    

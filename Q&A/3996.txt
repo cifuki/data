@@ -1,0 +1,60 @@
+58
+Q:My application users can change the language from the app's settings. Is it possible to change the language inside the application without having effect to general language settings ? 
+This question of stackoverflow is very useful to me and i have tried it. After changing language newly created activities display with changed new language, but current activity and previously created activities which are in pause state are not updated.How to update activities ? 
+I have also spent a lot of time trying to make the preference change to be applied immediately but didn't succeed. When application is restarted, all activities created again, so now language changed correctly.
+
+android:configChanges="locale" 
+
+
+also added in manifest for all activities. and also support all screen.
+Currently I have not done any thing in activity's onResume() method.
+Is there any way to refresh or update activity (without finish and starting again) ? Am I missing something to do in onResume() method? 
+    
+===============================================================================================
+65
+A:After changing language newly created activities display with changed new language, but current activity and previously created activities which are in pause state are not updated.How to update activities ?
+
+
+Pre API 11 (Honeycomb), the simplest way to make the existing activities to be displayed in new language is to restart it. In this way you don't bother to reload each resources by yourself.
+
+private void restartActivity() {
+    Intent intent = getIntent();
+    finish();
+    startActivity(intent);
+}
+
+
+Register an OnSharedPreferenceChangeListener, in its onShredPreferenceChanged(), invoke restartActivity() if language preference was changed. In my example, only the PreferenceActivity is restarted, but you should be able to restart other activities on activity resume by setting a flag.
+
+Update (thanks @stackunderflow): As of API 11 (Honeycomb) you should use recreate() instead of restartActivity().
+
+public class PreferenceActivity extends android.preference.PreferenceActivity implements
+        OnSharedPreferenceChangeListener {
+
+    // ...
+
+    @Override
+    public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+        if (key.equals("pref_language")) {
+            ((Application) getApplication()).setLocale();
+            restartActivity();
+        }
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        addPreferencesFromResource(R.xml.preferences);
+        getPreferenceScreen().getSharedPreferences().registerOnSharedPreferenceChangeListener(this);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        getPreferenceScreen().getSharedPreferences().unregisterOnSharedPreferenceChangeListener(this);
+    }
+}
+
+
+I have a blog post on this topic with more detail, but it's in Chinese. The full source code is on github: PreferenceActivity.java
+    

@@ -1,0 +1,172 @@
+41
+Q:I am using Google Volley on the Android platform.
+I am having a problem in which the error parameter in onErrorResponse is returning a null networkResponse
+For the RESTful API I am using, I need to determine the Http Status Code which is often arriving as 401 (SC_UNAUTHORIZED) or 500 (SC_INTERNAL_SERVER_ERROR), and I can occasionally check via:
+
+final int httpStatusCode = error.networkResponse.statusCode;
+if(networkResponse == HttpStatus.SC_UNAUTHORIZED) {
+    // Http status code 401: Unauthorized.
+}
+
+
+This throws a NullPointerException because networkResponse is null.
+
+How can I determine the Http Status Code in the function onErrorResponse?
+
+Or, how can I ensure error.networkResponse is non-null in onErrorResponse?
+    
+===============================================================================================
+78
+A:Or, how can I ensure error.networkResponse is non-null in
+  onErrorResponse?
+
+
+My first thought would be to check if the object is null.
+
+@Override
+public void onErrorResponse(VolleyError error) {
+    NetworkResponse networkResponse = error.networkResponse;
+    if (networkResponse != null && networkResponse.statusCode == HttpStatus.SC_UNAUTHORIZED) {
+        // HTTP Status Code: 401 Unauthorized
+    }
+}
+
+
+Alternatively, you could also try grabbing the Status Code by extending the Request class and overriding parseNetworkResponse.  
+
+For example, if extending the abstract Request<T> class
+
+public class GsonRequest<T> extends Request<T> {
+
+    ...
+    private int mStatusCode;
+
+    public int getStatusCode() {
+        return mStatusCode;
+    }
+    ...
+
+    @Override
+    protected Response<T> parseNetworkResponse(NetworkResponse response) {
+
+        mStatusCode = response.statusCode;
+        try {
+            Log.d(TAG, "[raw json]: " + (new String(response.data)));
+            Gson gson = new Gson();
+            String json = new String(response.data, HttpHeaderParser.parseCharset(response.headers));
+            return Response.success(gson.fromJson(json, mClazz),
+                HttpHeaderParser.parseCacheHeaders(response));
+
+        } catch (UnsupportedEncodingException e) {
+            return Response.error(new ParseError(e));
+        } catch (JsonSyntaxException e) {
+            return Response.error(new ParseError(e));
+        }
+    }
+    ...
+}
+
+
+Or, if you are using one of the toolbox classes that already extend the abstract Request<T> class and you don't want to muddle up the implementation for parseNetworkResponse(NetworkResponse networkResponse), continue overriding the method but return the super's implementation via super.parseNetworkResponse(networkResponse)
+
+e.g. StringResponse
+
+public class MyStringRequest extends StringRequest {
+
+    private int mStatusCode;
+
+    public MyStringRequest(int method, String url, Listener<String> listener,
+            ErrorListener errorListener) {
+        super(method, url, listener, errorListener);
+    }
+
+    public int getStatusCode() {
+        return mStatusCode;
+    }
+
+    @Override
+    protected Response<String> parseNetworkResponse(NetworkResponse response) {
+        mStatusCode = response.statusCode;
+        return super.parseNetworkResponse(response);
+    }
+}
+
+
+usage:
+
+public class myClazz extends FragmentActivity {
+
+
+    private Request mMyRequest;
+    ...
+
+    public void makeNetworkCall() {
+    mMyRequest = new MyNetworkRequest(
+            Method.GET, 
+            BASE_URL + Endpoint.USER,
+            new Listener<String>() {
+
+                @Override
+                public void onResponse(String response) {
+                    // Success
+
+                }
+            }, 
+            new ErrorListener() {
+
+                @Override
+                public void onErrorResponse(VolleyError error) {
+                    if (mMyRequest.getStatusCode() == 401) {
+                        // HTTP Status Code: 401 Unauthorized
+                    }
+                }
+            });
+
+    MyVolley.getRequestQueue().add(request);
+}
+
+
+Of course, the option to override the method inline is available too
+
+public class MyClazz extends FragmentActivity {
+
+    private int mStatusCode;
+
+    ...
+
+    public void makeNetworkCall() {
+
+        StringRequest request = new StringRequest(
+                Method.GET, 
+                BASE_URL + Endpoint.USER,
+                new Listener<String>() {
+
+                    @Override
+                    public void onResponse(String response) {
+                        // Success
+
+                    }
+                }, 
+                new ErrorListener() {
+
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        if (mStatusCode == 401) {
+                            // HTTP Status Code: 401 Unauthorized
+                        }
+                    }
+                }) {
+
+                    @Override
+                    protected Response<String> parseNetworkResponse(NetworkResponse response) {
+                        mStatusCode = response.statusCode;
+                        return super.parseNetworkResponse(response);
+                    }
+                };
+    MyVolley.getRequestQueue.add(request);
+}
+
+
+Update:
+HttpStatus is Deprecated. Use HttpURLConnection instead. See Link.
+    

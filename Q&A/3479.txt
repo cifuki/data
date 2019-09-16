@@ -1,0 +1,230 @@
+65
+Q:I am creating an application in which I want to capture a image and then I want to send that image in the email as a attachment.
+
+I am opening a camera using android.provider.MediaStore.ACTION_IMAGE_CAPTURE intent action and I am passing the Uri of the file as a parameter EXTRA_OUTPUT to get the image back to the file. This is working perfectly and I am able to get the captured image if I use the external storage uri as a  EXTRA_OUTPUT but if I use the data folder uri it is not working and the camera is not closing and its all buttons are not working.
+
+Here is my code for get the result in the external storage directory 
+
+Intent i = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+File out = Environment.getExternalStorageDirectory();
+out = new File(out, imagename);
+i.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(out));
+startActivityForResult(i, CAMERA_RESULT);
+
+
+And this code is for get the image in the data folder
+
+Intent i = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+File out = getFilesDir();
+out = new File(out, MyPharmacyOptions.PRESCRIPTION_IMAGE_NAME);
+i.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(out));
+startActivityForResult(i, CAMERA_RESULT);
+
+
+I knew that the data folder is not accessible to third application so may be this causes an issue so I have create one content provider to share the file.
+
+Here is my content provide class
+
+public class MyContentProvider extends ContentProvider {
+    private static final String Tag = RingtonContentProvider.class.getName();
+    public static final Uri CONTENT_URI = Uri
+            .parse("content://x.y.z/");
+    private static final HashMap<String, String> MIME_TYPES = new HashMap<String, String>();
+
+    static {
+        MIME_TYPES.put(".mp3", "audio/mp3");
+        MIME_TYPES.put(".wav", "audio/mp3");
+        MIME_TYPES.put(".jpg", "image/jpeg");
+    }
+
+    @Override
+    public boolean onCreate() {
+        return true;
+    }
+
+    @Override
+    public String getType(Uri uri) {
+        String path = uri.toString();
+
+        for (String extension : MIME_TYPES.keySet()) {
+            if (path.endsWith(extension)) {
+                return (MIME_TYPES.get(extension));
+            }
+        }
+
+        return (null);
+    }
+
+    @Override
+    public ParcelFileDescriptor openFile(Uri uri, String mode)
+            throws FileNotFoundException {
+        File f = new File(getContext().getFilesDir(), uri.getPath());
+
+        if (f.exists()) {
+            return (ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY));
+        }
+
+        throw new FileNotFoundException(uri.getPath());
+    }
+
+    @Override
+    public Cursor query(Uri url, String[] projection, String selection,
+            String[] selectionArgs, String sort) {
+        throw new RuntimeException("Operation not supported");
+    }
+
+    @Override
+    public Uri insert(Uri uri, ContentValues initialValues) {
+        File file = new File(getContext().getFilesDir(), uri.getPath());
+        if(file.exists()) file.delete();
+        try {
+            file.createNewFile();
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+
+        return Uri.fromFile(file);
+    }
+
+    @Override
+    public int update(Uri uri, ContentValues values, String where,
+            String[] whereArgs) {
+        throw new RuntimeException("Operation not supported");
+    }
+
+    @Override
+    public int delete(Uri uri, String where, String[] whereArgs) {
+        File f = new File(getContext().getFilesDir(), "image1.jpg");
+        if(f.exists()) f.delete();
+        f = new File(getContext().getFilesDir(), "image2.jpg");
+        if(f.exists()) f.delete();
+
+        getContext().getContentResolver().notifyChange(CONTENT_URI, null);
+
+    }
+}
+
+
+So to use this content provide I am using following code to pass the uri to the camera activity
+
+Intent i = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+Uri uri = MyContentProvider.CONTENT_URI;
+uri = Uri.withAppendedPath(uri, imagename);
+getContentResolver().insert(uri, null);
+getContentResolver().notifyChange(RingtonContentProvider.CONTENT_URI, null);
+Log.d(Tag, uri.toString());
+i.putExtra(MediaStore.EXTRA_OUTPUT, uri);
+
+startActivityForResult(i, CAMERA_RESULT);
+
+
+Now if I pass the url other then external storage directory the camera is opening but it is not closing in emulator but in device the camera is going to closed but I am not getting the result.
+
+I have declared this content provide in the manifest file 
+
+<provider
+android:name=".contentproviders.MyContentProvider"
+android:authorities="x.y.z" />
+
+
+Also I have given the permission to write the external storage and also for use the camera.
+
+I am able to capture the image using the external storage but I want to store the image in the data directory instead of external storage because if the external storage in not available I want to capture the image and want to send mail.
+
+If I create content provide then I can also share my image to the email application.
+
+If we not provide the extras with the camera intent it will return the image as a byte[] in the activity result as a data extra but this is for the purpose of the thumbnail so I can't get the high resolution image using this way.
+    
+===============================================================================================
+68
+A:There are two ways to solve this problem.
+
+1. Save bitmap which you received from onActivityResult method
+
+You can start camera through intent to capture photo using below code
+
+Intent cameraIntent=new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+startActivityForResult(cameraIntent, CAMERA_REQUEST);
+
+
+After capture photo, you will get bitmap in onActivityResult method
+
+if (requestCode == CAMERA_REQUEST) {  
+    Bitmap photo = (Bitmap) data.getExtras().get("data"); 
+ }
+
+
+Now you can simply save this bitmap to internal storage
+
+Note: Here bitmap object consists of thumb image, it will not have a full resolution image
+
+2. Save bitmap directly to internal storage using content provider
+
+Here we will create content provider class to allow permission of local storage directory to camera activity
+
+Sample provider example as per below
+
+public class MyFileContentProvider extends ContentProvider {
+    public static final Uri CONTENT_URI = Uri.parse
+                                    ("content://com.example.camerademo/");
+    private static final HashMap<String, String> MIME_TYPES = 
+                                     new HashMap<String, String>();
+
+    static {
+        MIME_TYPES.put(".jpg", "image/jpeg");
+        MIME_TYPES.put(".jpeg", "image/jpeg");
+    }
+
+    @Override
+    public boolean onCreate() {
+
+        try {
+            File mFile = new File(getContext().getFilesDir(), "newImage.jpg");
+            if(!mFile.exists()) {
+                mFile.createNewFile();
+            }
+            getContext().getContentResolver().notifyChange(CONTENT_URI, null);
+            return (true);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+
+    }
+
+    @Override
+    public String getType(Uri uri) {
+        String path = uri.toString();
+
+        for (String extension : MIME_TYPES.keySet()) {
+            if (path.endsWith(extension)) {
+                return (MIME_TYPES.get(extension));
+            }
+        }
+        return (null);
+    }
+
+    @Override
+    public ParcelFileDescriptor openFile(Uri uri, String mode)
+    throws FileNotFoundException {
+
+        File f = new File(getContext().getFilesDir(), "newImage.jpg");
+        if (f.exists()) {
+            return (ParcelFileDescriptor.open(f,
+                    ParcelFileDescriptor.MODE_READ_WRITE));
+        }
+        throw new FileNotFoundException(uri.getPath());
+    }
+}
+
+
+After that you can simply use the URI to pass to camera activity using the below code
+
+Intent i = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+i.putExtra(MediaStore.EXTRA_OUTPUT, MyFileContentProvider.CONTENT_URI);
+startActivityForResult(i, CAMERA_RESULT);
+
+
+If you don't want to create your own provider then you can use FileProvider from support-library-v4. For detailed help you can look into this post
+    

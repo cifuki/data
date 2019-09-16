@@ -1,0 +1,148 @@
+29
+Q:How to use (or "Can we use") getChildFragmentManager() on programmatically (dynamically) added Fragments?
+
+Here is my example.
+
+I have one MainActivity, one OuterFrag, and one InnerFrag. I will add the OuterFrag to MainActivity dynamically by the FragmentManager. And also, I will add the InnerFrag to the OuterFrag also dynamically by the FragmentManager. But I want to add InnerFrag exactly as a child of the OuterFrag, not replacing OuterFrag and be the new child of the MainActivity.
+
+I want to keep this hierarchy: MainActivity -> OuterFrag -> InnerFrag. So MainActivity can always call OuterFrag.
+
+But NOT change from this hierarchy: MainActivity -> OuterFrag to this hierarchy: MainActivity -> InnerFrag that MainActivity will loss the OuterFrag.
+
+Here is my example code.
+
+MainActivity.java
+
+package com.example.frag;
+
+import android.os.Bundle;
+import android.support.v4.app.FragmentActivity;
+
+public class MainActivity extends FragmentActivity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        getSupportFragmentManager().beginTransaction().add(R.id.frameLayout, new OuterFrag()).commit();
+        getSupportFragmentManager().executePendingTransactions();
+
+        System.out.println("Before: "
+                + getSupportFragmentManager().findFragmentById(R.id.frameLayout));
+
+        ((OuterFrag) getSupportFragmentManager().findFragmentById(R.id.frameLayout))
+                .addInnerFrag();
+
+        System.out.println("After: "
+                + getSupportFragmentManager().findFragmentById(R.id.frameLayout));
+    }
+}
+
+
+activity_main.xml
+
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/frameLayout"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent" >
+</FrameLayout>
+
+
+OuterFrag.java
+
+package com.example.frag;
+
+import android.os.Bundle;
+import android.support.v4.app.Fragment;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+
+public class OuterFrag extends Fragment {
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        return inflater.inflate(R.layout.outer_frag, container, false);
+    }
+
+    public void addInnerFrag() {
+
+        getFragmentManager().beginTransaction().replace(this.getId(), new InnerFrag()).commit();
+        getFragmentManager().executePendingTransactions();
+
+//        getChildFragmentManager().beginTransaction().add(this.getId(), new InnerFrag()).commit();
+//        getChildFragmentManager().executePendingTransactions();
+    }
+}
+
+
+outer_frag.xml
+
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/textView1"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="i am the OUTER frag" />
+
+
+InnerFrag.java
+
+package com.example.frag;
+
+import android.os.Bundle;
+import android.support.v4.app.Fragment;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+
+public class InnerFrag extends Fragment {
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        return inflater.inflate(R.layout.inner_frag, container, false);
+    }
+}
+
+
+inner_frag.xml
+
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/textView2"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="i am the INNER frag" />
+
+
+Currently, the above code can run without errors. But it is actually changing InnerFrag as the new child of MainActivity. This can be verified by the two System Print Out statements that the Before: Object and the After: Object is changed. In the OuterFrag.java, if the getChildFragmentManager() statements are run instead of the getFragmentManager() statements, we will get the following runtime error:
+
+12-07 02:29:38.406: E/AndroidRuntime(12051): java.lang.RuntimeException: Unable to start activity ComponentInfo{com.example.frag/com.example.frag.MainActivity}: java.lang.IllegalArgumentException: No view found for id 0x7f070000 (com.example.frag:id/frameLayout) for fragment InnerFrag{46e32748 #0 id=0x7f070000}
+
+
+Using getChildFragmentManager() is theoretically correct. It can be used in a non-programmatically added fragment (which means changing activity_main.xml's <FrameLayout> to <fragment>, add attribute android:name="com.example.frag.OuterFrag", and remove the first getSupportFragmentManager() statement in MainActivity.java). And it is keeping the correct hierarchy: MainActivity -> OuterFrag -> InnerFrag. But the words of original fragment (outer_frag.xml) can never be taken away.
+
+In conclusion, I want to reference OuterFrag in MainActivity always. And I want OuterFrag act as a placeholder to load different InnerFrags. In short, I want to call getChildFragmentManager() in OuterFrag, when it is added programmatically (dynamically).
+    
+===============================================================================================
+45
+A:In conclusion, I want to reference OuterFrag in MainActivity always.
+  And I want OuterFrag act as a placeholder to load different
+  InnerFrags. In short, I want to call getChildFragmentManager() in
+  OuterFrag, when it is added programmatically (dynamically).
+
+
+If you want this then make your OuterFrag have a container layout as its content and add whatever InnerFrag to that container. The layout file for the OuterFrag will be:
+
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/fragContainer"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+/>
+
+
+Of course you could have other views in the layout for the OuterFrag if you want that. Then your addInnerFrag method will be:
+
+public void addInnerFrag() {
+        getChildFragmentManager().beginTransaction().add(R.id.fragContainer, new InnerFrag()).commit();
+        getChildFragmentManager().executePendingTransactions();
+}
+
+
+The code for adding the OuterFrag to the main activity remains valid.
+    

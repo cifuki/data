@@ -1,0 +1,119 @@
+48
+Q:I'm trying to use the new navigation component. I use a BottomNavigationView with the navController : NavigationUI.setupWithNavController(bottomNavigation, navController)
+
+But when I'm switching fragments, they are each time destroy/create even if they were previously used.
+
+Is there a way to keep alive our main fragments link to our BottomNavigationView?
+    
+===============================================================================================
+35
+A:Try this.
+
+Navigator
+
+Create custom navigator.
+
+@Navigator.Name("custom_fragment")  // Use as custom tag at navigation.xml
+class CustomNavigator(
+    private val context: Context,
+    private val manager: FragmentManager,
+    private val containerId: Int
+) : FragmentNavigator(context, manager, containerId) {
+
+    override fun navigate(destination: Destination, args: Bundle?, navOptions: NavOptions?) {
+        val tag = destination.id.toString()
+        val transaction = manager.beginTransaction()
+
+        val currentFragment = manager.primaryNavigationFragment
+        if (currentFragment != null) {
+            transaction.detach(currentFragment)
+        }
+
+        var fragment = manager.findFragmentByTag(tag)
+        if (fragment == null) {
+            fragment = destination.createFragment(args)
+            transaction.add(containerId, fragment, tag)
+        } else {
+            transaction.attach(fragment)
+        }
+
+        transaction.setPrimaryNavigationFragment(fragment)
+        transaction.setReorderingAllowed(true)
+        transaction.commit()
+
+        dispatchOnNavigatorNavigated(destination.id, BACK_STACK_DESTINATION_ADDED)
+    }
+}
+
+
+NavHostFragment
+
+Create custom NavHostFragment.
+
+class CustomNavHostFragment: NavHostFragment() {
+    override fun createFragmentNavigator(): Navigator<out FragmentNavigator.Destination> {
+        return CustomNavigator(requireContext(), childFragmentManager, id)
+    }
+}
+
+
+navigation.xml
+
+Use custom tag instead of fragment tag. 
+
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/navigation"
+    app:startDestination="@id/navigation_first">
+
+    <custom_fragment
+        android:id="@+id/navigation_first"
+        android:name="com.example.sample.FirstFragment"
+        android:label="FirstFragment" />
+    <custom_fragment
+        android:id="@+id/navigation_second"
+        android:name="com.example.sample.SecondFragment"
+        android:label="SecondFragment" />
+</navigation>
+
+
+activity layout
+
+Use CustomNavHostFragment instead of NavHostFragment.
+
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <fragment
+        android:id="@+id/nav_host_fragment"
+        android:name="com.example.sample.CustomNavHostFragment"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toTopOf="@+id/bottom_navigation"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:navGraph="@navigation/navigation" />
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottom_navigation"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:menu="@menu/navigation" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+
+
+
+
+Update
+
+I created sample project. link
+
+I don't create custom NavHostFragment. I use navController.navigatorProvider += navigator.
+    

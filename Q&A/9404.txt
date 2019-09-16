@@ -1,0 +1,94 @@
+29
+Q:I received a strange out of bounds exception in the Play Store console relating to the android.support.v4.app.ActivityCompat.OnRequestPermissionsResultCallback
+
+java.lang.ArrayIndexOutOfBoundsException: length=0; index=0
+    at com.example.MyFragmentActivity.onRequestPermissionsResult(MyFragmentActivity.java:2068)
+    at android.app.Activity.requestPermissions(Activity.java:4163)
+    at android.support.v4.app.ActivityCompatApi23.requestPermissions(ActivityCompat23.java:32)
+    at android.support.v4.app.ActivityCompat.requestPermissions(ActivityCompat.java:316)
+    at com.example.MyFragmentActivity.onConnected(MyFragmentActivity.java:2048)
+    at com.google.android.gms.common.internal.zzk.zzk(Unknown Source)
+    at com.google.android.gms.common.api.internal.zzj.zzi(Unknown Source)
+    at com.google.android.gms.common.api.internal.zzh.zzpx(Unknown Source)
+    at com.google.android.gms.common.api.internal.zzh.onConnected(Unknown Source)
+    at com.google.android.gms.common.api.internal.zzl.onConnected(Unknown Source)
+    at com.google.android.gms.common.api.internal.zzc.onConnected(Unknown Source)
+    at com.google.android.gms.common.internal.zzj$zzg.zzqL(Unknown Source)
+    at com.google.android.gms.common.internal.zzj$zza.zzc(Unknown Source)
+    at com.google.android.gms.common.internal.zzj$zza.zzw(Unknown Source)
+    at com.google.android.gms.common.internal.zzj$zzc.zzqN(Unknown Source)
+    at com.google.android.gms.common.internal.zzj$zzb.handleMessage(Unknown Source)
+    at android.os.Handler.dispatchMessage(Handler.java:102)
+    at android.os.Looper.loop(Looper.java:158)
+    at android.app.ActivityThread.main(ActivityThread.java:7229)
+    at java.lang.reflect.Method.invoke(Native Method)
+    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1230)
+    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1120)
+
+
+This is my onRequestPermissionsResult implementation
+
+@Override
+public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    switch (requestCode) {
+        case REQUEST_CODE_ASK_LOCATION_PERMISSIONS:
+            if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission Granted
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    mLastLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+                }
+                startLocationUpdates();
+            } else {
+                // Permission Denied
+            }
+            break;
+        default:
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    }
+}
+
+
+Line 2068 is this:
+
+if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+
+
+I believe it's claiming grantResults length is zero which is why the java.lang.ArrayIndexOutOfBoundsException is thrown.  According to the documentation 
+
+
+  int: The grant results for the corresponding permissions which is
+  either PERMISSION_GRANTED or PERMISSION_DENIED. Never null.
+
+
+grantResults will not be null, but doesn't say anything about it not containing a value either.  Furthermore it seems like the callback will contain at least one value, either PERMISSION_GRANTED or PERMISSION_DENIED.  Is this a bug or am I misunderstanding the documentation?
+    
+===============================================================================================
+49
+A:Documentation about permissions says
+
+
+  If request is cancelled, the result arrays are empty.
+
+
+And it seems to be your situation, so you have to check first if the array is not empty:
+
+@Override
+public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    switch (requestCode) {
+        case REQUEST_CODE_ASK_LOCATION_PERMISSIONS:
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission Granted
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    mLastLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+                }
+                startLocationUpdates();
+            } else {
+                // Permission Denied
+            }
+            break;
+        default:
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    }
+}
+
+    

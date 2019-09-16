@@ -1,0 +1,57 @@
+30
+Q:I'm trying to set notification for a time in the future.
+I have the code for creating a notification but I can't find an option to schedule it. 
+
+How can I schedule notifications?
+    
+===============================================================================================
+32
+A:You need to use PendingIntent and BroadCastReceiver for this -
+
+public void scheduleNotification(Context context, long delay, int notificationId) {//delay is after how much time(in millis) from current time you want to schedule the notification
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context)
+                .setContentTitle(context.getString(R.string.title))
+                .setContentText(context.getString(R.string.content))
+                .setAutoCancel(true)
+                .setSmallIcon(R.drawable.app_icon)
+                .setLargeIcon(((BitmapDrawable) context.getResources().getDrawable(R.drawable.app_icon)).getBitmap())
+                .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION));
+
+        Intent intent = new Intent(context, YourActivity.class);
+        PendingIntent activity = PendingIntent.getActivity(context, notificationId, intent, PendingIntent.FLAG_CANCEL_CURRENT);
+        builder.setContentIntent(activity);
+
+        Notification notification = builder.build();
+
+        Intent notificationIntent = new Intent(context, MyNotificationPublisher.class);
+        notificationIntent.putExtra(MyNotificationPublisher.NOTIFICATION_ID, notificationId);
+        notificationIntent.putExtra(MyNotificationPublisher.NOTIFICATION, notification);
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(context, notificationId, notificationIntent, PendingIntent.FLAG_CANCEL_CURRENT);
+
+        long futureInMillis = SystemClock.elapsedRealtime() + delay;
+        AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, futureInMillis, pendingIntent);
+    }
+
+
+Also, you need to show notification in your receiver class -
+
+public class MyNotificationPublisher extends BroadcastReceiver {
+
+    public static String NOTIFICATION_ID = "notification_id";
+    public static String NOTIFICATION = "notification";
+
+    @Override
+    public void onReceive(final Context context, Intent intent) {
+
+        NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+
+        Notification notification = intent.getParcelableExtra(NOTIFICATION);
+        int notificationId = intent.getIntExtra(NOTIFICATION_ID, 0);
+        notificationManager.notify(notificationId, notification);
+    }
+}
+
+
+Finally, call scheduleNotification() with appropriate arguments and you are good to go!
+    

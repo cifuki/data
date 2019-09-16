@@ -1,0 +1,51 @@
+42
+Q:I'm using Firebase Realtime Database for storing and retrieving data for my Android application. In my activity I retrieve all data (example: list of user data) from Firebase using a childEventListener.
+
+I want to show a progress bar as long as the data is not completely retrieved from the database. How do I check if all data is completely retrieved so that I can close the progress bar after the data is loaded?
+    
+===============================================================================================
+84
+A:There is a common way to detect when Firebase is done synchronizing the initial data on a given location. This approach makes use of one of the Firebase event guarantees:
+
+
+  Value events are always triggered last and are guaranteed to contain updates from any other events which occurred before that snapshot was taken.
+
+
+So if you have both a ValueEventListener and a ChildEventListener on a given location, the ValueEventListener.onDataChange() is guaranteed to be called after all the onChildAdded() calls have happened. You can use this to know when the initial data loading is done:
+
+ref.addListenerForSingleValueEvent(new ValueEventListener() {
+    public void onDataChange(DataSnapshot dataSnapshot) {
+        System.out.println("We're done loading the initial "+dataSnapshot.getChildrenCount()+" items");
+    }
+    public void onCancelled(FirebaseError firebaseError) { }
+});
+ref.addChildEventListener(new ChildEventListener() {
+    public void onChildAdded(DataSnapshot dataSnapshot, String previousKey) {
+        System.out.println("Add "+dataSnapshot.getKey()+" to UI after "+previousKey);
+    }
+    public void onChildChanged(DataSnapshot dataSnapshot, String s) {
+    }
+    public void onChildRemoved(DataSnapshot dataSnapshot) {
+    }
+    public void onChildMoved(DataSnapshot dataSnapshot, String s) {
+    }
+    public void onCancelled(FirebaseError firebaseError) { }
+});
+
+
+In my test run this results in:
+
+Add -K2WLjgH0es40OGWp6Ln to UI after null
+Add -K2YyDkM4lUotI12OnOs to UI after -K2WLjgH0es40OGWp6Ln
+Add -K2YyG4ScQMuRDoFogA9 to UI after -K2YyDkM4lUotI12OnOs
+...
+Add -K4BPqs_cdj5SwARoluP to UI after -K4A0zkyITWOrxI9-2On
+Add -K4BaozoJDUsDP_X2sUu to UI after -K4BPqs_cdj5SwARoluP
+Add -K4uCQDYR0k05Xqyj6jI to UI after -K4BaozoJDUsDP_X2sUu
+We're done loading the initial 121 items
+
+
+So you could use the onDataChanged() event to hide the progress bar.
+
+But one thing to keep in mind: Firebase doesn't just load data. It continuously synchronizes data from the server to all connected clients. As such, there is not really any moment where the data is completely retrieved.
+    

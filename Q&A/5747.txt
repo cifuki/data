@@ -1,0 +1,161 @@
+43
+Q:I have a Fragment FR1 that contains several Nested Fragments; FRa, FRb, FRc. These Nested Fragments are changed by pressing Buttons on FR1's layout. Each of the Nested Fragments have several input fields within them; which include things like EditTexts, NumberPickers, and Spinners. When my user goes through and fills in all the values for the Nested Fragments, FR1 (the parent fragment) has a submit button.
+
+How can I then, retrieve my values from my Nested Fragments and bring them into FR1.
+
+
+All Views are declared and programmatically handled within each Nested Fragment.
+The parent Fragment, FR1 handles the transaction of the Nested Fragments.
+
+
+I hope this question is clear enough and I am not sure if code is necessary to post but if someone feels otherwise I can do so.
+
+EDIT 1:
+
+Here is how I add my Nested Fragments:
+
+tempRangeButton.setOnClickListener(new View.OnClickListener() {
+
+        @Override
+        public void onClick(View v) {
+
+            getChildFragmentManager().beginTransaction()
+                    .add(R.id.settings_fragment_tertiary_nest, tempFrag)
+                    .commit();
+
+        }
+    });
+
+    scheduleButton.setOnClickListener(new View.OnClickListener() {
+
+        @Override
+        public void onClick(View v) {
+
+            getChildFragmentManager().beginTransaction()
+                    .add(R.id.settings_fragment_tertiary_nest, scheduleFrag)
+                    .commit();
+        }
+    });
+
+    alertsButton.setOnClickListener(new View.OnClickListener() {
+
+        @Override
+        public void onClick(View v) {
+
+            getChildFragmentManager().beginTransaction()
+                    .add(R.id.settings_fragment_tertiary_nest, alertsFrag)
+                    .commit();
+
+        }
+    });
+
+    submitProfile.setOnClickListener(new View.OnClickListener() {
+
+        @Override
+        public void onClick(View v) {
+            constructNewProfile();
+        }
+    });
+
+
+where my constructNewProfile() method needs the values from my Nested Fragments.
+
+public Fragment tempFrag = fragment_profile_settings_temperature
+        .newInstance();
+public Fragment scheduleFrag= fragment_profile_settings_schedules
+            .newInstance();
+public Fragment alertsFrag = fragment_profile_settings_alerts
+        .newInstance();
+
+
+The above refers to the fields of the parent fragment; and how they are initially instantiated.
+    
+===============================================================================================
+85
+A:The best way is use an interface:
+
+
+Declare an interface in the nest fragment
+
+// Container Activity or Fragment must implement this interface
+public interface OnPlayerSelectionSetListener
+{
+    public void onPlayerSelectionSet(List<Player> players_ist);
+}
+
+Attach the interface to parent fragment
+
+// In the child fragment.
+public void onAttachToParentFragment(Fragment fragment)
+{
+    try
+    {
+        mOnPlayerSelectionSetListener = (OnPlayerSelectionSetListener)fragment;
+
+    }
+    catch (ClassCastException e)
+    {
+          throw new ClassCastException(
+              fragment.toString() + " must implement OnPlayerSelectionSetListener");
+    }
+}
+
+
+@Override
+public void onCreate(Bundle savedInstanceState)
+{
+    Log.i(TAG, "onCreate");
+    super.onCreate(savedInstanceState);
+
+    onAttachToParentFragment(getParentFragment());
+
+    // ...
+}
+
+Call the listener on button click.
+
+// In the child fragment.
+@Override
+public void onClick(View v)
+{
+    switch (v.getId())
+    {
+        case R.id.tv_submit:
+            if (mOnPlayerSelectionSetListener != null)
+            {                
+                 mOnPlayerSelectionSetListener.onPlayerSelectionSet(selectedPlayers);
+            }
+            break;
+        }
+    }
+
+Have your parent fragment implement the interface.
+
+ public class Fragment_Parent extends Fragment implements Nested_Fragment.OnPlayerSelectionSetListener
+ {
+      // ...
+      @Override
+      public void onPlayerSelectionSet(final List<Player> players_list)
+      {
+           FragmentManager fragmentManager = getChildFragmentManager();
+           SomeOtherNestFrag someOtherNestFrag = (SomeOtherNestFrag)fragmentManager.findFragmentByTag("Some fragment tag");
+           //Tag of your fragment which you should use when you add
+
+           if(someOtherNestFrag != null)
+           {
+                // your some other frag need to provide some data back based on views.
+                SomeData somedata = someOtherNestFrag.getSomeData();
+                // it can be a string, or int, or some custom java object.
+           }
+      }
+ }
+
+
+
+Add Tag when you do fragment transaction so you can look it up afterward to call its method. FragmentTransaction
+
+This is the proper way to handle communication between fragment and nest fragment, it's almost the same for activity and fragment.
+http://developer.android.com/guide/components/fragments.html#EventCallbacks
+
+There is actually another official way, it's using activity result, but this one is good enough and common.
+    

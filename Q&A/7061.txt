@@ -1,0 +1,101 @@
+37
+Q:I'm using an android device. When I open the Settings > Apps > Running, there is an option on the top-left of the screen to see : (1) Running processes (2) Cached background processes. And the app(s) which I wanted to run always (24\xc3\x977) is/are unfortunately listed under (2) Cached background processes, which I wanted it/them to be listed under (1) Running processes (if it is possible). Can it be done? Or in short, how to make an android app to always run in background?
+
+I hope I conveyed the question :-) 
+    
+===============================================================================================
+50
+A:You have to start a service in your Application class to run it always.
+If you do that, your service will be always running. Even though user terminates your app from task manager or force stop your app, it will start running again.
+
+Create a service:
+
+public class YourService extends Service {
+
+    @Nullable
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        // do your jobs here
+        return super.onStartCommand(intent, flags, startId);
+    }
+}
+
+
+Create an Application class and start your service:
+
+public class App extends Application {
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+
+        startService(new Intent(this, YourService.class));
+    }
+}
+
+
+Add "name" attribute into the "application" tag of your AndroidManifest.xml
+
+android:name=".App"
+
+
+Also, don't forget to add your service in the "application" tag of your AndroidManifest.xml
+
+<service android:name=".YourService"/>
+
+
+And also this permission request in the "manifest" tag (if API level 28 or higher):
+
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+
+
+
+
+UPDATE
+
+After Android Oreo, Google introduced some background limitations. Therefore, this solution above won't work probably. When a user kills your app from task manager, Android System will kill your service as well. If you want to run a service which is always alive in the background. You have to run a foreground service with showing an ongoing notification. So, edit your service like below.
+
+public class YourService extends Service {
+
+    private static final int NOTIF_ID = 1;
+    private static final String NOTIF_CHANNEL_ID = "Channel_Id";
+
+    @Nullable
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId){
+
+        // do your jobs here
+
+        startForeground();
+
+        return super.onStartCommand(intent, flags, startId);
+    }
+
+    private void startForeground() {
+        Intent notificationIntent = new Intent(this, MainActivity.class);
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0,
+                notificationIntent, 0);
+
+        startForeground(NOTIF_ID, new NotificationCompat.Builder(this, 
+                NOTIF_CHANNEL_ID) // don't forget create a notification channel first
+                .setOngoing(true)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(getString(R.string.app_name))
+                .setContentText("Service is running background")
+                .setContentIntent(pendingIntent)
+                .build());         
+    }
+}
+
+    

@@ -1,0 +1,183 @@
+38
+Q:I just added the new TabLayout component to my app. As you may know there are two different modes for tabs app:tabMode="scrollable" and app:tabMode="fixed". 
+
+When I use app:tabMode="fixed" I get following result:
+
+
+
+There's no margin/padding on the left and right side but the text is wrapped.
+
+But when I use app:tabMode="scrollable" I get following result:
+
+
+
+The text is not wrapped but here is a weird margin on the right side and I can't get rid of it.
+
+I also tried setting the tabGravity to either app:tabGravity="center" or app:tabGravity="fill" but did not achieve any changes.
+
+Would be nice if any of you smart guys and girls got a solution for me.
+
+Cheers, Lukas
+    
+===============================================================================================
+28
+A:One solution here is to inflate a custom layout for each tab, which will give you more control over the appearance of each tab.
+This is done with the setCustomView() method.
+
+Note that it will look different on different screen resolutions.
+
+It's always tough to make it look perfect on every device, but at least using this method gives you more control, as you can use different custom layout xml files for different screen resolutions/sizes.  
+
+One approach would be to make the font size as big as possible without getting cut off on each screen size.
+
+I got a simple example working, which restricts the text in each tab to one line, however in this simple example it also causes the long text in the side tabs to ellipsize without changing the font size.  Your next step would be to figure out the optimal font size for each screen size, and create a specific tab layout xml for each.
+
+Here is the custom_tab.xml file, with android:singleLine="true" specified:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <TextView
+        android:id="@+id/custom_text"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:background="?attr/selectableItemBackground"
+        android:gravity="center"
+        android:textSize="16dip"
+        android:textColor="#ffffff"
+        android:singleLine="true"
+        />
+</LinearLayout>
+
+
+Here is the layout for MainActivity:
+
+<RelativeLayout
+    android:id="@+id/main_layout"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <android.support.v7.widget.Toolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:background="?attr/colorPrimary"
+        android:elevation="6dp"
+        android:minHeight="?attr/actionBarSize"
+        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+        app:popupTheme="@style/ThemeOverlay.AppCompat.Light"/>
+
+    <android.support.design.widget.TabLayout
+        android:id="@+id/tab_layout"
+        app:tabMode="fixed"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/toolbar"
+        android:background="?attr/colorPrimary"
+        android:elevation="6dp"
+        app:tabTextColor="#d3d3d3"
+        app:tabSelectedTextColor="#ffffff"
+        app:tabIndicatorColor="#ff00ff"
+        android:minHeight="?attr/actionBarSize"
+        />
+
+    <android.support.v4.view.ViewPager
+        android:id="@+id/viewpager"
+        android:layout_width="match_parent"
+        android:layout_height="fill_parent"
+        android:layout_below="@id/tab_layout"/>
+
+</RelativeLayout>
+
+
+Here is the Activity code, which includes the FragmentPagerAdapter:
+
+public class MainActivity extends AppCompatActivity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+
+        // Get the ViewPager and set it's PagerAdapter so that it can display items
+        ViewPager viewPager = (ViewPager) findViewById(R.id.viewpager);
+        PagerAdapter pagerAdapter =
+                new PagerAdapter(getSupportFragmentManager(), MainActivity.this);
+        viewPager.setAdapter(pagerAdapter);
+
+        // Give the TabLayout the ViewPager
+        TabLayout tabLayout = (TabLayout) findViewById(R.id.tab_layout);
+        tabLayout.setupWithViewPager(viewPager);
+
+        // Iterate over all tabs and set the custom view
+        for (int i = 0; i < tabLayout.getTabCount(); i++) {
+            TabLayout.Tab tab = tabLayout.getTabAt(i);
+            tab.setCustomView(pagerAdapter.getTabView(i));
+        }
+    }
+
+
+    class PagerAdapter extends FragmentPagerAdapter {
+
+        String tabTitles[] = new String[] { "Aufzeichnung", "Berichte", "Neue Aufgabe", };
+        Context context;
+
+        public PagerAdapter(FragmentManager fm, Context context) {
+            super(fm);
+            this.context = context;
+        }
+
+        @Override
+        public int getCount() {
+            return tabTitles.length;
+        }
+
+        @Override
+        public Fragment getItem(int position) {
+
+            switch (position) {
+                case 0:
+                    return new BlankFragment();
+                case 1:
+                    return new BlankFragment();
+                case 2:
+                    return new BlankFragment();
+            }
+
+            return null;
+        }
+
+        @Override
+        public CharSequence getPageTitle(int position) {
+            // Generate title based on item position
+            return tabTitles[position];
+        }
+
+        public View getTabView(int position) {
+            View tab = LayoutInflater.from(MainActivity.this).inflate(R.layout.custom_tab, null);
+            TextView tv = (TextView) tab.findViewById(R.id.custom_text);
+            tv.setText(tabTitles[position]);
+            return tab;
+        }
+
+    }
+}
+
+
+And here is the result with the code above:
+
+
+
+Note that if you remove android:singleLine="true", it looks like this, similar to how it looks in your question:
+
+
+    

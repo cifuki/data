@@ -1,0 +1,81 @@
+36
+Q:I'm trying to call the contact picker, get the persons name, phone and e-mail into strings and send them to another activity using an intent. So far this works:
+
+Intent intent = new Intent(Intent.ACTION_PICK, ContactsContract.Contacts.CONTENT_URI);  
+startActivityForResult(intent, 1);  
+
+// ...
+
+@Override  
+public void onActivityResult(int reqCode, int resultCode, Intent data) {  
+    super.onActivityResult(reqCode, resultCode, data);  
+    if (resultCode == Activity.RESULT_OK) {  
+        Uri contactData = data.getData();  
+        Cursor c =  managedQuery(contactData, null, null, null, null);  
+        if (c.moveToFirst()) {  
+            String name = c.getString(c.getColumnIndexOrThrow(ContactsContract.Contacts.DISPLAY_NAME));  
+            Intent intent = new Intent(CurrentActivity.this, NewActivity.class);  
+            intent.putExtra("name", name);  
+            startActivityForResult(intent, 0);  
+        }  
+    }  
+}
+
+
+But if i add in:
+
+String number = c.getString(c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)); 
+
+
+it force closes
+
+Maybe theres another way to get their number?
+    
+===============================================================================================
+62
+A:Phone Numbers
+
+Phone numbers are stored in their own table and need to be queried separately. To query the phone number table use the URI stored in the SDK variable ContactsContract.CommonDataKinds.Phone.CONTENT_URI. Use a WHERE conditional to get the phone numbers for the specified contact. 
+
+    if (Integer.parseInt(cur.getString(
+           cur.getColumnIndex(ContactsContract.Contacts.HAS_PHONE_NUMBER))) > 0) {
+        Cursor pCur = cr.query(
+        ContactsContract.CommonDataKinds.Phone.CONTENT_URI, 
+        null, 
+        ContactsContract.CommonDataKinds.Phone.CONTACT_ID +" = ?", 
+        new String[]{id}, null);
+        while (pCur.moveToNext()) {
+        // Do something with phones
+        } 
+        pCur.close();
+    }
+
+
+Perform a second query against the Android contacts SQLite database. The phone numbers are queried against the URI stored in ContactsContract.CommonDataKinds.Phone.CONTENT_URI. The contact ID is stored in the phone table as ContactsContract.CommonDataKinds.Phone.CONTACT_ID and the WHERE clause is used to limit the data returned.
+
+Email Addresses
+
+Querying email addresses is similar to phone numbers. A query must be performed to get email addresses from the database. Query the URI stored in ContactsContract.CommonDataKinds.Email.CONTENT_URI to query the email address table. 
+
+Cursor emailCur = cr.query( 
+        ContactsContract.CommonDataKinds.Email.CONTENT_URI, 
+        null,
+        ContactsContract.CommonDataKinds.Email.CONTACT_ID + " = ?", 
+        new String[]{id}, null); 
+    while (emailCur.moveToNext()) { 
+        // This would allow you get several email addresses
+            // if the email addresses were stored in an array
+        String email = emailCur.getString(
+                      emailCur.getColumnIndex(ContactsContract.CommonDataKinds.Email.DATA));
+        String emailType = emailCur.getString(
+                      emailCur.getColumnIndex(ContactsContract.CommonDataKinds.Email.TYPE)); 
+    } 
+    emailCur.close();
+
+
+As with the phone query the field names for the email table are also stored under ContactsContract.CommonDataKinds. The email query is performed on the URI in ContactsContract.CommonDataKinds.Email.CONTENT_URI and the WHERE clause has to match the ContactsContract.CommonDataKinds.Email.CONTACT_ID field. Since multiple email addresses can be stored loop through the records returned in the Cursor.
+
+More tutorials here
+
+This method requires Android API version 5 or higher.
+    

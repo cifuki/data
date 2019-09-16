@@ -1,0 +1,104 @@
+53
+Q:I am using crashlytics to track my app's crash. There is one bug which is quite hard to figure out.  The stack trace from crashlytics is as below:
+
+java.lang.RuntimeException: Could not read input channel file descriptors from parcel.
+       at android.view.InputChannel.nativeReadFromParcel(InputChannel.java)
+       at android.view.InputChannel.readFromParcel(InputChannel.java:148)
+       at android.view.InputChannel$1.createFromParcel(InputChannel.java:39)
+       at android.view.InputChannel$1.createFromParcel(InputChannel.java:36)
+       at com.android.internal.view.InputBindResult.<init>(InputBindResult.java:62)
+       at com.android.internal.view.InputBindResult$1.createFromParcel(InputBindResult.java:102)
+       at com.android.internal.view.InputBindResult$1.createFromParcel(InputBindResult.java:99)
+       at com.android.internal.view.IInputMethodManager$Stub$Proxy.windowGainedFocus(IInputMethodManager.java:851)
+       at android.view.inputmethod.InputMethodManager.startInputInner(InputMethodManager.java:1292)
+       at android.view.inputmethod.InputMethodManager.onWindowFocus(InputMethodManager.java:1518)
+       at android.view.ViewRootImpl$ViewRootHandler.handleMessage(ViewRootImpl.java:3550)
+       at android.os.Handler.dispatchMessage(Handler.java:102)
+       at android.os.Looper.loop(Looper.java:157)
+       at android.app.ActivityThread.main(ActivityThread.java:5293)
+       at java.lang.reflect.Method.invokeNative(Method.java)
+       at java.lang.reflect.Method.invoke(Method.java:515)
+       at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1265)
+       at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1081)
+       at dalvik.system.NativeStart.main(NativeStart.java)
+
+
+I know there is one similar question about this here. But there is a bit different. And as statistics from crashlytics, the crash happens mainly in SAMSUNG android phone. 
+
+I am new to android and don't know why the crash happened and how to fix this kind of crash.
+
+Any suggestion would be much appreciated.
+    
+===============================================================================================
+34
+A:Think it's a very wide area and there could be a lot of situations which can trigger this system level exception. But maybe this example of how it was fixed in a particular project can help someone.
+
+I experienced a similar exception: 
+"Could not read input channel file descriptors from parcel" on Samsung phone:
+
+java.lang.RuntimeException: Could not read input channel file descriptors from parcel.
+        at android.view.InputChannel.nativeReadFromParcel(Native Method)
+        at android.view.InputChannel.readFromParcel(InputChannel.java:148)
+        at android.view.IWindowSession$Stub$Proxy.addToDisplay(IWindowSession.java:690)
+        at android.view.ViewRootImpl.setView(ViewRootImpl.java:525)
+        at android.view.WindowManagerGlobal.addView(WindowManagerGlobal.java:269)
+        at android.view.WindowManagerImpl.addView(WindowManagerImpl.java:69)
+        at android.widget.Toast$TN.handleShow(Toast.java:402)
+        at android.widget.Toast$TN$1.run(Toast.java:310)
+        at android.os.Handler.handleCallback(Handler.java:730)
+        at android.os.Handler.dispatchMessage(Handler.java:92)
+        at android.os.Looper.loop(Looper.java:137)
+        at android.app.ActivityThread.main(ActivityThread.java:5103)
+        at java.lang.reflect.Method.invokeNative(Native Method)
+        at java.lang.reflect.Method.invoke(Method.java:525)
+        at       com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:737)
+        at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:553)
+        at dalvik.system.NativeStart.main(Native Method)
+
+
+It happened in a big old project which I got for maintenance and this floating bug occurred only after several hours. I spent quite some time on it and also read some related answers on SO regarding it and had no clue except it's a system level bug of Android, and there should be some extra data or duplicates of objects or big objects in memory etc:
+
+https://code.google.com/p/android/issues/detail?id=32470 
+
+The last thing I could think about was SoundPool. It's not used a lot in the project - there are not more than 10 different sounds played from time to time. But it was the root cause! Sometimes there were floating exceptions from SoundPool "unable to load sample (null)". And it helped to realize that SoundPool was used in a wrong way:
+
+public void play(int rscId) {
+...
+    final int soundId = soundPool.load(mContext, rscId, 1);
+    ...
+    soundPool.play(soundId, volume, volume, 5, 0, 1f);
+
+
+So new id was generated and sound resource was reloaded each time application called play sound method! And after certain amount of time some non related exceptions started to occur until application crashed with the "Could not read input channel file descriptors from parcel" exception.
+It's interesting that one of those non related exceptions was: "ExceptionHandled in unable to open database file (code 14)": 
+
+ExceptionHandled in unable to open database file (code 14)
+android.database.sqlite.SQLiteCantOpenDatabaseException: 
+unable to open database file (code 14)
+at android.database.sqlite.SQLiteConnection.nativeExecuteForCursorWindow
+(Native Method)
+at android.database.sqlite.SQLiteConnection.executeForCursorWindow
+(SQLiteConnection.java:845)
+
+
+And of course it has nothing to do neither with database nor with toasts/parcels. The fix for that particular situation was very easy: just preload all sounds as it's suggested in Android documentation:
+
+http://developer.android.com/reference/android/media/SoundPool.html
+
+"The loading logic iterates through the list of sounds calling the appropriate SoundPool.load() function. This should typically be done early in the process to allow time for decompressing the audio to raw PCM format before they are needed for playback.
+Once the sounds are loaded and play has started, the application can trigger sounds by calling SoundPool.play()."
+
+So I moved soundPool.load() out from play() method and the exception : 
+"Could not read input channel file descriptors from parcel" has gone as well as the exception "unable to open database file (code 14)".
+
+public void play(int soundId) {
+    ...
+    soundPool.play(soundId, volume, volume, 5, 0, 1f);
+
+
+And soundPool.release(); soundPool = null should be called as well when it's not needed anymore. And maybe it also can have an effect on such exceptions, see details here 
+
+Could not read input channel file descriptors from parcel
+
+Most probably it's not the exact situation for the original question but hope it can give some information to dig further. I.e. looking for some additional exceptions, swallowed exceptions, or wrong files/data handling.
+    

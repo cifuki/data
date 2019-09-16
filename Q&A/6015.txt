@@ -1,0 +1,242 @@
+42
+Q:On Last Google IO, Google released a preview of some new arch components, one of which, ViewModel. 
+
+In the docs google shows one of the possible uses for this component:
+
+
+  It is very common that two or more fragments in an activity need to
+  communicate with each other. This is never trivial as both fragments
+  need to define some interface description, and the owner activity must
+  bind the two together. Moreover, both fragments must handle the case
+  where the other fragment is not yet created or not visible.
+  
+  This common pain point can be addressed by using ViewModel objects.
+  Imagine a common case of master-detail fragments, where we have a
+  fragment in which the user selects an item from a list and another
+  fragment that displays the contents of the selected item.
+  
+  These fragments can share a ViewModel using their activity scope to
+  handle this communication.
+
+
+And shows a implementation example:
+
+public class SharedViewModel extends ViewModel {
+    private final MutableLiveData<Item> selected = new MutableLiveData<Item>();
+
+    public void select(Item item) {
+        selected.setValue(item);
+    }
+
+    public LiveData<Item> getSelected() {
+        return selected;
+    }
+}
+
+public class MasterFragment extends Fragment {
+    private SharedViewModel model;
+    public void onActivityCreated() {
+        model = ViewModelProviders.of(getActivity()).get(SharedViewModel.class);
+        itemSelector.setOnClickListener(item -> {
+            model.select(item);
+        });
+    }
+}
+
+public class DetailFragment extends LifecycleFragment {
+    public void onActivityCreated() {
+        SharedViewModel model = ViewModelProviders.of(getActivity()).get(SharedViewModel.class);
+        model.getSelected().observe(this, { item ->
+           // update UI
+        });
+    }
+}
+
+
+I was quite excited about the possibility of not needing those interfaces used for fragments to communicate through the activity.
+
+But Google's example does not show exactly how would I call the detail fragment from master. 
+
+I'd still have to use an interface that will be implemented by the activity, which will call fragmentManager.replace(...), or there is another way to do that using the new architecture?
+    
+===============================================================================================
+39
+A:Updated on 6/12/2017,
+
+Android Official provide a simple, precise example to example how the ViewModel works on Master-Detail template, you should take a look on it first.Share data between fragments
+
+As @CommonWare, @Quang Nguyen methioned, it is not the purpose for Yigit to make the call from master to detail but be better to use the Middle man pattern. But if you want to make some fragment transaction, it should be done in the activity. At that moment, the ViewModel class should be as static class in Activity and may contain some Ugly Callback to call back the activity to make the fragment transaction.
+
+I have tried to implement this and make a simple project about this. You can take a look it. Most of the code is referenced from Google IO 2017, also the structure. 
+https://github.com/charlesng/SampleAppArch
+
+I do not use Master Detail Fragment to implement the component, but the old one ( communication between fragment in ViewPager.) The logic should be the same. 
+
+But I found something is important using these components
+
+
+What you want to send and receive in the Middle man, they should be sent and received in View Model only
+The modification seems not too much in the fragment class. Since it only change the implementation from "Interface callback" to "Listening and responding ViewModel" 
+View Model initialize seems important and likely to be called in the activity.
+Using the MutableLiveData to make the source synchronized in activity only. 
+
+
+1.Pager Activity
+
+public class PagerActivity extends LifecycleActivity {
+    /**
+     * The pager widget, which handles animation and allows swiping horizontally to access previous
+     * and next wizard steps.
+     */
+    private ViewPager mPager;
+    private PagerAgentViewModel pagerAgentViewModel;
+    /**
+     * The pager adapter, which provides the pages to the view pager widget.
+     */
+    private PagerAdapter mPagerAdapter;
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_pager);
+        FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
+        fab.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
+                        .setAction("Action", null).show();
+            }
+        });
+        mPager = (ViewPager) findViewById(R.id.pager);
+        mPagerAdapter = new ScreenSlidePagerAdapter(getSupportFragmentManager());
+        mPager.setAdapter(mPagerAdapter);
+        pagerAgentViewModel = ViewModelProviders.of(this).get(PagerAgentViewModel.class);
+        pagerAgentViewModel.init();
+    }
+
+    /**
+     * A simple pager adapter that represents 5 ScreenSlidePageFragment objects, in
+     * sequence.
+     */
+    private class ScreenSlidePagerAdapter extends FragmentStatePagerAdapter {
+       ...Pager Implementation
+    }
+
+}
+
+
+2.PagerAgentViewModel (It deserved a better name rather than this) 
+
+public class PagerAgentViewModel extends ViewModel {
+    private MutableLiveData<String> messageContainerA;
+    private MutableLiveData<String> messageContainerB;
+
+    public void init()
+    {
+        messageContainerA = new MutableLiveData<>();
+        messageContainerA.setValue("Default Message");
+        messageContainerB = new MutableLiveData<>();
+        messageContainerB.setValue("Default Message");
+    }
+
+    public void sendMessageToB(String msg)
+    {
+        messageContainerB.setValue(msg);
+    }
+    public void sendMessageToA(String msg)
+    {
+        messageContainerA.setValue(msg);
+
+    }
+    public LiveData<String> getMessageContainerA() {
+        return messageContainerA;
+    }
+
+    public LiveData<String> getMessageContainerB() {
+        return messageContainerB;
+    }
+}
+
+
+3.BlankFragmentA
+
+public class BlankFragmentA extends LifecycleFragment {
+
+    public BlankFragmentA() {
+        // Required empty public constructor
+    }
+
+    @Override
+    public void onActivityCreated(@Nullable Bundle savedInstanceState) {
+        super.onActivityCreated(savedInstanceState);
+        //setup the listener for the fragment A
+        ViewModelProviders.of(getActivity()).get(PagerAgentViewModel.class).getMessageContainerA().observe(this, new Observer<String>() {
+            @Override
+            public void onChanged(@Nullable String msg) {
+                textView.setText(msg);
+            }
+        });
+
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState) {
+        // Inflate the layout for this fragment
+        View view = inflater.inflate(R.layout.fragment_blank_a, container, false);
+        textView = (TextView) view.findViewById(R.id.fragment_textA);
+        // set the onclick listener
+        Button button = (Button) view.findViewById(R.id.btnA);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                ViewModelProviders.of(getActivity()).get(PagerAgentViewModel.class).sendMessageToB("Hello B");
+            }
+        });
+        return view;
+    }
+
+}
+
+
+4.BlankFragmentB
+
+public class BlankFragmentB extends LifecycleFragment {
+
+    public BlankFragmentB() {
+        // Required empty public constructor
+    }
+
+    @Override
+    public void onActivityCreated(@Nullable Bundle savedInstanceState) {
+        super.onActivityCreated(savedInstanceState);
+        //setup the listener for the fragment B
+        ViewModelProviders.of(getActivity()).get(PagerAgentViewModel.class).getMessageContainerB().observe(this, new Observer<String>() {
+            @Override
+            public void onChanged(@Nullable String msg) {
+                textView.setText(msg);
+
+            }
+        });
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState) {
+        // Inflate the layout for this fragment
+        View view = inflater.inflate(R.layout.fragment_blank_b, container, false);
+        textView = (TextView) view.findViewById(R.id.fragment_textB);
+        //set the on click listener
+        Button button = (Button) view.findViewById(R.id.btnB);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                ViewModelProviders.of(getActivity()).get(PagerAgentViewModel.class).sendMessageToA("Hello A");
+
+            }
+        });
+        return view;
+    }
+
+}
+
+    

@@ -1,0 +1,83 @@
+27
+Q:I have a set of alarms that I need to keep after reboot. I've tried using on an boot receiver but they won't start again. I'm not sure if I understand the boot receiver and how to then restart all the alarms. I already have one receiver for my notifications, but don't know whether I can use the same receiver or if I need a new one?
+
+Could anyone point me to any good tutorials or help me out?
+
+Cheers
+
+Code :    
+
+    DatabaseHandler db = new DatabaseHandler(this);  
+    List<UAlarm> alarms = db.getAllAlarms();        
+    AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);  
+    for (UAlarm ua : alarms) {  
+        String programme = ua.getTitle();  
+        String startTime = ua.getStart();  
+        String endTime = ua.getEnd();  
+        String nowPlaying = ua.getChannel();  
+        db.addAlarm(new UAlarm(programme, startTime, endTime, nowPlaying, ""));  
+        final UAlarm ut = new UAlarm();  
+        ut.setTitle(programme);  
+        ut.setStart(startTime);  
+        ut.setEnd(endTime);  
+        ut.setChannel(nowPlaying);  
+        ut.setId(db.getLastEntered());  
+        String [] bla = startTime.split(":");  
+        int hour = Integer.parseInt(bla[0].trim());  
+        int minute = Integer.parseInt(bla[1].trim());  
+        minute -= 2;  
+        Calendar cal = Calendar.getInstance();  
+        cal.set(Calendar.HOUR_OF_DAY, hour);  
+        cal.set(Calendar.MINUTE, minute);  
+        Intent intenta = new Intent(this, NotificationMenu.class);  
+        String name = programme;  
+        intenta.putExtra("name", name);  
+        intenta.putExtra("id", db.getLastEntered());  
+          PendingIntent pendingIntent = PendingIntent.getBroadcast(this, ua.getId(),  
+            intenta, PendingIntent.FLAG_CANCEL_CURRENT);  
+          am.set(AlarmManager.RTC_WAKEUP,  
+            cal.getTimeInMillis(), pendingIntent);      
+    }  
+}  
+
+
+with NotificationMenu being the notifications, which is why I'm using the AlarmManager
+    
+===============================================================================================
+47
+A:I'm not sure if I understand the boot receiver and how to then restart all the alarms.
+
+
+Just call your code to call setRepeating() (or whatever) on AlarmManager.
+
+For example, in this sample project, PollReceiver is set to receive BOOT_COMPLETED. In onReceive(), it reschedules the alarms:
+
+package com.commonsware.android.schedsvc;
+
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.os.SystemClock;
+
+public class PollReceiver extends BroadcastReceiver {
+  private static final int PERIOD=5000;
+
+  @Override
+  public void onReceive(Context ctxt, Intent i) {
+    scheduleAlarms(ctxt);
+  }
+
+  static void scheduleAlarms(Context ctxt) {
+    AlarmManager mgr=
+        (AlarmManager)ctxt.getSystemService(Context.ALARM_SERVICE);
+    Intent i=new Intent(ctxt, ScheduledService.class);
+    PendingIntent pi=PendingIntent.getService(ctxt, 0, i, 0);
+
+    mgr.setRepeating(AlarmManager.ELAPSED_REALTIME,
+                     SystemClock.elapsedRealtime() + PERIOD, PERIOD, pi);
+  }
+}
+
+    

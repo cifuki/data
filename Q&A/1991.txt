@@ -1,0 +1,286 @@
+98
+Q:Slight variation on my other posting
+
+Basically I have a message Handler in my Fragment which receives a bunch of messages that can result in dialogs being dismissed or shown. 
+
+When the app is put into the background I get an onPause but then still get my messages coming through as one would expect. However, because I'm using fragments I can't just dismiss and show dialogs as that will result in an IllegalStateException.
+
+I can't just dismiss or cancel allowing state loss.
+
+Given that I have a Handler I'm wondering whether there is a recommended approach as to 
+how I should handle messages while in a paused state.
+
+One possible solution I'm considering is to record the messages coming through while paused and play them back on an onResume. This is somewhat unsatisfactory and I'm thinking that there must be something in the framework to handle this more elegantly.
+    
+===============================================================================================
+165
+A:Although the Android operating system does not appear to have a mechanism that sufficiently addresses your problem I believe this pattern does provide a relatively simple to implement workaround.
+
+The following class is a wrapper around android.os.Handler that buffers up messages when an activity is paused and plays them back on resume.
+
+Ensure any code that you have which asynchronously changes a fragment state (e.g. commit, dismiss) is only called from a message in the handler.
+
+Derive your handler from the PauseHandler class.
+
+Whenever your activity receives an onPause() call PauseHandler.pause() and for onResume() call PauseHandler.resume().
+
+Replace your implementation of the Handler handleMessage() with processMessage().
+
+Provide a simple implementation of storeMessage() which always returns true.
+
+/**
+ * Message Handler class that supports buffering up of messages when the
+ * activity is paused i.e. in the background.
+ */
+public abstract class PauseHandler extends Handler {
+
+    /**
+     * Message Queue Buffer
+     */
+    final Vector<Message> messageQueueBuffer = new Vector<Message>();
+
+    /**
+     * Flag indicating the pause state
+     */
+    private boolean paused;
+
+    /**
+     * Resume the handler
+     */
+    final public void resume() {
+        paused = false;
+
+        while (messageQueueBuffer.size() > 0) {
+            final Message msg = messageQueueBuffer.elementAt(0);
+            messageQueueBuffer.removeElementAt(0);
+            sendMessage(msg);
+        }
+    }
+
+    /**
+     * Pause the handler
+     */
+    final public void pause() {
+        paused = true;
+    }
+
+    /**
+     * Notification that the message is about to be stored as the activity is
+     * paused. If not handled the message will be saved and replayed when the
+     * activity resumes.
+     * 
+     * @param message
+     *            the message which optional can be handled
+     * @return true if the message is to be stored
+     */
+    protected abstract boolean storeMessage(Message message);
+
+    /**
+     * Notification message to be processed. This will either be directly from
+     * handleMessage or played back from a saved message when the activity was
+     * paused.
+     * 
+     * @param message
+     *            the message to be handled
+     */
+    protected abstract void processMessage(Message message);
+
+    /** {@inheritDoc} */
+    @Override
+    final public void handleMessage(Message msg) {
+        if (paused) {
+            if (storeMessage(msg)) {
+                Message msgCopy = new Message();
+                msgCopy.copyFrom(msg);
+                messageQueueBuffer.add(msgCopy);
+            }
+        } else {
+            processMessage(msg);
+        }
+    }
+}
+
+
+Below is a simple example of how the PausedHandler class can be used.
+
+On the click of a button a delayed message is sent to the handler.
+
+When the handler receives the message (on the UI thread) it displays a DialogFragment.
+
+If the PausedHandler class was not being used an IllegalStateException would be shown if the home button was pressed after pressing the test button to launch the dialog.
+
+public class FragmentTestActivity extends Activity {
+
+    /**
+     * Used for "what" parameter to handler messages
+     */
+    final static int MSG_WHAT = ('F' << 16) + ('T' << 8) + 'A';
+    final static int MSG_SHOW_DIALOG = 1;
+
+    int value = 1;
+
+    final static class State extends Fragment {
+
+        static final String TAG = "State";
+        /**
+         * Handler for this activity
+         */
+        public ConcreteTestHandler handler = new ConcreteTestHandler();
+
+        @Override
+        public void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            setRetainInstance(true);            
+        }
+
+        @Override
+        public void onResume() {
+            super.onResume();
+
+            handler.setActivity(getActivity());
+            handler.resume();
+        }
+
+        @Override
+        public void onPause() {
+            super.onPause();
+
+            handler.pause();
+        }
+
+        public void onDestroy() {
+            super.onDestroy();
+            handler.setActivity(null);
+        }
+    }
+
+    /**
+     * 2 second delay
+     */
+    final static int DELAY = 2000;
+
+    /** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        if (savedInstanceState == null) {
+            final Fragment state = new State();
+            final FragmentManager fm = getFragmentManager();
+            final FragmentTransaction ft = fm.beginTransaction();
+            ft.add(state, State.TAG);
+            ft.commit();
+        }
+
+        final Button button = (Button) findViewById(R.id.popup);
+
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+
+                final FragmentManager fm = getFragmentManager();
+                State fragment = (State) fm.findFragmentByTag(State.TAG);
+                if (fragment != null) {
+                    // Send a message with a delay onto the message looper
+                    fragment.handler.sendMessageDelayed(
+                            fragment.handler.obtainMessage(MSG_WHAT, MSG_SHOW_DIALOG, value++),
+                            DELAY);
+                }
+            }
+        });
+    }
+
+    public void onSaveInstanceState(Bundle bundle) {
+        super.onSaveInstanceState(bundle);
+    }
+
+    /**
+     * Simple test dialog fragment
+     */
+    public static class TestDialog extends DialogFragment {
+
+        int value;
+
+        /**
+         * Fragment Tag
+         */
+        final static String TAG = "TestDialog";
+
+        public TestDialog() {
+        }
+
+        public TestDialog(int value) {
+            this.value = value;
+        }
+
+        @Override
+        public void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+        }
+
+        @Override
+        public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                Bundle savedInstanceState) {
+            final View inflatedView = inflater.inflate(R.layout.dialog, container, false);
+            TextView text = (TextView) inflatedView.findViewById(R.id.count);
+            text.setText(getString(R.string.count, value));
+            return inflatedView;
+        }
+    }
+
+    /**
+     * Message Handler class that supports buffering up of messages when the
+     * activity is paused i.e. in the background.
+     */
+    static class ConcreteTestHandler extends PauseHandler {
+
+        /**
+         * Activity instance
+         */
+        protected Activity activity;
+
+        /**
+         * Set the activity associated with the handler
+         * 
+         * @param activity
+         *            the activity to set
+         */
+        final void setActivity(Activity activity) {
+            this.activity = activity;
+        }
+
+        @Override
+        final protected boolean storeMessage(Message message) {
+            // All messages are stored by default
+            return true;
+        };
+
+        @Override
+        final protected void processMessage(Message msg) {
+
+            final Activity activity = this.activity;
+            if (activity != null) {
+                switch (msg.what) {
+
+                case MSG_WHAT:
+                    switch (msg.arg1) {
+                    case MSG_SHOW_DIALOG:
+                        final FragmentManager fm = activity.getFragmentManager();
+                        final TestDialog dialog = new TestDialog(msg.arg2);
+
+                        // We are on the UI thread so display the dialog
+                        // fragment
+                        dialog.show(fm, TestDialog.TAG);
+                        break;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+
+I've added a storeMessage() method to the PausedHandler class in case any messages should be processed immediately even when the activity is paused. If a message is handled then false should be returned and the message will be discarded.
+    

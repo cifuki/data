@@ -1,0 +1,46 @@
+37
+Q:I'm using the new TextInputLayout to wrap an EditText.  When I determine a field has an error I do the following:
+
+Drawable drawable = DrawableCompat.wrap(getEditText().getBackground());
+
+DrawableCompat.setTintList(drawable, ColorStateList.valueOf(Color.RED));
+
+
+This works on 5.0 and turns the underline red, but does nothing on 4.4 or 4.1 test devices.  What am I missing here?  Seems so simple and according to google "just works"... pretty sure I have the latest version of it as well:
+
+compile 'com.android.support:design:22.2.0'
+
+FWIW, if I do setColorFilter instead of setTint then it works on all platforms but then I have issues with it going away and not coming back as soon as the focus is set/left/etc... I'd prefer to do it with tint (and really prefer to have the tint apply to the focus and non-focus states if anybody is looking for extra credit lol)
+
+Thanks!
+    
+===============================================================================================
+66
+A:When you call wrap() then the original Drawable is wrapped internally into a new DrawableWrapper which is used to implement the tinting on older devices. So to make it work you have to set the returned Drawable back to the EditText:
+
+final Drawable originalDrawable = editText.getBackground();
+final Drawable wrappedDrawable = DrawableCompat.wrap(originalDrawable);
+DrawableCompat.setTintList(wrappedDrawable, ColorStateList.valueOf(Color.RED));
+editText.setBackground(wrappedDrawable);
+
+
+
+
+Since version 23.2.0 of the support library you can also use setTint() instead of setTintList() to set just one tint color without having to create a ColorStateList.
+
+DrawableCompat.setTint(wrappedDrawable, Color.RED);
+
+
+
+
+If you want to ensure backwards compatibility beyond API level 16 you run into a little snag. setBackground() was added in API level 16 and you need to call setBackgroundDrawable() on devices before that. It's best to implement a helper method which does that for you:
+
+public static void setBackground(View view, Drawable background) {
+    if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+        view.setBackground(background);
+    } else {
+        view.setBackgroundDrawable(background);
+    }
+}
+
+    

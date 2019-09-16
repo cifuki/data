@@ -1,0 +1,54 @@
+28
+Q:I'm trying to use the YouTubeData API with OAuth 2.0 authentication on Android, and i'm kind of struggling with it.
+
+I've searched a lot online, but there's not much help for the Android implementation.
+
+First of all, it's not clear to me what's the best way to obtain an OAuth token. In the doc they suggest that for Android is better to obtain it using the Google Play services lib. Is that true? if yes, it should be pretty trivial following this guide: https://developers.google.com/android/guides/http-auth.
+But at this point i will have the token in a String object .. how should I use it with the YouTubeData API? Should I place it somewhere in the YouTube.Builder ?
+
+YouTube youtube = new YouTube.Builder(Auth.HTTP_TRANSPORT, Auth.JSON_FACTORY, new HttpRequestInitializer() {
+        public void initialize(HttpRequest request) throws IOException {
+        }
+    }).setApplicationName("AppName").build();
+
+
+if yes, does anyone know where?
+
+Searching on StackOverflow i've come across this question: What to do after getting Auth Token - Android Youtube API. Here Ibrahim Ulukaya says it's better to use  GoogleAccountCredential. For what i've understood (Access to Google API - GoogleAccountCredential.usingOAuth2 vs GoogleAuthUtil.getToken())  the Android version of GoogleAccountCredential should use the GoogleAuthUtil provided from the Google Play services lib, so it could be pretty useful to simplify the process. I've looked at the sample project suggested from Ibrahim Ulukaya (https://github.com/youtube/yt-direct-lite-android) and i've implemented everything as he does. But it doesn't seem to work very well as i'm only obtaining this message in the logcat: "There was an IO error: com.google.android.gms.auth.UserRecoverableAuthException: NeedPermission : null". 
+(Note that I've enabled all the required APIs on the Google Console, and created the Client ID for my app)
+
+At this point i'm kind of lost. 
+Should I use directly the GoogleAuthUtil from the Google Play services lib? in this case once obtained the token as a String how can i use it with the YouTubeData APIs? 
+Or should I use the GoogleAccountCredential ? in this case someone knows how can I solve the "NeedPersmission : null" error?
+
+---- EDIT:
+
+details on what my app is trying to do:  being this my first experience with this kind of APIs I started from the easy stuff: retrieve video information and then play those videos, without any user authentication. I managed to do that pretty easily, but for my app's purpose i need to access the user data, in particular users must be able to like and comment videos.
+So I started implementing OAuth2, trying to do the same exact queries I was doing before (retrieve video info).
+    
+===============================================================================================
+6
+A:Wow.  The documentation on this is super confusing.  Full disclosure, I'm not an Android developer but I am a Java developer who has worked with Google apps and OAuth2.
+
+Google Play or not Google Play?  First off, Google Play Services will only be available on Android devices with Google Play Services installed (so not OUYA, Amazon devices, etc.).   Google state that "the Google Play library will give you the best possible performance and experience.".
+
+There are numerous discussions (e.g. here, here) from actual Android developers that list the various merits of Google Play verses other techniques.  I would imagine that once you are able to get your application working using one method, then it should be an easy enough to change if you so desire.
+
+Much of the example code about uses the Android AccountManager (Tasks and Calendars being favourite examples) so that is what I will show.
+
+Your example code looks like it might be for a simple search, I would guess that many of the YouTube API interactions do not require OAuth2, in other code I've seen this empty HttpRequestInitializer implementation referred to as a no-op function. (e.g. GeolocationSearch.java).  
+
+It sounds like you want access to YouTube API operations that need account credentials.  You can do something similar to this Android Calendar example (CalendarSampleActivity.java) except with YouTube, like the example answer from here.
+
+// Google Accounts
+credential = GoogleAccountCredential.usingOAuth2(this, YouTubeScopes.YOUTUBE, YouTubeScopes.YOUTUBE_READONLY);
+SharedPreferences settings = getPreferences(Context.MODE_PRIVATE);
+credential.setSelectedAccountName(settings.getString(PREF_ACCOUNT_NAME, null));
+// YouTube client
+service =
+        new com.google.api.services.youtube.YouTube.Builder(transport, jsonFactory, credential)
+            .setApplicationName("Google-YouTubeAndroidSample/1.0").build();
+
+
+I hope this helps.
+    

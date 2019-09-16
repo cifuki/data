@@ -1,0 +1,138 @@
+40
+Q:I have a library project and a application. I'd like to have 2 product flavours (store, dev) for both library and application. When I build the store flavour for the application I want to use the store flavour from the library. Also when I build the dev flavour for the application I want to use the dev flavour from the library. I tried setting the same product flavours for both library and application but it does not work.  
+
+Here is my configuration:
+
+Library
+
+apply plugin: 'android-library'
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "19.1.0"
+
+    defaultConfig {
+        applicationId "ro.amarkovits.graddletest.lib"
+        minSdkVersion 14
+        targetSdkVersion 19
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            runProguard false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    productFlavors{
+        store{
+
+        }
+        dev{
+
+        }
+    }
+
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+}
+
+
+and I have this files:
+src/main/res/values/strings.xml
+and 
+src/store/res/values/strings.xml
+
+Application
+
+apply plugin: 'android'
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion '19.1.0'
+    defaultConfig {
+        applicationId 'ro.amarkovits.mymodule.app'
+        minSdkVersion 14
+        targetSdkVersion 19
+        versionCode 1
+        versionName '1.0'
+    }
+    buildTypes {
+        release {
+            runProguard false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    productFlavors{
+        store{
+
+        }
+        dev{
+
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile project(':lib')
+}
+
+
+In this situation I get this error: Error:(12, 23) No resource found that matches the given name (at 'text' with value '@string/app_name'). The app_name is defined in string.xml in the library (in both main and store directory)
+
+If I remove the productFlavors from the library it builds but always use the values.xml from the main directory
+    
+===============================================================================================
+54
+A:In your library you need to tell gradle to build every time every variant:
+
+android {
+    publishNonDefault true
+}
+
+
+Then in your application, since recently I guess, you can do this:
+
+dependencies {
+    (...)
+    devCompile project(path: ':lib', configuration: 'devDebug') // or 'devRelease'
+    storeCompile project(path: ':lib', configuration: 'storeRelease') // or 'storeDebug'
+}
+
+
+Found in the official documentation under Library Publication.
+
+Edit: 
+
+Since version 0.14.3 (2014/11/18), you can now have Flavor-buildType-Compile directive as well:
+
+In your build.gradle before the android {} scope add the following:
+
+configurations {
+    devDebugCompile
+    devReleaseCompile
+    storeDebugCompile
+    storeReleaseCompile
+}
+
+
+Then you can declare and use different versions of your library per Flavor-BuildType:
+
+dependencies {
+    (...)
+    devDebugCompile project(path: ':lib', configuration: 'devDebug')
+    devReleaseCompile project(path: ':lib', configuration: 'devRelease')
+    storeDebugCompile project(path: ':lib', configuration: 'storeDebug')
+    storeReleaseCompile project(path: ':lib', configuration: 'storeRelease') 
+}
+
+
+Edit: 
+
+Dependency management between modules has changed since Android Gradle Plugin 3.0.0. It automatically tries to matches flavours between your app and the libraries/modules it depends on. 
+
+See the documentation for the whole explanation!
+    

@@ -1,0 +1,56 @@
+34
+Q:I want to display an activity chooser that shows all apps that can VIEW and/or EDIT some data. Is there an easy way to do this, or do I have to implement my own activity chooser dialog? Or maybe I can just subclass Intent? Thanks.
+    
+===============================================================================================
+61
+A:I found a partial solution by using EXTRA_INITIAL_INTENTS:
+
+Intent viewIntent = new Intent(Intent.ACTION_VIEW);
+Intent editIntent = new Intent(Intent.ACTION_EDIT);
+viewIntent.setDataAndType(uri, type);
+editIntent.setDataAndType(uri, type);
+Intent chooserIntent = Intent.createChooser(editIntent, "Open in...");
+chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[] { viewIntent });
+startActivity(chooserIntent);
+
+
+I say partial because if an app supports both ACTION_VIEW and ACTION_EDIT it will show up twice in the list, one of which will open the file for viewing and the other for editing, and you wouldn't necessarily know which is which. I think a complete solution would require a custom app chooser, as Tim suggested.
+
+EDIT (Complete Solution!):
+
+I found a solution that doesn't involving writing a custom app chooser. In order to differentiate ACTION_EDIT apps from ACTION_VIEW apps, I found a way to append a "(for editing)" string to the labels for one of them (in my case, ACTION_EDIT) by using the line of code Tim provided. In addition, to ensure the appended string doesn't appear to be a part of the app name, I changed the color of it to cyan:
+
+PackageManager pm = kyoPrint.getPackageManager();
+Intent viewIntent = new Intent(Intent.ACTION_VIEW);
+Intent editIntent = new Intent(Intent.ACTION_EDIT);
+viewIntent.setDataAndType(uri, type);
+editIntent.setDataAndType(uri, type);
+Intent openInChooser = Intent.createChooser(viewIntent, "Open in...");
+
+// Append " (for editing)" to applicable apps, otherwise they will show up twice identically
+Spannable forEditing = new SpannableString(" (for editing)");
+forEditing.setSpan(new ForegroundColorSpan(Color.CYAN), 0, forEditing.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+List<ResolveInfo> resInfo = pm.queryIntentActivities(editIntent, 0);
+Intent[] extraIntents = new Intent[resInfo.size()];
+for (int i = 0; i < resInfo.size(); i++) {
+    // Extract the label, append it, and repackage it in a LabeledIntent
+    ResolveInfo ri = resInfo.get(i);
+    String packageName = ri.activityInfo.packageName;
+    Intent intent = new Intent();
+    intent.setComponent(new ComponentName(packageName, ri.activityInfo.name));
+    intent.setAction(Intent.ACTION_EDIT);
+    intent.setDataAndType(uri, type);
+    CharSequence label = TextUtils.concat(ri.loadLabel(pm), forEditing);
+    extraIntents[i] = new LabeledIntent(intent, packageName, label, ri.icon);
+}
+
+openInChooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, extraIntents);
+startActivity(openInChooser);
+
+
+
+
+EDIT 2: BUG
+
+If there are no activities found by the first intent, NO activities will be displayed, including any found by the second intent. I ended up writing my own chooser. I just populated an ExpandableListView with headings for each type of intent with their respective activities as children (stored as individual LabeledIntents).
+    

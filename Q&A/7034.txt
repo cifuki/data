@@ -1,0 +1,198 @@
+37
+Q:Background
+
+Android got new API on Kitkat and Lollipop, to video capture the screen. You can do it either via the ADB tool, or via code (starting from Lollipop).
+
+Ever since the new API was out, many apps came that use this feature, allowing to record the screen, and Microsoft even made its own Google-Now-On-tap competitor app.
+
+Using ADB, you can use:
+
+adb shell screenrecord /sdcard/video.mp4 
+
+
+You can even do it from within Android Studio itself.
+
+The problem
+
+I can't find any tutorial or explanation about how to do it using the API, meaning in code.
+
+What I've found
+
+The only place I've found is the documentations (here, under "Screen capturing and sharing"), telling me this:
+
+
+  Android 5.0 lets you add screen capturing and screen sharing
+  capabilities to your app with the new android.media.projection APIs.
+  This functionality is useful, for example, if you want to enable
+  screen sharing in a video conferencing app.
+  
+  The new createVirtualDisplay() method allows your app to capture the
+  contents of the main screen (the default display) into a Surface
+  object, which your app can then send across the network. The API only
+  allows capturing non-secure screen content, and not system audio. To
+  begin screen capturing, your app must first request the user\xe2\x80\x99s
+  permission by launching a screen capture dialog using an Intent
+  obtained through the createScreenCaptureIntent() method.
+  
+  For an example of how to use the new APIs, see the MediaProjectionDemo
+  class in the sample project.
+
+
+Thing is, I can't find any "MediaProjectionDemo" sample. Instead, I've found "Screen Capture" sample, but I don't understand how it works, as when I've ran it, all I've seen is a blinking screen and I don't think it saves the video to a file. The sample seems very buggy.
+
+The questions
+
+How do I perform those actions using the new API:
+
+
+start recording, optionally including audio (mic/speaker/both).
+stop recording
+take a screenshot instead of video.
+
+
+Also, how do I customize it (resolution, requested fps, colors, time...) ?
+    
+===============================================================================================
+61
+A:First step and the one which Ken White rightly suggested & which you may have already covered is the Example Code provided officially.
+
+I have used their API earlier. I agree screenshot is pretty straight forward. But, screen recording is also under similar lines.
+
+I will answer your questions in 3 sections and will wrap it up with a link. :)
+
+
+
+1. Start Video Recording
+
+private void startScreenRecord(final Intent intent) {
+ if (DEBUG) Log.v(TAG, "startScreenRecord:sMuxer=" + sMuxer);
+ synchronized(sSync) {
+  if (sMuxer == null) {
+   final int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
+   // get MediaProjection 
+   final MediaProjection projection = mMediaProjectionManager.getMediaProjection(resultCode, intent);
+   if (projection != null) {
+    final DisplayMetrics metrics = getResources().getDisplayMetrics();
+    final int density = metrics.densityDpi;
+
+    if (DEBUG) Log.v(TAG, "startRecording:");
+    try {
+     sMuxer = new MediaMuxerWrapper(".mp4"); // if you record audio only, ".m4a" is also OK. 
+     if (true) {
+      // for screen capturing 
+      new MediaScreenEncoder(sMuxer, mMediaEncoderListener,
+       projection, metrics.widthPixels, metrics.heightPixels, density);
+     }
+     if (true) {
+      // for audio capturing 
+      new MediaAudioEncoder(sMuxer, mMediaEncoderListener);
+     }
+     sMuxer.prepare();
+     sMuxer.startRecording();
+    } catch (final IOException e) {
+     Log.e(TAG, "startScreenRecord:", e);
+    }
+   }
+  }
+ }
+}
+
+
+2. Stop Video Recording
+
+ private void stopScreenRecord() {
+  if (DEBUG) Log.v(TAG, "stopScreenRecord:sMuxer=" + sMuxer);
+  synchronized(sSync) {
+   if (sMuxer != null) {
+    sMuxer.stopRecording();
+    sMuxer = null;
+    // you should not wait here 
+   }
+  }
+ }
+
+
+2.5. Pause and Resume Video Recording
+
+ private void pauseScreenRecord() {
+  synchronized(sSync) {
+   if (sMuxer != null) {
+    sMuxer.pauseRecording();
+   }
+  }
+ }
+
+ private void resumeScreenRecord() {
+  synchronized(sSync) {
+   if (sMuxer != null) {
+    sMuxer.resumeRecording();
+   }
+  }
+ }
+
+
+Hope the code helps. Here is the original link to the code that I referred to and from which this implementation(Video recording) is also derived from.
+
+
+
+3. Take screenshot Instead of Video
+
+
+  I think by default its easy to capture the image in bitmap format. You can still go ahead with MediaProjectionDemo example to capture screenshot.
+
+
+[EDIT] : Code encrypt for screenshot
+
+a. To create virtual display depending on device width / height
+
+mImageReader = ImageReader.newInstance(mWidth, mHeight, PixelFormat.RGBA_8888, 2);
+mVirtualDisplay = sMediaProjection.createVirtualDisplay(SCREENCAP_NAME, mWidth, mHeight, mDensity, VIRTUAL_DISPLAY_FLAGS, mImageReader.getSurface(), null, mHandler);
+mImageReader.setOnImageAvailableListener(new ImageAvailableListener(), mHandler);
+
+
+b. Then start the Screen Capture based on an intent or action-
+
+startActivityForResult(mProjectionManager.createScreenCaptureIntent(), REQUEST_CODE);
+
+
+Stop Media projection-
+
+sMediaProjection.stop();
+
+
+c. Then convert to image-
+
+//Process the media capture
+image = mImageReader.acquireLatestImage();
+Image.Plane[] planes = image.getPlanes();
+ByteBuffer buffer = planes[0].getBuffer();
+int pixelStride = planes[0].getPixelStride();
+int rowStride = planes[0].getRowStride();
+int rowPadding = rowStride - pixelStride * mWidth;
+//Create bitmap
+bitmap = Bitmap.createBitmap(mWidth + rowPadding / pixelStride, mHeight, Bitmap.Config.ARGB_8888);
+bitmap.copyPixelsFromBuffer(buffer);
+//Write Bitmap to file in some path on the phone
+fos = new FileOutputStream(STORE_DIRECTORY + "/myscreen_" + IMAGES_PRODUCED + ".png");
+bitmap.compress(CompressFormat.PNG, 100, fos);
+fos.close();
+
+
+
+
+There are several implementations (full code) of Media Projection API available.
+Some other links that can help you in your development-
+
+
+Video Recording with MediaProjectionManager - website
+android-ScreenCapture - github as per android developer's observations :)
+screenrecorder - github
+Capture and Record Android Screen using MediaProjection APIs - website
+
+
+
+
+Hope it helps :) Happy coding and screen recording!
+
+PS: Can you please tell me the Microsoft app you are talking about? I have not used it. Would like to try it :)
+    

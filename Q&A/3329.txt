@@ -1,0 +1,96 @@
+67
+Q:I have an app with a button on it that I use to turn BT on and off. I have the following code in there;
+
+public void buttonFlip(View view) {
+    flipBT();
+    buttonText(view);
+}
+
+public void buttonText(View view) {  
+    Button buttonText = (Button) findViewById(R.id.button1);
+    if (mBluetoothAdapter.isEnabled() || (mBluetoothAdapter.a)) {
+        buttonText.setText(R.string.bluetooth_on);  
+    } else {
+        buttonText.setText(R.string.bluetooth_off);
+    }
+}
+
+private void flipBT() {
+    if (mBluetoothAdapter.isEnabled()) {
+        mBluetoothAdapter.disable();    
+    } else {
+        mBluetoothAdapter.enable();
+    }
+}
+
+
+I'm calling button Flip, which flips the BT state, and then calls ButtonText, which should update the UI. However, the issue I'm having is, it takes a few seconds for BT to turn on - and during these seconds, the BT status is not enabled, making my button say Bluetooth off, even if it will be on in 2 seconds.
+
+I found the STATE_CONNECTING constant in the BluetoothAdapter android documentation, but... I simply don't know how to use it, being a newbie and all.
+
+So, I've got two questions:
+
+
+Is there a way to dynamically tie a UI element (such as a button or image) to a BT state, so that when the BT state changes, the button will change as well?
+Otherwise, I would want to press the button and get the correct state (I would like for it to say BT on, even if it's only connecting, since it will be on in 2 seconds). How do I do this?
+
+    
+===============================================================================================
+178
+A:You will want to register a BroadcastReceiver to listen for any changes in the state of the BluetoothAdapter:
+
+As a private instance variable in your Activity (or in a separate class file... whichever one you prefer):
+
+private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        final String action = intent.getAction();
+
+        if (action.equals(BluetoothAdapter.ACTION_STATE_CHANGED)) {
+            final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE,
+                                                 BluetoothAdapter.ERROR);
+            switch (state) {
+            case BluetoothAdapter.STATE_OFF:
+                setButtonText("Bluetooth off");
+                break;
+            case BluetoothAdapter.STATE_TURNING_OFF:
+                setButtonText("Turning Bluetooth off...");
+                break;
+            case BluetoothAdapter.STATE_ON:
+                setButtonText("Bluetooth on");
+                break;
+            case BluetoothAdapter.STATE_TURNING_ON:
+                setButtonText("Turning Bluetooth on...");
+                break;
+            }
+        }
+    }
+};
+
+
+Note that this assumes that your Activity implements a method setButtonText(String text) that will change the Button's text accordingly.
+
+And then in your Activity, register and unregister the BroadcastReceiver as follows,
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    /* ... */
+
+    // Register for broadcasts on BluetoothAdapter state change
+    IntentFilter filter = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
+    registerReceiver(mReceiver, filter);
+}
+
+@Override
+public void onDestroy() {
+    super.onDestroy();
+
+    /* ... */
+
+    // Unregister broadcast listeners
+    unregisterReceiver(mReceiver);
+}
+
+    

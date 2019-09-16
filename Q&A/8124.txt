@@ -1,0 +1,75 @@
+33
+Q:There are dozens of posts about this issue (javax.net.ssl.SSLPeerUnverifiedException: No peer certificate) but I haven't found anything that works for me.
+
+Many posts (like this, and this) "solve" this by allowing all certificates to be accepted but, of course, this is not a good solution for anything other than testing.
+
+Others seem quite localized and don't work for me. I really hope that someone has some insight that I lack.
+
+So, my problem: I'm testing on a server accessible only through the local network, connecting via HTTPS. Making the call I need to through the browser works fine. No complaining about certificates and if you check the certificates, it all looks good.
+
+When I try on my Android device, I get javax.net.ssl.SSLPeerUnverifiedException: No peer certificate
+
+Here's the code that calls it:
+
+StringBuilder builder = new StringBuilder();
+builder.append( /* stuff goes here*/ );
+
+httpGet.setEntity(new UrlEncodedFormEntity(nameValuePairs));
+ResponseHandler<String> responseHandler = new BasicResponseHandler();
+
+// Execute HTTP Post Request. Response body returned as a string
+HttpClient httpClient = MyActivity.getHttpClient();
+HttpGet httpGet = new HttpGet(builder.toString());
+
+String jsonResponse = httpClient.execute(httpGet, responseHandler); //Line causing the Exception
+
+
+My code for MyActivity.getHttpClient():
+
+protected synchronized static HttpClient getHttpClient(){
+    if (httpClient != null)
+        return httpClient;
+
+    HttpParams httpParameters = new BasicHttpParams();
+    HttpConnectionParams.setConnectionTimeout(httpParameters, TIMEOUT_CONNECTION);
+    HttpConnectionParams.setSoTimeout(httpParameters, TIMEOUT_SOCKET);
+    HttpProtocolParams.setVersion(httpParameters, HttpVersion.HTTP_1_1);
+
+    //Thread safe in case various AsyncTasks try to access it concurrently
+    SchemeRegistry schemeRegistry = new SchemeRegistry();
+    schemeRegistry.register(new Scheme("http", PlainSocketFactory.getSocketFactory(), 80));
+    schemeRegistry.register(new Scheme("https", SSLSocketFactory.getSocketFactory(), 443));
+    ClientConnectionManager cm = new ThreadSafeClientConnManager(httpParameters, schemeRegistry);
+
+    httpClient = new DefaultHttpClient(cm, httpParameters);
+
+    CookieStore cookieStore = httpClient.getCookieStore();
+    HttpContext localContext = new BasicHttpContext();
+    localContext.setAttribute(ClientContext.COOKIE_STORE, cookieStore);
+
+    return httpClient;
+}
+
+
+Any help would be much appreciated.
+
+Edit
+
+Also just to mention I've had other SSL issues with another app but adding the SchemeRegistry portion fixed it for me before.
+
+Edit 2
+
+So far I've only tested on Android 3.1, but I need this to work on Android 2.2+ regardless. I just tested on the browser on my Android tab (Android 3.1) and it complains about the certificate. It's fine on my pc browser, but not on the Android browser or in my app.
+
+Edit 3
+
+Turns out the iOS browser also complains about it. I'm starting to think it's a certificate chain issue described here (SSL certificate is not trusted - on mobile only)
+    
+===============================================================================================
+19
+A:It turns out my code was fine and the problem was that the server was not returning the full certificate chain. For more information see this SO post and this superuser post: 
+
+SSL certificate is not trusted - on mobile only
+
+https://superuser.com/questions/347588/how-do-ssl-chains-work
+    

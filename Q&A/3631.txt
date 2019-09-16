@@ -1,0 +1,44 @@
+63
+Q:I'm developing a website that is primarily accessed via an app, and I want to use OAuth2 for user registration and authentication. Since it is an Android app I will start using Google's OAuth2 stuff, since it provides a decent UI on Android.
+
+Google states that "You can choose to use Google's authentication system as a way to outsource user authentication for your application. This can remove the need to create, maintain, and secure a username and password store." which is what I want to do. However when I go through all their examples and whatnot, I can only find stuff about having a website or an app authenticate a user against Google's services.
+
+And indeed, when I go to register my app ("client") with Google's OAuth2 there are options for website clients and "installed" clients (i.e. a mobile app) but not both. I can create two separate clients but I read the OAuth2 draft and I think there will be a problem, which I will now explain.
+
+Here's how I did envisage it working:
+
+
+
+
+User asks MyApp to access his private data.
+App uses Android's AccountManager class to request an access token for Google's APIs.
+Android says to user "The app 'MyApp' wants access to your Basic Information on Google. Is this ok?"
+User says yes.
+AccountManager connects to Google's OAuth2 server using the credentials stored on the phone, and asks for an access token.
+Access token (which follows the green lines) is returned.
+AccountManager returns the access token to MyApp.
+MyApp sends a request to MySite for the user's private data, including the access token.
+MySite needs to verify the user, using the access token. It validates the token as described here, with Google - "Google, is this token valid?".
+Now, what I want to happen is that Google says "Yes, whoever gave it to you is indeed that user.", but what I think will actually happen (based on the OAuth2 draft and Google's documentation) is that it will say "No way! That token is only valid for MyApp, and you're MySite. GTFO!".
+
+
+So how should I do this? And PLEASE don't say "Use OpenID" or "Don't use OAuth2" or other similarly unhelpful answers. Oh and I would really like to keep using the nice AccountManager UI rather than crappy popup WebViews
+
+Edit
+
+Provisional answer (I will report back if it works!) from Nikolay is that it should actually work, and Google's servers won't care where the access token came from. Seems a bit insecure to me, but I will see if it works!
+
+Update
+
+I implemented this pattern with Facebook instead of Google and it totally works. The OAuth2 server doesn't care where the access token comes from. At least Facebook's doesn't, so I assume Google's doesn't either.
+
+In light of that it is a very very bad idea to store access tokens! But we also don't want to have to hit Facebook/Google's servers to check authentication for every request since it will slow everything down. Probably the best thing is to add an additional authentication cookie for your site that you hand out when their access token is validated, but a simpler way is just to treat the access token like a password and store a hash of it. You don't need to salt it either since access tokens are really really long. So the steps above become something like:
+
+9. MySite needs to verify the user, using the access token. First it checks its cache of hashed valid access tokens. If the hash of the token is found there it knows the user is authenticated. Otherwise it checks with Google as described here, with Google - "Google, is this token valid?".
+
+10. If Google says the access token is invalid, we tell the user to GTFO. Otherwise Google says "Yes that is a valid user" and we then check our registered user database. If that Google username (or Facebook id if using Facebook) is not found we can create a new user. Then we cache the hashed value of the access token.
+    
+===============================================================================================
+1
+A:You probably need OpenID Connect, which uses OAuth tokens for authentication. As for AccountManager, the current OAuth support is a bit hacky, the new Google Play Services, set to be released 'soon' should hopefully make this better. See here for a demo.
+    

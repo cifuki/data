@@ -1,0 +1,167 @@
+29
+Q:I'm getting this error inside an extended asynctask, but i'm really sure that Object[] IS a Void[].
+
+This is my custom AsyncTask:
+
+public abstract class RepeatableAsyncTask<A, B, C> extends AsyncTask<A, B, C> {
+private static final String TAG = "RepeatableAsyncTask";
+public static final int DEFAULT_MAX_RETRY = 5;
+
+private int mMaxRetries = DEFAULT_MAX_RETRY;
+private Exception mException = null;
+
+/**
+ * Default constructor
+ */
+public RepeatableAsyncTask() {
+    super();
+}
+
+/**
+ * Constructs an AsyncTask that will repeate itself for max Retries
+ * @param retries Max Retries.
+ */
+public RepeatableAsyncTask(int retries) {
+    super();
+    mMaxRetries = retries;
+}
+
+/**
+ * Will be repeated for max retries while the result is null or an exception is thrown.
+ * @param inputs Same as AsyncTask's
+ * @return Same as AsyncTask's
+ */
+protected abstract C repeatInBackground(A...inputs);
+
+@Override
+protected final C doInBackground(A...inputs) {
+    int tries = 0;
+    C result = null;
+
+    /* This is the main loop, repeatInBackground will be repeated until result will not be null */
+    while(tries++ < mMaxRetries && result == null) {
+        try {
+            result = repeatInBackground(inputs);
+        } catch (Exception exception) {
+            /* You might want to log the exception everytime, do it here. */
+            mException = exception;
+        }
+    }
+    return result;
+}
+
+/**
+ * Like onPostExecute but will return an eventual Exception
+ * @param c Result same as AsyncTask
+ * @param exception Exception thrown in the loop, even if the result is not null.
+ */
+protected abstract void onPostExecute(C c, Exception exception);
+
+@Override
+protected final void onPostExecute(C c) {
+    super.onPostExecute(c);
+    onPostExecute(c, mException);
+}
+
+
+And this is the SubClass that gives the problem:
+
+public class ListPalinasAsynkTask extends RepeatableAsyncTask<Void, Void, List<Palina>>{
+    private static final String TAG = "ListPalinasAsynkTask";
+    private static final boolean D = SystemConstants.ACTIVE_DEBUG;
+
+    private ApiRequest.ListPalinasCallback mCallback;
+
+    public ListPalinasAsynkTask(ApiRequest.ListPalinasCallback callback) {
+        if(D) Log.d(TAG, "Called: ListPalinasAsynkTask([callback])");
+        mCallback = callback;
+    }
+
+    @Override
+    protected List<Palina> repeatInBackground(Void... voids) {
+        /* Here i send request to get palinas */
+        return Api.getPalinasNearMe();
+    }
+
+    @Override
+    protected void onPostExecute(List<Palina> palinas, Exception exception) {
+        if(exception != null)
+            Logging.e(TAG, "Received exception in Asynk Task", exception);
+        if(palinas != null)
+            mCallback.result(palinas);
+        else
+            mCallback.result(new ArrayList<Palina>());
+    }
+}
+
+
+Finally, this is the error:
+
+E/ListPalinasAsynkTask\xef\xb9\x95 Received exception in Asynk Task
+    java.lang.ClassCastException: java.lang.Object[] cannot be cast to java.lang.Void[]
+            at ListPalinasAsynkTask.repeatInBackground(ListPalinasAsynkTask.java:19)
+            at RepeatableAsyncTask.doInBackground(RepeatableAsyncTask.java:43)
+            at android.os.AsyncTask$2.call(AsyncTask.java:288)
+
+
+I can't explain this exception because i'm giving Void as a parameter! That should not be an Object.
+Do you have solutions?
+
+Edit:
+ListPalinasAsyncTask.java:19 refers to:
+
+public class ListPalinasAsynkTask extends RepeatableAsyncTask<Void, Void, List<Palina>> {
+
+
+RepeatableAsyncTask.java:43:
+
+result = repeatInBackground(inputs);
+
+
+EDIT 2:
+
+I'm calling execute this way:
+
+AsyncTask mAsyncTask = new ListPalinasAsynkTask(callback);
+....
+mAsyncTask.execute();
+
+    
+===============================================================================================
+39
+A:Solution found:
+
+the problem was this:
+
+AsyncTask mAsyncTask = new ListPalinasAsynkTask(callback);
+....
+mAsyncTask.execute();
+
+
+I'm using generic AsyncTask to call execute, that class would pass Void as a parameter and will never call .execute() on ListPalinasAsynkTask, instead it will call ListPalinasAsynkTask.execute(Void). That gives the error.
+
+Solutions:
+
+
+Use ListPalinasAsynkTask instead of generic AsyncTask
+Better one: Create a new class VoidRepeatableAsyncTask and make other Void AsyncTasks extend that one.
+
+
+Like this:
+
+public abstract class VoidRepeatableAsyncTask<T> extends RepeatableAsyncTask<Void, Void, T> {
+    public void execute() {
+        super.execute();
+    }
+}
+
+
+Then you can easily use something like this to call execute:
+
+VoidRepeatableAsyncTask mAsyncTask = new ListPalinasAsynkTask(callback);
+....
+mAsyncTask.execute();
+
+
+This will call the no-parameters execute method of AsyncTask.
+    

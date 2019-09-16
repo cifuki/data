@@ -1,0 +1,94 @@
+70
+Q:I have a FragmentActivity that hosts a DialogFragment.
+
+The DialogFragment perform network requests and handles Facebook authentication, so I need to retain it during rotation.
+
+I've read all the other questions relating to this issue, but none of them have actually solved the problem. 
+
+I'm using putFragment and getFragment to save the Fragment instance and get it again during activity re-creation.
+
+However, I'm always getting a null pointer exception on the call to getFragment in onRestoreInstanceState. I would also like to keep the dialog from being dismissed during rotation, but so far I can't even retain the instance of it. 
+
+Any ideas what's going wrong?
+
+Here's what my code currently looks like:
+
+public class OKLoginActivity extends FragmentActivity implements OKLoginDialogListener
+{
+
+    private OKLoginFragment loginDialog;
+    private static final String TAG_LOGINFRAGMENT = "OKLoginFragment";
+
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        FragmentManager fm = getSupportFragmentManager();
+
+        if(savedInstanceState == null)
+        {
+            loginDialog = new OKLoginFragment(); 
+            loginDialog.show(fm, TAG_LOGINFRAGMENT);
+        }
+    }
+
+
+    @Override
+    public void onSaveInstanceState(Bundle outState)
+    {
+        getSupportFragmentManager().putFragment(outState,TAG_LOGINFRAGMENT, loginDialog);
+    }
+
+    @Override
+    public void onRestoreInstanceState(Bundle inState)
+    {
+        FragmentManager fm = getSupportFragmentManager();
+        loginDialog = (OKLoginFragment) fm.getFragment(inState, TAG_LOGINFRAGMENT);
+    }
+
+}
+
+
+This is the exception stack trace:
+
+02-01 16:31:13.684: E/AndroidRuntime(9739): FATAL EXCEPTION: main
+02-01 16:31:13.684: E/AndroidRuntime(9739): java.lang.RuntimeException: Unable to start activity ComponentInfo{io.openkit.example.sampleokapp/io.openkit.OKLoginActivity}: java.lang.NullPointerException
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2180)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2230)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.app.ActivityThread.handleRelaunchActivity(ActivityThread.java:3692)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.app.ActivityThread.access$700(ActivityThread.java:141)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1240)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.os.Handler.dispatchMessage(Handler.java:99)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.os.Looper.loop(Looper.java:137)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.app.ActivityThread.main(ActivityThread.java:5039)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at java.lang.reflect.Method.invokeNative(Native Method)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at java.lang.reflect.Method.invoke(Method.java:511)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:793)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:560)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at dalvik.system.NativeStart.main(Native Method)
+02-01 16:31:13.684: E/AndroidRuntime(9739): Caused by: java.lang.NullPointerException
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.support.v4.app.FragmentManagerImpl.getFragment(FragmentManager.java:528)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at io.openkit.OKLoginActivity.onRestoreInstanceState(OKLoginActivity.java:62)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.app.Activity.performRestoreInstanceState(Activity.java:910)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.app.Instrumentation.callActivityOnRestoreInstanceState(Instrumentation.java:1131)
+02-01 16:31:13.684: E/AndroidRuntime(9739):     at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2158)
+
+    
+===============================================================================================
+138
+A:Inside your DialogFragment, call Fragment.setRetainInstance(boolean) with the value true. You don't need to save the fragment manually, the framework already takes care of all of this. Calling this will prevent your fragment from being destroyed on rotation and your network requests will be unaffected.
+
+You may have to add this code to stop your dialog from being dismissed on rotation, due to a bug with the compatibility library:
+
+@Override
+public void onDestroyView() {
+    Dialog dialog = getDialog();
+    // handles https://code.google.com/p/android/issues/detail?id=17423
+    if (dialog != null && getRetainInstance()) {
+        dialog.setDismissMessage(null);
+    }
+    super.onDestroyView();
+}
+
+    

@@ -1,0 +1,74 @@
+32
+Q:I have been trying to get H264 encoding to work with input captured by the camera on an Android tablet using the new low-level MediaCodec. I have gone through some difficulties with this, since the MediaCodecAPI is poorly documented, but I've gotten something to work at last.
+
+I'm setting up the camera as follows:
+
+        Camera.Parameters parameters = mCamera.getParameters();
+        parameters.setPreviewFormat(ImageFormat.YV12); // <1>
+        parameters.setPreviewFpsRange(4000,60000);
+        parameters.setPreviewSize(640, 480);            
+        mCamera.setParameters(parameters);
+
+
+For the encoding part, I'm instantiating the MediaCodec object as follows:
+
+    mediaCodec = MediaCodec.createEncoderByType("video/avc");
+    MediaFormat mediaFormat = MediaFormat.createVideoFormat("video/avc", 640, 480);
+    mediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, 500000);
+    mediaFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 15);
+    mediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT,
+            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar); // <2>
+    mediaFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5);
+    mediaCodec.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+    mediaCodec.start();
+
+
+The final goal is to create an RTP-stream (and correspond with Skype), but so far I am only streaming the raw H264 directly to my desktop. There I use the following GStreamer-pipeline to show the result:
+
+gst-launch udpsrc port=5555 ! video/x-h264,width=640,height=480,framerate=15/1 ! ffdec_h264 ! autovideosink
+
+
+All works well, except for the colors. I need to set 2 colorformats in the computer: one for the camera-preview (line tagged with <1>) and one for the MediaCodec-object (tagged with <2>)
+
+To determine the acceptable values for the lines <1> I used parameters.getSupportedPreviewFormats(). From this, I know that the only supported formats on the camera are ImageFormat.NV21 and ImageFormat.YV2.
+
+For <2>, I retrieved the MediaCodecInfo.CodecCapabilities-object for type video/avc, being the integer values 19 (corresponding with MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar and 2130708361 (which doesn't correspond with any value of MediaCodecInfo.CodecCapabilities). 
+
+Any other value than the above results in a crash.
+
+Combining these settings gives different results, which I'll show below. Here's the screenshot on Android (i.e. the "real" colors):
+
+Here are the results as shown by Gstreamer:
+
+<1> = NV21, <2> = COLOR_FormatYUV420Planar
+
+
+<1> = NV21, <2> = 2130708361
+
+
+<1> = YV2, <2> = COLOR_FormatYUV420Planar
+
+
+<1> = YV2, <2> = 2130708361
+
+
+As can be seen, none of these are satisfying. The YV2-colorspace looks the most promising, but it looks like red (Cr) and blue (Cb) are inverted. The NV21 looks interlaced I guess (however, I'm no expert in this field).
+
+Since the purpose is to communicate with Skype, I assume I shouldn't change the decoder (i.e. the Gstreamer-command), right? Is this to be solved in Android and if so: how? Or can this be solved by adding certain RTP payload information? Any other suggestion?
+    
+===============================================================================================
+7
+A:I solved it by swapping the byteplanes myself on Android level, using a simple function:
+
+public byte[] swapYV12toI420(byte[] yv12bytes, int width, int height) {
+    byte[] i420bytes = new byte[yv12bytes.length];
+    for (int i = 0; i < width*height; i++)
+        i420bytes[i] = yv12bytes[i];
+    for (int i = width*height; i < width*height + (width/2*height/2); i++)
+        i420bytes[i] = yv12bytes[i + (width/2*height/2)];
+    for (int i = width*height + (width/2*height/2); i < width*height + 2*(width/2*height/2); i++)
+        i420bytes[i] = yv12bytes[i - (width/2*height/2)];
+    return i420bytes;
+}
+
+    

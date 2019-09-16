@@ -1,0 +1,45 @@
+30
+Q:In Android 4.2, using SQLite 3.7.11, when I delete a row from the Quizzes table, who's schema is below, the corresponding rows in the QuizQuestions table are not deleted.
+
+I can't figure out what's wrong. I have tried putting 
+
+db.execSQL("PRAGMA foreign_keys = ON;"); 
+
+
+before and after the create table statements.
+
+Create table statements:
+
+CREATE TABLE quizzes(quiz_name TEXT PRIMARY KEY COLLATE NOCASE);
+
+CREATE TABLE quizQuestions(quiz_name TEXT, question_id INTEGER,
+     PRIMARY KEY(quiz_name, question_id),
+     FOREIGN KEY(quiz_name) REFERENCES quizzes(quiz_name) ON DELETE CASCADE,
+     FOREIGN KEY(question_id) REFERENCES questions(question_id) ON DELETE CASCADE);
+
+    
+===============================================================================================
+61
+A:Your database should delete rows from quizQuestions in case someone is deleting from quizzes or from questions. It will ignore the entire foreign key constraint in case foreign key support is turned off and you have just regular columns that can contain any value.
+
+SQLite defaults to PRAGMA foreign_keys = OFF every time you open the database. It's not a property of a table or of the schema.
+
+In case you use SQLiteOpenHelper put it in onOpen. That is the place that is called every time the database is opened. onCreate only once when the database is created.
+
+
+
+What SQLiteOpenHelper calls when you call getWriteableDatabase for the first time is
+
+
+onConfigure every time, API Level >= 16 required
+depending on the existence and version of the database file the following is called within an transaction
+
+onCreate if there is no database file. Typically, this happens only once in the entire lifetime of the app.
+onUpgrade if the database version (PRAGMA user_version - saved inside the database file) is less then the version supplied in SQLiteOpenHelper's constructor. Happens every time you bump the version in your code.
+Nothing if file exists and version matches.
+
+onOpen every time
+
+
+If the same instance of SQLiteOpenHelper already has an open database it will just return it and nothing of above happens.
+    

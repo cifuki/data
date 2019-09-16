@@ -1,0 +1,142 @@
+52
+Q:I am creating an android application which uses https for communication with the server. I am using retrofit and OkHttp for making requests. These works fine for standard http requests. The following are the steps that I followed.
+
+Step 1 :
+Acquired the cert file from the server using the command
+
+echo -n | openssl s_client -connect api.****.tk:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > gtux.cert
+
+
+Step 2 :
+Converted the cert to a BKS format by using the following commands
+
+keytool -importcert -v -trustcacerts -file "gtux.cert" -alias imeto_alias -keystore "my_keystore.bks" -provider org.bouncycastle.jce.provider.BouncyCastleProvider -providerpath "bcprov-jdk16-146.jar" -storetype BKS
+
+
+It asked me for password and the file was successfully created.
+
+Step 3 :
+
+Create a OkHttpClient and use the same for making https requests
+
+public class MySSLTrust {
+public static OkHttpClient trustcert(Context context){
+    OkHttpClient okHttpClient = new OkHttpClient();
+    try {
+        KeyStore ksTrust = KeyStore.getInstance("BKS");
+        InputStream instream = context.getResources().openRawResource(R.raw.my_keystore);
+        ksTrust.load(instream, "secret".toCharArray());
+        // TrustManager decides which certificate authorities to use.
+        TrustManagerFactory tmf = TrustManagerFactory
+                .getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(ksTrust);
+        SSLContext sslContext = SSLContext.getInstance("TLS");
+        sslContext.init(null, tmf.getTrustManagers(), null);
+        okHttpClient.setSslSocketFactory(sslContext.getSocketFactory());
+    } catch (KeyStoreException | IOException | NoSuchAlgorithmException | CertificateException | KeyManagementException e) {
+        e.printStackTrace();
+    }
+    return okHttpClient;
+}
+}
+
+
+Step 4:
+
+RestAdapter has to be created
+
+RestAdapter.Builder()
+.setRequestInterceptor(intercept)
+.setEndpoint("https://api.****.tk")
+.setClient(new OkClient(this))
+.setLogLevel(RestAdapter.LogLevel.FULL)
+.setLog(new AndroidLog("RETROFIT"))
+.build();
+
+
+But finally when run the app it is throwing me CertPathValidatorException : Trust anchor for certificate path not found. Please help me to solve this. Thank you. 
+
+Other failure attempts :
+Tried to install the certificate in my Xperia Z2 and it says the file was installed but when i run the app the same exception is thrown. 
+
+Error Log
+Here is the error log that I got on executing... 
+
+Error Log
+
+Pasted there so that it will be easy to read..
+    
+===============================================================================================
+86
+A:DISCLAIMER: this answer is from Jul 2015 and uses Retrofit and OkHttp from that time.
+  Check this link for more info on Retrofit v2 and this one for the current OkHttp methods.
+
+
+Okay, I got it working using Android Developers guide.
+
+Just as OP, I'm trying to use Retrofit and OkHttp to connect to a self-signed SSL-enabled server.
+
+Here's the code that got things working (I've removed the try/catch blocks):
+
+public static RestAdapter createAdapter(Context context) {
+  // loading CAs from an InputStream
+  CertificateFactory cf = CertificateFactory.getInstance("X.509");
+  InputStream cert = context.getResources().openRawResource(R.raw.my_cert);
+  Certificate ca;
+  try {
+    ca = cf.generateCertificate(cert);
+  } finally { cert.close(); }
+
+  // creating a KeyStore containing our trusted CAs
+  String keyStoreType = KeyStore.getDefaultType();
+  KeyStore keyStore = KeyStore.getInstance(keyStoreType);
+  keyStore.load(null, null);
+  keyStore.setCertificateEntry("ca", ca);
+
+  // creating a TrustManager that trusts the CAs in our KeyStore
+  String tmfAlgorithm = TrustManagerFactory.getDefaultAlgorithm();
+  TrustManagerFactory tmf = TrustManagerFactory.getInstance(tmfAlgorithm);
+  tmf.init(keyStore);
+
+  // creating an SSLSocketFactory that uses our TrustManager
+  SSLContext sslContext = SSLContext.getInstance("TLS");
+  sslContext.init(null, tmf.getTrustManagers(), null);
+
+  // creating an OkHttpClient that uses our SSLSocketFactory
+  OkHttpClient okHttpClient = new OkHttpClient();
+  okHttpClient.setSslSocketFactory(sslContext.getSocketFactory());
+
+  // creating a RestAdapter that uses this custom client
+  return new RestAdapter.Builder()
+              .setEndpoint(UrlRepository.API_BASE)
+              .setClient(new OkClient(okHttpClient))
+              .build();
+}
+
+
+To help in debugging, I also added .setLogLevel(RestAdapter.LogLevel.FULL) to my RestAdapter creation commands and I could see it connecting and getting the response from the server.
+
+All it took was my original .crt file saved in main/res/raw.
+The .crt file, aka the certificate, is one of the two files created when you create a certificate using openssl. Generally, it is a .crt or .cert file, while the other is a .key file. 
+
+Afaik, the .crt file is your public key and the .key file is your private key.
+
+As I can see, you already have a .cert file, which is the same, so try to use it.
+
+
+
+PS: For those that read it in the future and only have a .pem file, according to this answer, you only need this to convert one to the other:
+
+openssl x509 -outform der -in your-cert.pem -out your-cert.crt
+
+
+
+
+PS\xc2\xb2: For those that don't have any file at all, you can use the following command (bash) to extract the public key (aka certificate) from any server:
+
+echo -n | openssl s_client -connect your.server.com:443 | \\
+  sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > ~/my_cert.crt
+
+
+Just replace the your.server.com and the port (if it is not standard HTTPS) and choose a valid path for your output file to be created.
+    

@@ -1,0 +1,83 @@
+38
+Q:Background
+
+I'm trying to get app-launched statistics, and on Lollipop it's possible by using the UsageStatsManager class, as such (original post here):
+
+manifest:
+
+<uses-permission
+    android:name="android.permission.PACKAGE_USAGE_STATS"
+    tools:ignore="ProtectedPermissions"/>
+
+
+opening the activity that will let the user confirm giving you this permission:
+
+startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+
+
+getting the stats, aggregated :
+
+ private static final String USAGE_STATS_SERVICE ="usagestats"; // Context.USAGE_STATS_SERVICE);
+ ...
+ final UsageStatsManager usageStatsManager=(UsageStatsManager)context.getSystemService(USAGE_STATS_SERVICE);
+ final Map<String,UsageStats> queryUsageStats=usageStatsManager.queryAndAggregateUsageStats(fromTime,toTime);
+
+
+The problem
+
+I can't seem to check if the permission that you need ("android.permission.PACKAGE_USAGE_STATS") is granted. All I've tried so far always returns that it is denied.
+
+The code works, but the permission check doesn't work well.
+
+What I've tried
+
+you can check for a permission being granted using either this:
+
+String permission = "android.permission.PACKAGE_USAGE_STATS";
+boolean granted=getContext().checkCallingOrSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;   
+
+
+or this:
+
+String permission = "android.permission.PACKAGE_USAGE_STATS";
+boolean granted=getPackageManager().checkPermission(permission,getPackageName())== PackageManager.PERMISSION_GRANTED;   
+
+
+Both always returned that it got denied (even when I've granted the permission as a user).
+
+Looking at the code of UsageStatsManager, I've tried to come up with this workaround:
+
+      UsageStatsManager usm=(UsageStatsManager)getSystemService("usagestats");
+      Calendar calendar=Calendar.getInstance();
+      long toTime=calendar.getTimeInMillis();
+      calendar.add(Calendar.YEAR,-1);
+      long fromTime=calendar.getTimeInMillis();
+      final List<UsageStats> queryUsageStats=usm.queryUsageStats(UsageStatsManager.INTERVAL_YEARLY,fromTime,toTime);
+      boolean granted=queryUsageStats!=null&&queryUsageStats!=Collections.EMPTY_LIST;
+
+
+It worked, but it's still a workaround.
+
+The question
+
+How come I don't get the correct result of the permission check?
+
+What should be done to check it better?
+    
+===============================================================================================
+14
+A:By our investigation: if MODE is default (MODE_DEFAULT), extra permission checking is needed. Thanks to Weien's examination effort.
+
+boolean granted = false;
+AppOpsManager appOps = (AppOpsManager) context
+        .getSystemService(Context.APP_OPS_SERVICE);
+int mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, 
+        android.os.Process.myUid(), context.getPackageName());
+
+if (mode == AppOpsManager.MODE_DEFAULT) {
+    granted = (context.checkCallingOrSelfPermission(android.Manifest.permission.PACKAGE_USAGE_STATS) == PackageManager.PERMISSION_GRANTED);
+} else {
+    granted = (mode == AppOpsManager.MODE_ALLOWED);
+}
+
+    

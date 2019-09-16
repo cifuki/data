@@ -1,0 +1,219 @@
+174
+Q:I'd like to create a shape that's like the following image:
+
+
+
+Notice the top half gradients from color 1 to color 2, but theres a bottom half that gradients from color 3 to color 4.  I know how to make a shape with a single gradient, but I'm not sure how to split a shape into two halves and make 1 shape with 2 different gradients.
+
+Any ideas?
+    
+===============================================================================================
+376
+A:I don't think you can do this in XML (at least not in Android), but I've found a good solution posted here that looks like it'd be a great help!
+
+ShapeDrawable.ShaderFactory sf = new ShapeDrawable.ShaderFactory() {
+    @Override
+    public Shader resize(int width, int height) {
+        LinearGradient lg = new LinearGradient(0, 0, width, height,
+            new int[]{Color.GREEN, Color.GREEN, Color.WHITE, Color.WHITE},
+            new float[]{0,0.5f,.55f,1}, Shader.TileMode.REPEAT);
+        return lg;
+    }
+};
+
+PaintDrawable p=new PaintDrawable();
+p.setShape(new RectShape());
+p.setShaderFactory(sf);
+
+
+Basically, the int array allows you to select multiple color stops, and the following float array defines where those stops are positioned (from 0 to 1). You can then, as stated, just use this as a standard Drawable.
+
+Edit: Here's how you could use this in your scenario. Let's say you have a Button defined in XML like so:
+
+<Button
+    android:id="@+id/thebutton"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Press Me!"
+    />
+
+
+You'd then put something like this in your onCreate() method:
+
+Button theButton = (Button)findViewById(R.id.thebutton);
+ShapeDrawable.ShaderFactory sf = new ShapeDrawable.ShaderFactory() {
+    @Override
+    public Shader resize(int width, int height) {
+        LinearGradient lg = new LinearGradient(0, 0, 0, theButton.getHeight(),
+            new int[] { 
+                Color.LIGHT_GREEN, 
+                Color.WHITE, 
+                Color.MID_GREEN, 
+                Color.DARK_GREEN }, //substitute the correct colors for these
+            new float[] {
+                0, 0.45f, 0.55f, 1 },
+            Shader.TileMode.REPEAT);
+         return lg;
+    }
+};
+PaintDrawable p = new PaintDrawable();
+p.setShape(new RectShape());
+p.setShaderFactory(sf);
+theButton.setBackground((Drawable)p);
+
+
+I cannot test this at the moment, this is code from my head, but basically just replace, or add stops for the colors that you need. Basically, in my example, you would start with a light green, fade to white slightly before the center (to give a fade, rather than a harsh transition), fade from white to mid green between 45% and 55%, then fade from mid green to dark green from 55% to the end. This may not look exactly like your shape (Right now, I have no way of testing these colors), but you can modify this to replicate your example. 
+
+Edit: Also, the 0, 0, 0, theButton.getHeight() refers to the x0, y0, x1, y1 coordinates of the gradient. So basically, it starts at x = 0 (left side), y = 0 (top), and stretches to x = 0 (we're wanting a vertical gradient, so no left to right angle is necessary), y = the height of the button. So the gradient goes at a 90 degree angle from the top of the button to the bottom of the button.
+
+Edit: Okay, so I have one more idea that works, haha. Right now it works in XML, but should be doable for shapes in Java as well. It's kind of complex, and I imagine there's a way to simplify it into a single shape, but this is what I've got for now:
+
+green_horizontal_gradient.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<shape
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle"
+    >
+    <corners
+        android:radius="3dp"
+        />
+    <gradient
+        android:angle="0"
+        android:startColor="#FF63a34a"
+        android:endColor="#FF477b36"
+        android:type="linear"
+        />    
+</shape>
+
+
+half_overlay.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<shape
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle"
+    >
+    <solid
+        android:color="#40000000"
+        />
+</shape>
+
+
+layer_list.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    >
+    <item
+        android:drawable="@drawable/green_horizontal_gradient"
+        android:id="@+id/green_gradient"
+        />
+    <item
+        android:drawable="@drawable/half_overlay"
+        android:id="@+id/half_overlay"
+        android:top="50dp"
+        />
+</layer-list>
+
+
+test.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:gravity="center"
+    >
+    <TextView
+        android:id="@+id/image_test"
+        android:background="@drawable/layer_list"
+        android:layout_width="fill_parent"
+        android:layout_height="100dp"
+        android:layout_marginLeft="15dp"
+        android:layout_marginRight="15dp"
+        android:gravity="center"
+        android:text="Layer List Drawable!"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:textSize="26sp"     
+        />
+</RelativeLayout>
+
+
+Okay, so basically I've created a shape gradient in XML for the horizontal green gradient, set at a 0 degree angle, going from the top area's left green color, to the right green color. Next, I made a shape rectangle with a half transparent gray. I'm pretty sure that could be inlined into the layer-list XML, obviating this extra file, but I'm not sure how. But okay, then the kind of hacky part comes in on the layer_list XML file. I put the green gradient as the bottom layer, then put the half overlay as the second layer, offset from the top by 50dp. Obviously you'd want this number to always be half of whatever your view size is, though, and not a fixed 50dp. I don't think you can use percentages, though. From there, I just inserted a TextView into my test.xml layout, using the layer_list.xml file as my background. I set the height to 100dp (twice the size of the offset of the overlay), resulting in the following:
+
+
+
+Tada!
+
+One more edit: I've realized you can just embed the shapes into the layer list drawable as items, meaning you don't need 3 separate XML files any more! You can achieve the same result combining them like so:
+
+layer_list.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    >
+    <item>
+        <shape
+            xmlns:android="http://schemas.android.com/apk/res/android"
+            android:shape="rectangle"
+            >
+            <corners
+                android:radius="3dp"
+                />
+            <gradient
+                android:angle="0"
+                android:startColor="#FF63a34a"
+                android:endColor="#FF477b36"
+                android:type="linear"
+                />    
+        </shape>
+    </item>
+    <item
+        android:top="50dp" 
+        >
+        <shape
+            android:shape="rectangle"
+            >
+            <solid
+                android:color="#40000000"
+                />
+        </shape>            
+    </item>
+</layer-list>
+
+
+You can layer as many items as you like this way! I may try to play around and see if I can get a more versatile result through Java.
+
+I think this is the last edit...: Okay, so you can definitely fix the positioning through Java, like the following:
+
+    TextView tv = (TextView)findViewById(R.id.image_test);
+    LayerDrawable ld = (LayerDrawable)tv.getBackground();
+    int topInset = tv.getHeight() / 2 ; //does not work!
+    ld.setLayerInset(1, 0, topInset, 0, 0);
+    tv.setBackgroundDrawable(ld);
+
+
+However! This leads to yet another annoying problem in that you cannot measure the TextView until after it has been drawn. I'm not quite sure yet how you can accomplish this...but manually inserting a number for topInset does work. 
+
+I lied, one more edit
+
+Okay, found out how to manually update this layer drawable to match the height of the container, full description can be found here. This code should go in your onCreate() method:
+
+final TextView tv = (TextView)findViewById(R.id.image_test);
+        ViewTreeObserver vto = tv.getViewTreeObserver();
+        vto.addOnGlobalLayoutListener(new OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                LayerDrawable ld = (LayerDrawable)tv.getBackground();
+                ld.setLayerInset(1, 0, tv.getHeight() / 2, 0, 0);
+            }
+        });
+
+
+And I'm done! Whew! :)
+    

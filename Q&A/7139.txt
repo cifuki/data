@@ -1,0 +1,65 @@
+36
+Q:I'm developing an Android app that communicate with a RESTful web service I wrote. Using Volley for GET methods is awesome and easy, but I can't put my finger on the POST methods.
+
+I want to send a POST request with a String in the body of the request, and retrieve the raw response of the web service (like 200 ok, 500 server error).
+
+All I could find is the StringRequest which doesn't allow to send with data (body), and also it bounds me to receive a parsed String response.
+I also came across JsonObjectRequest which accepts data (body) but retrieve a parsed JSONObject response.
+
+I decided to write my own implementation, but I cannot find a way to receive the raw response from the web service. How can I do it?
+    
+===============================================================================================
+97
+A:You can refer to the following code (of course you can customize to get more details of the network response):
+
+try {
+    RequestQueue requestQueue = Volley.newRequestQueue(this);
+    String URL = "http://...";
+    JSONObject jsonBody = new JSONObject();
+    jsonBody.put("Title", "Android Volley Demo");
+    jsonBody.put("Author", "BNK");
+    final String requestBody = jsonBody.toString();
+
+    StringRequest stringRequest = new StringRequest(Request.Method.POST, URL, new Response.Listener<String>() {
+        @Override
+        public void onResponse(String response) {
+            Log.i("VOLLEY", response);
+        }
+    }, new Response.ErrorListener() {
+        @Override
+        public void onErrorResponse(VolleyError error) {
+            Log.e("VOLLEY", error.toString());
+        }
+    }) {
+        @Override
+        public String getBodyContentType() {
+            return "application/json; charset=utf-8";
+        }
+
+        @Override
+        public byte[] getBody() throws AuthFailureError {
+            try {
+                return requestBody == null ? null : requestBody.getBytes("utf-8");
+            } catch (UnsupportedEncodingException uee) {
+                VolleyLog.wtf("Unsupported Encoding while trying to get the bytes of %s using %s", requestBody, "utf-8");
+                return null;
+            }
+        }
+
+        @Override
+        protected Response<String> parseNetworkResponse(NetworkResponse response) {
+            String responseString = "";
+            if (response != null) {
+                responseString = String.valueOf(response.statusCode);
+                // can get more details such as response.headers
+            }
+            return Response.success(responseString, HttpHeaderParser.parseCacheHeaders(response));
+        }
+    };
+
+    requestQueue.add(stringRequest);
+} catch (JSONException e) {
+    e.printStackTrace();
+}
+
+    

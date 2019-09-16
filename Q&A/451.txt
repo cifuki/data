@@ -1,0 +1,115 @@
+263
+Q:I am trying to open an image / picture in the Gallery built-in app from inside my application.
+
+I have a URI of the picture (the picture is located on the SD card).
+
+Do you have any suggestions?
+    
+===============================================================================================
+348
+A:This is a complete solution. I've just updated this example code with the information provided in the answer below by @mad. Also check the solution below from @Khobaib explaining how to deal with picasa images.
+
+Update
+
+I've just reviewed my original answer and created a simple Android Studio project you can checkout from github and import directly on your system. 
+
+https://github.com/hanscappelle/SO-2169649
+
+(note that the multiple file selection still needs work)
+
+Single Picture Selection
+
+With support for images from file explorers thanks to user mad.
+
+public class BrowsePictureActivity extends Activity {
+
+    // this is the action code we use in our intent, 
+    // this way we know we're looking at the response from our own action
+    private static final int SELECT_PICTURE = 1;
+
+    private String selectedImagePath;
+
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        findViewById(R.id.Button01)
+                .setOnClickListener(new OnClickListener() {
+
+                    public void onClick(View arg0) {
+
+                        // in onCreate or any event where your want the user to
+                        // select a file
+                        Intent intent = new Intent();
+                        intent.setType("image/*");
+                        intent.setAction(Intent.ACTION_GET_CONTENT);
+                        startActivityForResult(Intent.createChooser(intent,
+                                "Select Picture"), SELECT_PICTURE);
+                    }
+                });
+    }
+
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (resultCode == RESULT_OK) {
+            if (requestCode == SELECT_PICTURE) {
+                Uri selectedImageUri = data.getData();
+                selectedImagePath = getPath(selectedImageUri);
+            }
+        }
+    }
+
+    /**
+     * helper to retrieve the path of an image URI
+     */
+    public String getPath(Uri uri) {
+            // just some safety built in 
+            if( uri == null )\xc2\xa0{
+                // TODO perform some logging or show user feedback
+                return null;
+            }
+            // try to retrieve the image from the media store first
+            // this will only work for images selected from gallery
+            String[] projection = { MediaStore.Images.Media.DATA };
+            Cursor cursor = managedQuery(uri, projection, null, null, null);
+            if( cursor != null ){
+                int column_index = cursor
+                .getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+                cursor.moveToFirst();
+                String path = cursor.getString(column_index);
+                cursor.close();
+                return path;
+            }
+            // this is our fallback here
+            return uri.getPath();
+    }
+
+}
+
+
+Selecting Multiple Pictures
+
+Since someone requested that information in a comment and it's better to have information gathered.
+
+Set an extra parameter EXTRA_ALLOW_MULTIPLE on the intent:
+
+intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+
+
+And in the Result handling check for that parameter:
+
+if (Intent.ACTION_SEND_MULTIPLE.equals(data.getAction()))
+        && Intent.hasExtra(Intent.EXTRA_STREAM)) {
+    // retrieve a collection of selected images
+    ArrayList<Parcelable> list = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+    // iterate over these images
+    if( list != null ) {
+       for (Parcelable parcel : list) {
+         Uri uri = (Uri) parcel;
+         // TODO handle the images one by one here
+       }
+   }
+} 
+
+
+Note that this is only supported by API level 18+.
+    

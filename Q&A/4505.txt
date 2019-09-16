@@ -1,0 +1,163 @@
+53
+Q:I am writing an android app in which I need to answer an incoming call, do some work and then end the call. 
+After all the Googling I could find two different ways to achieve this both of which do not work with recent versions of Android, specifically after 4.1, Jelly Bean. 
+
+I.) Access "com.android.internal.telephony.ITelephony" using Java Reflection in the Broadcast receiver for "android.intent.action.PHONE_STATE". Below sample code can be found in hundreds of related post:
+
+public class PhoneCallReceiver extends BroadcastReceiver {
+ Context context = null;
+ private static final String TAG = "Phone call";
+ private ITelephony telephonyService;
+
+@Override
+ public void onReceive(Context context, Intent intent) {
+  if (!intent.getAction().equals("android.intent.action.PHONE_STATE")) 
+    return;
+
+  Log.v(TAG, "Receving....");
+  TelephonyManager telephony = (TelephonyManager) 
+  context.getSystemService(Context.TELEPHONY_SERVICE);  
+  try {
+      Log.v(TAG, "Get getTeleService...");
+      Class c = Class.forName(telephony.getClass().getName());
+      Method m = c.getDeclaredMethod("getITelephony");
+      m.setAccessible(true);
+      telephonyService = (ITelephony) m.invoke(telephony);
+      telephonyService.silenceRinger();
+      Log.v(TAG, "Answering Call now...");
+      telephonyService.answerRingingCall();
+      Log.v(TAG, "Call answered...");
+      //telephonyService.endCall();
+  } catch (Exception e) {
+   e.printStackTrace();
+   Log.e(TAG,
+           "FATAL ERROR: could not connect to telephony subsystem");
+   Log.e(TAG, "Exception object: " + e);
+  }
+ }
+}
+
+
+The problem with this code is that 
+
+<uses-permission android:name="android.permission.MODIFY_PHONE_STATE" /> 
+
+
+is required for this method to work, and this permission has been defined as "for system apps only" from android v 2.3. In short, normal user apps can not define this permission in the manifest file anymore. 
+
+II.) Another way is to simulate pushing of the Headset hook which makes Android answer the call. This is done by broadcasting the "Intent.ACTION_MEDIA_BUTTON" as shown in below code.
+
+public class PhoneCallReceiver extends BroadcastReceiver {
+ Context context = null;
+ private static final String TAG = "Phone call";
+
+ @Override
+ public void onReceive(Context context, Intent intent) {
+     if (!intent.getAction().equals("android.intent.action.PHONE_STATE")) 
+         return;
+
+     String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
+     if (state.equals(TelephonyManager.EXTRA_STATE_RINGING)) {
+         String number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
+
+         Intent answer = new Intent(Intent.ACTION_MEDIA_BUTTON);
+         answer.putExtra(Intent.EXTRA_KEY_EVENT, new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_HEADSETHOOK));
+         context.sendOrderedBroadcast(answer, null);
+         Log.d(TAG, "Answered incoming call from: " + number);
+     }   
+     return;
+ } 
+}
+
+
+This method works till Android 4.1 after which android has restricted user apps from broadcasting "Intent.ACTION_MEDIA_BUTTON". 
+
+So my conclusion is that currently there is no way how we can achieve this in Android 4.1 or later. 
+
+Has anybody else found any other solution or workaround to this problem?
+    
+===============================================================================================
+16
+A:This works from Android 2.2 to 4.0 and now after adding the try catch to the last line it works for 4.1.2 and 4.2 Frankly speaking dont know how it works but it works for me.
+
+Log.d(tag, "InSecond Method Ans Call");
+// froyo and beyond trigger on buttonUp instead of buttonDown
+Intent buttonUp = new Intent(Intent.ACTION_MEDIA_BUTTON);
+buttonUp.putExtra(Intent.EXTRA_KEY_EVENT, new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_HEADSETHOOK));
+sendOrderedBroadcast(buttonUp, "android.permission.CALL_PRIVILEGED");
+
+Intent headSetUnPluggedintent = new Intent(Intent.ACTION_HEADSET_PLUG);
+headSetUnPluggedintent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY);
+headSetUnPluggedintent.putExtra("state", 0);
+headSetUnPluggedintent.putExtra("name", "Headset");
+try {
+    sendOrderedBroadcast(headSetUnPluggedintent, null);
+} catch (Exception e) { 
+    e.printStackTrace();
+}
+
+
+This is working for me in Android 4.1.2 as well as i have tested on 4.2
+This still gives an exception which is handled.
+
+Edit for End Call
+
+Hope this helps all the people looking for total solution for answer and end call.
+
+/**
+ * Reject button click listener will reject the incoming call.
+ */
+private class RejectCallOnClickListener implements OnClickListener {
+    @Override
+    public void onClick(View v) {
+        Log.d(tag, "OnRejectButton: " + "Reject OnClick");
+        ignoreCall();
+        exitCleanly();
+    }
+}
+
+/**
+ * ignore incoming calls
+ */
+private void ignoreCall() {
+    if (USE_ITELEPHONY)
+        ignoreCallAidl();
+    else
+        ignoreCallPackageRestart();
+}
+/**
+ * AIDL/ITelephony technique for ignoring calls
+ */
+private void ignoreCallAidl() {
+    try {
+        // telephonyService.silenceRinger();
+
+        telephonyService.endCall();
+    } catch (RemoteException e) {
+        e.printStackTrace();
+        Log.d(tag, "ignoreCall: " + "Error: " + e.getMessage());
+
+    } catch (Exception e) {
+        e.printStackTrace();
+        Log.d(tag, "ignoreCall" + "Error: " + e.getMessage());
+
+    }
+}
+/**
+ * package restart technique for ignoring calls
+ */
+private void ignoreCallPackageRestart() {
+    ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+    am.restartPackage("com.android.providers.telephony");
+    am.restartPackage("com.android.phone");
+}
+/**
+ * cleanup and exit routine
+ */
+private void exitCleanly() {
+    unHookReceiver();
+    this.finish();
+
+}
+
+    

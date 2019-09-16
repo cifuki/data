@@ -1,0 +1,100 @@
+43
+Q:I have two activities
+
+
+MainActivity
+DeepLinkActivity
+
+
+I set up everything to use the NavUtils for navigating up like advised here, here and here.
+
+What I want to achieve is:
+
+
+Start DeepLinkActivity via a deep link
+Press up
+Go to MainActivity
+
+
+Everything works nicely as long as there is any task of my app in the recent apps.  
+
+However, when I swipe away my app from the recent apps, it behaves like this:
+
+
+Swipe away my app from recent apps
+Start DeepLinkActivity via a deep link
+Press up
+My app closes, like when pressing back
+
+
+I debugged the code, and found out, that NavUtils.shouldUpRecreateTask() returns false.
+upIntent has everything set to normal, like my Component set.
+But still, NavUtils.navigateUpTo() behaves just like a call to finish().
+No log statement, nothing.
+
+Any ideas, how to fix that?
+
+AndroidManifest.xml
+
+<activity
+    android:name=".DeepLinkActivity"
+    android:parentActivityName="my.package.MainActivity">
+    <meta-data
+        android:name="android.support.PARENT_ACTIVITY"
+        android:value="my.package.MainActivity"/>
+    <intent-filter>
+        <!-- Some intent filter -->
+    </intent-filter>
+</activity>
+
+
+DeepLinkActivity.java
+
+@Override
+public boolean onOptionsItemSelected(final MenuItem item) {
+    switch (item.getItemId()) {
+        case android.R.id.home:
+            Intent upIntent = NavUtils.getParentActivityIntent(this);
+            if (NavUtils.shouldUpRecreateTask(this, upIntent)) {
+                // create new task
+                TaskStackBuilder.create(this).addNextIntentWithParentStack(upIntent)
+                        .startActivities();
+            } else {
+                // Stay in same task
+                NavUtils.navigateUpTo(this, upIntent);
+            }
+            return true;
+        default:
+            return super.onOptionsItemSelected(item);
+    }
+}
+
+
+----- Edit -----
+
+I realized that a few Google Apps are broken in the same way. If you jump e.g. to Contacts from search, press up in AB and you'll find yourself on the home screen instead of the contacts app. (API19/cm11)
+    
+===============================================================================================
+22
+A:I think that method is bugged. I've read support library source code, and that method check for intent's action. It only works when your App was previously created..as you've described, if you kill it from Apps preview, shouldUp method stops working.
+
+I've fixed this using my own "shouldUpRecreateTask". When I receive a Notification that creates directly an Activity (Like your behaviour), I send from my BroadCastReceiver a custom Action inside the intent. Then, in my Method I do the next thing:
+
+private final boolean shouldUpRecreateTask(Activity from){
+    String action = from.getIntent().getAction();
+    return action != null && action.equals(com.xxxxxx.activities.Intent.FROM_NOTIFICATION);
+}
+
+
+..........................
+
+ if (shouldUpRecreateTask(this)) {
+      TaskStackBuilder.create(this)
+       .addNextIntentWithParentStack(upIntent)
+       .startActivities();
+ } else {
+       fillUpIntentWithExtras(upIntent);
+       NavUtils.navigateUpTo(this, upIntent);
+ }
+
+    

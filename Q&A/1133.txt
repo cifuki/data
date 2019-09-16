@@ -1,0 +1,64 @@
+143
+Q:Is there a way of finding out where my app threw an ANR (Application Not Responding). I took a look at the traces.txt file in /data and I see a trace for my application. This is what I see in the trace.
+
+DALVIK THREADS:
+"main" prio=5 tid=3 TIMED_WAIT
+  | group="main" sCount=1 dsCount=0 s=0 obj=0x400143a8
+  | sysTid=691 nice=0 sched=0/0 handle=-1091117924
+  at java.lang.Object.wait(Native Method)
+  - waiting on <0x1cd570> (a android.os.MessageQueue)
+  at java.lang.Object.wait(Object.java:195)
+  at android.os.MessageQueue.next(MessageQueue.java:144)
+  at android.os.Looper.loop(Looper.java:110)
+  at android.app.ActivityThread.main(ActivityThread.java:3742)
+  at java.lang.reflect.Method.invokeNative(Native Method)
+  at java.lang.reflect.Method.invoke(Method.java:515)
+  at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:739)
+  at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:497)
+  at dalvik.system.NativeStart.main(Native Method)
+
+"Binder Thread #3" prio=5 tid=15 NATIVE
+  | group="main" sCount=1 dsCount=0 s=0 obj=0x434e7758
+  | sysTid=734 nice=0 sched=0/0 handle=1733632
+  at dalvik.system.NativeStart.run(Native Method)
+
+"Binder Thread #2" prio=5 tid=13 NATIVE
+  | group="main" sCount=1 dsCount=0 s=0 obj=0x433af808
+  | sysTid=696 nice=0 sched=0/0 handle=1369840
+  at dalvik.system.NativeStart.run(Native Method)
+
+"Binder Thread #1" prio=5 tid=11 NATIVE
+  | group="main" sCount=1 dsCount=0 s=0 obj=0x433aca10
+  | sysTid=695 nice=0 sched=0/0 handle=1367448
+  at dalvik.system.NativeStart.run(Native Method)
+
+"JDWP" daemon prio=5 tid=9 VMWAIT
+  | group="system" sCount=1 dsCount=0 s=0 obj=0x433ac2a0
+  | sysTid=694 nice=0 sched=0/0 handle=1367136
+  at dalvik.system.NativeStart.run(Native Method)
+
+"Signal Catcher" daemon prio=5 tid=7 RUNNABLE
+  | group="system" sCount=0 dsCount=0 s=0 obj=0x433ac1e8
+  | sysTid=693 nice=0 sched=0/0 handle=1366712
+  at dalvik.system.NativeStart.run(Native Method)
+
+"HeapWorker" daemon prio=5 tid=5 VMWAIT
+  | group="system" sCount=1 dsCount=0 s=0 obj=0x4253ef88
+  | sysTid=692 nice=0 sched=0/0 handle=1366472
+  at dalvik.system.NativeStart.run(Native Method)
+
+----- end 691 -----
+
+
+How can I find out where the problem is? The methods in the trace are all SDK methods.
+
+Thanks.
+    
+===============================================================================================
+119
+A:An ANR happens when some long operation takes place in the "main" thread. This is the event loop thread, and if it is busy, Android cannot process any further GUI events in the application, and thus throws up an ANR dialog.
+
+Now, in the trace you posted, the main thread seems to be doing fine, there is no problem. It is idling in the MessageQueue, waiting for another message to come in. In your case the ANR was likely a longer operation, rather than something that blocked the thread permanently, so the event thread recovered after the operation finished, and your trace went through after the ANR.
+
+Detecting where ANRs happen is easy if it is a permanent block (deadlock acquiring some locks for instance), but harder if it's just a temporary delay. First, go over your code and look for vunerable spots and long running operations. Examples may include using sockets, locks, thread sleeps, and other blocking operations from within the event thread. You should make sure these all happen in separate threads. If nothing seems the problem, use DDMS and enable the thread view. This shows all the threads in your application similar to the trace you have. Reproduce the ANR, and refresh the main thread at the same time. That should show you precisely whats going on at the time of the ANR
+    

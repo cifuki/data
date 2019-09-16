@@ -1,0 +1,72 @@
+82
+Q:I am trying to silently install apk into the system. 
+My app is located in /system/app and successfully granted permission "android.permission.INSTALL_PACKAGES"
+
+However I can't find anywhere how to use this permission. I tried to copy files to /data/app and had no success. Also I tried using this code
+
+    Intent intent = new Intent(Intent.ACTION_VIEW);
+    intent.setDataAndType(
+            Uri.parse("file:///sdcard/app.apk"),
+            "application/vnd.android.package-archive");
+    startActivity(intent);
+
+
+But this code opens standard installation dialog. How can I install app silently without root with granted android.permission.INSTALL_PACKAGES?
+
+PS I am writing an app that will install many apks from folder into the system on the first start (replace Setup Wizard). I need it to make firmware lighter. 
+
+If you think that I am writing a virus: All programs are installed into /data/app. Permission Install_packages can only be granted to system-level programs located in /system/app or signed with the system key. So virus can't get there.
+
+As said http://www.mail-archive.com/android-porting@googlegroups.com/msg06281.html apps CAN be silent installed if they have install_packages permission. Moreover you don't need Install_packages permission to install packages not silently. Plus http://www.androidzoom.com/android_applications/tools/silent-installer_wgqi.html
+    
+===============================================================================================
+59
+A:Your first bet is to look into Android's native PackageInstaller. I would recommend modifying that app the way you like, or just extract required functionality. 
+
+
+
+Specifically, if you look into PackageInstallerActivity and its method onClickListener:
+
+ public void onClick(View v) {
+    if(v == mOk) {
+        // Start subactivity to actually install the application
+        Intent newIntent = new Intent();
+        ...
+        newIntent.setClass(this, InstallAppProgress.class);
+        ...
+        startActivity(newIntent);
+        finish();
+    } else if(v == mCancel) {
+        // Cancel and finish
+        finish();
+    }
+}
+
+
+Then you'll notice that actual installer is located in InstallAppProgress class. Inspecting that class you'll find that initView is the core installer function, and the final thing it does is call to PackageManager's installPackage function:
+
+public void initView() {
+...
+pm.installPackage(mPackageURI, observer, installFlags, installerPackageName);
+}
+
+
+Next step is to inspect PackageManager, which is abstract class. You'll find installPackage(...) function there. The bad news is that it's marked with @hide. This means it's not directly available (you won't be able to compile with call to this method).
+
+ /**
+  * @hide
+  * ....
+  */
+  public abstract void installPackage(Uri packageURI,
+             IPackageInstallObserver observer, 
+             int flags,String installerPackageName); 
+
+
+But you will be able to access this methods via reflection.
+
+If you are interested in how PackageManager's installPackage function is implemented, take a look at PackageManagerService.
+
+Summary
+
+You'll need to get package manager object via Context's getPackageManager(). Then you will call installPackage function via reflection. 
+    

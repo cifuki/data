@@ -1,0 +1,127 @@
+45
+Q:I have been doing some research and I have yet to find an example or implementation that allows you to put a view (Example Image Below) underneath the RecyclerView when you swipe. Does anyone have any example or an idea of how this would be implemented WITHOUT using a library.
+
+Here is how I am implementing the swipe to dismiss.  
+
+ItemTouchHelper.SimpleCallback simpleItemTouchCallback = new ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT) {
+
+    @Override
+    public boolean onMove(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, RecyclerView.ViewHolder target) {
+        return false;
+    }
+
+    @Override
+    public int getSwipeDirs(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
+        return super.getSwipeDirs(recyclerView, viewHolder);
+    }
+
+    @Override
+    public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
+        if (viewHolder instanceof ViewDividers) {
+            Log.e("DIRECTION", direction + "");
+        }
+    }
+};
+new ItemTouchHelper(simpleItemTouchCallback).attachToRecyclerView(recycler);
+
+
+Here is the example of Google's Inbox:
+
+    
+===============================================================================================
+28
+A:My understanding of how this is done is that one would put two views in the xml that would be displayed per line in your recyclerview.
+
+So for example, this would be my adapter:
+
+public class MyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+    public static class ExampleViewHolder extends RecyclerView.ViewHolder {
+        public TextView background;
+        public TextView foreground;
+
+        public ExampleViewHolder(View v) {
+            super(v);
+            background = (TextView) v.findViewById(R.id.background);
+            foreground = (TextView) v.findViewById(R.id.foreground);
+        }
+
+        @Override
+        public void onBindViewHolder(final RecyclerView.ViewHolder holder, final int position) {
+            if (holder instanceof ExampleViewHolder) {
+                ((ExampleViewHolder) holder).background.setBackgroundColor(); // do your manipulation of background and foreground here.
+            }
+        }
+
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent,
+                                                          int viewType) {
+
+            View v = LayoutInflater.from(parent.getContext())
+                    .inflate(R.layout.example, parent, false);
+            return new ExampleViewHolder(v);
+        }
+
+
+    }
+}
+
+
+Each line in the recyclerview is pulling the xml layout from R.layout.example. Therefore, to create a view underneath, you can just use relativelayout or framelayout to create the views on top of one another:
+
+<RelativeLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:id="@+id/background"
+        />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:id="@+id/foreground"/>
+</RelativeLayout>
+
+
+Then if you do not want to use a library for the swipe, you can copy this class from google and subsequently modified by Bruno Romeu Nunes:
+
+https://github.com/heruoxin/Clip-Stack/blob/master/app/src/main/java/com/catchingnow/tinyclipboardmanager/SwipeableRecyclerViewTouchListener.java
+
+The class will require you to create a swipe listener:
+
+swipeTouchListener =
+        new SwipeableRecyclerViewTouchListener(mRecyclerView,
+                new SwipeableRecyclerViewTouchListener.SwipeListener() {
+                    @Override
+                    public boolean canSwipe(int position) {
+                        if (position == totalPost.size() - 1 && !connected) {
+                            return false;
+                        }
+                        return true;
+                    }
+
+                    @Override
+                    public void onDismissedBySwipeLeft(RecyclerView recyclerView, int[] reverseSortedPositions) {
+                        for (int position : reverseSortedPositions) {
+                            //change some data if you swipe left
+                        }
+                        myAdapter.notifyDataSetChanged();
+                    }
+
+                    @Override
+                    public void onDismissedBySwipeRight(RecyclerView recyclerView, int[] reverseSortedPositions) {
+                        for (int position : reverseSortedPositions) {
+                            //change some data if you swipe right
+                        }
+                        myAdapter.notifyDataSetChanged();
+                    }
+                });
+
+
+Then simply link it with your recyclerview:
+
+    mRecyclerView.addOnItemTouchListener(swipeTouchListener);
+
+    

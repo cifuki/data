@@ -1,0 +1,107 @@
+40
+Q:I am using progress dialog.i need to stop the thread when user close the progressdialog .unfortunately it giving exception pls help me..
+
+In inner class
+
+class UpdateThread extends Thread{
+
+    public  void run() {
+        while (true){
+            count=adapter.getCount();
+
+            try {
+               mHandler.post(  new Runnable() {
+                    public  void run() {
+                        Log.i(TAG,count+"count");
+                        progressDialog.setMessage(count + "Device  found");
+                    }
+                });
+                Thread.sleep(300);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+
+
+Oncreate 
+
+ updateThread=new UpdateThread();
+
+ progressDialog= new ProgressDialog(GroupListActivity.this);
+ synchronized (this) {
+     updateThread.start();
+ }
+
+
+ondismissal
+
+   progressDialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+        @Override
+        public  void onDismiss(DialogInterface dialog) {
+            try {
+                synchronized (this) {
+                    updateThread.wait(300);
+                }
+
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            Log.i(TAG,"Thread is stopped");
+        }
+    });
+
+    
+===============================================================================================
+57
+A:This is wrong:
+
+synchronized(foo) {
+    foo.wait();
+}
+
+
+The problem is, what's going to wake this thread up?  That is to say, how do you guarantee that the other thread won't call foo.notify() before the first thread calls foo.wait()?  That's important because the foo object will not remember that it was notified if the notify call happens first.  If there's only one notify(), and if it happens before the wait(), then the wait() will never return.
+
+Here's how wait and notify were meant to be used:
+
+private Queue<Product> q = ...;
+private Object lock = new Object();
+
+void produceSomething(...) {
+    Product p = reallyProduceSomething();
+    synchronized(lock) {
+        q.add(p);
+        lock.notify();
+    }
+}
+
+void consumeSomething(...) {
+    Product p = null;
+    synchronized(lock) {
+        while (q.peek() == null) {
+            lock.wait();
+        }
+        p = q.remove();
+    }
+    reallyConsume(p);
+}
+
+
+The most important things to to note in this example are that there is an explicit test for the condition (i.e., q.peek() != null), and that nobody changes the condition without locking the lock.
+
+If the consumer is called first, then it will find the queue empty, and it will wait.  There is no moment when the producer can slip in, add a Product to the queue, and then notify the lock until the consumer is ready to receive that notification.
+
+On the other hand, if the producer is called first, then the consumer is guaranteed not to call wait().
+
+The loop in the consumer is important for two reasons:  One is that, if there is more than one consumer thread, then it is possible for one consumer to receive a notification, but then another consumer sneaks in and steals the Product from the queue.  The only reasonable thing for the fist consumer to do in that case is wait again for the next Product.  The other reason that the loop is important is that the Javadoc says Object.wait() is allowed to return even when the object has not been notified.  That is called a "spurious wakeup", and the correct way to handle it is to go back and wait again.
+
+Also note:  The lock is private and the queue is private.  That guarantees that no other compilation unit is going to interfere with the synchronization in this compilation unit.
+
+And note: The lock is a different object from the queue itself.  That guarantees that synchronization in this compilation unit will not interfere with whatever synchronization that the Queue implementation does (if any).
+
+
+
+NOTE: My example re-invents a wheel to prove a point.  In real code, you would use the put() and take() methods of an ArrayBlockingQueue which would take care of all of the waiting and notifying for you.
+    

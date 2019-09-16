@@ -1,0 +1,30 @@
+48
+Q:Given a custom class org.example.app.MyClass implements Parcelable, I want to write a List<MyClass> to a Parcel. I did the marshalling with
+
+ List<MyClass> myclassList = ...
+ parcel.writeList(myclassList);
+
+
+whenever I try to unmarshall the class with
+
+ List<MyClass> myclassList = new ArrayList<MyClass>();
+ parcel.readList(myclassList, null);
+
+
+there is an "BadParcelableException: ClassNotFoundException when unmarshalling org.example.app.MyClass" exception.
+
+What is wrong here? Why is the class not found?
+    
+===============================================================================================
+102
+A:Don't unmarshall a custom class (i.e. one provided by your application and not by the Android framework) with the framework class loader that is used when you give null as the ClassLoader argument. Use the application class loader:
+
+parcel.readList(myclassList, getClass().getClassLoader());
+
+
+Whenever a Parcel.read*() method also has a ClassLoader as an argument (e.g. Parcel.readList(List outVal, ClassLoader loader)) and you want to read an application class from a Parcel, use the application class loader that can be retrieved with getClass().getClassLoader().
+
+Background: Android comes with two class loaders: the system class loader, that is able to load all system classes but the ones provided by your application; and the application class loader, which has set the system class loader as its parent and therefore is able to load all classes. If you give null as the class loader, Parcel.readParcelableCreator() will use the framework class loader, causing a ClassNotFoundException.
+
+Thanks to alexanderblom for providing the hint that led me on the right track.
+    

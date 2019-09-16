@@ -1,0 +1,109 @@
+49
+Q:I am using an API that uses an authorization scheme that requires a special "X-Authorization" header to be set to authenticate the request. For example, this Retrofit setup works perfectly for the user whose auth token is abc123:
+
+@Headers("X-Authorization: abc123")
+@GET("/posts")
+Observable<List<Post>> get_posts();
+
+
+I cache the user's X-Authorization token, so I have access to that, however, I can't just drop it in the @Headers declaration.
+
+@Headers("X-Authorization: " + token)
+@GET("/posts")
+Observable<List<Post>> get_posts();
+
+
+I get a compile error here: Error:(41, 34) error: element value must be a constant expression
+
+Any ideas on how I could get around this?
+    
+===============================================================================================
+80
+A:Since Retrofit 2.0 you have two options
+
+
+
+1) Using OkHttp 2.2+ use Interceptor
+
+At the Http level, you have more control over the request, so you could do things like applying headers only to a specific request made to a specific endpoint, and so on.
+
+public class MyOkHttpInterceptor implements Interceptor {
+
+@Override
+public Response intercept(Chain chain) throws IOException {
+    Request originalRequest = chain.request();
+    if (!"/posts".contains(originalRequest.url()) ) {
+        return chain.proceed(originalRequest);
+    }
+
+    String token = // get token logic 
+
+    Request newRequest = originalRequest.newBuilder()
+        .header("X-Authorization", token)
+        .build();
+
+    return chain.proceed(newRequest);
+}
+
+[...]
+
+OkHttpClient okHttpClient = new OkHttpClient();
+okHttpClient.networkInterceptors().add(new MyOkHttpInterceptor());
+OkClient okClient = new OkClient(okHttpClient);
+YourApi api = new RestAdapter.Builder()
+            .setEndpoint(url)
+            .setClient(okClient)
+            .build()
+            .create(YourApi.class);
+
+
+
+
+Edit: 
+Adding @JakeWarthon comment as another option as is also valid.
+
+2) Put @Header on a method parameter and pass it as a value when invoking. 
+
+From the docs:
+
+// Replaces the header with the the value of its target.
+@GET("/")
+void foo(@Header("Accept-Language") String lang, Callback<Response> cb);
+
+
+Header parameters may be null which will omit them from the request. Passing a List or array will result in a header for each non-null item.
+
+Note: Headers do not overwrite each other. All headers with the same name will be included in the request.
+
+
+
+EDIT: This option should not be considered as Retrofit 2.* dropped support for interceptors.
+
+3) User retrofit RequestInterceptor
+
+From the docs: 
+Intercept every request before it is executed in order to add additional data.
+
+You could do something like 
+
+public class MyRetrofitInterceptor implements RequestInterceptor {
+
+@Override
+public void intercept(RequestFacade req) {
+    String token = // get token logic 
+    if (token != null) {
+        req.addHeader("X-Authorization", token);
+    }
+}
+
+[...]
+
+YourApi api = new RestAdapter.Builder()
+            .setEndpoint(url)
+            .setRequestInterceptor(new MyRetrofitInterceptor())
+            .build()
+            .create(YourApi.class);
+
+
+The "problem" with this approach is that the interceptor will get executed on all the endpoints, as it's set at the RestAdapter level, and not per endpoint. Also, the RequestFacade doesn't expose much information about the request, so no chance to add much logic around it.
+    

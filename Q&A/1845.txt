@@ -1,0 +1,265 @@
+104
+Q:UPDATE: Please see "accepted" solution below
+
+When my app creates an unhandled exception, rather than simply terminating, I'd like to first give the user an opportunity to send a log file.  I realize that doing more work after getting a random exception is risky but, hey, the worst is the app finishes crashing and the log file doesn't get sent.  This is turning out to be trickier than I expected :)  
+
+What works: (1) trapping the uncaught exception, (2) extracting log info and writing to a file.
+
+What doesn't work yet: (3) starting an activity to send email.  Ultimately, I'll have yet another activity to ask the user's permission.  If I get the email activity working, I don't expect much trouble for the other.
+
+The crux of the problem is that the unhandled exception is caught in my Application class.  Since that isn't an Activity, it's not obvious how to start an activity with Intent.ACTION_SEND.  That is, normally to start an activity one calls startActivity and resumes with onActivityResult.  These methods are supported by Activity but not by Application.
+
+Any suggestions on how to do this?
+
+Here are some code snips as a starting guide:
+
+public class MyApplication extends Application
+{
+  defaultUncaughtHandler = Thread.getDefaultUncaughtExceptionHandler();
+  public void onCreate ()
+  {
+    Thread.setDefaultUncaughtExceptionHandler (new Thread.UncaughtExceptionHandler()
+    {
+      @Override
+      public void uncaughtException (Thread thread, Throwable e)
+      {
+        handleUncaughtException (thread, e);
+      }
+    });
+  }
+
+  private void handleUncaughtException (Thread thread, Throwable e)
+  {
+    String fullFileName = extractLogToFile(); // code not shown
+
+    // The following shows what I'd like, though it won't work like this.
+    Intent intent = new Intent (Intent.ACTION_SEND);
+    intent.setType ("plain/text");
+    intent.putExtra (Intent.EXTRA_EMAIL, new String[] {"me@mydomain.com"});
+    intent.putExtra (Intent.EXTRA_SUBJECT, "log file");
+    intent.putExtra (Intent.EXTRA_STREAM, Uri.parse ("file://" + fullFileName));
+    startActivityForResult (intent, ACTIVITY_REQUEST_SEND_LOG);
+  }
+
+  public void onActivityResult (int requestCode, int resultCode, Intent data)
+  {
+    if (requestCode == ACTIVITY_REQUEST_SEND_LOG)
+      System.exit(1);
+  }
+}
+
+    
+===============================================================================================
+229
+A:Here's the complete solution (almost: I omitted the UI layout and button handling) - derived from a lot of experimentation and various posts from others related to issues that came up along the way.  
+
+There are a number of things you need to do:
+
+
+Handle uncaughtException in your Application subclass. 
+After catching an exception, start a new activity to ask the user to send
+a log. 
+Extract the log info from logcat's files and write to your
+own file. 
+Start an email app, providing your file as an attachment.
+Manifest: filter your activity to be recognized by your exception handler.
+Optionally, setup Proguard to strip out Log.d() and Log.v().
+
+
+Now, here are the details:
+
+(1 & 2) Handle uncaughtException, start send log activity:
+
+public class MyApplication extends Application
+{
+  public void onCreate ()
+  {
+    // Setup handler for uncaught exceptions.
+    Thread.setDefaultUncaughtExceptionHandler (new Thread.UncaughtExceptionHandler()
+    {
+      @Override
+      public void uncaughtException (Thread thread, Throwable e)
+      {
+        handleUncaughtException (thread, e);
+      }
+    });
+  }
+
+  public void handleUncaughtException (Thread thread, Throwable e)
+  {
+    e.printStackTrace(); // not all Android versions will print the stack trace automatically
+
+    Intent intent = new Intent ();
+    intent.setAction ("com.mydomain.SEND_LOG"); // see step 5.
+    intent.setFlags (Intent.FLAG_ACTIVITY_NEW_TASK); // required when starting from Application
+    startActivity (intent);
+
+    System.exit(1); // kill off the crashed app
+  }
+}
+
+
+(3) Extract log (I put this an my SendLog Activity):
+
+private String extractLogToFile()
+{
+  PackageManager manager = this.getPackageManager();
+  PackageInfo info = null;
+  try {
+    info = manager.getPackageInfo (this.getPackageName(), 0);
+  } catch (NameNotFoundException e2) {
+  }
+  String model = Build.MODEL;
+  if (!model.startsWith(Build.MANUFACTURER))
+    model = Build.MANUFACTURER + " " + model;
+
+  // Make file name - file must be saved to external storage or it wont be readable by
+  // the email app.
+  String path = Environment.getExternalStorageDirectory() + "/" + "MyApp/";
+  String fullName = path + <some name>;
+
+  // Extract to file.
+  File file = new File (fullName);
+  InputStreamReader reader = null;
+  FileWriter writer = null;
+  try
+  {
+    // For Android 4.0 and earlier, you will get all app's log output, so filter it to
+    // mostly limit it to your app's output.  In later versions, the filtering isn't needed.
+    String cmd = (Build.VERSION.SDK_INT <= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) ?
+                  "logcat -d -v time MyApp:v dalvikvm:v System.err:v *:s" :
+                  "logcat -d -v time";
+
+    // get input stream
+    Process process = Runtime.getRuntime().exec(cmd);
+    reader = new InputStreamReader (process.getInputStream());
+
+    // write output stream
+    writer = new FileWriter (file);
+    writer.write ("Android version: " +  Build.VERSION.SDK_INT + "\
+");
+    writer.write ("Device: " + model + "\
+");
+    writer.write ("App version: " + (info == null ? "(null)" : info.versionCode) + "\
+");
+
+    char[] buffer = new char[10000];
+    do 
+    {
+      int n = reader.read (buffer, 0, buffer.length);
+      if (n == -1)
+        break;
+      writer.write (buffer, 0, n);
+    } while (true);
+
+    reader.close();
+    writer.close();
+  }
+  catch (IOException e)
+  {
+    if (writer != null)
+      try {
+        writer.close();
+      } catch (IOException e1) {
+      }
+    if (reader != null)
+      try {
+        reader.close();
+      } catch (IOException e1) {
+      }
+
+    // You might want to write a failure message to the log here.
+    return null;
+  }
+
+  return fullName;
+}
+
+
+(4) Start an email app (also in my SendLog Activity):
+
+private void sendLogFile ()
+{
+  String fullName = extractLogToFile();
+  if (fullName == null)
+    return;
+
+  Intent intent = new Intent (Intent.ACTION_SEND);
+  intent.setType ("plain/text");
+  intent.putExtra (Intent.EXTRA_EMAIL, new String[] {"log@mydomain.com"});
+  intent.putExtra (Intent.EXTRA_SUBJECT, "MyApp log file");
+  intent.putExtra (Intent.EXTRA_STREAM, Uri.parse ("file://" + fullName));
+  intent.putExtra (Intent.EXTRA_TEXT, "Log file attached."); // do this so some email clients don't complain about empty body.
+  startActivity (intent);
+}
+
+
+(3 & 4) Here's what SendLog looks like (you'll have to add the UI, though):
+
+public class SendLog extends Activity implements OnClickListener
+{
+  @Override
+  public void onCreate(Bundle savedInstanceState)
+  {
+    super.onCreate(savedInstanceState);
+    requestWindowFeature (Window.FEATURE_NO_TITLE); // make a dialog without a titlebar
+    setFinishOnTouchOutside (false); // prevent users from dismissing the dialog by tapping outside
+    setContentView (R.layout.send_log);
+  }
+
+  @Override
+  public void onClick (View v) 
+  {
+    // respond to button clicks in your UI
+  }
+
+  private void sendLogFile ()
+  {
+    // method as shown above
+  }
+
+  private String extractLogToFile()
+  {
+    // method as shown above
+  }
+}
+
+
+(5) Manifest:
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" ... >
+    <!-- needed for Android 4.0.x and eariler -->
+    <uses-permission android:name="android.permission.READ_LOGS" /> 
+
+    <application ... >
+        <activity
+            android:name="com.mydomain.SendLog"
+            android:theme="@android:style/Theme.Dialog"
+            android:textAppearance="@android:style/TextAppearance.Large"
+            android:windowSoftInputMode="stateHidden">
+            <intent-filter>
+              <action android:name="com.mydomain.SEND_LOG" />
+              <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+     </application>
+</manifest>
+
+
+(6) Setup Proguard:
+
+In project.properties, change the config line. You must specify "optimize" or Proguard will not remove Log.v() and Log.d() calls.
+
+proguard.config=${sdk.dir}/tools/proguard/proguard-android-optimize.txt:proguard-project.txt
+
+
+In proguard-project.txt, add the following.  This tell Proguard to assume Log.v and Log.d have no side effects (even though they do since they write to the logs) and thus can be removed during optimization:
+
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+}
+
+
+That's it!  If you have any suggestions for improvements to this, please let me know and I may update this.
+    

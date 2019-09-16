@@ -1,0 +1,69 @@
+27
+Q:I need to know how does the shouldinterceptrequest work. I don't know how to create and handle this method to read and replace the CSS link. Thank you!
+    
+===============================================================================================
+63
+A:Well, the short answer is that it works quite similar to shouldOverrideUrlLoading(WebView view, String url), as illustrated in the WebView tutorial.
+
+To get you started, see the code below. You simply override the shouldInterceptRequest(WebView view, String url) method of your WebViewClient. Obviously you don't have to do that inline, but for the sake of compactness that's what I did:
+
+    WebView webview = (WebView) findViewById(R.id.webview);
+    webview.setWebViewClient(new WebViewClient() {
+        @Override
+        public WebResourceResponse shouldInterceptRequest (final WebView view, String url) {
+            if (url.contains(".css")) {
+                return getCssWebResourceResponseFromAsset();
+            } else {
+                return super.shouldInterceptRequest(view, url);
+            }
+        }
+
+        /**
+         * Return WebResourceResponse with CSS markup from a String. 
+         */
+        @SuppressWarnings("deprecation")
+        private WebResourceResponse getCssWebResourceResponseFromString() {
+            return getUtf8EncodedCssWebResourceResponse(new ByteArrayInputStream("body { background-color: #F781F3; }".getBytes()));
+        }
+
+        /**
+         * Return WebResourceResponse with CSS markup from an asset (e.g. "assets/style.css"). 
+         */
+        private WebResourceResponse getCssWebResourceResponseFromAsset() {
+            try {
+                return getUtf8EncodedCssWebResourceResponse(getAssets().open("style.css"));
+            } catch (IOException e) {
+                return null;
+            }
+        }
+
+        /**
+         * Return WebResourceResponse with CSS markup from a raw resource (e.g. "raw/style.css"). 
+         */
+        private WebResourceResponse getCssWebResourceResponseFromRawResource() {
+            return getUtf8EncodedCssWebResourceResponse(getResources().openRawResource(R.raw.style));
+        }
+
+        private WebResourceResponse getUtf8EncodedCssWebResourceResponse(InputStream data) {
+            return new WebResourceResponse("text/css", "UTF-8", data);
+        }
+
+    });
+
+    webview.loadUrl("http://stackoverflow.com");
+
+
+Catch the loading of the css file and return your own WebResourceResponse containing the data you want to load in stead.
+
+Do note that this method requires API level 11. 
+
+If you want to do something similar for Android 2.x, you might want to try using the earlier mentioned shouldOverrideUrlLoading(WebView view, String url) to avoid loading the page, fetch it manually, replace the reference to the css file with your own, and finally call loadData(String data, String mimeType, String encoding)  (or loadDataWithBaseURL(String baseUrl, String data, String mimeType, String encoding, String historyUrl)) on the WebView, passing in the manipulated html content as a string.
+
+Before:
+
+ 
+
+After:
+
+
+    

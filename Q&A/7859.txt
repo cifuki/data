@@ -1,0 +1,182 @@
+34
+Q:Relevant only in that it motivates eliminating any false positives from strict mode, since the continued presence of any makes the death penalty impractical
+
+Over the last few days I've been chasing down and fixing memory leaks in an application. On getting to the point that I believed I'd fixed them all, I implemented a fail-loud mechanism similar to that described in Android StrictMode and heap dumps (enable instance tracking with death penalty, intercept the shutdown error message, dump heap, send a distress signal next time application starts). All just in debug builds of course.
+
+To the point
+
+Having believed I've fixed all activity leaks, certain activities still result in strict mode instance violation warnings on screen rotation. Curiously it is only some, not all of the application's activities that do this.
+
+I've reviewed heap dumps taken when such violations occur, and reviewed the code of the activities in question in search of the leak, but do not get anywhere.
+
+So at this point I tried to make the smallest possible test case. I create a completely blank activity (no layout even), looking like this:
+
+package com.example.app;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.os.StrictMode;
+
+public class MainActivity extends Activity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        StrictMode.setVmPolicy(
+                new StrictMode.VmPolicy.Builder()
+                        .detectAll()
+                        .penaltyLog()
+                        .build());
+        StrictMode.setThreadPolicy(
+                new StrictMode.ThreadPolicy.Builder()
+                        .detectAll()
+                        .penaltyDeath()
+                        .penaltyLog()
+                        .build());
+        super.onCreate(savedInstanceState);
+    }
+
+}
+
+
+And for completeness, the manifest:
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.app" >
+
+    <application
+    android:allowBackup="true"
+    android:icon="@drawable/ic_launcher"
+    android:label="@string/app_name"
+    android:theme="@style/AppTheme" >
+    <activity
+        android:name="com.example.app.MainActivity"
+        android:label="@string/app_name" >
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+    </activity>
+    </application>
+
+</manifest>
+
+
+I open the activity (device held portrait). I rotate to landscape, and back to portrait, at which point I see from StrictMode this in LogCat:
+
+
+  01-15 17:24:23.248: E/StrictMode(13867): class com.example.app.MainActivity; instances=2; limit=1
+  01-15 17:24:23.248: E/StrictMode(13867): android.os.StrictMode$InstanceCountViolation: class com.example.app.MainActivity; instances=2; limit=1
+  01-15 17:24:23.248: E/StrictMode(13867):  at android.os.StrictMode.setClassInstanceLimit(StrictMode.java:1)
+
+
+Heap dump
+
+At this point I manually acquire a heap dump using DDMS. Here are the two instances in MAT:
+
+
+
+And here's the one that was leaked, with the first part of the path from it to a GC root:
+
+
+
+Note that no matter how many times I rotate between portrait and landscape, the number of actual instances never exceeds two, and the number of expected instances never exceeds one.
+
+Can anyone make sense of the leak? Is it even a real leak? If it is, it presumably must be an Android bug. If it is not, the only other thing I can see that it could be is a bug in StrictMode.
+
+Good answers might include
+
+
+If this is a real leak, an explanation of how it occurs, and what if any action can be taken to fix it or suppress StrictMode from initiating the death penalty for such cases (recall that false positives/neutrals make the death penalty impractical).
+If this is not a real leak, an explanation of why StrictMode thinks otherwise, and what if any action can be taken to fix it or suppress StrictMode from initiating the death penalty for such cases (recall that false positives/neutrals make the death penalty impractical).
+In either case, hypotheses as to why this does not occur with all activities (the majority of activities in the application I'm working on do not produce such violations on rotation).
+
+
+I've got as far as looking at the StrictMode source and see nothing obviously wrong there - as expected, it forces a GC before considering an extra instance to be a violation.
+
+Good entry points for reading the StrictMode source are:
+
+
+http://grepcode.com/file/repository.grepcode.com/java/ext/com.google.android/android/4.4_r1/android/os/StrictMode.java#StrictMode.trackActivity%28java.lang.Object%29
+http://grepcode.com/file/repository.grepcode.com/java/ext/com.google.android/android/4.4_r1/android/os/StrictMode.java#StrictMode.InstanceTracker.finalize%28%29
+http://grepcode.com/file/repository.grepcode.com/java/ext/com.google.android/android/4.4_r1/android/os/StrictMode.java#StrictMode.incrementExpectedActivityCount%28java.lang.Class%29
+http://grepcode.com/file/repository.grepcode.com/java/ext/com.google.android/android/4.4_r1/android/os/StrictMode.java#StrictMode.decrementExpectedActivityCount(java.lang.Class)
+
+
+Full disclosure
+
+I've only done these tests on one device, a Galaxy S4 running CyanogenMod 11 snapshot M2 (http://download.cyanogenmod.org/get/jenkins/53833/cm-11-20140104-SNAPSHOT-M2-jfltexx.zip), but I can't imagine CyanogenMod would deviate from KitKat in terms of activity management.
+
+Additional StrictMode sources:
+
+
+Activity's instanceTracker instance is just a final instance field: http://grepcode.com/file/repository.grepcode.com/java/ext/com.google.android/android/4.4_r1/android/app/Activity.java#Activity.0mInstanceTracker
+Where expected activity instance counts are incremented: http://grepcode.com/file/repository.grepcode.com/java/ext/com.google.android/android/4.4_r1/android/app/ActivityThread.java#2095
+Where expected activity instance counts are decremented: http://grepcode.com/file/repository.grepcode.com/java/ext/com.google.android/android/4.4_r1/android/app/ActivityThread.java#3485
+
+    
+===============================================================================================
+20
+A:I go with door #2: This is not a real leak.
+
+More specifically, it's just related to garbage collection. Three clues:
+
+
+The path to GC root ends at FinalizerReference, which is closely related to GC. It basically handles calling the finalize() methods on objects that are eligible for GC -- for which there is one here, namely the ViewRootImpl.WindowInputEventReceiver instance, which extends InputEventReceiver, which does have a finalize() method. If this was a "real" memory leak, then the object would not be eligible for GC, and there should be at least one other path to a GC root.
+At least in my test case, if I force GC before taking the heap snapshot, then there is only one reference to MainActivity (whereas there are two if I take the snapshot without doing so). Looks like forcing GC from DDMS actually includes calling all finalizers (most likely by calling FinalizerReference.finalizeAllEnqueued() which should release all these references.
+I could reproduce it in a device with Android 4.4.4, but not in Android L which has a new GC algorithm (admittedly this is at most circumstantial evidence, but it's consistent with the others).
+
+
+Why does this happen for some activities and not for others? While I cannot say for sure, it's likely that constructing a "more complicated" activity fires GC (simply because it needs to allocate more memory) while a simple one like this one "generally" does not. But this should be variable.
+
+Why does StrictMode think otherwise?
+
+There are extensive comments in StrictMode about this case, check the source code of decrementExpectedActivityCount(). Nevertheless, it looks like it's not working exactly as they intended.
+
+    // Note: adding 1 here to give some breathing room during
+    // orientation changes.  (shouldn't be necessary, though?)
+    limit = newExpected + 1;
+
+    ...
+
+    // Quick check.
+    int actual = InstanceTracker.getInstanceCount(klass);
+    if (actual <= limit) {
+        return;
+    }
+
+    // Do a GC and explicit count to double-check.
+    // This is the work that we are trying to avoid by tracking the object instances
+    // explicity.  Running an explicit GC can be expensive (80ms) and so can walking
+    // the heap to count instance (30ms).  This extra work can make the system feel
+    // noticeably less responsive during orientation changes when activities are
+    // being restarted.  Granted, it is only a problem when StrictMode is enabled
+    // but it is annoying.
+    Runtime.getRuntime().gc();
+
+    long instances = VMDebug.countInstancesOfClass(klass, false);
+    if (instances > limit) {
+        Throwable tr = new InstanceCountViolation(klass, instances, limit);
+        onVmPolicyViolation(tr.getMessage(), tr);
+    }
+
+
+Update
+
+Actually, I've performed more tests, calling StrictMode.incrementExpectedActivityCount() using reflection, and I've found a very curious result, which does not change the answer (it's still #2) but I think provides an additional clue. If you increase the number of "expected" instances of the Activity (say, to 4), then the strict mode violation will still occur (claiming 5 instances are present), on every 4th rotation.
+
+From this I'm led to conclude that the call to Runtime.getRuntime().gc() is what actually releases these finalizable objects, and that code runs only after going beyond the set limit.
+
+What if any action can be taken to fix it?
+
+While it's not 100% foolproof, calling System.gc() in the Activity's onCreate() is likely to get this problem to go away (and it did in my tests). However, the specification for Java clearly says that garbage collection cannot be forced (and this is merely a hint) so I'm not sure if I'd trust going with the death penalty, even with this "fix"...
+
+You could possibly combine it with manually increasing the limit for activity instance count by calling reflection. But it seems like a really crude hack:
+
+Method m = StrictMode.class.getMethod("incrementExpectedActivityCount", Class.class);
+m.invoke(null, MainActivity.class);
+
+
+(Note: be sure to do this only once at application startup). 
+    

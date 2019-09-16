@@ -1,0 +1,526 @@
+101
+Q:What exactly happens when you call setRetainInstance(true) on a Fragment? The documentation is virtually non-existent and this seems like a very important function. Specifically I want to know how much of this sequence (that I made up) is true:
+
+
+  
+  The user rotates the device.
+  The fragment is detached from the Activity and Fragment.onDetach() is called.
+  The activity is destroyed; Activity.onDestroy() is called.
+  The Activity java object is deleted (when possible, by the GC).
+  A new Activity java object is created; its constructor, and onCreate() are called.
+  In Activity.onCreate() we either have setContentView(...) which sets a layout containing a fragment, or we use FragmentTransaction
+  to add a fragment.
+  I'm really not sure about this, but I assume that android is smart enough to find the old fragment, and call Fragment.onAttach() to
+  reattach it to the new Activity
+  Next (or before? who knows?) Activity.onResume() is called.
+  
+
+
+So is that correct? Is Android smart enough to find the old fragment, even if I explicitly use FragmentTransaction.add(new MyFragment(), ...) the first time? And if so, how do I avoid adding another fragment in onCreate()? Do I need to do something like this?:
+
+    if (getSupportFragmentManager().findFragmentByTag("foo") == null)
+    {
+        FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
+        ft.add(new FooFragment(), "foo").commit();
+    }
+
+    
+===============================================================================================
+90
+A:Ok, perhaps I was slightly too harsh on the Android documentation, because it does have some useful information, but sadly none of it is linked from setRetainInstance(). From the page about fragments
+
+
+  Note: Each fragment requires a unique identifier that the system can
+  use to restore the fragment if the activity is restarted (and which
+  you can use to capture the fragment to perform transactions, such as
+  remove it). There are three ways to provide an ID for a fragment:
+  
+  
+  Supply the android:id attribute with a unique ID.
+  Supply the android:tag attribute with a unique string.
+  If you provide neither of the previous two, the system uses the ID of the container view.
+  
+
+
+This strongly implies that if you do setContentView(R.layout.whatever) in Activity.onCreated() and that layout contains a fragment with setRetainInstance(true), then when the activity is recreated it will be searched for again using its id or tag.
+
+Secondly, for UI-less fragments, it states
+
+
+  To add a fragment without a UI, add the fragment from the activity
+  using add(Fragment, String) (supplying a unique string "tag" for the
+  fragment, rather than a view ID). This adds the fragment, but, because
+  it's not associated with a view in the activity layout, it does not
+  receive a call to onCreateView(). So you don't need to implement that
+  method.
+
+
+And the docs link to a very good example - FragmentRetainInstance.java which I have reproduced below for your convenience. It does exactly what I speculated was the answer in my question (if (...findFragmentByTag() == null) { ...).
+
+Finally, I created my own test activity to see exactly what functions are called. It outputs this, when you start in portrait and rotate to landscape. The code is below.
+
+(This is edited a bit to make it easier to read.)
+
+TestActivity@415a4a30: this()
+TestActivity@415a4a30: onCreate()
+TestActivity@415a4a30: Existing fragment not found.
+TestFragment{41583008}: this() TestFragment{41583008}
+TestFragment{41583008}: onAttach(TestActivity@415a4a30)
+TestFragment{41583008}: onCreate()
+TestFragment{41583008}: onCreateView()
+TestFragment{41583008}: onActivityCreated()
+TestActivity@415a4a30: onStart()
+TestFragment{41583008}: onStart()
+TestActivity@415a4a30: onResume()
+TestFragment{41583008}: onResume()
+
+<rotate device>
+
+TestFragment{41583008}: onPause()
+TestActivity@415a4a30: onPause()
+TestFragment{41583008}: onStop()
+TestActivity@415a4a30: onStop()
+TestFragment{41583008}: onDestroyView()
+TestFragment{41583008}: onDetach()
+TestActivity@415a4a30: onDestroy()
+TestActivity@415a3380: this()
+TestFragment{41583008}: onAttach(TestActivity@415a3380)
+TestActivity@415a3380: onCreate()
+TestActivity@415a3380: Existing fragment found.
+TestFragment{41583008}: onCreateView()
+TestFragment{41583008}: onActivityCreated()
+TestActivity@415a3380: onStart()
+TestFragment{41583008}: onStart()
+TestActivity@415a3380: onResume()
+TestFragment{41583008}: onResume()
+
+
+Note that the Android documentation is wrong: the UI-less fragment does receive a call to onCreateView() but it is free to return null.
+
+Source code for TestActivity/TestFragment
+
+import android.app.Activity;
+import android.app.Fragment;
+import android.app.FragmentTransaction;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.TextView;
+
+import com.concentriclivers.ss.R;
+
+// An activity for understanding Android lifecycle events.
+public class TestActivity extends Activity
+{
+    private static final String TAG = TestActivity.class.getSimpleName();
+
+    public TestActivity()
+    {
+        super();
+        Log.d(TAG, this + ": this()");
+    }
+
+    protected void finalize() throws Throwable
+    {
+        super.finalize();
+        Log.d(TAG, this + ": finalize()");
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+        Log.d(TAG, this + ": onCreate()");
+
+
+        TextView tv = new TextView(this);
+        tv.setText("Hello world");
+        setContentView(tv);
+
+        if (getFragmentManager().findFragmentByTag("test_fragment") == null)
+        {
+            Log.d(TAG, this + ": Existing fragment not found.");
+            FragmentTransaction ft = getFragmentManager().beginTransaction();
+            ft.add(new TestFragment(), "test_fragment").commit();
+        }
+        else
+        {
+            Log.d(TAG, this + ": Existing fragment found.");
+        }
+    }
+
+    @Override
+    public void onStart()
+    {
+        super.onStart();
+        Log.d(TAG, this + ": onStart()");
+    }
+
+    @Override
+    public void onResume()
+    {
+        super.onResume();
+        Log.d(TAG, this + ": onResume()");
+    }
+
+    @Override
+    public void onPause()
+    {
+        super.onPause();
+        Log.d(TAG, this + ": onPause()");
+    }
+
+    @Override
+    public void onStop()
+    {
+        super.onStop();
+        Log.d(TAG, this + ": onStop()");
+    }
+
+    @Override
+    public void onDestroy()
+    {
+        super.onDestroy();
+        Log.d(TAG, this + ": onDestroy()");
+    }
+
+
+
+
+    public static class TestFragment extends Fragment
+    {
+        private static final String TAG = TestFragment.class.getSimpleName();
+
+        public TestFragment()
+        {
+            super();
+            Log.d(TAG,  this + ": this() " + this);
+        }
+
+        @Override
+        public void onCreate(Bundle savedInstanceState)
+        {
+            super.onCreate(savedInstanceState);
+            Log.d(TAG, this + ": onCreate()");
+            setRetainInstance(true);
+        }
+
+        @Override
+        public void onAttach(final Activity activity)
+        {
+            super.onAttach(activity);
+            Log.d(TAG, this + ": onAttach(" + activity + ")");
+        }
+
+        @Override
+        public void onActivityCreated(Bundle savedInstanceState)
+        {
+            super.onActivityCreated(savedInstanceState);
+            Log.d(TAG, this + ": onActivityCreated()");
+        }
+
+        @Override
+        public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState)
+        {
+            Log.d(TAG, this + ": onCreateView()");
+            return null;
+        }
+
+        @Override
+        public void onViewCreated(View view, Bundle savedInstanceState)
+        {
+            super.onViewCreated(view, savedInstanceState);
+            Log.d(TAG, this + ": onViewCreated()");
+        }
+
+        @Override
+        public void onDestroyView()
+        {
+            super.onDestroyView();
+            Log.d(TAG, this + ": onDestroyView()");
+        }
+
+        @Override
+        public void onDetach()
+        {
+            super.onDetach();
+            Log.d(TAG, this + ": onDetach()");
+        }
+
+        @Override
+        public void onStart()
+        {
+            super.onStart();
+            Log.d(TAG, this + ": onStart()");
+        }
+
+        @Override
+        public void onResume()
+        {
+            super.onResume();
+            Log.d(TAG, this + ": onResume()");
+        }
+
+        @Override
+        public void onPause()
+        {
+            super.onPause();
+            Log.d(TAG, this + ": onPause()");
+        }
+
+        @Override
+        public void onStop()
+        {
+            super.onStop();
+            Log.d(TAG, this + ": onStop()");
+        }
+
+        @Override
+        public void onDestroy()
+        {
+            super.onDestroy();
+            Log.d(TAG, this + ": onDestroy()");
+        }
+    }
+
+}
+
+
+Source code for FragmentRetainInstance.java (as of API 16):
+
+/*
+ * Copyright (C) 2010 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.example.android.apis.app;
+
+import com.example.android.apis.R;
+
+import android.app.Activity;
+import android.app.Fragment;
+import android.app.FragmentManager;
+import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.View.OnClickListener;
+import android.widget.Button;
+import android.widget.ProgressBar;
+
+/**
+ * This example shows how you can use a Fragment to easily propagate state
+ * (such as threads) across activity instances when an activity needs to be
+ * restarted due to, for example, a configuration change.  This is a lot
+ * easier than using the raw Activity.onRetainNonConfiguratinInstance() API.
+ */
+public class FragmentRetainInstance extends Activity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // First time init, create the UI.
+        if (savedInstanceState == null) {
+            getFragmentManager().beginTransaction().add(android.R.id.content,
+                    new UiFragment()).commit();
+        }
+    }
+
+    /**
+     * This is a fragment showing UI that will be updated from work done
+     * in the retained fragment.
+     */
+    public static class UiFragment extends Fragment {
+        RetainedFragment mWorkFragment;
+
+        @Override
+        public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                Bundle savedInstanceState) {
+            View v = inflater.inflate(R.layout.fragment_retain_instance, container, false);
+
+            // Watch for button clicks.
+            Button button = (Button)v.findViewById(R.id.restart);
+            button.setOnClickListener(new OnClickListener() {
+                public void onClick(View v) {
+                    mWorkFragment.restart();
+                }
+            });
+
+            return v;
+        }
+
+        @Override
+        public void onActivityCreated(Bundle savedInstanceState) {
+            super.onActivityCreated(savedInstanceState);
+
+            FragmentManager fm = getFragmentManager();
+
+            // Check to see if we have retained the worker fragment.
+            mWorkFragment = (RetainedFragment)fm.findFragmentByTag("work");
+
+            // If not retained (or first time running), we need to create it.
+            if (mWorkFragment == null) {
+                mWorkFragment = new RetainedFragment();
+                // Tell it who it is working with.
+                mWorkFragment.setTargetFragment(this, 0);
+                fm.beginTransaction().add(mWorkFragment, "work").commit();
+            }
+        }
+
+    }
+
+    /**
+     * This is the Fragment implementation that will be retained across
+     * activity instances.  It represents some ongoing work, here a thread
+     * we have that sits around incrementing a progress indicator.
+     */
+    public static class RetainedFragment extends Fragment {
+        ProgressBar mProgressBar;
+        int mPosition;
+        boolean mReady = false;
+        boolean mQuiting = false;
+
+        /**
+         * This is the thread that will do our work.  It sits in a loop running
+         * the progress up until it has reached the top, then stops and waits.
+         */
+        final Thread mThread = new Thread() {
+            @Override
+            public void run() {
+                // We'll figure the real value out later.
+                int max = 10000;
+
+                // This thread runs almost forever.
+                while (true) {
+
+                    // Update our shared state with the UI.
+                    synchronized (this) {
+                        // Our thread is stopped if the UI is not ready
+                        // or it has completed its work.
+                        while (!mReady || mPosition >= max) {
+                            if (mQuiting) {
+                                return;
+                            }
+                            try {
+                                wait();
+                            } catch (InterruptedException e) {
+                            }
+                        }
+
+                        // Now update the progress.  Note it is important that
+                        // we touch the progress bar with the lock held, so it
+                        // doesn't disappear on us.
+                        mPosition++;
+                        max = mProgressBar.getMax();
+                        mProgressBar.setProgress(mPosition);
+                    }
+
+                    // Normally we would be doing some work, but put a kludge
+                    // here to pretend like we are.
+                    synchronized (this) {
+                        try {
+                            wait(50);
+                        } catch (InterruptedException e) {
+                        }
+                    }
+                }
+            }
+        };
+
+        /**
+         * Fragment initialization.  We way we want to be retained and
+         * start our thread.
+         */
+        @Override
+        public void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+
+            // Tell the framework to try to keep this fragment around
+            // during a configuration change.
+            setRetainInstance(true);
+
+            // Start up the worker thread.
+            mThread.start();
+        }
+
+        /**
+         * This is called when the Fragment's Activity is ready to go, after
+         * its content view has been installed; it is called both after
+         * the initial fragment creation and after the fragment is re-attached
+         * to a new activity.
+         */
+        @Override
+        public void onActivityCreated(Bundle savedInstanceState) {
+            super.onActivityCreated(savedInstanceState);
+
+            // Retrieve the progress bar from the target's view hierarchy.
+            mProgressBar = (ProgressBar)getTargetFragment().getView().findViewById(
+                    R.id.progress_horizontal);
+
+            // We are ready for our thread to go.
+            synchronized (mThread) {
+                mReady = true;
+                mThread.notify();
+            }
+        }
+
+        /**
+         * This is called when the fragment is going away.  It is NOT called
+         * when the fragment is being propagated between activity instances.
+         */
+        @Override
+        public void onDestroy() {
+            // Make the thread go away.
+            synchronized (mThread) {
+                mReady = false;
+                mQuiting = true;
+                mThread.notify();
+            }
+
+            super.onDestroy();
+        }
+
+        /**
+         * This is called right before the fragment is detached from its
+         * current activity instance.
+         */
+        @Override
+        public void onDetach() {
+            // This fragment is being detached from its activity.  We need
+            // to make sure its thread is not going to touch any activity
+            // state after returning from this function.
+            synchronized (mThread) {
+                mProgressBar = null;
+                mReady = false;
+                mThread.notify();
+            }
+
+            super.onDetach();
+        }
+
+        /**
+         * API for our UI to restart the progress thread.
+         */
+        public void restart() {
+            synchronized (mThread) {
+                mPosition = 0;
+                mThread.notify();
+            }
+        }
+    }
+}
+
+    

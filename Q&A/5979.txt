@@ -1,0 +1,56 @@
+42
+Q:This seem to be a common problem and I went through all the related questions I could find already:
+Activity isn't picking up new intent, Why extra data (integer) is not sent in android notification intent?, Notification passes old Intent Extras, Can't put extras for an intent in notification, android pending intent notification problem; but still cannot figure this out.
+
+Problem is the same. I set a notification with a PendingIntent carrying some extra information and I don't get it on the other side.
+
+Here is the code for generating the notification:
+
+Notification notification = new Notification(R.drawable.icon, getResources().getString(R.string.notification_ticker), System.currentTimeMillis());
+notification.flags = Notification.FLAG_AUTO_CANCEL | Notification.FLAG_ONLY_ALERT_ONCE;
+
+Intent start_test = new Intent(this, MyActivity.class);
+start_test.putExtra("start_test", true);
+start_test.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+PendingIntent pi = PendingIntent.getActivity(this, (int) System.currentTimeMillis(), start_test, PendingIntent.FLAG_CANCEL_CURRENT);
+notification.setLatestEventInfo(this, getResources().getString(R.string.notification_title), getResources().getString(R.string.notification_content, expired), pi);
+nm.notify(NOTIFICATION_ID, notification);
+
+
+And on the other side:
+
+boolean start_test=getIntent().getBooleanExtra("start_test", false);
+
+
+The bundle is actually not there (getExtras() returns null).
+
+I tried the different flags for PendingIntent.getActivity (FLAG_UPDATE_CURRENT, FLAG_CANCEL_CURRENT, FLAG_ONE_SHOT), none of those helped.
+
+As shown in the code, I use getCurrentMillis to make sure the requestID changes....
+
+Also found that in MyActivity, onCreate and onNewIntent are not getting called. only onResume is. Even though the FLAG_ACTIVITY_NEW_TASK is set... ?
+
+Am I missing something very simple ?
+    
+===============================================================================================
+48
+A:Setting FLAG_ACTIVITY_NEW_TASK for the notification Intent will cause the following:
+
+
+If the activity is not already running in a task, a new task will be started and the Intent will be delivered to the activity in onCreate()
+However, if the activity is already running in a task, that task will be brought to the foreground. That's all. The Intent will not be delivered and onNewIntent() will not be called.
+
+
+If you want the Intent to actually be delivered you need to specify:
+
+start_test.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | 
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP);
+
+
+It makes no difference whether the launchMode of the activity is singleTop or not, you still must specify Intent.FLAG_ACTIVITY_SINGLE_TOP in the Intent.
+
+Note: If the activity is already running in a task and the activity is not on top of the activity stack in that task, the task will be brought to the foreground. That's all. The Intent will not be delivered. The only way to make this happen would be to add Intent.FLAG_ACTIVITY_CLEAR_TOP to the other 2 flags, but this may not be what you want to happen (depends on your specific scenario).
+
+See my (still) open issue on Google code at http://code.google.com/p/android/issues/detail?id=17137
+    

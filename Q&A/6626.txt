@@ -1,0 +1,121 @@
+39
+Q:Does anybody has an idea how Pinterest or Tumblr has implemented there "swipe back" method.
+
+i.e. on Pinterest you can click on a post on the news feed. Than the DetailActivity is started and displays the details for the selected post. Than you can press the back button to return to the news feed activity, or you can swipe (the details activity) to the left to come back to the news feed activity.
+
+Video: http://youtu.be/eVcSCWetnTA
+
+Normally I would use overridePendingTransition(), but overridePendingTransition() takes animations (Resource ids like R.anim.foo). Pinterest and Tumblr  start the animation only if the user do a swipe gesture. They also support some kind of "frame by frame animation" according the fingers move. So they track the distance of the finger move and animate the transition to the corresponding percentage value.
+
+I know how to use a "real java" Animation / AnimatorSet Object with FragmentTransaction to animate a fragment replacement. With fragments I have to override onCreateAnimator(),  but I have no clue how to implement something like that with Activities. Is there a onCreateAnimator() (or something similar) for Activities? Also not sure how to swipe behaviour, since its not starting the animation right now, but more a step by step property changement of the Window / Activity/ Fragment or whatever ...
+
+Any suggestions?
+
+EDIT:
+I have found a video of the pinterest app at youtube: http://youtu.be/eVcSCWetnTA
+Thats what I want to implement.
+
+I guess Pinterest is working with Fragments and onCreateAnimator() to achieve the "swipe back".
+Since my App has already Fragment and ChildFragments in a activity it would be so much easier for me if I could implement that for Activities.
+
+Once more: I know how to detect swipe gestures and thats not what I'm asking for. Watch the youtube video: http://youtu.be/eVcSCWetnTA
+
+
+
+UPDATE:
+I have created a little library, which has not exactly the same behavior like Pinterest or Tumblrs implementation, however for my apps this seems to me a good solution:
+https://github.com/sockeqwe/SwipeBack?source=c
+    
+===============================================================================================
+20
+A:It seems that the effect you're looking for is one of the samples for ViewPager in the android developer's website.
+
+Check out http://developer.android.com/training/animation/screen-slide.html#depth-page , in the Depth page transformer section. It has a video and source code.
+
+Using a ViewPager.PageTransformer you can decide how the pages behave when switching from one to the next.
+
+The only difference between the sample and the video you linked to is that left-right seems to be inverted, but should be a good starting point for what I saw on the YouTube video linked in the question. The actions on the two views would have to be swaped. As shown in this piece of code (the 1st parameter to mPager.setPageTransformer should be reverseDrawingOrder = false). Note the middle 2 if sections are swaped and the position variable is handled slightly different to switch sides. The bouncy effect is left as an exercise. Please share when you get that!
+
+    package com.example.android.animationsdemo;
+
+    import android.support.v4.view.ViewPager;
+    import android.view.View;
+
+    public class SinkPageTransformer implements ViewPager.PageTransformer {
+            private static float MIN_SCALE = 0.75f;
+
+            public void transformPage(View view, float position) {
+                    int pageWidth = view.getWidth();
+
+                    if (position < -1) { // [-Infinity,-1)
+                            // This page is way off-screen to the left.
+                            view.setAlpha(0);
+
+                    } else if (position <= 0) { // [-1,0]
+                            // Fade the page out.
+                            view.setAlpha(1 + position);
+
+                            // Counteract the default slide transition
+                            view.setTranslationX(pageWidth * -position);
+
+                            // Scale the page down (between MIN_SCALE and 1)
+                            float scaleFactor = MIN_SCALE
+                                            + (1 - MIN_SCALE) * (1 - Math.abs(position));
+                            view.setScaleX(scaleFactor);
+                            view.setScaleY(scaleFactor);
+
+                    } else if (position <= 1) { // (0,1]
+                            // Use the default slide transition when moving to the left page
+                            view.setAlpha(1);
+                            view.setTranslationX(0);
+                            view.setScaleX(1);
+                            view.setScaleY(1);
+
+                    } else { // (1,+Infinity]
+                            // This page is way off-screen to the right.
+                            view.setAlpha(0);
+                    }
+            }
+    }
+
+
+And just in case the page with the sample goes poof, here's that section's original code:
+
+    public class DepthPageTransformer implements ViewPager.PageTransformer {
+        private static float MIN_SCALE = 0.75f;
+
+        public void transformPage(View view, float position) {
+            int pageWidth = view.getWidth();
+
+            if (position < -1) { // [-Infinity,-1)
+                // This page is way off-screen to the left.
+                view.setAlpha(0);
+
+            } else if (position <= 0) { // [-1,0]
+                // Use the default slide transition when moving to the left page
+                view.setAlpha(1);
+                view.setTranslationX(0);
+                view.setScaleX(1);
+                view.setScaleY(1);
+
+            } else if (position <= 1) { // (0,1]
+                // Fade the page out.
+                view.setAlpha(1 - position);
+
+                // Counteract the default slide transition
+                view.setTranslationX(pageWidth * -position);
+
+                // Scale the page down (between MIN_SCALE and 1)
+                float scaleFactor = MIN_SCALE
+                        + (1 - MIN_SCALE) * (1 - Math.abs(position));
+                view.setScaleX(scaleFactor);
+                view.setScaleY(scaleFactor);
+
+            } else { // (1,+Infinity]
+                // This page is way off-screen to the right.
+                view.setAlpha(0);
+            }
+        }
+    }
+
+    

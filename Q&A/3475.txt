@@ -1,0 +1,132 @@
+65
+Q:I would like to understand better how Gridview works, in particular auto_fit.
+Here is the XML layout:
+
+<?xml version="1.0" encoding="utf-8"?>
+<GridView xmlns:android="http://schemas.android.com/apk/res/android" 
+    android:id="@+id/gridview"
+    android:layout_width="wrap_content" 
+    android:layout_height="wrap_content"
+    android:columnWidth="60dp"
+    android:numColumns="auto_fit"
+/>
+
+
+And it works fine with a series of six thumbnails (48*48 pixels).  In portrait mode, it displays one row, six columns.
+
+
+
+What I don't understand is why the line android:columnWidth="60dp" is necessary, because auto_fit is expected to find the right number of columns.
+Without the line android:columnWidth="60dp", it displays a grid 3 rows and 2 columns.
+
+
+
+Here is the ImageAdapter class:
+
+package com.examples.HelloGridView;
+
+import android.content.Context;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.BaseAdapter;
+import android.widget.ImageView;
+
+public class ImageAdapter extends BaseAdapter {
+    private Context mContext;
+
+    public ImageAdapter(Context c) {
+        mContext = c;
+    }
+
+    public int getCount() {
+        return mThumbIds.length;
+    }
+
+    public Object getItem(int position) {
+        return null;
+    }
+
+    public long getItemId(int position) {
+        return 0;
+    }
+
+    // create a new ImageView for each item referenced by the Adapter
+    public View getView(int position, View convertView, ViewGroup parent) {
+        ImageView imageView;
+        if (convertView == null) {  // if it's not recycled, initialize some attributes
+            imageView = new ImageView(mContext);
+            imageView.setPadding(0, 0, 0, 0);
+        } else {
+            imageView = (ImageView) convertView;
+        }
+
+        imageView.setImageResource(mThumbIds[position]);
+        return imageView;
+    }
+
+    // references to our images
+    private Integer[] mThumbIds = {
+            R.drawable.ic_1, R.drawable.ic_2,
+            R.drawable.ic_3, R.drawable.ic_4,
+            R.drawable.ic_5, R.drawable.ic_6
+    };
+}
+
+
+Thank you for your help.
+    
+===============================================================================================
+94
+A:Looking at the GridView source, it is clear that setting the padding and the height on your ImageView will not help you at all. When a column width is not specified, it just chooses a preset number of columns (2):
+
+    private void determineColumns(int availableSpace) {
+
+    ...
+
+    if (mRequestedNumColumns == AUTO_FIT) {
+        if (requestedColumnWidth > 0) {
+            // Client told us to pick the number of columns
+            mNumColumns = (availableSpace + requestedHorizontalSpacing) /
+                    (requestedColumnWidth + requestedHorizontalSpacing);
+        } else {
+            // Just make up a number if we don't have enough info
+            mNumColumns = 2;
+        }
+    } else {
+        // We picked the columns
+        mNumColumns = mRequestedNumColumns;
+    }
+
+    if (mNumColumns <= 0) {
+        mNumColumns = 1;
+    }
+
+    ...
+
+
+The solution is to measure your column size before setting the GridView's column width. Here is a quick way to measure Views offscreen:
+
+public int measureCellWidth( Context context, View cell )
+{
+
+    // We need a fake parent
+    FrameLayout buffer = new FrameLayout( context );
+    android.widget.AbsListView.LayoutParams layoutParams = new  android.widget.AbsListView.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+    buffer.addView( cell, layoutParams);
+
+    cell.forceLayout();
+    cell.measure(1000, 1000);
+
+    int width = cell.getMeasuredWidth();
+
+    buffer.removeAllViews();
+
+    return width;
+}
+
+
+And then you just set the GridView's column width:
+
+gridView.setColumnWidth( width );
+
+    

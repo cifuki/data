@@ -1,0 +1,78 @@
+36
+Q:I have a setup that looks something like this:
+
+class MyFragment implements SomeEventListener {
+
+    Application mAppContext;    
+
+    boolean mBound;
+    boolean mDidCallUnbind;
+    MyIBinder mBinder;
+    ServiceConnection mConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            mBound = true;
+            mBinder = (MyIBinder) service;
+            mBinder.getThings();...
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            mDidCallUnbind = false;
+            mBound = false;
+            mBinder = null;
+        }
+    };
+
+    ...
+
+    @Override
+    public void onSomeEvent() {
+        mAppContext.bindService(...);
+    }
+
+    void unbindService() {
+        if (mBound && !mDidCallUnbind) {
+            mDidCallUnbind = true;
+            mAppContext.unbindService(mConnection);
+        }
+    }
+
+    @Override
+    public void onPause() {
+        unbindService();
+        super.onPause();
+    }
+}
+
+
+However, I am still seeing the error in the title from time to time: java.lang.IllegalArgumentException: Service not registered being generated when unbindService() is called.  Am I missing something silly, or is there more going on?  I should note that there may be more than one of this same fragment in existence.
+
+Edit
+
+Since no one actually seems to be reading the code, let me explain.  unbindService() does not call Context.unbindService(ServiceConnection) unless the service is bound (mBound) and it had not previously been called before the onServiceDisconnected(...) callback was hit from a possible previous call to unbindService().  
+
+That in mind, are there any cases where Android will unbind your service for you such that the service would become unbound but onServiceDisconnected would not be called thus leaving me in a stale state?  
+
+Also, I am using my Application context to do the initial binding.  Assume something like:
+
+@Override
+public void onCreate() {
+    mApplication = getContext().getApplicationContext();
+}
+
+    
+===============================================================================================
+16
+A:I realize this question has already been answered. But I think there is reason to go into why people are making this mistake.
+
+The issue is really with the training docs. http://developer.android.com/reference/android/app/Service.html shows a correct implementation while https://developer.android.com/guide/components/bound-services.html in the 'ActivityMessenger' shows a Very INCORRECT implementation.
+
+In the 'ActivityMessenger' example onStop() could potentially be called before the service has actually been bound.  
+
+The reason for this confusion is they are using the bound service boolean to mean different things in different examples. (mainly, was bindService() called OR is the Service actually connected)
+
+In the correct examples where unbind() is done based on the value of the bound boolean, the bound boolean indicates that the bindService() was called. Since it's queued up for main thread execution, then unbindService() needs to be called (so queued to be executed), regardless of when (if ever) onServiceConnected() happens.
+
+In other examples, such as the one in http://developer.android.com/reference/android/app/Service.html. The bound indicates that the Services is Actually bound so that you can use it and not get a NullPointerException. Note that in this example, the unbindService() call is still made and the bound boolean doesn't determine whether to unbind or not.
+    

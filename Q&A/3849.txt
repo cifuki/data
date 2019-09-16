@@ -1,0 +1,102 @@
+60
+Q:I would like to have a better understanding of how the components of Android's (2D) Canvas drawing pipeline fit together.
+
+For example, how do XferMode, Shader, MaskFilter and ColorFilter interact? The reference docs for these classes are pretty sparse and the docs for Canvas and Paint don't really add any useful explanation.
+
+It's also not entirely clear to me how drawing operations that have intrinsic colors (eg: drawBitmap, versus the "vector" primitives like drawRect) fit into all of this -- do they always ignore the Paint's color and use use their intrinsic color instead?
+
+I was also surprised by the fact that one can do something like this:
+
+Paint eraser = new Paint();
+eraser.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+canvas.drawOval(rectF, eraser);
+
+
+This erases an oval. Before I noticed this my mental-model was that drawing to a canvas (conceptually) draws to a separate "layer" and then that layer is composed with the Canvas's Bitmap using the Paint's transfer mode. If it were as simple as that then the above code would erase the entire Bitmap (within the clipping region) as CLEAR always sets the color (and alpha) to 0 regardless of the source's alpha. So this implies that there's an additional sort of masking going on to constrain the erasing to an oval.
+
+I did find the API demos but each demo works "in a vacuum" and doesn't show how the thing it focusses on (eg: XferModes) interacts with other stuff (eg: ColorFilters).
+
+With enough time and effort I could empirically figure out how these pieces relate or go decipher the source, but I'm hoping that someone else has already worked this out, or better yet that there's some actual documentation of the pipeline/drawing-model that I missed.
+
+This question was inspired by seeing the code in this answer to another SO question.
+
+Update
+
+While looking around for some documentation it occurred to me that since much the stuff I'm interested in here seems to be a pretty thin veneer on top of skia, maybe there's some skia documentation that would be helpful. The best thing I could find is the documentation for SkPaint which says:
+
+
+  There are 6 types of effects that can
+  be assigned to a paint:
+  
+  
+  SkPathEffect - modifications to the geometry (path) before it generates an
+  alpha mask (e.g. dashing)
+  SkRasterizer - composing custom mask layers (e.g. shadows)
+  SkMaskFilter - modifications to the alpha mask before it is colorized and
+  drawn (e.g. blur, emboss)
+  SkShader - e.g. gradients (linear, radial, sweep), bitmap patterns
+  (clamp, repeat, mirror)
+  SkColorFilter - modify the source color(s) before applying the xfermode
+  (e.g. color matrix)
+  SkXfermode - e.g. porter-duff transfermodes, blend modes
+  
+
+
+It isn't stated explicitly, but I'm guessing that the order of the effects here is the order they appear in the pipeline.
+    
+===============================================================================================
+48
+A:Like Romain Guy said, "This question is difficult to answer on StackOverflow". There wasn't really any complete documentation, and complete documentation would be kind of large to include here.
+
+I ended up reading through the source and doing a bunch of experiments. I took notes along the way, and ended up turning them into a document which you can see here:
+
+
+Android's 2D Canvas Rendering Pipeline
+
+
+as well as this diagram:
+
+
+
+It's "unofficial", obviously, so the normal caveats apply.
+
+Based on the above, here are answers to some of the "sub-questions":
+
+
+  It's also not entirely clear to me how
+  drawing operations that have intrinsic
+  colors (eg: drawBitmap, versus the
+  "vector" primitives like drawRect)
+  fit into all of this -- do they always
+  ignore the Paint's color and use use
+  their intrinsic color instead?
+
+
+The "source colors" come from the Shader. In drawBitmap the Shader is temporarily replaced by a BitmapShader if a non-ALPHA_8 Bitmap is used. In other cases, if no Shader is specified a Shader that just generates a solid color, the Paint's color, is used.
+
+
+  I was also surprised by the fact that
+  one can do something like this:
+
+Paint eraser = new Paint();
+eraser.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+canvas.drawOval(rectF, eraser);
+
+  
+  This erases an oval. Before I noticed
+  this my mental-model was that drawing
+  to a canvas (conceptually) draws to a
+  separate "layer" and then that layer
+  is composed with the Canvas's Bitmap
+  using the Paint's transfer mode. If it
+  were as simple as that then the above
+  code would erase the entire Bitmap
+  (within the clipping region) as CLEAR
+  always sets the color (and alpha) to 0 regardless of the source's alpha. So
+  this implies that there's an
+  additional sort of masking going on to
+  constrain the erasing to an oval.
+
+
+The XferMode applies to the "source colors" (from the Shader) and the "destination colors" (from the Canvas's Bitmap). The result is then blended with the destination using the mask computed in Rasterization. See the Transfer phase in the above document for more details.
+    

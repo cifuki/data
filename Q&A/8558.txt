@@ -1,0 +1,42 @@
+31
+Q:I am stuck.  When my application starts I want to check if an alarm is alive that I previously set.  If not then I want to set it.
+
+I referred to this solution.  I am trying to match the intent like this:
+
+Intent intent = new Intent();
+        intent.setAction("com.vit.upload");
+        PendingIntent pIntent = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_NO_CREATE);
+
+
+But it doesn't work.  What else would work?
+    
+===============================================================================================
+72
+A:First of all, a little tutorial on how to access previously created alarms:
+
+You can differentiate between alarms by creating each with a unique id such as:
+
+Intent intent = new Intent(this, AlarmReceiverActivity.class);
+PendingIntent pi = PendingIntent.getActivity(this,UNIQUE_ID_GOES_HERE, intent, 0);
+AlarmManager am = (AlarmManager)getSystemService(Activity.ALARM_SERVICE);
+am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis ,pi);
+
+
+When you want to access this alarm, you have to create the same PendingIntent with the same unique id. For example, the following will only access an alarm that you created with PendingIntent id 1234. Then it will cancel the previous one and reset it.
+
+Intent intent = new Intent(this, AlarmReceiverActivity.class);
+PendingIntent pi = PendingIntent.getBroadcast(this, 1234, intent, 0);
+AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis ,pi);
+
+
+The idea is simple. Keep track of the id's and then use them to access their respective alarms. If you create multiple alarms with same id, the most recent one will cancel the previous.
+
+Coming to your main problem, instead of checking if your alarm is active each time you launch your application, just re-set it in your Activity's onCreate() method. with the same PendingIntent as I described above. This saves you all the hassle of checking if the alarm is previously set or not. Since your aim is to keep the alarm alive, it won't hurt to override the previously set one everytime you launch the application. Just make sure you use the same id to create your PendingIntent.
+
+Do not forget to check if the time for your alarm has already passed or not in order to avoid trying to set an alarm for a past time, which will trigger it immediately.
+
+Let us consider another case: when you turn off your device, all your alarms will be cancelled. This leaves you no option but to set them again at reboot. To do that, you will have to use a BroadcastReceiver.
+
+This answer will help you on how to do that. Just recreate your alarm in the onReceive() method of your BroadcastReceiver as suggested above.
+    

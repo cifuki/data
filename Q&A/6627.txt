@@ -1,0 +1,53 @@
+39
+Q:Is it possible to specify the location of a self created debug keystore when creating debug .apk's (<project-name>-debug.apk) with ant debug? I only see the possibility to specify the location of the release keystore.
+
+I would like to share the debug keystore over multiple PC's without copying them over the the one that is placed in the '.android' directory. The debug keystore could for example reside within the source code repository. But I need a way to tell ant where to find the debug keystore.
+    
+===============================================================================================
+4
+A:You can remove the signature of the final apk and sign it again. It is just a debug build so the zipalign can be avoided (at least I have no problems in my build).
+
+Copy your keystore to a file debug.keystore in the project and add the following in ant.properties
+
+debug.key.store.password=android
+debug.key.alias.password=android
+debug.key.store=../debug.keystore
+debug.key.alias=androiddebugkey
+
+
+And add the following in your build.xml
+
+<target name="-post-build" if="${build.is.packaging.debug}">
+    <!-- Remove the signature of the debug build, and sign it again with our own debug keystore -->
+    <delete dir="tmp" includeemptydirs="true" failonerror="false" />
+    <mkdir dir="tmp" />
+    <unzip src="${out.final.file}" dest="tmp" />
+    <delete dir="tmp/META-INF" includeemptydirs="true" verbose="true" failonerror="true" />
+    <delete file="${out.final.file}" failonerror="true" />
+    <zip destfile="${out.final.file}" basedir="tmp" />
+    <delete dir="tmp" includeemptydirs="true" failonerror="false" /> 
+
+    <echo level="info">Signing final DEBUG apk with a common signature...
+        signapk
+            input="${out.final.file}"
+            output="${out.packaged.file}"
+            keystore="${debug.key.store}"
+            storepass="${debug.key.store.password}"
+            alias="${debug.key.alias}"
+            keypass="${debug.key.alias.password}"
+    </echo>
+
+    <signapk
+        input="${out.final.file}"
+        output="${out.packaged.file}"
+        keystore="${debug.key.store}"
+        storepass="${debug.key.store.password}"
+        alias="${debug.key.alias}"
+        keypass="${debug.key.alias.password}"/>
+
+    <delete file="${out.final.file}" failonerror="true" />
+    <move file="${out.packaged.file}" tofile="${out.final.file}" failonerror="true" />
+
+</target>
+
+    

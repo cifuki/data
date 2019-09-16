@@ -1,0 +1,171 @@
+31
+Q:I want to integrate zxing scanner into my app without needed of external application (zxing scanner from play store).  This is my code
+
+Button scan = (Button) findViewById(R.id.scan_button);
+scan.setOnClickListener(new View.OnClickListener() {
+    @Override
+    public void onClick(View v) {
+        Intent intent = new Intent("com.google.zxing.client.android.SCAN");
+        intent.setPackage("com.mypackage.app");
+        intent.putExtra("SCAN_MODE", "QR_CODE_MODE");
+        startActivityForResult(intent, SCANNER_REQUEST_CODE);
+    }
+});
+
+@Override
+public void onActivityResult(int requestCode, int resultCode, Intent intent) {
+    if (requestCode == SCANNER_REQUEST_CODE) {
+        // Handle scan intent
+        if (resultCode == Activity.RESULT_OK) {
+            // Handle successful scan
+            String contents = intent.getStringExtra("SCAN_RESULT");
+            String formatName = intent.getStringExtra("SCAN_RESULT_FORMAT");
+            byte[] rawBytes = intent.getByteArrayExtra("SCAN_RESULT_BYTES");
+            int intentOrientation = intent.getIntExtra("SCAN_RESULT_ORIENTATION", Integer.MIN_VALUE);
+            Integer orientation = (intentOrientation == Integer.MIN_VALUE) ? null : intentOrientation;
+            String errorCorrectionLevel = intent.getStringExtra("SCAN_RESULT_ERROR_CORRECTION_LEVEL");
+
+        } else if (resultCode == Activity.RESULT_CANCELED) {
+            // Handle cancel
+        }
+    } else {
+        // Handle other intents
+    }
+
+}
+
+
+
+
+AndroidManifest.xml
+
+<activity android:name="com.google.zxing.client.android.CaptureActivity"
+    android:screenOrientation="landscape"
+    android:configChanges="orientation|keyboardHidden"
+    android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+    android:windowSoftInputMode="stateAlwaysHidden">
+    <intent-filter>
+        <action android:name="com.google.zxing.client.android.SCAN"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+    </intent-filter>
+</activity>
+
+
+
+
+My Android Studio said that cannot resolve symbol: .android.CaptureActivity and if I run this, error happened 
+
+
+  java.lang.ClassNotFoundException: Didn't find class "com.google.zxing.client.android.CaptureActivity"
+
+
+What happened?
+    
+===============================================================================================
+46
+A:Although already been answered I feel like an in depth solution for those who want to use ZXing as a library without using any auto installation method like ANT.
+
+ZXing being an open source project allow (as described in the ZXing website) you to use its features as a projects library rather than forcing 3rd party application installation on the users device, in my opinion this is the preferred choice for most projects.
+
+It is important to note that this way is acceptable by the creators and will not violate any of their terms of use, since we are not going to copy their code but simply use it as a library of our project.
+
+The general process is this:
+
+
+Downloading the ZXing source code and core file.
+Importing the ZXing project to whatever environment you desire (Eclipse/Studio)
+Defining ZXing project to act as a library and fixing the code to meet these requirements.
+Adding ZXing to your own project's build path
+Adding ZXing methods as required by your application.
+
+
+Here is a fully detailed procedure for those using Eclipse (which can be very easily implemented for Studio as well):
+
+Downloading the ZXing source code and core file
+
+
+Go  to ZXing\xe2\x80\x99s  GitHub project page (https://github.com/zxing/zxing) and click on \xe2\x80\x9cDownload zip\xe2\x80\x9d.
+Extract the files (I recommend using somewhere most of your other library sources are located)
+
+
+Importing the ZXing project to Eclipse
+
+
+Open Eclipse.
+Click on File>Import,>Android> "Existing Android Code Into Workspace", from the selection window navigate to the folder where you extracted the ZXing zip file to and select the "Android" folder. Eclipse should now detect the folder contain a project called "captureActivity", import that project.
+You should now see capture activity in your workspace. Depending on
+the ZXing version you have you might need to assign core.jar file to
+the ZXing project, to check if this is the case for your version
+open the libs folder of the captureActivity project and check if
+core.jar file exist, if not than you have to add it yourself,
+otherwise skip to the next chapter.
+
+5.1. To add the core.jar file right click the captureActivity project in the Eclipse workspace and select Build path>configure
+build path
+
+5.2. From the side menu select Java Build Path and click the Libraries tab.
+
+5.3.Click "Add external JARs" and navigate to where you originally exported ZXing zip.
+
+5.4. Enter the core folder and select core.jar (name might differ based on ZXing version) and click open
+
+5.5. You should now see core.jar in your build path list, click on the "Order and Export" tab and check core.jar
+
+
+Defining ZXing as a library and fixing the code
+
+
+If you're not already in the build path window, right click the captureActivity project and select Build path>configure build path.
+From the side menu select Android and check Is Library, click Ok to exit the window
+Now depending on the version of ZXing you have you might see Eclipse mark some of the java files containing errors, if this is the case you will have to fix the code to match android java version, otherwise simply move to the next chapter
+
+8.1. Open each broken java file in the editor and replace broken Switch statements with a chain of If Else statements, this is an annoying part I know.
+
+
+Add ZXing as a library of your own project
+
+
+If everything is well now the captureActivity should appear like any normal project folder in your workspace, no errors or red ! sign. To define ZXing to be a library in your own project, right click your project in the workspace and select Build path>Configure build path.
+From the side menu select Android. Click the Add button at the right bottom side of the window and from the window select captureActivity.
+That's it, your project now able to use ZXing as an independent library without the need of any third party installation.
+
+
+Adding ZXing's methods required by your application
+
+This part is not really a guide but simply what I found useful for my own needs so far, the two methods I use mostly are these:
+
+Running the scanner and capture a QR code:
+
+Intent intent = new Intent(getApplicationContext(),CaptureActivity.class);
+intent.setAction("com.google.zxing.client.android.SCAN");
+intent.putExtra("SAVE_HISTORY", false);
+startActivityForResult(intent, 0);
+
+
+Retrieving the results from the scan in onActivityResult ():
+
+if (requestCode == 0) {
+if (resultCode == RESULT_OK) {
+String contents = data.getStringExtra("SCAN_RESULT");
+Log.d(TAG, "contents: " + contents);
+} else if (resultCode == RESULT_CANCELED) {
+// Handle cancel
+Log.d(TAG, "RESULT_CANCELED");
+}
+}
+
+
+Note that just like any other activity in android capture activity also need to be defined in the project manifest, also note that you have to give the project permission to use the camera like so :
+
+<uses-permission android:name="android.permission.CAMERA" />
+<activity
+android:name="com.google.zxing.client.android.CaptureActivity"
+android:screenOrientation="landscape" >
+</activity>
+
+
+I hope this will help others save a few good hours of research.
+
+As an added bonus I recommend reading :
+https://biocram.wordpress.com/2013/06/11/integrate-zxing-as-a-library-inside-an-android-project/
+    

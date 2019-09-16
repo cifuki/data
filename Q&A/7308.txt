@@ -1,0 +1,93 @@
+36
+Q:In my Android application I am getting a very strange crash, when I press a button (Image) on my UI the entire application freezes and after a couple of seconds I getthe dreaded force close dialog appearing.
+
+Here is what gets printed in the log:
+
+
+
+WARN/WindowManager(88): Key dispatching timed out sending to package name/Activity
+WARN/WindowManager(88): Dispatch state: {{KeyEvent{action=1 code=5 repeat=0 meta=0 scancode=231 mFlags=8} to Window{432bafa0 com.android.launcher/com.android.launcher.Launcher paused=false} @ 1281611789339 lw=Window{432bafa0 com.android.launcher/com.android.launcher.Launcher paused=false} lb=android.os.BinderProxy@431ee8e8 fin=false gfw=true ed=true tts=0 wf=false fp=false mcf=Window{4335fc58 package name/Activity paused=false}}}
+WARN/WindowManager(88): Current state:  {{null to Window{4335fc58 package name/Activity paused=false} @ 1281611821193 lw=Window{4335fc58 package name/Activity paused=false} lb=android.os.BinderProxy@434c9bd0 fin=false gfw=true ed=true tts=0 wf=false fp=false mcf=Window{4335fc58 package name/Activity paused=false}}}
+INFO/ActivityManager(88): ANR in process: package name (last in package name)
+INFO/ActivityManager(88): Annotation: keyDispatchingTimedOut
+INFO/ActivityManager(88): CPU usage:
+INFO/ActivityManager(88): Load: 5.18 / 5.1 / 4.75
+INFO/ActivityManager(88): CPU usage from 7373ms to 1195ms ago:
+INFO/ActivityManager(88):   package name: 6% = 1% user + 5% kernel / faults: 7 minor
+INFO/ActivityManager(88):   system_server: 5% = 4% user + 1% kernel / faults: 27 minor
+INFO/ActivityManager(88):   tiwlan_wifi_wq: 3% = 0% user + 3% kernel
+INFO/ActivityManager(88):   mediaserver: 0% = 0% user + 0% kernel
+INFO/ActivityManager(88):   logcat: 0% = 0% user + 0% kernel
+INFO/ActivityManager(88): TOTAL: 12% = 5% user + 6% kernel + 0% softirq
+INFO/ActivityManager(88): Removing old ANR trace file from /data/anr/traces.txt
+INFO/Process(88): Sending signal. PID: 1812 SIG: 3
+INFO/dalvikvm(1812): threadid=7: reacting to signal 3
+INFO/dalvikvm(1812): Wrote stack trace to '/data/anr/traces.txt'
+
+
+
+
+This is the code for the Button (Image):
+
+
+
+findViewById(R.id.endcallimage).setOnClickListener(new OnClickListener() {
+                    public void onClick(View v) {
+                        mNotificationManager.cancel(2);
+
+                        Log.d("Handler", "Endcallimage pressed");
+
+                        if(callConnected)
+                        elapsedTimeBeforePause = SystemClock.elapsedRealtime() - stopWatch.getBase();
+
+                        try {
+                            serviceBinder.endCall(lineId);
+                        } catch (RemoteException e) {
+                            e.printStackTrace();
+                        } 
+                            dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.FLAG_SOFT_KEYBOARD));
+                            dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK));
+                    }
+            });     
+
+
+
+
+If I comment the following out the pressing of the button (image) doesn't cause the crash:
+
+
+
+try {
+      serviceBinder.endCall(lineId);
+    } catch (RemoteException e) {
+      e.printStackTrace();
+    } 
+
+
+
+
+The above code calls down through several levels of the app and into the native layer (NDK), could the call passing through several objects be leading to the force close? It seems unlikely as several other buttons do the same without issue.
+
+How about the native layer? Could some code I've built with the NDK be causing the issue?
+
+Any other ideas as to what the cause of the issue might be?
+    
+===============================================================================================
+46
+A:You must be as fast as possible in your onClick implementation. Expensive operations should be, in general, offloaded to a background thread.
+
+In onClick, try:
+
+Thread t = new Thread(){
+    public void run(){
+        your_stuff();
+    }
+};
+t.start();
+
+
+instead of just
+
+your_stuff()
+
+    

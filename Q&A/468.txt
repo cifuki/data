@@ -1,0 +1,102 @@
+258
+Q:I have investigated this problem for months now, came up with different solutions to it, which I am not happy with since they are all massive hacks. I still cannot believe that a class that flawed in design made it into the framework and no-one is talking about it, so I guess I just must be missing something.
+
+The problem is with AsyncTask. According to the documentation it 
+
+
+  "allows to perform background
+  operations and publish results on the
+  UI thread without having to manipulate
+  threads and/or handlers."
+
+
+The example then continues to show how some exemplary showDialog() method is called in onPostExecute(). This, however, seems entirely contrived to me, because showing a dialog always needs a reference to a valid Context, and an AsyncTask must never hold a strong reference to a context object.
+
+The reason is obvious: what if the activity gets destroyed which triggered the task? This can happen all the time, e.g. because you flipped the screen. If the task would hold a reference to the context that created it, you're not only holding on to a useless context object (the window will have been destroyed and any UI interaction will fail with an exception!), you even risk creating a memory leak.
+
+Unless my logic is flawed here, this translates to: onPostExecute() is entirely useless, because what good is it for this method to run on the UI thread if you don't have access to any context? You can't do anything meaningful here.
+
+One workaround would be to not pass context instances to an AsyncTask, but a Handler instance. That works: since a Handler loosely binds the context and the task, you can exchange messages between them without risking a leak (right?). But that would mean that the premise of AsyncTask, namely that you don't need to bother with handlers, is wrong. It also seems like abusing Handler, since you are sending and receiving messages on the same thread (you create it on the UI thread and send through it in onPostExecute() which is also executed on the UI thread).
+
+To top it all off, even with that workaround, you still have the problem that when the context gets destroyed, you have no record of the tasks it fired. That means that you have to re-start any tasks when re-creating the context, e.g. after a screen orientation change. This is slow and wasteful.
+
+My solution to this (as implemented in the Droid-Fu library) is to maintain a mapping of WeakReferences from component names to their current instances on the unique application object. Whenever an AsyncTask is started, it records the calling context in that map, and on every callback, it will fetch the current context instance from that mapping. This ensures that you will never reference a stale context instance and you always have access to a valid context in the callbacks so you can do meaningful UI work there. It also doesn't leak, because the references are weak and are cleared when no instance of a given component exists anymore.
+
+Still, it is a complex workaround and requires to sub-class some of the Droid-Fu library classes, making this a pretty intrusive approach.
+
+Now I simply want to know: Am I just massively missing something or is AsyncTask really entirely flawed? How are your experiences working with it? How did you solve these problem?
+
+Thanks for your input.
+    
+===============================================================================================
+85
+A:How about something like this:
+
+class MyActivity extends Activity {
+    Worker mWorker;
+
+    static class Worker extends AsyncTask<URL, Integer, Long> {
+        MyActivity mActivity;
+
+        Worker(MyActivity activity) {
+            mActivity = activity;
+        }
+
+        @Override
+        protected Long doInBackground(URL... urls) {
+            int count = urls.length;
+            long totalSize = 0;
+            for (int i = 0; i < count; i++) {
+                totalSize += Downloader.downloadFile(urls[i]);
+                publishProgress((int) ((i / (float) count) * 100));
+            }
+            return totalSize;
+        }
+
+        @Override
+        protected void onProgressUpdate(Integer... progress) {
+            if (mActivity != null) {
+                mActivity.setProgressPercent(progress[0]);
+            }
+        }
+
+        @Override
+        protected void onPostExecute(Long result) {
+            if (mActivity != null) {
+                mActivity.showDialog("Downloaded " + result + " bytes");
+            }
+        }
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        mWorker = (Worker)getLastNonConfigurationInstance();
+        if (mWorker != null) {
+            mWorker.mActivity = this;
+        }
+
+        ...
+    }
+
+    @Override
+    public Object onRetainNonConfigurationInstance() {
+        return mWorker;
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (mWorker != null) {
+            mWorker.mActivity = null;
+        }
+    }
+
+    void startWork() {
+        mWorker = new Worker(this);
+        mWorker.execute(...);
+    }
+}
+
+    

@@ -1,0 +1,47 @@
+73
+Q:I am stuck with my app, as I am unable to debug as it is a multithreaded one and crashes with error SIGSEGV. I get lot of information from LogCat, which gives me addresses in my native library. It would be helpful if I could convert these addresses into my code. 
+
+Does anybody have any idea how to use addr2line, which is provided with android-ndk?
+    
+===============================================================================================
+160
+A:Let's say that logcat show you the following crash log (this is from one of my projects):
+
+I/DEBUG   (   31): *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+I/DEBUG   (   31): Build fingerprint: 'generic/sdk/generic:2.3/GRH55/79397:eng/test-keys'
+I/DEBUG   (   31): pid: 378, tid: 386  >>> com.example.gltest <<<
+I/DEBUG   (   31): signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 00000000
+I/DEBUG   (   31):  r0 001dbdc0  r1 00000001  r2 00000000  r3 00000000
+I/DEBUG   (   31):  r4 00000000  r5 40a40000  r6 4051a480  r7 42ddbee8
+I/DEBUG   (   31):  r8 43661b24  r9 42ddbed0  10 42ddbebc  fp 41e462d8
+I/DEBUG   (   31):  ip 00000001  sp 436619d0  lr 83a12f5d  pc 8383deb4  cpsr 20000010
+I/DEBUG   (   31):          #00  pc 0003deb4  /data/data/com.example.gltest/lib/libnativemaprender.so
+I/DEBUG   (   31):          #01  pc 00039b76  /data/data/com.example.gltest/lib/libnativemaprender.so
+I/DEBUG   (   31):          #02  pc 00017d34  /system/lib/libdvm.so
+
+
+Look at the last 3 lines; this is your callstack. 'pc' is the program counter, and the pc for stack frame #00 gives you the address where the crash occurred. This is the number to pass to addr2line.
+
+I'm using NDK r5, so the executable I'm using is located at $NDK/toolchains/arm-linux-androideabi-4.4.3/prebuilt/linux-x86/bin; make sure that is in your $PATH. The command to use looks like
+
+arm-linux-androideabi-addr2line -C -f -e obj/local/armeabi/libXXX.so <address>
+
+
+Or, for the case above:
+
+arm-linux-androideabi-addr2line -C -f -e obj/local/armeabi/libnativemaprender.so 0003deb4
+
+
+Which gives you the location of the crash.
+
+Note:
+
+
+The -C flag is to demangle C++ code
+Use the .so file under
+obj/local/armeabi, since this is the
+non-stripped version
+
+
+Also, when using NDK r5 with a 2.3 AVD, it is actually possible to debug multithreaded code.
+    

@@ -1,0 +1,88 @@
+33
+Q:I haven't managed to find a good explanation/example on method injection using Dagger 2. Could someone please help me understand?
+
+Example:
+
+@Inject
+public Dinner makeDinner(Pasta pasta, Sauce sauce) {
+    mPan.add(pasta);
+    mPan.add(sauce);
+    return mPan.cookDinner();
+}
+
+
+So if I annotate my method with @Inject, am I correct to assume that the arguments in the method signature will be injected with defined objects from the object graph? How can I use this method in my code then? It will still expect me to supply all the arguments, when I make the method call, which sort of defeats the purpose.
+
+UPDATE:
+
+So from what I understand the Dinner object will be available if I call DinnerComponent.dinner(), assuming my DinnerComponent is set up like this:
+
+@Component(modules = DinnerModule.class)
+public interface DinnerComponent {
+    Dinner dinner();
+}
+
+
+and my DinnerModule is set up like this:
+
+@Module
+public class DinnerModule {
+    public DinnerModule() {}
+
+    @Provides
+    Pasta providePasta() { return new Pasta(); }
+
+    @Provides
+    Sauce provideSauce() { return new Sauce(); }
+}
+
+
+What happens if I want my dinner fried?
+So let's introduce this method:
+
+@Inject
+public Dinner makeDinner(Pasta pasta, Sauce sauce) {
+    mPan.add(pasta);
+    mPan.add(sauce);
+    return mPan.fryDinner();
+}
+
+
+How can I specify within the component which dinner is which?
+    
+===============================================================================================
+42
+A:One fundamental difference about method injection that differs from the way you seem to be using it is that method injection is just another way for Dagger to send in dependencies when constructing or injecting a DI-ready object, which means that @Inject-annotated methods are meant to be called by Dagger once on construction and not from within your own code. This makes it very very unlikely that you would @Inject-annotate makeDinner, fryDinner, or any other method that has meaningful side effects or return values. Instead, treat method injection as a post-facto opportunity for constructor-style injection.
+
+public class Chef {
+  private Provider<Pasta> mPastaProvider;
+  private Sauce mSauce;
+
+  @Inject
+  public void registerIngredients(     // can be named anything
+      Provider<Pasta> pastaProvider,
+      Sauce sauce) {                   // T and Provider<T> both work, of course
+    mPastaProvider = pastaProvider;
+    mSauce = sauce;
+  }
+
+  /* Non-@Inject */ public Dinner cookDinner() {
+    mPan.add(mPastaProvider.get());
+    mPan.add(mSauce);
+    return mPan.cookDinner();
+  }
+
+  /* Non-@Inject */ public Dinner fryDinner() {
+    mPan.add(mPastaProvider.get());
+    mPan.add(mSauce);
+    return mPan.fryDinner();
+  }
+}
+
+
+In this case, when you request injection on a Chef, Dagger will see the @Inject-annotated method and call it. Unless you have an @Inject-annotated constructor or @Provides method, you won't be able to get a Chef directly from your Component, but you could create a void method on the Component which receives a constructed Chef instance and which uses field and method injection to provide that Chef with the ingredients (or ingredient Providers) they may need. (See the @Component and MembersInjector docs for details.)
+
+Note that in no case does Dinner appear available on the object graph! Adding @Inject to a constructor tells Dagger that it can use that constructor to make the object available on the object graph, but adding @Inject to a method or field merely tells Dagger that as part of the injection process it should populate that field or call that method with the given dependencies. If you want to make a Dinner available on the object graph, you'll need to @Inject-annotate the Dinner constructor, or put a @Provides or @Binds method on a Module that you feed into the Component.
+
+Why would you use this? Consider a case where objects are created reflectively (e.g. Activities, Fragments, and Views in Android, or Serializable objects), where you would prefer not to expose @Inject fields. In those cases, you could work around constructor constraints by having your injection happen on a field. Similarly, though I haven't tried this, you could take advantage of class hierarchy to mark an interface method with @Inject, ensuring that whether or not you're in a DI context you can pass certain dependencies to an object as part of their preparation.
+    

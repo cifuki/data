@@ -1,0 +1,83 @@
+62
+Q:When calling progressDialog = ProgressDialog.show(this, null, null, true); usually the developers wants to only show the progress indication image, and usually would it expect to be centered within the window (at least from regular UI design point of view).
+But the image is too far left, it seems that some padding/margin on the right hand side is still being calculated in for (optional) text on the right, although we're not passing any text as parameter.
+It would just make life little easier for a developer :) So we don't need to create a custom dialog only in order to have the progress indicator being centered by default.
+
+(I filed this as a feature request at http://code.google.com/p/android/issues/detail?id=9697; please star it if you would also like to see this improved).
+
+Now my questions:
+
+
+How can I easily center the progress image without having to entirely create my own custom alert dialog class? Any parameter I might have overlooked?
+Furthermore, how to set the background to transparent? 
+
+
+I'm also wondering about this: 
+https://stackoverflow.com/questions/2866141/how-to-put-custom-animation-into-a-progressdialog
+I haven't actually tried it myself yet but if you cannot create custom animations, it means if you want a kind of animated progress indicator, you always need to extend the ProgressDialog class?
+Looking at the ProgressDialog class though, I don't find anything other than regular drawables though (ProgressDialog.java), they're not using AnimatedDrawable there.
+    
+===============================================================================================
+104
+A:I did some testing and I feel that the best way to achieve this is doing a custom Dialog.
+
+Here is an example of what I did. This will answer question number 2 but will give you an idea of how to fix question number 1.
+
+public class MyProgressDialog extends Dialog {
+
+    public static MyProgressDialog show(Context context, CharSequence title,
+            CharSequence message) {
+        return show(context, title, message, false);
+    }
+
+    public static MyProgressDialog show(Context context, CharSequence title,
+            CharSequence message, boolean indeterminate) {
+        return show(context, title, message, indeterminate, false, null);
+    }
+
+    public static MyProgressDialog show(Context context, CharSequence title,
+            CharSequence message, boolean indeterminate, boolean cancelable) {
+        return show(context, title, message, indeterminate, cancelable, null);
+    }
+
+    public static MyProgressDialog show(Context context, CharSequence title,
+            CharSequence message, boolean indeterminate,
+            boolean cancelable, OnCancelListener cancelListener) {
+        MyProgressDialog dialog = new MyProgressDialog(context);
+        dialog.setTitle(title);
+        dialog.setCancelable(cancelable);
+        dialog.setOnCancelListener(cancelListener);
+        /* The next line will add the ProgressBar to the dialog. */
+        dialog.addContentView(new ProgressBar(context), new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        dialog.show();
+
+        return dialog;
+    }
+
+    public MyProgressDialog(Context context) {
+        super(context, R.style.NewDialog);
+    }
+}
+
+
+All the static methods comes from this link, nothing strange, but the magic occurs in the constructor.
+Check that I pass as parameter an style. That style is the following:
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="NewDialog" parent="@android:Theme.Dialog">
+        <item name="android:windowFrame">@null</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowTitleStyle">@null</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+        <item name="android:windowSoftInputMode">stateUnspecified|adjustPan</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:background">@android:color/transparent</item>
+    </style>
+</resources>
+
+
+The result of this is a ProgressBar rotating in the center of the screen. Without backgroundDim and without the Dialog box.
+    

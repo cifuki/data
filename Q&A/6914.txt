@@ -1,0 +1,91 @@
+37
+Q:I don't want to put all my code here, so I'm just putting the relevant pieces.  If you need more, feel free to ask.  
+
+I'm using Text To Speech (TTS) which leads to a speech listener after it asks a question... I found through Log outputs that TTS's onInit is being called, but the UtteranceProgressListener is not and I can't figure out why.  Any help is appreciated.
+
+// ---Initialize TTS variables---
+
+        // Implement Text to speech feature
+        tts = new TextToSpeech(this, new ttsInitListener());
+
+        // set listener to the TTS engine
+        tts.setOnUtteranceProgressListener(new ttsUtteranceListener());
+
+        if (!tts.isSpeaking()) {
+            tts.speak("Speak to me", TextToSpeech.QUEUE_FLUSH, null);
+        }
+
+
+
+
+// --- TEXT TO SPEECH && SPEECH TO TEXT METHODS ---
+
+class ttsInitListener implements OnInitListener {
+
+    @Override
+    public void onInit(int status) {
+
+        if (status == TextToSpeech.SUCCESS) {
+            tts.setLanguage(Locale.getDefault());
+
+        } else {
+            tts = null;
+            Toast.makeText(mContext, "Failed to initialize TTS engine.",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+}
+
+class ttsUtteranceListener extends UtteranceProgressListener {
+
+    @Override
+    public void onDone(String utteranceId) {
+        if (processStart) {
+            speech.startListening(intent);
+        } else {
+            ...
+        }
+
+    }
+
+    @Override
+    public void onError(String utteranceId) {
+    }
+
+    @Override
+    public void onStart(String utteranceId) {
+    }    
+}
+
+
+I added log outputs to all of the my TTS and Speech methods.  UtteranceProgressListener's onStart isn't even being called:
+
+11-30 00:38:37.299: D/OpenGLRenderer(15842): Enabling debug mode 0
+11-30 00:38:39.782: I/TextToSpeech(15842): Connected to ComponentInfo{com.google.android.tts/com.google.android.tts.service.GoogleTTSService}
+11-30 00:38:39.782: I/TextToSpeech(15842): Set up connection to ComponentInfo{com.google.android.tts/com.google.android.tts.service.GoogleTTSService}
+11-30 00:38:39.782: D/LOOK AT ME!!!(15842): ttsInitListener - onInit
+
+    
+===============================================================================================
+87
+A:found the answer...
+
+Turns out that the TTS resources I found online were using a single TTS string source, so the third parameter in tts.speak(String text, int queueMode, HashMap params) was set to null.
+
+to anybody having this issue in the future:
+
+if you set the third param to null, there's no ID for the UtteranceProgressListener to track.  The fix was creating and initializing a hashmap, then adding to the included array for each new TTS with a new ID could be tracked.  Here's the code:
+
+HashMap<String, String> map = new HashMap<String, String>();
+
+
+then, before calling tts.speak...
+
+map.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "UniqueID");
+
+
+then you can call speak with all params...
+
+tts.speak(text, TextToSpeech.QUEUE_FLUSH, map);
+
+    

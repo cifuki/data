@@ -1,0 +1,85 @@
+36
+Q:So far and thanks to this website, I've been able to set up an alarm that will be set up and active, even if I turn of my phone.
+
+Now, I set up a alarm to show a reminder for event A and I need the application to setup another alarm to show another reminder for event B.
+
+I must be doing something wrong, because it only fires the reminder for event A.  It seems that once set up, any other alarm is understood as the same one. :-(
+
+Here is the detail of what I am doing in two steps:
+
+1) From an activity I set an alarm that at certain time and date will call a receiver
+
+                Intent intent = new Intent(Activity_Reminder.this,
+                        AlarmReceiver_SetOnService.class);
+
+                intent.putExtra("item_name", prescription
+                        .getItemName());
+                intent
+                        .putExtra(
+                                "message",
+                                Activity_Reminder.this
+                                        .getString(R.string.notif_text));
+                intent.putExtra("item_id", itemId);
+                intent.putExtra("activityToTrigg",
+                        "com.companyName.appName.main.Activity_Reminder");
+
+                PendingIntent mAlarmSender;
+
+                mAlarmSender = PendingIntent.getBroadcast(
+                        Activity_Reminder.this, 0, intent, 0);
+
+                long alarmTime = dateMgmt.getTimeForAlarm(pickedDate);
+                Calendar c = Calendar.getInstance();
+                c.setTimeInMillis(alarmTime);
+                // Schedule the alarm!
+                AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+                am.set(AlarmManager.RTC_WAKEUP, alarmTime + 15000,
+                        mAlarmSender);
+
+
+2) From the receiver I call a service
+
+        Bundle bundle = intent.getExtras();
+        String itemName = bundle.getString("item_name");
+        String reminderOrAlarmMessage = bundle.getString("message");
+        String activityToTrigg = bundle.getString("activityToTrigg");
+        int itemId = Integer.parseInt(bundle.getString("item_id"));
+        NotificationManager nm = (NotificationManager) context.getSystemService("notification");
+        CharSequence text = itemName + " "+reminderOrAlarmMessage;
+        Notification notification = new Notification(R.drawable.icon, text,
+                System.currentTimeMillis());
+        Intent newIntent = new Intent();
+        newIntent.setAction(activityToTrigg);
+        newIntent.putExtra("item_id", itemId);
+        CharSequence text1= itemName + " "+reminderOrAlarmMessage;
+        CharSequence text2= context.getString(R.string.notif_Go_To_Details);
+        PendingIntent pIntent = PendingIntent.getActivity(context,0, newIntent, 0);
+        notification.setLatestEventInfo(context, text1, text2, pIntent);
+        notification.flags = Notification.FLAG_AUTO_CANCEL;
+        notification.defaults = Notification.DEFAULT_ALL;
+        nm.notify(itemId, notification);
+
+
+Thanks in Advance,
+
+monn3t
+    
+===============================================================================================
+76
+A:Ok, when you set an PendingIntent, you're supposed to assign it a unique ID to it, incase you want to identify it later (for modifying/canceling it)
+
+static PendingIntent    getActivity(Context context, int requestCode, Intent intent, int flags) 
+//Retrieve a PendingIntent that will start a new activity, like calling Context.startActivity(Intent).
+static PendingIntent    getBroadcast(Context context, int requestCode, Intent intent, int flags) 
+//Retrieve a PendingIntent that will perform a broadcast, like calling Context.sendBroadcast().
+
+
+The Request code is that ID.
+
+In your code, you keep resetting the SAME PendingIntent, instead use a different RequestCode each time.
+
+PendingIntent pIntent = PendingIntent.getActivity(context,uniqueRQCODE, newIntent, 0);
+
+
+It has to be an integer, i suppose you have a primaryid (itemId) that can identify Alarm A from Alarm B.
+    

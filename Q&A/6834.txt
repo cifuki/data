@@ -1,0 +1,121 @@
+38
+Q:I'm using the ViewPager example with ActionBar tabs taken from the Android documentation here.
+
+Unfortunately, as soon as I call the addTab method, the application crashes with the following exception:
+
+
+  IllegalStateException: The application's PagerAdapter changed the
+  adapter's content without calling PagerAdapter#notifyDataSetChanged!
+  Expected adapter item count 0, found 1.
+
+
+This is the FragmentPagerAdapter code:
+
+public static class TabsAdapter extends FragmentPagerAdapter
+            implements ActionBar.TabListener, ViewPager.OnPageChangeListener {
+        private final Context mContext;
+        private final ActionBar mActionBar;
+        private final ViewPager mViewPager;
+        private final ArrayList<TabInfo> mTabs = new ArrayList<TabInfo>();
+
+        static final class TabInfo {
+            private final Class<?> clss;
+            private final Bundle args;
+
+            TabInfo(Class<?> _class, Bundle _args) {
+                clss = _class;
+                args = _args;
+            }
+        }
+
+        public TabsAdapter(Activity activity, ViewPager pager) {
+            super(activity.getFragmentManager());
+            mContext = activity;
+            mActionBar = activity.getActionBar();
+            mViewPager = pager;
+            mViewPager.setAdapter(this);
+            mViewPager.setOnPageChangeListener(this);
+        }
+
+        public void addTab(ActionBar.Tab tab, Class<?> clss, Bundle args) {
+            TabInfo info = new TabInfo(clss, args);
+            tab.setTag(info);
+            tab.setTabListener(this);
+            mTabs.add(info);
+            mActionBar.addTab(tab);
+            notifyDataSetChanged();
+        }
+
+        @Override
+        public int getCount() {
+            return mTabs.size();
+        }
+
+        @Override
+        public Fragment getItem(int position) {
+            TabInfo info = mTabs.get(position);
+            return Fragment.instantiate(mContext, info.clss.getName(), info.args);
+        }
+
+        @Override
+        public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
+        }
+
+        @Override
+        public void onPageSelected(int position) {
+            mActionBar.setSelectedNavigationItem(position);
+        }
+
+        @Override
+        public void onPageScrollStateChanged(int state) {
+        }
+
+        @Override
+        public void onTabSelected(Tab tab, FragmentTransaction ft) {
+            Object tag = tab.getTag();
+            for (int i=0; i<mTabs.size(); i++) {
+                if (mTabs.get(i) == tag) {
+                    mViewPager.setCurrentItem(i);
+                }
+            }
+        }
+
+        @Override
+        public void onTabUnselected(Tab tab, FragmentTransaction ft) {
+        }
+
+        @Override
+        public void onTabReselected(Tab tab, FragmentTransaction ft) {
+        }
+    }
+}
+
+
+I'm not modifying my adapter in any other part of my code and I'm calling the addTab method from the main thread, the addTab method ends with a call to notifyDataSetChanged. As the documentation recommends to do:
+
+
+  PagerAdapter supports data set changes. Data set changes must occur on
+  the main thread and must end with a call to notifyDataSetChanged()
+  similar to AdapterView adapters derived from BaseAdapter.
+
+    
+===============================================================================================
+25
+A:I had a hard time making my ViewPager working. At the end, it seems that the example in the documentation is wrong.
+
+The addTab method should be as follows:
+
+public void addTab(Tab tab, Class<?> clss, Bundle args) {
+        TabInfo info = new TabInfo(clss, args);
+        tab.setTag(info);
+        tab.setTabListener(this);
+        mTabs.add(info);
+        notifyDataSetChanged();
+        mActionBar.addTab(tab);
+    }
+
+
+Notice the order of the last three operations. In the original example, notifyDataSetChanged was called after the mActionBar.addTab function.
+
+Unfortunately, as soon as you call the addTab on the ActionBar, the first tab you add is automatically selected. Because of this, the onTabSelected event is fired and while trying to retrieve the page, it throws the IllegalStateException because it notices a discrepancy between the expected item count and the actual one.
+    

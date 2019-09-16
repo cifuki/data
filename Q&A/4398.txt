@@ -1,0 +1,66 @@
+54
+Q:I'm using an LRUCache to cache bitmaps which are stored on the file system.  I built the cache based on the examples here: http://developer.android.com/training/displaying-bitmaps/cache-bitmap.html
+
+The problem is that I'm seeing OutOfMemory crashes frequently while using the app.  I believe that when the LRUCache evicts an image to make room for another one, the memory is not being freed.
+
+I added a call to Bitmap.recycle() when an image is evicted:
+
+  // use 1/8 of the available memory for this memory cache
+    final int cacheSize = 1024 * 1024 * memClass / 8;
+                mImageCache = new LruCache<String, Bitmap>(cacheSize) {
+                @Override
+                protected int sizeOf(String key, Bitmap bitmap) {
+                    return bitmap.getByteCount();
+                }
+
+                @Override
+                protected void entryRemoved(boolean evicted, String key, Bitmap oldBitmap, Bitmap newBitmap) {
+                    oldBitmap.recycle();
+                    oldBitmap = null;
+                }
+            };
+
+
+This fixes the crashes, however it also results in images sometimes not appearing in the app (just a black space where the image should be).  Any time that occurs I see this message in my Logcat: Cannot generate texture from bitmap.
+
+A quick google search reveals that this is happening because the image which is displaying has been recycled.
+
+So what is happening here?  Why are recycled images still in the LRUCache if I'm only recycling them after they've been removed?
+What is the alternative for implementing a cache?  The Android docs clearly state that LRUCache is the way to go, but they do not mention the need to recycle bitmaps or how to do so.
+
+RESOLVED:
+In case its useful to anyone else, the solution to this problem as suggested by the accepted answer is to NOT do what I did in the code example above (don't recycle the bitmaps in the entryRemoved() call).
+
+Instead, when you're finished with an ImageView (such as onPause() in an activity, or when a view is recycled in an adapter) check if the bitmap is still in the cache (I added a isImageInCache() method to my cache class) and, if it's not, then recycle the bitmap.  Otherwise, leave it alone.  This fixed my OutOfMemory exceptions and prevented recycling bitmaps which were still being used.
+    
+===============================================================================================
+41
+A:I believe that when the LRUCache evicts an image to make room for another one, the memory is not being freed.
+
+
+It won't be, until the Bitmap is recycled or garbage-collected.
+
+
+  A quick google search reveals that this is happening because the image which is displaying has been recycled.
+
+
+Which is why you should not be recycling there.
+
+
+  Why are recycled images still in the LRUCache if I'm only recycling them after they've been removed?
+
+
+Presumably, they are not in the LRUCache. They are in an ImageView or something else that is still using the Bitmap.
+
+
+  What is the alternative for implementing a cache?
+
+
+For the sake of argument, let's assume you are using the Bitmap objects in ImageView widgets, such as in rows of a ListView.
+
+When you are done with a Bitmap (e.g., row in a ListView is recycled), you check to see if it is still in the cache. If it is, you leave it alone. If it is not, you recycle() it.
+
+The cache is simply letting you know which Bitmap objects are worth holding onto. The cache has no way of knowing if the Bitmap is still being used somewhere.
+
+BTW, if you are on API Level 11+, consider using inBitmap. OutOMemoryErrors are triggered when an allocation cannot be fulfilled. Last I checked, Android does not have a compacting garbage collector, so you can get an OutOfMemoryError due to fragmentation (want to allocate something bigger than the biggest single available block).
+    

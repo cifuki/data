@@ -1,0 +1,109 @@
+47
+Q:I have a ViewModel class just like the one defined in the Connecting ViewModel and repository section of Architecture guide. When I run my app I get a runtime exception. Does anyone know how to get around this? Should I not be injecting the ViewModel? Is there a way to tell the ViewModelProvider to use Dagger to create the model?
+
+public class DispatchActivityModel extends ViewModel {
+
+    private final API api;
+
+    @Inject
+    public DispatchActivityModel(API api) {
+        this.api = api;
+    }
+}
+
+
+
+  Caused by: java.lang.InstantiationException: java.lang.Class has no zero argument constructor
+          at java.lang.Class.newInstance(Native Method)
+          at android.arch.lifecycle.ViewModelProvider$NewInstanceFactory.create(ViewModelProvider.java:143)
+          at android.arch.lifecycle.ViewModelProviders$DefaultFactory.create(ViewModelProviders.java:143)\xc2\xa0
+          at android.arch.lifecycle.ViewModelProvider.get(ViewModelProvider.java:128)\xc2\xa0
+          at android.arch.lifecycle.ViewModelProvider.get(ViewModelProvider.java:96)\xc2\xa0
+          at com.example.base.BaseActivity.onCreate(BaseActivity.java:65)\xc2\xa0
+          at com.example.dispatch.DispatchActivity.onCreate(DispatchActivity.java:53)\xc2\xa0
+          at android.app.Activity.performCreate(Activity.java:6682)\xc2\xa0
+          at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1118)\xc2\xa0
+          at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2619)        at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2727)\xc2\xa0
+          at android.app.ActivityThread.-wrap12(ActivityThread.java)\xc2\xa0
+          at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1478)\xc2\xa0
+          at android.os.Handler.dispatchMessage(Handler.java:102)\xc2\xa0
+          at android.os.Looper.loop(Looper.java:154)\xc2\xa0
+          at android.app.ActivityThread.main(ActivityThread.java:6121)
+
+    
+===============================================================================================
+82
+A:You need to implement your own ViewModelProvider.Factory. There is an example app created by Google demonstrating how to connect Dagger 2 with ViewModels. LINK. You need those 5 things:
+
+In ViewModel:
+
+@Inject
+public UserViewModel(UserRepository userRepository, RepoRepository repoRepository) {
+
+
+Define annotation:
+
+@Documented
+@Target({ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME)
+@MapKey
+@interface ViewModelKey {
+    Class<? extends ViewModel> value();
+}
+
+
+In ViewModelModule:
+
+@Module
+abstract class ViewModelModule {
+    @Binds
+    @IntoMap
+    @ViewModelKey(UserViewModel.class)
+    abstract ViewModel bindUserViewModel(UserViewModel userViewModel);
+
+
+In Fragment:
+
+@Inject
+ViewModelProvider.Factory viewModelFactory;
+
+@Override
+public void onActivityCreated(@Nullable Bundle savedInstanceState) {
+            userViewModel = ViewModelProviders.of(this, viewModelFactory).get(UserViewModel.class);
+
+
+Factory:
+
+@Singleton
+public class GithubViewModelFactory implements ViewModelProvider.Factory {
+    private final Map<Class<? extends ViewModel>, Provider<ViewModel>> creators;
+
+    @Inject
+    public GithubViewModelFactory(Map<Class<? extends ViewModel>, Provider<ViewModel>> creators) {
+        this.creators = creators;
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T extends ViewModel> T create(Class<T> modelClass) {
+        Provider<? extends ViewModel> creator = creators.get(modelClass);
+        if (creator == null) {
+            for (Map.Entry<Class<? extends ViewModel>, Provider<ViewModel>> entry : creators.entrySet()) {
+                if (modelClass.isAssignableFrom(entry.getKey())) {
+                    creator = entry.getValue();
+                    break;
+                }
+            }
+        }
+        if (creator == null) {
+            throw new IllegalArgumentException("unknown model class " + modelClass);
+        }
+        try {
+            return (T) creator.get();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+
+    

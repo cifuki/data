@@ -1,0 +1,137 @@
+116
+Q:Since the Android developers recommend to use the HttpURLConnection class, I was wondering if anyone can provide me with a good example on how to send a bitmap "file" (actually an in-memory stream) via POST to an Apache HTTP server. I'm not interested in cookies or authentication or anything complicated, but I just want to have a reliable and logic implementation. All the examples that I've seen around here look more like "let's try this and maybe it works".
+
+Right now, I have this code:
+
+URL url;
+HttpURLConnection urlConnection = null;
+try {
+    url = new URL("http://example.com/server.cgi");
+
+    urlConnection = (HttpURLConnection) url.openConnection();
+
+} catch (Exception e) {
+    this.showDialog(getApplicationContext(), e.getMessage());
+}
+finally {
+    if (urlConnection != null)
+    {
+        urlConnection.disconnect();
+    }
+}
+
+
+where showDialog should just display an AlertDialog (in case of an invalid URL?).
+
+Now, let's say that I generate a bitmap like so: Bitmap image = this.getBitmap() inside a control derived from View and I want to send it via POST. What would be the proper procedure to achieve such a thing? What classes do I need to use? Can I use HttpPost like in this example? If so, how would I construct the InputStreamEntity for my bitmap? I would find it revolting to be required to first store the bitmap in a file on the device.
+
+
+
+I should also mention that I really need to send every unaltered pixel of the original bitmap to the server, so I can't convert it to JPEG.
+    
+===============================================================================================
+183
+A:I have no idea why the HttpURLConnection class does not provide any means to send files without having to compose the file wrapper manually. Here's what I ended up doing, but if someone knows a better solution, please let me know.
+
+Input data:
+
+Bitmap bitmap = myView.getBitmap();
+
+
+Static stuff:
+
+String attachmentName = "bitmap";
+String attachmentFileName = "bitmap.bmp";
+String crlf = "\\r\
+";
+String twoHyphens = "--";
+String boundary =  "*****";
+
+
+Setup the request:
+
+HttpURLConnection httpUrlConnection = null;
+URL url = new URL("http://example.com/server.cgi");
+httpUrlConnection = (HttpURLConnection) url.openConnection();
+httpUrlConnection.setUseCaches(false);
+httpUrlConnection.setDoOutput(true);
+
+httpUrlConnection.setRequestMethod("POST");
+httpUrlConnection.setRequestProperty("Connection", "Keep-Alive");
+httpUrlConnection.setRequestProperty("Cache-Control", "no-cache");
+httpUrlConnection.setRequestProperty(
+    "Content-Type", "multipart/form-data;boundary=" + this.boundary);
+
+
+Start content wrapper:
+
+DataOutputStream request = new DataOutputStream(
+    httpUrlConnection.getOutputStream());
+
+request.writeBytes(this.twoHyphens + this.boundary + this.crlf);
+request.writeBytes("Content-Disposition: form-data; name=\\"" +
+    this.attachmentName + "\\";filename=\\"" + 
+    this.attachmentFileName + "\\"" + this.crlf);
+request.writeBytes(this.crlf);
+
+
+Convert Bitmap to ByteBuffer:
+
+//I want to send only 8 bit black & white bitmaps
+byte[] pixels = new byte[bitmap.getWidth() * bitmap.getHeight()];
+for (int i = 0; i < bitmap.getWidth(); ++i) {
+    for (int j = 0; j < bitmap.getHeight(); ++j) {
+        //we're interested only in the MSB of the first byte, 
+        //since the other 3 bytes are identical for B&W images
+        pixels[i + j] = (byte) ((bitmap.getPixel(i, j) & 0x80) >> 7);
+    }
+}
+
+request.write(pixels);
+
+
+End content wrapper:
+
+request.writeBytes(this.crlf);
+request.writeBytes(this.twoHyphens + this.boundary + 
+    this.twoHyphens + this.crlf);
+
+
+Flush output buffer:
+
+request.flush();
+request.close();
+
+
+Get response:
+
+InputStream responseStream = new 
+    BufferedInputStream(httpUrlConnection.getInputStream());
+
+BufferedReader responseStreamReader = 
+    new BufferedReader(new InputStreamReader(responseStream));
+
+String line = "";
+StringBuilder stringBuilder = new StringBuilder();
+
+while ((line = responseStreamReader.readLine()) != null) {
+    stringBuilder.append(line).append("\
+");
+}
+responseStreamReader.close();
+
+String response = stringBuilder.toString();
+
+
+Close response stream:
+
+responseStream.close();
+
+
+Close the connection:
+
+httpUrlConnection.disconnect();
+
+
+PS: Of course I had to wrap the request in private class AsyncUploadBitmaps extends AsyncTask<Bitmap, Void, String>, in order to make the Android platform happy, because it doesn't like to have network requests on the main thread.
+    

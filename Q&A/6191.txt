@@ -1,0 +1,45 @@
+41
+Q:I have a ListView subclass that I allow selections on when the context action bar (CAB) is active. The CAB is set as a callback to the onItemLongClick event:
+
+public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+    // Inflate a menu resource providing context menu items
+    MenuInflater inflater = mode.getMenuInflater();
+    inflater.inflate(context_menu, menu);
+    getListView().setChoiceMode(ListView.CHOICE_MODE_SINGLE);
+    return true;
+}
+
+
+This is fine, and the ListView works as expected, with the currently selected item staying highlighted when touched.
+
+When I close the CAB, I want the ListView to return to normal (i.e. Touch mode). The problem is that the last selected item remains highlighted indefinitely, regardless of what methods I try to clear it:
+
+public void onDestroyActionMode(ActionMode mode) {
+    //Unselect any rows
+    ListView lv = getListView();
+    lv.clearChoices(); // Has no effect
+    lv.setChoiceMode(ListView.CHOICE_MODE_NONE); // Has no effect on the highlighted item 
+    lv.setFocusable(false); // Has no effect
+    lv.setSelection(0); // Has no effect
+    mActionMode = null;
+}
+
+
+Any suggestions?
+    
+===============================================================================================
+34
+A:The main reason for the problem is that once the ListView selection mode is switched to CHOICE_MODE_NONE, the framework optimizes out the clear operation as it is no longer supporting 'selections'. I have improved the above workarounds a bit by clearing the selection state manually and then setting the mode in a delayed manner so the framework will have its turn to clear the state before turning the mode to CHOICE_MODE_NONE.
+
+final ListView lv = getListView();
+lv.clearChoices();
+for (int i = 0; i < lv.getCount(); i++)
+    lv.setItemChecked(i, false);
+lv.post(new Runnable() {
+    @Override
+    public void run() {
+        lv.setChoiceMode(ListView.CHOICE_MODE_NONE);
+    }
+});
+
+    

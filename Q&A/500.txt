@@ -1,0 +1,52 @@
+248
+Q:I'm registering a preference change listener like this (in the onCreate() of my main activity):
+
+SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+
+prefs.registerOnSharedPreferenceChangeListener(
+   new SharedPreferences.OnSharedPreferenceChangeListener() {
+       public void onSharedPreferenceChanged(
+         SharedPreferences prefs, String key) {
+
+         System.out.println(key);
+       }
+});
+
+
+The trouble is, the listener is not always called. It works for the first few times a preference is changed, and then it is no longer called until I uninstall and reinstall the app. No amount of restarting the application seems to fix it.
+
+I found a mailing list thread reporting the same problem, but no one really answered him. What am I doing wrong?
+    
+===============================================================================================
+579
+A:This is a sneaky one. SharedPreferences keeps listeners in a WeakHashMap. This means that you cannot use an anonymous inner class as a listener, as it will become the target of garbage collection as soon as you leave the current scope. It will work at first, but eventually, will get garbage collected, removed from the WeakHashMap and stop working.
+
+Keep a reference to the listener in a field of your class and you will be OK, provided your class instance is not destroyed.
+
+i.e. instead of:
+
+prefs.registerOnSharedPreferenceChangeListener(
+  new SharedPreferences.OnSharedPreferenceChangeListener() {
+  public void onSharedPreferenceChanged(SharedPreferences prefs, String key) {
+    // Implementation
+  }
+});
+
+
+do this:
+
+// Use instance field for listener
+// It will not be gc'd as long as this instance is kept referenced
+listener = new SharedPreferences.OnSharedPreferenceChangeListener() {
+  public void onSharedPreferenceChanged(SharedPreferences prefs, String key) {
+    // Implementation
+  }
+};
+
+prefs.registerOnSharedPreferenceChangeListener(listener);
+
+
+The reason unregistering in the onDestroy method fixes the problem is because to do that you had to save the listener in a field, therefore preventing the issue. It's the saving the listener in a field that fixes the problem, not the unregistering in onDestroy.
+
+UPDATE: The Android docs have been updated with warnings about this behavior. So, oddball behavior remains. But now it's documented.
+    

@@ -1,0 +1,131 @@
+42
+Q:My app shows a map and i want that users can't swipe over a certain region.
+So i'm trying to add bounds but it makes the app to crash.
+Here is the working code:
+
+public class MapViewer extends Activity implements OnInfoWindowClickListener {
+    private LatLng defaultLatLng = new LatLng(42.564241, 12.22759);
+    private GoogleMap map;
+    private int zoomLevel = 5;
+    private Database db = new Database(this);
+
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.mapviewer);
+
+        try {
+            map = ((MapFragment) getFragmentManager().findFragmentById(R.id.map)).getMap();
+            if (map != null) {
+                map.setMyLocationEnabled(true);
+                map.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+                map.getUiSettings().setRotateGesturesEnabled(false);
+
+                map.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLatLng, zoomLevel));
+
+                this.addMerchantMarkers(new MarkerOptions());
+
+                map.setOnInfoWindowClickListener(this);
+            }
+        } catch (NullPointerException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void onPause() {
+        if (map != null) {
+            map.setMyLocationEnabled(false);
+            map.setTrafficEnabled(false);
+        }
+        super.onPause();
+    }
+
+    public void addMerchantMarkers(MarkerOptions mo) {
+        SQLiteDatabase dbRead = db.getReadableDatabase();
+        String[] columns = {"title", "addr", "lat", "lon"};
+        Cursor result = dbRead.query("merchants", columns, null, null, null, null, null);
+
+        while(result.moveToNext()) {
+            String merchant = result.getString(0);
+            String address = result.getString(1);
+            float lat = result.getFloat(2);
+            float lon = result.getFloat(3);
+
+            LatLng pos = new LatLng(lat, lon);
+
+            map.addMarker(mo.position(pos)
+                    .title(merchant)
+                    .snippet(address)
+                    .icon(BitmapDescriptorFactory.fromResource(R.drawable.marker_50)));;
+        }
+    }
+}
+
+
+And this is the code i add in onCreate method that cause the crash:
+
+    LatLngBounds.Builder builder = new LatLngBounds.Builder();
+    builder.include(new LatLng(47.09194444, 18.52166666));
+    builder.include(new LatLng(36.448311, 6.62555555));
+    LatLngBounds bounds = builder.build();
+
+    CameraUpdate cu = CameraUpdateFactory.newLatLngBounds(bounds, 30);
+
+    map.animateCamera(cu);
+
+
+Here is the LogCat:
+
+08-10 20:59:41.689: E/AndroidRuntime(6304): FATAL EXCEPTION: main
+08-10 20:59:41.689: E/AndroidRuntime(6304): Process: com.example.myapp, PID: 6304
+08-10 20:59:41.689: E/AndroidRuntime(6304): java.lang.RuntimeException: Unable to start activity ComponentInfo{com.example.myapp/com.example.myapp.MapViewer}: java.lang.IllegalStateException: Error using newLatLngBounds(LatLngBounds, int): Map size can't be 0. Most likely, layout has not yet occured for the map view.  Either wait until layout has occurred or use newLatLngBounds(LatLngBounds, int, int, int) which allows you to specify the map's dimensions.
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2215)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2264)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at android.app.ActivityThread.access$800(ActivityThread.java:144)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1205)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at android.os.Handler.dispatchMessage(Handler.java:102)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at android.os.Looper.loop(Looper.java:136)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at android.app.ActivityThread.main(ActivityThread.java:5139)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at java.lang.reflect.Method.invokeNative(Native Method)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at java.lang.reflect.Method.invoke(Method.java:515)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:796)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:612)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at dalvik.system.NativeStart.main(Native Method)
+08-10 20:59:41.689: E/AndroidRuntime(6304): Caused by: java.lang.IllegalStateException: Error using newLatLngBounds(LatLngBounds, int): Map size can't be 0. Most likely, layout has not yet occured for the map view.  Either wait until layout has occurred or use newLatLngBounds(LatLngBounds, int, int, int) which allows you to specify the map's dimensions.
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at mut.b(Unknown Source)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at oxp.a(Unknown Source)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at oxi.a(Unknown Source)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at oyf.b(Unknown Source)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at grl.onTransact(SourceFile:92)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at android.os.Binder.transact(Binder.java:361)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at com.google.android.gms.maps.internal.IGoogleMapDelegate$a$a.animateCamera(Unknown Source)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at com.google.android.gms.maps.GoogleMap.animateCamera(Unknown Source)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at com.example.myapp.MapViewer.onCreate(MapViewer.java:59)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at android.app.Activity.performCreate(Activity.java:5231)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1087)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2169)
+08-10 20:59:41.689: E/AndroidRuntime(6304):     ... 11 more
+
+    
+===============================================================================================
+82
+A:You can use MapLoadedCallBack;
+
+map.setOnMapLoadedCallback(new GoogleMap.OnMapLoadedCallback() {
+  @Override
+  public void onMapLoaded() {
+      map.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 30));
+  }
+});
+
+
+and also you can use this event that occurs prier to above.
+
+  map.setOnCameraChangeListener(new GoogleMap.OnCameraChangeListener() {
+        @Override
+        public void onCameraChange(CameraPosition arg0) {
+        map.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 30));
+  }
+});
+
+    

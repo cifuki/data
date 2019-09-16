@@ -1,0 +1,76 @@
+51
+Q:I am trying to put a Google map inside a scroll view, so that the user can scroll down other contents to see the map. The problem is that this scroll view is eating up all the vertical touching events, so the UI experience of map becomes very weird.
+
+I know that in V1 of the google map, you could override onTouch, or setOnTouchListener to call requestDisallowInterceptTouchEvent upon MotionEvent.ACTION_DOWN. I have tried to implement the similar trick with V2 to no avail.
+
+So far I have tried:
+
+
+Override SupportMapFragment, and inside onCreateView, set a on touch listener for the View
+call .getView() of a SupportMapFragment instance, then setOnTouchListener
+Wrap around relative layout or frame layout, mask the fragment with a transparent view or imageview 
+
+
+None of these remedied the scrolling problem. Am I missing something here? If anyone has a working example of a map inside scrolling view, could you please kindly share code example?
+    
+===============================================================================================
+135
+A:Apply a transparent image over the mapview fragment.
+
+<RelativeLayout
+    android:id="@+id/map_layout"
+    android:layout_width="match_parent"
+    android:layout_height="300dp">
+
+    <fragment
+        android:id="@+id/mapview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="-100dp"
+        android:layout_marginBottom="-100dp"
+        android:name="com.google.android.gms.maps.MapFragment"/>
+
+    <ImageView
+        android:id="@+id/transparent_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:src="@color/transparent" />
+
+</RelativeLayout>   
+
+
+Then set requestDisallowInterceptTouchEvent(true) for the main ScrollView. When the user touches the transparent image and moves disable the touch on the transparent image for MotionEvent.ACTION_DOWN and MotionEvent.ACTION_MOVE so that map fragment can take Touch Events.
+
+ScrollView mainScrollView = (ScrollView) findViewById(R.id.main_scrollview);
+ImageView transparentImageView = (ImageView) findViewById(R.id.transparent_image);
+
+transparentImageView.setOnTouchListener(new View.OnTouchListener() {
+
+    @Override
+    public boolean onTouch(View v, MotionEvent event) {
+        int action = event.getAction();
+        switch (action) {
+           case MotionEvent.ACTION_DOWN:
+                // Disallow ScrollView to intercept touch events.
+                mainScrollView.requestDisallowInterceptTouchEvent(true);
+                // Disable touch on transparent view
+                return false;
+
+           case MotionEvent.ACTION_UP:
+                // Allow ScrollView to intercept touch events.
+                mainScrollView.requestDisallowInterceptTouchEvent(false);
+                return true;
+
+           case MotionEvent.ACTION_MOVE:
+                mainScrollView.requestDisallowInterceptTouchEvent(true);
+                return false;
+
+           default: 
+                return true;
+        }   
+    }
+});
+
+
+This worked for me. Hope it helps you..
+    

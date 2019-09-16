@@ -1,0 +1,136 @@
+81
+Q:I have investigated a while and probably saw most popular answers here related to aar and transitive dependencies but somehow it is still not clear for me how to make this working.
+
+So:
+
+I have android library with given gradle config:
+
+apply plugin: 'android-library'
+apply plugin: 'android-maven'
+
+version = "1.0.0"
+group = "com.somepackage"
+
+buildscript {
+    repositories {
+        mavenCentral()
+        mavenLocal()
+    }
+
+    dependencies {
+        classpath 'com.github.dcendents:android-maven-plugin:1.0'
+    }
+}
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion '19.0.3'
+
+    defaultConfig {
+        minSdkVersion 10
+    }
+}
+
+repositories {
+    maven { url 'http://www.bugsense.com/gradle/' }
+}
+
+dependencies {
+    provided 'com.google.android.gms:play-services:+'
+    provided 'com.android.support:appcompat-v7:+'
+    compile 'com.google.code.gson:gson:2.2.4'
+    compile 'com.bugsense.trace:bugsense:3.6'
+    compile 'commons-net:commons-net:3.3'
+}
+
+
+Then I am deploying it to local maven repo with gradle install. POM file of the deployed library looks like this:
+
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.sprezzat</groupId>
+  <artifactId>app</artifactId>
+  <version>1.0.0</version>
+  <packaging>aar</packaging>
+  <dependencies>
+    <dependency>
+      <groupId>com.bugsense.trace</groupId>
+      <artifactId>bugsense</artifactId>
+      <version>3.6</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>commons-net</groupId>
+      <artifactId>commons-net</artifactId>
+      <version>3.3</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
+      <version>2.2.4</version>
+      <scope>compile</scope>
+    </dependency>
+  </dependencies>
+</project>
+
+
+And finally gradle config of my android application using above library as a dependency:
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.9.+'
+    }
+}
+apply plugin: 'android'
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+android {
+    compileSdkVersion 15
+    buildToolsVersion "19.0.2"
+
+    defaultConfig {
+        minSdkVersion 10
+        targetSdkVersion 18
+    }
+}
+
+dependencies {
+    compile 'com.google.android.gms:play-services:+'
+    compile 'com.android.support:appcompat-v7:+'
+    compile 'com.somepackage:LIBRARY_NAME:1.0.0@aar'
+}
+
+
+And after deploying application on phone I am getting NoClassDefFoundError for classes belonging to compile dependencies of my android library. 
+
+Inspecting my android application dependencies using gradle dependencies:
+
+apk - Classpath packaged with the compiled main classes.
++--- com.google.android.gms:play-services:+ -> 4.3.23
+|    \\--- com.android.support:support-v4:19.0.1 -> 19.1.0
++--- com.android.support:appcompat-v7:+ -> 19.1.0
+|    \\--- com.android.support:support-v4:19.1.0
+\\--- com.somepackage:LIBRARY_NAME:1.0.0
+
+
+According to above tree, all transitive dependencies are not detected. Where is the problem and how should it be done correctly?
+    
+===============================================================================================
+84
+A:I have solved my problem by setting transitive attribute for my aar dependency:
+
+compile ('com.somepackage:LIBRARY_NAME:1.0.0@aar'){
+    transitive=true
+}
+
+    

@@ -1,0 +1,46 @@
+277
+Q:I have created my tables in my SQLiteOpenHelper onCreate() but receive
+
+SQLiteException: no such table
+
+
+or
+
+SQLiteException: no such column
+
+
+errors. Why?
+
+
+  NOTE:
+  
+  (This is the amalgamated summary of tens of similar questions every week. Attempting to provide a "canonical" community wiki question/answer here so that all those questions can be directed to a good reference.)
+
+    
+===============================================================================================
+342
+A:SQLiteOpenHelper onCreate() and onUpgrade() callbacks are invoked when the database is actually opened, for example by a call to getWritableDatabase(). The database is not opened when the database helper object itself is created.
+
+SQLiteOpenHelper versions the database files. The version number is the int argument passed to the constructor. In the database file, the version number is stored in PRAGMA user_version.
+
+onCreate() is only run when the database file did not exist and was just created. If onCreate() returns successfully (doesn't throw an exception), the database is assumed to be created with the requested version number. As an implication, you should not catch SQLExceptions in onCreate() yourself.
+
+onUpgrade() is only called when the database file exists but the stored version number is lower than requested in constructor. The onUpgrade() should update the table schema to the requested version.
+
+When changing the table schema in code (onCreate()), you should make sure the database is updated. Two main approaches:
+
+
+Delete the old database file so that onCreate() is run again. This is often preferred at development time where you have control over the installed versions and data loss is not an issue. Some ways to to delete the database file:
+
+
+Uninstall the application. Use the application manager or adb uninstall your.package.name from shell.
+Clear application data. Use the application manager.
+
+Increment the database version so that onUpgrade() is invoked. This is slightly more complicated as more code is needed.
+
+
+For development time schema upgrades where data loss is not an issue, you can just use execSQL("DROP TABLE IF EXISTS <tablename>") in to remove your existing tables and call onCreate() to recreate the database.
+For released versions, you should implement data migration in onUpgrade() so your users don't lose their data.
+
+
+    

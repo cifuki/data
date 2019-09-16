@@ -1,0 +1,146 @@
+93
+Q:I'm facing a very common problem: 
+I layed out an activity and now it turns out it should display a few items within this ScrollView. The normal way to do that would be to use the existing ListAdapter, connect it to a ListView and BOOM I'd have my list of items.
+
+BUT You should not place a nested ListView in a ScrollView as it screws up the scrolling - even Android Lint complains about it.
+
+So here's my question:
+
+How do I connect a ListAdapter to a LinearLayout or something similar?
+
+I know this solution won't scale for a lot of items but my lists is very short (< 10 items) so reusage of views is not really needed. Performance wise I can live with placing all views directly into the LinearLayout.
+
+One solution I came up with would be to place my existing activity layout in the headerView section of the ListView. But this feels like abusing this mechanism so I'm looking for a cleaner solution.
+
+Ideas?
+
+UPDATE: In order to inspire the right direction I add a sample layout to show my problem:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@+id/news_detail_layout"
+              android:layout_width="fill_parent"
+              android:layout_height="fill_parent"
+              android:orientation="vertical"
+              android:visibility="visible">
+
+
+    <ScrollView
+            android:layout_width="fill_parent"
+            android:layout_height="fill_parent"
+            android:background="#FFF"
+            >
+
+        <LinearLayout
+                android:layout_width="fill_parent"
+                android:layout_height="fill_parent"
+                android:orientation="vertical"
+                android:paddingLeft="@dimen/news_detail_layout_side_padding"
+                android:paddingRight="@dimen/news_detail_layout_side_padding"
+                android:paddingTop="@dimen/news_detail_layout_vertical_padding"
+                android:paddingBottom="@dimen/news_detail_layout_vertical_padding"
+                >
+
+            <TextView
+                    android:id="@+id/news_detail_date"
+                    android:layout_height="wrap_content"
+                    android:layout_width="fill_parent"
+                    android:gravity="center_horizontal"
+                    android:text="LALALA"
+                    android:textSize="@dimen/news_detail_date_height"
+                    android:textColor="@color/font_black"
+                    />
+
+            <Gallery
+                    android:id="@+id/news_detail_image"
+                    android:layout_height="wrap_content"
+                    android:layout_width="fill_parent"
+                    android:paddingTop="5dip"
+                    android:paddingBottom="5dip"
+                    />
+
+            <TextView
+                    android:id="@+id/news_detail_headline"
+                    android:layout_height="wrap_content"
+                    android:layout_width="fill_parent"
+                    android:gravity="center_horizontal"
+                    android:text="Some awesome headline"
+                    android:textSize="@dimen/news_detail_headline_height"
+                    android:textColor="@color/font_black"
+                    android:paddingTop="@dimen/news_detail_headline_paddingTop"
+                    android:paddingBottom="@dimen/news_detail_headline_paddingBottom"
+                    />
+
+            <TextView
+                    android:id="@+id/news_detail_content"
+                    android:layout_height="wrap_content"
+                    android:layout_width="fill_parent"
+                    android:text="Here comes a lot of text so the scrollview is really needed."
+                    android:textSize="@dimen/news_detail_content_height"
+                    android:textColor="@color/font_black"
+                    />
+
+            <!---
+                HERE I NEED THE LIST OF ITEMS PROVIDED BY THE EXISTING ADAPTER. 
+                They should be positioned at the end of the content, so making the scrollview smaller is not an option.
+            ---->                        
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
+
+
+UPDATE 2 I changed the headline to make it easier to understand (got a downvote, doh!).
+    
+===============================================================================================
+95
+A:You probably should just manually add your items to LinearLayout:
+
+LinearLayout layout = ... // Your linear layout.
+ListAdapter adapter = ... // Your adapter.
+
+final int adapterCount = adapter.getCount();
+
+for (int i = 0; i < adapterCount; i++) {
+  View item = adapter.getView(i, null, null);
+  layout.addView(item);
+}
+
+
+EDIT: I rejected this approach when I needed to display about 200 non-trivial list items, it is very slow - Nexus 4 needed about 2 seconds to display my "list", that was unacceptable. So I turned to Flo's approach with headers. It works much faster because list views are created on demand when user scrolls, not at the time the view is created.
+
+Resume: The manual addition of views to layout is easier to code (thus potentially less moving parts and bugs), but suffers from performance problems, so if you have like 50 views or more, I advise to use the header approach.
+
+Example. Basically the activity (or fragment) layout transforms to something like this (no ScrollView needed anymore):
+
+<ListView xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/my_top_layout"
+  android:layout_width="fill_parent"
+  android:layout_height="fill_parent"/>
+
+
+Then in onCreateView() (I'll use an example with a fragment) you need to add a header view and then set an adapter (I assume the header resource ID is header_layout):
+
+ListView listView = (ListView) inflater.inflate(R.layout.my_top_layout, container, false);
+View header = inflater.inflate(R.layout.header_layout, null);
+// Initialize your header here.
+listView.addHeaderView(header, null, false);
+
+BaseAdapter adapter = // ... Initialize your adapter.
+listView.setAdapter(adapter);
+
+// Just as a bonus - if you want to do something with your list items:
+view.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+  @Override
+  public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+    // You can just use listView instead of parent casted to ListView.
+    if (position >= ((ListView) parent).getHeaderViewsCount()) {
+      // Note the usage of getItemAtPosition() instead of adapter's getItem() because
+      // the latter does not take into account the header (which has position 0).
+      Object obj = parent.getItemAtPosition(position);
+      // Do something with your object.
+    }
+  }
+});
+
+    

@@ -1,0 +1,38 @@
+34
+Q:I am developing an application in android and I need to create an udf in sqlite. Is it possible to create it in sqlite? And if yes how to do this?
+    
+===============================================================================================
+70
+A:SQLite does not have support for user-defined functions in the way that Oracle or MS SQL Server does. For SQLite, you must create a callback function in C/C++ and hook the function up using the sqlite3_create_function call.
+
+Unfortunately, the SQLite API for Android does not allow for the sqlite3_create_function call directly through Java. In order to get it to work you will need to compile the SQLite C library with the NDK.  
+
+And if you are still interested read 2.3 User-defined functions...
+
+Here's how to create a function that finds the first byte of a string.
+
+static void firstchar(sqlite3_context *context, int argc, sqlite3_value **argv)
+{
+    if (argc == 1) {
+        char *text = sqlite3_value_text(argv[0]);
+        if (text && text[0]) {
+          char result[2]; 
+          result[0] = text[0]; result[1] = '\\0';
+          sqlite3_result_text(context, result, -1, SQLITE_TRANSIENT);
+          return;
+        }
+    }
+    sqlite3_result_null(context);
+}
+
+
+Then attach the function to the database.
+
+sqlite3_create_function(db, "firstchar", 1, SQLITE_UTF8, NULL, &firstchar, NULL, NULL)
+
+
+Finally, use the function in a sql statement.
+
+SELECT firstchar(textfield) from table
+
+    

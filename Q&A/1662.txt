@@ -1,0 +1,65 @@
+112
+Q:This is a canonical question for a problem frequently posted on StackOverflow.
+
+I'm following a tutorial. I've created a new activity using a wizard. I get NullPointerException when attempting to call a method on Views obtained with findViewById() in my activity onCreate().
+
+Activity onCreate():
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    View something = findViewById(R.id.something);
+    something.setOnClickListener(new View.OnClickListener() { ... }); // NPE HERE
+
+    if (savedInstanceState == null) {
+        getSupportFragmentManager().beginTransaction()
+                .add(R.id.container, new PlaceholderFragment()).commit();
+    }
+}
+
+
+Layout XML (fragment_main.xml):
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingBottom="@dimen/activity_vertical_margin"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="@dimen/activity_vertical_margin"
+    tools:context="packagename.MainActivity$PlaceholderFragment" >
+
+    <View
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:id="@+id/something" />
+
+</RelativeLayout>
+
+    
+===============================================================================================
+69
+A:The tutorial is probably outdated, attempting to create an activity-based UI instead of the fragment-based UI preferred by wizard-generated code.
+
+The view is in the fragment layout (fragment_main.xml)  and not in the activity layout (activity_main.xml). onCreate() is too early in the lifecycle to find it in the activity view hierarchy, and a null is returned. Invoking a method on null causes the NPE.
+
+The preferred solution is to move the code to the fragment onCreateView(), calling findViewById() on the inflated fragment layout rootView:
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container,
+    Bundle savedInstanceState) {
+  View rootView = inflater.inflate(R.layout.fragment_main, container,
+      false);
+
+  View something = rootView.findViewById(R.id.something); // not activity findViewById()
+  something.setOnClickListener(new View.OnClickListener() { ... });
+
+  return rootView;
+}
+
+
+As a side note, the fragment layout will eventually be a part of the activity view hierarchy and discoverable with activity findViewById() but only after the fragment transaction has been run. Pending fragment transactions get executed in super.onStart() after onCreate().
+    

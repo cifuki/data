@@ -1,0 +1,102 @@
+41
+Q:I currently have a Service in Android that is a sample VOIP client so it listens out for SIP messages and if it recieves one it starts up an Activity screen with UI components.
+
+Then the following SIP messages determine what the Activity is to display on the screen.
+For example if its an incoming call it will display Answer or Reject or an outgoing call it will show a dialling screen.
+
+At the minute I use Intents to let the Activity know what state it should display.
+
+An example is as follows:
+
+
+
+        Intent i = new Intent();
+        i.setAction(SIPEngine.SIP_TRYING_INTENT);
+        i.putExtra("com.net.INCOMING", true);
+        sendBroadcast(i);
+
+        Intent x = new Intent();
+        x.setAction(CallManager.SIP_INCOMING_CALL_INTENT);
+        sendBroadcast(x);
+        Log.d("INTENT SENT", "INTENT SENT INCOMING CALL AFTER PROCESSINVITE");
+
+
+
+
+So the activity will have a broadcast reciever registered for these intents and will switch its state according to the last intent it received.
+
+Sample code as follows:
+
+
+
+       SipCallListener = new BroadcastReceiver(){
+
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                    String action = intent.getAction(); 
+
+                    if(SIPEngine.SIP_RINGING_INTENT.equals(action)){
+                        Log.d("cda ", "Got RINGING action SIPENGINE");
+                        ringingSetup();
+                    }         
+
+                    if(CallManager.SIP_INCOMING_CALL_INTENT.equals(action)){
+                        Log.d("cda ", "Got PHONE RINGING action");
+                        incomingCallSetup();
+                    }  
+            }
+        };
+        IntentFilter filter = new IntentFilter(CallManager.SIP_INCOMING_CALL_INTENT);
+        filter.addAction(CallManager.SIP_RINGING_CALL_INTENT);
+        registerReceiver(SipCallListener, filter);
+
+
+
+
+This works however it seems like it is not very efficient, the Intents will get broadcast system wide and Intents having to fire for different states seems like it could become inefficient the more I have to include as well as adding complexity.
+
+So I was wondering if there is a different more efficient and cleaner way to do this?
+
+Is there a way to keep Intents broadcasting only inside an application?
+
+Would callbacks be a better idea? If so why and in what way should they be implemented? 
+    
+===============================================================================================
+52
+A:UPDATE 2015:
+
+This question/answer still gets a little bit of activity, but it is over 5 yrs old and things have changed quite a bit.  5 years ago, the answer below was how I would have handled it.  Later I wrote a very lightweight dependency injection solution that I was using for a while (which I mentioned in the comments).  Nowadays, I would answer this question using Dagger and RxAndroid.  Dagger to inject a "mediator" class into both the Service and all Activities that need to be notified, the Service would push the status update to the mediator class, and the mediator class would expose an observable for the activities to consume the status update (in place of the OP's broadcast receiver).  
+
+Original answer
+
+I usually subclass Application and let my in-app communication go through this class (or have a mediator owned by the Application do the work...regardless, the Application being the entry point for the service to communicate with).  I have a bound service that needs to update the UI as well (much simpler than yours, but the same idea) and it basically tells the app its new state and the app can then pass this information along in one way or another to the currently active activity.  You can also maintain a pointer to the currently active activity (if there is more than one), and make decisions whether or not to simply update the current activity, broadcast the intent to launch a different activity, ignore the message, etc.  I would also subclass Activity and have your new activity base class tell the Application that it is currently the active one in onResume and that it is being paused in onPause (for cases where your service is running in the background and the activities are all paused).
+
+EDIT:
+
+In response to the comment, here's more specifics.
+
+Your application currently consists of Activity-derived and Service-derived classes for the most part.  Inherently, you get functionality from an instance of the android.app.Application class.  This is declared in your manifest (by default) with the following line:
+
+<application android:icon="@drawable/icon" android:label="@string/app_name">
+
+
+The application element in your manifest doesn't use the android:name attribute, so it just creates an instance of the default android.app.Application class to represent your global application context.
+
+In my apps, I create a subclass of Application (ApplicationEx, for example) and I tell my app through the manifest that this is the class to instantiate as MY global application context.  For example:
+
+<application
+    android:name="com.mycompany.myapp.app.ApplicationEx"
+    android:icon="@drawable/app_icon"
+    android:label="@string/app_name">
+
+
+I can now add methods to ApplicationEx for activities and services to use to communicate.  There is always a single instance of your global application context, so this is your starting point if anything needs to be global for your app.
+
+A second piece of this is that instead of deriving my services and activities from Service and Activity, I create a subclass of each with a getAppContext method that casts the return value of getApplicationContext (which exists already in both of these classes because they derive from Context) to my ApplicationEx class.
+
+So........
+
+All that being said, you add a CurrentActivity property to your ApplicationEx class of type Activity (or ActivityBase if you subclass it as I do).  In ActivityBase's onResume method, you pass yourself to ApplicationEx for it to set CurrentActivity to that activity.  Now, you can expose methods on ApplicationEx to pass information directly to the current activity instead of relying on the Intent mechanisms.
+
+That's about as clear as I can make it
+    

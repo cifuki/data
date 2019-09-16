@@ -1,0 +1,448 @@
+27
+Q:I'm trying unsuccessfully to consume an API on Android using Retrofit library but while using POSTMAN I can see the expected results. 
+
+POSTMAN SETTING
+
+
+The api url (base+controller)
+HTTP Method set to POST 
+Clicked the from-data or x-www-form-urlencoded 
+Then i pass the two params on the key/value fields.  
+
+
+ANDROID RETROFIT SETTING
+
+@POST("/GetDetailWithMonthWithCode")
+void getLandingPageReport(@Query("code") String code,
+                          @Query("monthact") String monthact,
+                          Callback<LandingPageReport> cb);
+
+@FormUrlEncoded
+@POST("/GetDetailWithMonthWithCode")
+void getLandingPageReport(@Field("code") String code,
+                          @Field("monthact") String monthact,
+                          Callback<LandingPageReport> cb);
+
+
+None of this options works. But am getting {} as result.
+
+UPDATE
+
+Same settings by using the standard HttpClient(and HttpPost) class works fine.
+
+HttpClient client = new DefaultHttpClient();
+HttpPost post = new HttpPost(url);
+
+List<NameValuePair> urlParameters = new ArrayList<NameValuePair>();
+urlParameters.add(new BasicNameValuePair("code", "testcode"));
+urlParameters.add(new BasicNameValuePair("monthact", "feb-2015"));
+
+post.setEntity(new UrlEncodedFormEntity(urlParameters));
+
+HttpResponse response = client.execute(post);
+
+
+Why I can't do this request and get the correct response in Retrofit?
+
+UPDATE 2
+
+@POST("/GetDetailWithMonthWithCode")
+void getLandingPageReport(@Query("code") String code,
+                          @Query("monthact") String monthact,
+                          Callback<List<LandingPageReport>> cb);
+
+@FormUrlEncoded
+@POST("/GetDetailWithMonthWithCode")
+void getLandingPageReport(@Field("code") String code,
+                          @Field("monthact") String monthact,
+                          Callback<List<LandingPageReport>>> cb);
+
+
+After playing around I think I've found the source of the problem. I've updated my retrofit code to receive List<LandingPageReport>. But now this error occur
+
+
+  retrofit.RetrofitError: com.google.gson.JsonSyntaxException:
+  java.lang.IllegalStateException: Expected BEGIN_ARRAY but was
+  BEGIN_OBJECT at line 1 column 2 path $
+
+
+The reason is that i consume 2 api's (webapi and wcf). All my other json response are arrays of objects. [{},{}]  but in this call I've received this 
+
+{
+  "GetDetailWithMonthWithCodeResult": [
+     {
+        "code": "test",
+        "field1": "test",
+     }
+   ]
+}
+
+
+But still I can't manage to parse the response.
+    
+===============================================================================================
+29
+A:build.gradle
+
+      compile 'com.google.code.gson:gson:2.6.2'
+
+      compile 'com.squareup.retrofit2:retrofit:2.1.0'// compulsory
+
+      compile 'com.squareup.retrofit2:converter-gson:2.1.0' //for retrofit conversion
+
+
+Login APi Put Two Parameters
+
+    {
+        "UserId": "1234",
+        "Password":"1234"
+    }
+
+
+Login Response
+
+    {
+        "UserId": "1234",
+        "FirstName": "Keshav",
+        "LastName": "Gera",
+        "ProfilePicture": "312.113.221.1/GEOMVCAPI/Files/1.500534651736E12p.jpg"
+    }
+
+
+APIClient.java
+
+    import retrofit2.Retrofit;
+    import retrofit2.converter.gson.GsonConverterFactory;
+
+    class APIClient {
+
+        public static final String BASE_URL = "Your Base Url ";
+        private static Retrofit retrofit = null;
+
+        public static Retrofit getClient() {
+            if (retrofit == null) {
+                retrofit = new Retrofit.Builder()
+                        .baseUrl(BASE_URL)
+                        .addConverterFactory(GsonConverterFactory.create())
+                        .build();
+            }
+            return retrofit;
+        }
+    }
+
+
+APIInterface interface
+
+    interface APIInterface {
+
+        @POST("LoginController/Login")
+        Call<LoginResponse> createUser(@Body LoginResponse login);
+    }
+
+
+Login Pojo
+
+    package pojos;
+
+    import com.google.gson.annotations.SerializedName;
+
+    public class LoginResponse {
+
+
+        @SerializedName("UserId")
+        public String UserId;
+        @SerializedName("FirstName")
+        public String FirstName;
+        @SerializedName("LastName")
+        public String LastName;
+        @SerializedName("ProfilePicture")
+        public String ProfilePicture;
+        @SerializedName("Password")
+        public String Password;
+        @SerializedName("ResponseCode")
+        public String ResponseCode;
+        @SerializedName("ResponseMessage")
+        public String ResponseMessage;
+
+        public LoginResponse(String UserId, String Password) {
+            this.UserId = UserId;
+            this.Password = Password;
+        }
+
+        public String getUserId() {
+            return UserId;
+        }
+
+        public String getFirstName() {
+            return FirstName;
+        }
+
+        public String getLastName() {
+            return LastName;
+        }
+
+        public String getProfilePicture() {
+            return ProfilePicture;
+        }
+
+        public String getResponseCode() {
+            return ResponseCode;
+        }
+
+        public String getResponseMessage() {
+            return ResponseMessage;
+        }
+    }
+
+
+MainActivity
+
+    package com.keshav.retrofitloginexampleworkingkeshav;
+
+    import android.app.Dialog;
+    import android.os.Bundle;
+    import android.support.v7.app.AppCompatActivity;
+    import android.util.Log;
+    import android.view.View;
+    import android.widget.Button;
+    import android.widget.EditText;
+    import android.widget.TextView;
+    import android.widget.Toast;
+
+    import pojos.LoginResponse;
+    import retrofit2.Call;
+    import retrofit2.Callback;
+    import retrofit2.Response;
+    import utilites.CommonMethod;
+
+    public class MainActivity extends AppCompatActivity {
+
+        TextView responseText;
+        APIInterface apiInterface;
+
+        Button loginSub;
+        EditText et_Email;
+        EditText et_Pass;
+        private Dialog mDialog;
+        String userId;
+        String password;
+
+        @Override
+        protected void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            setContentView(R.layout.activity_main);
+
+            apiInterface = APIClient.getClient().create(APIInterface.class);
+
+            loginSub = (Button) findViewById(R.id.loginSub);
+            et_Email = (EditText) findViewById(R.id.edtEmail);
+            et_Pass = (EditText) findViewById(R.id.edtPass);
+
+            loginSub.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (checkValidation()) {
+                        if (CommonMethod.isNetworkAvailable(MainActivity.this))
+                            loginRetrofit2Api(userId, password);
+                        else
+                            CommonMethod.showAlert("Internet Connectivity Failure", MainActivity.this);
+                    }
+                }
+            });
+        }
+
+        private void loginRetrofit2Api(String userId, String password) {
+            final LoginResponse login = new LoginResponse(userId, password);
+            Call<LoginResponse> call1 = apiInterface.createUser(login);
+            call1.enqueue(new Callback<LoginResponse>() {
+                @Override
+                public void onResponse(Call<LoginResponse> call, Response<LoginResponse> response) {
+                    LoginResponse loginResponse = response.body();
+
+                    Log.e("keshav", "loginResponse 1 --> " + loginResponse);
+                    if (loginResponse != null) {
+                        Log.e("keshav", "getUserId          -->  " + loginResponse.getUserId());
+                        Log.e("keshav", "getFirstName       -->  " + loginResponse.getFirstName());
+                        Log.e("keshav", "getLastName        -->  " + loginResponse.getLastName());
+                        Log.e("keshav", "getProfilePicture  -->  " + loginResponse.getProfilePicture());
+
+                        String responseCode = loginResponse.getResponseCode();
+                        Log.e("keshav", "getResponseCode  -->  " + loginResponse.getResponseCode());
+                        Log.e("keshav", "getResponseMessage  -->  " + loginResponse.getResponseMessage());
+                        if (responseCode != null && responseCode.equals("404")) {
+                            Toast.makeText(MainActivity.this, "Invalid Login Details \
+ Please try again", Toast.LENGTH_SHORT).show();
+                        } else {
+                            Toast.makeText(MainActivity.this, "Welcome " + loginResponse.getFirstName(), Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                }
+
+                @Override
+                public void onFailure(Call<LoginResponse> call, Throwable t) {
+                    Toast.makeText(getApplicationContext(), "onFailure called ", Toast.LENGTH_SHORT).show();
+                    call.cancel();
+                }
+            });
+        }
+
+        public boolean checkValidation() {
+            userId = et_Email.getText().toString();
+            password = et_Pass.getText().toString();
+
+            Log.e("Keshav", "userId is -> " + userId);
+            Log.e("Keshav", "password is -> " + password);
+
+            if (et_Email.getText().toString().trim().equals("")) {
+                CommonMethod.showAlert("UserId Cannot be left blank", MainActivity.this);
+                return false;
+            } else if (et_Pass.getText().toString().trim().equals("")) {
+                CommonMethod.showAlert("password Cannot be left blank", MainActivity.this);
+                return false;
+            }
+            return true;
+        }
+    }
+
+
+CommonMethod.java
+
+    public class CommonMethod {
+
+
+        public static final String DISPLAY_MESSAGE_ACTION =
+                "com.codecube.broking.gcm";
+
+        public static final String EXTRA_MESSAGE = "message";
+
+        public  static boolean isNetworkAvailable(Context ctx) {
+            ConnectivityManager connectivityManager
+                    = (ConnectivityManager)ctx.getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
+            return activeNetworkInfo != null && activeNetworkInfo.isConnected();
+        }
+
+        public static void showAlert(String message, Activity context) {
+
+            final AlertDialog.Builder builder = new AlertDialog.Builder(context);
+            builder.setMessage(message).setCancelable(false)
+                    .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                        public void onClick(DialogInterface dialog, int id) {
+
+                        }
+                    });
+            try {
+                builder.show();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+        }
+    }
+
+
+activity_main.xml
+
+    <LinearLayout android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:orientation="vertical"
+        xmlns:android="http://schemas.android.com/apk/res/android">
+
+            <ImageView
+                android:id="@+id/imgLogin"
+                android:layout_width="200dp"
+                android:layout_height="150dp"
+                android:layout_gravity="center"
+                android:layout_marginTop="20dp"
+                android:padding="5dp"
+                android:background="@mipmap/ic_launcher_round"
+                />
+
+            <TextView
+                android:id="@+id/txtLogo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_below="@+id/imgLogin"
+                android:layout_centerHorizontal="true"
+                android:text="Holostik Track and Trace"
+                android:textSize="20dp"
+                android:visibility="gone" />
+
+            <android.support.design.widget.TextInputLayout
+                android:id="@+id/textInputLayout1"
+                android:layout_width="fill_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="@dimen/box_layout_margin_left"
+                android:layout_marginRight="@dimen/box_layout_margin_right"
+                android:layout_marginTop="8dp"
+                android:padding="@dimen/text_input_padding">
+
+                <EditText
+                    android:id="@+id/edtEmail"
+                    android:layout_width="fill_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:ems="10"
+                    android:fontFamily="sans-serif"
+                    android:gravity="top"
+                    android:hint="Login ID"
+                    android:maxLines="10"
+                    android:paddingLeft="@dimen/edit_input_padding"
+                    android:paddingRight="@dimen/edit_input_padding"
+                    android:paddingTop="@dimen/edit_input_padding"
+                    android:singleLine="true"></EditText>
+
+            </android.support.design.widget.TextInputLayout>
+
+            <android.support.design.widget.TextInputLayout
+                android:id="@+id/textInputLayout2"
+                android:layout_width="fill_parent"
+                android:layout_height="wrap_content"
+                android:layout_below="@+id/textInputLayout1"
+                android:layout_marginLeft="@dimen/box_layout_margin_left"
+                android:layout_marginRight="@dimen/box_layout_margin_right"
+                android:padding="@dimen/text_input_padding">
+
+                <EditText
+                    android:id="@+id/edtPass"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:focusable="true"
+                    android:fontFamily="sans-serif"
+                    android:hint="Password"
+                    android:inputType="textPassword"
+                    android:paddingLeft="@dimen/edit_input_padding"
+                    android:paddingRight="@dimen/edit_input_padding"
+                    android:paddingTop="@dimen/edit_input_padding"
+                    android:singleLine="true" />
+
+            </android.support.design.widget.TextInputLayout>
+
+            <RelativeLayout
+                android:id="@+id/rel12"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_below="@+id/textInputLayout2"
+                android:layout_marginTop="10dp"
+                android:layout_marginLeft="10dp"
+                >
+
+                <Button
+                    android:id="@+id/loginSub"
+                    android:layout_width="wrap_content"
+                    android:layout_height="45dp"
+                    android:layout_alignParentRight="true"
+                    android:layout_centerVertical="true"
+                    android:background="@drawable/border_button"
+                    android:paddingLeft="30dp"
+                    android:paddingRight="30dp"
+                    android:layout_marginRight="10dp"
+                    android:text="Login"
+                    android:textColor="#ffffff" />    
+            </RelativeLayout>
+
+    </LinearLayout>
+
+    

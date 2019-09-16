@@ -1,0 +1,109 @@
+34
+Q:I followed "Avoiding Memory Leaks" article from here. 
+
+However the proposed solution does not solve the leak problem. I tested this with android emulator on Windows XP (SDK 2.3.1). I dumped the heap and checked the main activity is still in the heap (I used MAT)
+
+Here's what I did:
+
+
+create HelloWorld app with HelloWorldActivity (it has no child views)
+run Emulator and launch HelloWorld app.
+close it by clicking back-key.
+Cause gc in DDMS and dump heap <-- Here I found HelloWorldActivity instance. 
+'Path to GC Roots' from it shows the following path.
+
+
+HelloWorldActivity <- PhoneWindow$DecorView <- InputMethodManager 
+
+InputMethodManager is a singleton and three references to DecorView which references HelloWorldActivity. 
+
+I can't understand why InputMethodManager still references DecorView instance even after the activity is destroyed. 
+
+Is there any way to make sure that the main activity is destroyed and GC-able after closing it?
+    
+===============================================================================================
+18
+A:It seems that calling InputMethodManager's methods 'windowDismissed' and 'startGettingWindowFocus' do the stuff.
+
+Something like this:
+
+@Override
+protected void onDestroy()
+{
+    super.onDestroy();
+    //fix for memory leak: http://code.google.com/p/android/issues/detail?id=34731
+    fixInputMethodManager();
+}
+
+private void fixInputMethodManager()
+{
+    final Object imm = getSystemService(Context.INPUT_METHOD_SERVICE);
+
+    final Reflector.TypedObject windowToken
+        = new Reflector.TypedObject(getWindow().getDecorView().getWindowToken(), IBinder.class);
+
+    Reflector.invokeMethodExceptionSafe(imm, "windowDismissed", windowToken);
+
+    final Reflector.TypedObject view
+        = new Reflector.TypedObject(null, View.class);
+
+    Reflector.invokeMethodExceptionSafe(imm, "startGettingWindowFocus", view);
+}
+
+
+Reflector's code:
+
+public static final class TypedObject
+{
+    private final Object object;
+    private final Class type;
+
+    public TypedObject(final Object object, final Class type)
+    {
+    this.object = object;
+    this.type = type;
+    }
+
+    Object getObject()
+    {
+        return object;
+    }
+
+    Class getType()
+    {
+        return type;
+    }
+}
+
+public static void invokeMethodExceptionSafe(final Object methodOwner, final String method, final TypedObject... arguments)
+{
+    if (null == methodOwner)
+    {
+        return;
+    }
+
+    try
+    {
+        final Class<?>[] types = null == arguments ? new Class[0] : new Class[arguments.length];
+        final Object[] objects = null == arguments ? new Object[0] : new Object[arguments.length];
+
+        if (null != arguments)
+        {
+            for (int i = 0, limit = types.length; i < limit; i++)
+            {
+                types[i] = arguments[i].getType();
+                objects[i] = arguments[i].getObject();
+            }
+        }
+
+        final Method declaredMethod = methodOwner.getClass().getDeclaredMethod(method, types);
+
+        declaredMethod.setAccessible(true);
+        declaredMethod.invoke(methodOwner, objects);
+    }
+    catch (final Throwable ignored)
+    {
+    }
+}
+
+    

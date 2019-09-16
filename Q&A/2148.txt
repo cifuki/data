@@ -1,0 +1,47 @@
+93
+Q:I am working with a SQLite database on android. My database manager is a singleton and right now opens a connection to the database when it is initialized. It is safe to leave the database open the entire time so that when someone calls my class to work with the database it is already open? Or should I open and close the database before and after each access is needed. Is there any harm in just leaving it open the whole time?
+
+Thanks!
+    
+===============================================================================================
+60
+A:i would keep it open the whole time, and close it in some lifecycle method such as onStop or onDestroy.  that way, you can easily check if the database is already in use by calling isDbLockedByCurrentThread or isDbLockedByOtherThreads on the single SQLiteDatabase object every time before you use it.  this will prevent multiple manipulations to the database and save your application from a potential crash
+
+so in your singleton, you might have a method like this to get your single SQLiteOpenHelper object:
+
+private SQLiteDatabase db;
+private MyDBOpenHelper mySingletonHelperField;
+public MyDBOpenHelper getDbHelper() {
+    db = mySingletonHelperField.getDatabase();//returns the already created database object in my MyDBOpenHelper class(which extends `SQLiteOpenHelper`)
+    while(db.isDbLockedByCurrentThread() || db.isDbLockedByOtherThreads()) {
+        //db is locked, keep looping
+    }
+    return mySingletonHelperField;
+}
+
+
+so whenever you want to use your open helper object, call this getter method(make sure it's threaded)
+
+another method in your singleton may be(called EVERY TIME before you try to call the getter above):
+
+public void setDbHelper(MyDBOpenHelper mySingletonHelperField) {
+    if(null == this.mySingletonHelperField) {
+        this.mySingletonHelperField = mySingletonHelperField;
+        this.mySingletonHelperField.setDb(this.mySingletonHelperField.getWritableDatabase());//creates and sets the database object in the MyDBOpenHelper class
+    }
+}
+
+
+you may want to close the database in the singleton as well:
+
+public void finalize() throws Throwable {
+    if(null != mySingletonHelperField)
+        mySingletonHelperField.close();
+    if(null != db)
+        db.close();
+    super.finalize();
+}
+
+
+if the users of your application have the ability to create many database interactions very quickly, you should use something like i have demonstrated above.  but if there is minimal database interactions, i wouldn't worry about it, and just create and close the database every time.
+    

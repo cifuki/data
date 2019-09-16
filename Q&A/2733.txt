@@ -1,0 +1,31 @@
+78
+Q:Since the new support library version (22.x) the getPosition() method of the RecyclerView.ViewHolder class has been deprecated in lieu of the methods mentioned in the topic. I don't really get the difference from reading the docs.
+Could somebody explain the difference in layman's terms?
+
+I have the following use case - I give my adapter a List, and also want to be able to associate extra info for each list item. I have a position-to-extra mapping, and the mapping is available for the holders so that they can fetch the extra for their position and do stuff with it. In the holder, which method should I use?
+
+What happens with the holder positions when list items at indices 0 and 1 are switched places? What do the methods return?
+    
+===============================================================================================
+101
+A:This is a tricky situation, sorry that docs are not sufficient.
+
+When adapter contents change (and you call notify***()) RecyclerView requests a new layout. From that moment, until layout system decides to calculate a new layout (<16 ms), the layout position and adapter position may not match because layout has not reflected adapter changes yet.
+
+In your use case, since your data is related to your adapter contents (and I assume that data is changed at the same time with adapter changes), you should be using adapterPosition.
+
+Be careful though, if you are calling notifyDataSetChanged(), because it invalidates everything, RecyclerView does not know that ViewHolder's adapter position until next layout is calculated. In that case, getAdapterPosition() will return RecyclerView#NO_POSITION (-1).
+
+But lets say if you've called notifyItemInserted(0), the getAdapterPosition() of ViewHolder which was previously at position 0 will start returning 1 immediately. So as long as you are dispatching granular notify events, you are always in good state (we know adapter position even though new layout is not calculated yet).
+
+Another example, if you are doing something on user click, if getAdapterPosition() returns NO_POSITION, it is best to ignore that click because you don't know what user clicked (unless you have some other mechanism, e.g. stable ids to lookup the item).
+
+Edit For When Layout Position is Good
+
+Lets say you are using LinearLayoutManager and want to access the ViewHolder above the currently clicked item. In that case, you should use layout position to get the item above.
+
+mRecyclerView.findViewHolderForLayoutPosition(myViewHolder.getLayoutPosition() - 1)
+
+
+You have to use layout position because it matches what user is currently seeing on the screen.
+    

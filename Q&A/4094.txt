@@ -1,0 +1,51 @@
+57
+Q:Im deciding on whether to use Moshi by square or Gson to serialize and deserialize model data.   
+
+one thing i always did not like about Gson is i think it uses reflection which can be slow on android ?  Does Moshi use reflection also ?  
+
+What are some of the pros and cons of moshi vs Gson ?
+
+I see them as similar. take for example this statement that creates a typeAdapter:
+
+    class CardAdapter {
+  @ToJson String toJson(Card card) {
+    return card.rank + card.suit.name().substring(0, 1);
+  }
+
+  @FromJson Card fromJson(String card) {
+    if (card.length() != 2) throw new JsonDataException("Unknown card: " + card);
+
+    char rank = card.charAt(0);
+    switch (card.charAt(1)) {
+      case 'C': return new Card(rank, Suit.CLUBS);
+      case 'D': return new Card(rank, Suit.DIAMONDS);
+      case 'H': return new Card(rank, Suit.HEARTS);
+      case 'S': return new Card(rank, Suit.SPADES);
+      default: throw new JsonDataException("unknown suit: " + card);
+    }
+  }
+}
+
+
+and to use it register it just like in gson:
+
+Moshi moshi = new Moshi.Builder()
+.add(new CardAdapter())
+.build();
+
+
+i guess the advantages would be the annotation being used in the typeAdapter. Im looking to find out if there are any performance gains if i switch to Moshi. 
+    
+===============================================================================================
+75
+A:Moshi uses Okio to optimize a few things that Gson doesn\xe2\x80\x99t.
+
+
+When reading field names, Moshi doesn\xe2\x80\x99t have to allocate strings or do hash lookups.
+Moshi scans the input as a sequence of UTF-8 bytes, converting to Java chars lazily. For example, it never needs to convert integer literals to chars.
+
+
+The benefits of these optimizations are particularly pronounced if you\xe2\x80\x99re already using Okio streams. Users of Retrofit and OkHttp in particular benefit from Moshi.
+
+Further discussion on the origins of Moshi are in my post, Moshi, another JSON Processor.
+    

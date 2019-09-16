@@ -1,0 +1,44 @@
+69
+Q:Android's Room persistence library graciously includes the @Insert and @Update annotations that work for objects or collections. I however have a use case (push notifications containing a model) that would require an UPSERT as the data may or may not exist in the database.
+
+Sqlite doesn't have upsert natively, and workarounds are described in this SO question. Given the solutions there, how would one apply them to Room?
+
+To be more specific, how can I implement an insert or update in Room that would not break any foreign key constraints? Using insert with onConflict=REPLACE will cause the onDelete for any foreign key to that row to be called. In my case onDelete causes a cascade, and reinserting a row will cause rows in other tables with the foreign key to be deleted. This is NOT the intended behavior.
+    
+===============================================================================================
+67
+A:For more elegant way to do that I would suggest two options:
+
+Checking for return value from insert operation with IGNORE as a OnConflictStrategy (if it equals to -1 then it means row wasn't inserted):
+
+@Insert(onConflict = OnConflictStrategy.IGNORE)
+long insert(Entity entity);
+
+@Update(onConflict = OnConflictStrategy.IGNORE)
+void update(Entity entity);
+
+public void upsert(Entity entity) {
+    long id = insert(entity);
+    if (id == -1) {
+        update(entity);   
+    }
+}
+
+
+Handling exception from insert operation with FAIL as a OnConflictStrategy:
+
+@Insert(onConflict = OnConflictStrategy.FAIL)
+void insert(Entity entity);
+
+@Update(onConflict = OnConflictStrategy.FAIL)
+void update(Entity entity);
+
+public void upsert(Entity entity) {
+    try {
+        insert(entity);
+    } catch (SQLiteConstraintException exception) {
+        update(entity);
+    }
+}
+
+    

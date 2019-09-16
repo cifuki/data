@@ -1,0 +1,117 @@
+41
+Q:I have many flavors of my Android app, and I want all but one to use the same key. There is one that needs to use a different key.
+
+How do I override the signingConfig for just 1 flavor of the app (but within the same build type e.g. "release")?
+
+
+I would like all builds by default to use the main release configuration. 
+I only want to override 1 flavor
+I want to be able to run all release builds with a single gradlew assembleRelease command
+
+
+This last point is important as I currently have over 120 different flavors and growing. In order to customise every single flavor individually is a lot of extra work.
+
+
+
+Related posts I have tried:
+
+Producing multiple builds signed with different keys from single build type
+
+
+this requires configuration for each flavor
+it doesn't seem to use my custom signingConfig anyway
+
+
+Signing product flavors with gradle
+
+
+accepted solution doesn't work (for me)
+according to a comment this is possible by putting buildTypes inside the productFlavors but I do not understand how to do this.
+
+
+Debug Signing Config on Gradle Product Flavors
+
+
+as explained on blog post: Building Multiple Editions of an Android App with Gradle
+it doesn't work actually it works perfectly
+but it doesn't scale well for 119 flavors
+
+
+Overall, each solution seems to still use the default release config, instead of my custom config.
+
+
+
+Important parts of my build.gradle look like this:
+
+signingConfigs {
+    releaseConfig {
+        storeFile file('key')
+        storePassword "pass"
+        keyAlias "alias"
+        keyPassword "pass"
+    }
+
+    custom {
+        storeFile file('custom_key')
+        storePassword "pass"
+        keyAlias "alias"
+        keyPassword "pass"
+    }
+}
+
+productFlavors {
+    apple {
+        applicationId "demo.apple"
+    }
+    banana {
+        applicationId "demo.banana"
+    }
+
+    // def customConfig = signingConfigs.custom
+    custom {
+        applicationId "custom.signed.app"
+        // signingConfig customConfig
+    }
+ }
+
+
+buildTypes {
+    debug {
+        applicationIdSuffix ".debug"
+    }
+    release {
+         signingConfig signingConfigs.releaseConfig
+         // productFlavors.custom.signingConfig signingConfigs.custom
+    }
+}
+
+    
+===============================================================================================
+19
+A:The Gradle Plugin User Guide says that you can:
+
+
+  have each release package use their own SigningConfig by setting each
+  android.productFlavors.*.signingConfig objects separately.
+
+
+This is demonstrated in this answer (Debug Signing Config on Gradle Product Flavors) and this blog post (Building Multiple Editions of an Android App with Gradle).
+
+However, specifying a separate signingConfig line for each flavor does not scale well, and was out of scope of the question. Unfortunately none of the provided answers showed how to correctly override a signingConfig correctly.
+
+
+
+The trick came from this answer (How to get the currently chose build variant in gradle?) which shows how to loop over build variants (and by extension, flavors).
+
+My solution uses a loop to set the signingConfig on each flavor instead of having a separate line for that. This scales perfectly well. The "override" is done with a single line that specifies the custom config after the loop.
+
+Place the following code inside the buildTypes.release block:
+
+// loop over all flavors to set default signing config
+productFlavors.all { flavor ->
+    flavor.signingConfig signingConfigs.releaseConfig
+}
+// override default for single custom flavor
+productFlavors.custom.signingConfig signingConfigs.custom
+
+    

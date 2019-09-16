@@ -1,0 +1,112 @@
+40
+Q:I need to divide elements in RecyclerView on groups with titles (like in the Inbox app on the picture below) so help me please to figure out what approach would be better for my case:
+1) I can use Heterogenous layouts for it but it is not so convenient to insert new elements in groups (because I need check if elements of the same group is already added or I need to add new divider). So in this case I'll wrap all operations with such data structure into a separate class.
+
+2) Theoretically I can wrap each group in its own RecyclerView with label is it a good idea?
+
+
+    
+===============================================================================================
+93
+A:For example you can:
+
+
+Use a TreeMap<Date,List<Event>> for splitting elements by date. This will be a collection for keeping your business objects. Of course if you already have a similar structure you can keep it. It's just important to have something for easily building list of items for populating UI with right elements order.
+Define a dedicated abstract type for List items (e.g. ListItem) to wrap your business objects. Its implementation could be something like this:
+
+public abstract class ListItem {
+
+    public static final int TYPE_HEADER = 0;
+    public static final int TYPE_EVENT = 1;
+
+    abstract public int getType();
+} 
+
+Define a class for each of your List element type (here I added just two types but you can use many as you need):
+
+public class HeaderItem extends ListItem {
+
+    private Date date;
+
+    // here getters and setters 
+    // for title and so on, built
+    // using date
+
+    @Override
+    public int getType() {
+        return TYPE_HEADER;
+    }
+
+}
+
+public class EventItem extends ListItem {
+
+    private Event event;
+
+    // here getters and setters 
+    // for title and so on, built 
+    // using event
+
+    @Override
+    public int getType() {
+        return TYPE_EVENT;
+    }
+
+}
+
+Create a List as follows (where mEventsMap is map build at point 1):
+
+List<ListItem> mItems;
+// ...
+mItems = new ArrayList<>();
+for (Date date : mEventsMap.keySet()) {
+    HeaderItem header = new HeaderItem();
+    header.setDate(date); 
+    mItems.add(header);
+    for (Event event : mEventsMap.get(date)) {
+        EventItem item = new EventItem();
+        item.setEvent(event);
+        mItems.add(item);
+    }
+}
+
+Define an adapter for your RecyclerView, working on List defined at point 4. Here what is important is to override getItemViewType method as follows:
+
+@Override
+public int getItemViewType(int position) {
+    return mItems.get(position).getType();
+}
+
+
+Then you need to have two layouts and ViewHolder for header and event items. Adapter methods should take care of this accordingly:  
+
+@Override
+public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+    if (viewType == ListItem.TYPE_HEADER) {
+        View itemView = mLayoutInflater.inflate(R.layout.view_list_item_header, parent, false);
+        return new HeaderViewHolder(itemView);
+    } else {
+        View itemView = mLayoutInflater.inflate(R.layout.view_list_item_event, parent, false);
+        return new EventViewHolder(itemView);
+    }
+}
+
+
+@Override
+public void onBindViewHolder(final RecyclerView.ViewHolder viewHolder, final int position) {
+    int type = getItemViewType(position);
+    if (type == ListItem.TYPE_HEADER) {
+        HeaderItem header = (HeaderItem) mItems.get(position);
+        HeaderViewHolder holder = (HeaderViewHolder) viewHolder;
+        // your logic here
+    } else {            
+        EventItem event = (EventItem) mItems.get(position);
+        EventViewHolder holder = (EventViewHolder) viewHolder;
+        // your logic here
+    }
+}
+
+
+
+Here it is a repository on GitHub providing an implementation of the approach explained above. 
+    

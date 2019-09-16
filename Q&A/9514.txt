@@ -1,0 +1,245 @@
+29
+Q:I am a begginer in Android but I tried to make a custom listview filtering and I it worked somehow. The only problem I have is that the ArrayList that I kept all the values ( "original" ArrayList ) , is getting lower and lower on items in every filtering. I can't explain this but I thought that you can help me somehow .
+
+Anyway here is the Custom ArrayAdaptor :
+
+public class PkmnAdapter extends ArrayAdapter<Pkmn> {
+
+private ArrayList<Pkmn> original;
+private ArrayList<Pkmn> fitems;
+private Filter filter;
+
+public PkmnAdapter(Context context, int textViewResourceId, ArrayList<Pkmn> items) {
+        super(context, textViewResourceId, items);
+        this.original = items;//new ArrayList<Pkmn>();
+        this.fitems = items;//new ArrayList<Pkmn>();
+}
+
+@Override
+public void add(Pkmn item){
+    original.add(item);
+}
+
+@Override
+public View getView(int position, View convertView, ViewGroup parent) {
+        View v = convertView;
+        if (v == null) {
+            LayoutInflater vi = (LayoutInflater)getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+            v = vi.inflate(R.layout.row, null);
+        }
+        Pkmn pkmn = original.get(position);
+        if (pkmn != null) {
+                TextView tt = (TextView) v.findViewById(R.id.RlabPName);
+                TextView dex = (TextView)v.findViewById(R.id.RlabDex);
+                ImageView img = (ImageView)v.findViewById(R.id.RimgPkmn);
+
+                if (tt != null) { tt.setText(pkmn.getName()); }
+                if (dex != null){ dex.setText(CalcDex(pkmn.getId())); }
+                if (img != null){
+                    int resId = getContext().getResources().getIdentifier("dex" + pkmn.getId(), "drawable", "com.compileguy.pokebwteam");
+                    img.setImageResource(resId);
+                }
+        }
+        return v;
+}
+
+@Override
+public Filter getFilter()
+{
+    if (filter == null)
+        filter = new PkmnNameFilter();
+
+    return filter;
+}
+
+private class PkmnNameFilter extends Filter
+{
+        @Override
+        protected FilterResults performFiltering(CharSequence constraint)
+        {   
+            FilterResults results = new FilterResults();
+            String prefix = constraint.toString().toLowerCase();
+
+            if (prefix == null || prefix.length() == 0)
+            {
+                ArrayList<Pkmn> list = new ArrayList<Pkmn>(original);
+                results.values = list;
+                results.count = list.size();
+            }
+            else
+            {
+                final ArrayList<Pkmn> list = original;
+
+                int count = list.size();
+                final ArrayList<Pkmn> nlist = new ArrayList<Pkmn>(count);
+
+                for (int i=0; i<count; i++)
+                {
+                    final Pkmn pkmn = list.get(i);
+                    final String value = pkmn.getName().toLowerCase();
+
+                    if (value.startsWith(prefix))
+                    {
+                        nlist.add(pkmn);
+                    }
+                }
+                results.values = nlist;
+                results.count = nlist.size();
+            }
+            return results;
+        }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        protected void publishResults(CharSequence constraint, FilterResults results) {
+            fitems = (ArrayList<Pkmn>)results.values;
+            clear();
+            int count = fitems.size();
+            for (int i=0; i<count; i++)
+            {
+                Pkmn pkmn = (Pkmn)fitems.get(i);
+                add(pkmn);
+            }
+
+            if (fitems.size() > 0)
+                notifyDataSetChanged();
+            else
+                notifyDataSetInvalidated();
+        }
+
+    }
+
+
+private String CalcDex(int id){
+    String s = String.valueOf(id);
+    if (s.length() == 1)
+        s = "00"+s;
+    else if (s.length() == 2)
+        s = "0"+s;
+    return '#'+s;
+}
+
+
+}
+
+NOTE: The listview is showing correctly the items but when for exaple I remove a letter in the editbox ( which triggers the filtering ) this is where the problems start.
+
+--- EDIT ---
+
+@Janusz: Many thanks for your answer . That solved my problem .
+
+Here is the source code that works for me , so if anyone has the same issue they could try this one :
+
+private ArrayList<Pkmn> original;
+private ArrayList<Pkmn> fitems;
+private Filter filter;
+
+public PkmnAdapter(Context context, int textViewResourceId, ArrayList<Pkmn> items) {
+        super(context, textViewResourceId, items);
+        this.original = new ArrayList<Pkmn>(items);
+        this.fitems = new ArrayList<Pkmn>(items);
+}
+
+@Override
+public View getView(int position, View convertView, ViewGroup parent) {
+        View v = convertView;
+        if (v == null) {
+            LayoutInflater vi = (LayoutInflater)getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+            v = vi.inflate(R.layout.row, null);
+        }
+        Pkmn pkmn = fitems.get(position);
+        if (pkmn != null) {
+                TextView tt = (TextView) v.findViewById(R.id.RlabPName);
+                TextView dex = (TextView)v.findViewById(R.id.RlabDex);
+                ImageView img = (ImageView)v.findViewById(R.id.RimgPkmn);
+
+                if (tt != null) { tt.setText(pkmn.getName()); }
+                if (dex != null){ dex.setText(CalcDex(pkmn.getId())); }
+                if (img != null){
+                    int resId = getContext().getResources().getIdentifier("dex" + pkmn.getId(), "drawable", "com.compileguy.pokebwteam");
+                    img.setImageResource(resId);
+                }
+        }
+        return v;
+}
+
+@Override
+public Filter getFilter()
+{
+    if (filter == null)
+        filter = new PkmnNameFilter();
+
+    return filter;
+}
+
+private class PkmnNameFilter extends Filter
+{
+        @Override
+        protected FilterResults performFiltering(CharSequence constraint)
+        {   
+            FilterResults results = new FilterResults();
+            String prefix = constraint.toString().toLowerCase();
+
+            if (prefix == null || prefix.length() == 0)
+            {
+                ArrayList<Pkmn> list = new ArrayList<Pkmn>(original);
+                results.values = list;
+                results.count = list.size();
+            }
+            else
+            {
+                final ArrayList<Pkmn> list = new ArrayList<Pkmn>(original);
+                final ArrayList<Pkmn> nlist = new ArrayList<Pkmn>();
+                int count = list.size();
+
+                for (int i=0; i<count; i++)
+                {
+                    final Pkmn pkmn = list.get(i);
+                    final String value = pkmn.getName().toLowerCase();
+
+                    if (value.startsWith(prefix))
+                    {
+                        nlist.add(pkmn);
+                    }
+                }
+                results.values = nlist;
+                results.count = nlist.size();
+            }
+            return results;
+        }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        protected void publishResults(CharSequence constraint, FilterResults results) {
+            fitems = (ArrayList<Pkmn>)results.values;
+
+            clear();
+            int count = fitems.size();
+            for (int i=0; i<count; i++)
+            {
+                Pkmn pkmn = (Pkmn)fitems.get(i);
+                add(pkmn);
+            }
+        }
+
+    }
+}
+
+    
+===============================================================================================
+17
+A:Your problem are this lines: 
+
+this.original = items;
+this.fitems = items;
+
+
+Items is the list you use for your ListView and putting it in two different variables does not make two different lists out of it. You are only giving the list items two different names. 
+
+You can use: 
+
+this.fitems = new ArrayList(items);
+
+
+that should generate a new List and changes on this list will only change the fitems list.
+    

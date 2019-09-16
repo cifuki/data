@@ -1,0 +1,40 @@
+330
+Q:Most app developers will integrate some third party libraries into their apps. If it's to access a service, such as Dropbox or YouTube, or for logging crashes. The number of third party libraries and services is staggering. Most of those libraries and services are integrated by somehow authenticating with the service, most of the time, this happens through an API key. For security purposes, services usually generate a public and private, often also referred to as secret, key. Unfortunately, in order to connect to the services, this private key must be used to authenticate and hence, probably be part of the application. 
+Needless to say, that this faces in immense security problem. Public and private API keys can be extracted from APKs in a matter of minutes and can easily be automated. 
+
+Assuming I have something similar to this, how can I protect the secret key:
+
+public class DropboxService  {
+
+    private final static String APP_KEY = "jk433g34hg3";
+    private final static String APP_SECRET = "987dwdqwdqw90";
+    private final static AccessType ACCESS_TYPE = AccessType.DROPBOX;
+
+    // SOME MORE CODE HERE
+
+}
+
+
+What is in your opinion the best and most secure way to store the private key? Obfuscation, encryption, what do you think?
+    
+===============================================================================================
+322
+A:As it is, your compiled application contains the key strings, but also the constant names APP_KEY and APP_SECRET. Extracting keys from such self-documenting code is trivial, for instance with the standard Android tool dx.
+You can apply ProGuard. It will leave the key strings untouched, but it will remove the constant names. It will also rename classes and methods with short, meaningless names, where ever possible. Extracting the keys then takes some more time, for figuring out which string serves which purpose.
+
+Note that setting up ProGuard shouldn't be as difficult as you fear. To begin with, you only need to enable ProGuard, as documented in project.properties. If there are any problems with third-party libraries, you may need to suppress some warnings and/or prevent them from being obfuscated, in proguard-project.txt. For instance:
+
+-dontwarn com.dropbox.**
+-keep class com.dropbox.** { *; }
+
+
+This is a brute-force approach; you can refine such configuration once the processed application works.
+You can obfuscate the strings manually in your code, for instance with a Base64 encoding or preferably with something more complicated; maybe even native code. A hacker will then have to statically reverse-engineer your encoding or dynamically intercept the decoding in the proper place.
+You can apply a commercial obfuscator, like ProGuard's specialized sibling DexGuard. It can additionally encrypt/obfuscate the strings and classes for you. Extracting the keys then takes even more time and expertise.
+You might be able to run parts of your application on your own server. If you can keep the keys there, they are safe.
+
+
+In the end, it's an economic trade-off that you have to make: how important are the keys, how much time or software can you afford, how sophisticated are the hackers who are interested in the keys, how much time will they want to spend, how much worth is a delay before the keys are hacked, on what scale will any successful hackers distribute the keys, etc. Small pieces of information like keys are more difficult to protect than entire applications. Intrinsically, nothing on the client-side is unbreakable, but you can certainly raise the bar.
+
+(I am the developer of ProGuard and DexGuard)
+    

@@ -1,0 +1,58 @@
+45
+Q:I'm using Matrix to scale and rotate Bitmaps. Now I'm wondering what the difference between preconcat & postconcat is, or more precisely the difference between:
+
+
+postRotate
+preRotate
+setRotate
+
+
+From what I could figure out so far setRotate always overwrites the whole matrix, while with preRotate and postRotate I can apply multiple changes to a matrix (e.g. scaling + rotation). However, either using postRotate or preRotate didn't cause any different results for the cases I used them.
+    
+===============================================================================================
+131
+A:The answer to your question isn't really specific to Android; it's a graphics and math question. There's lots of theory in this answer--you've been warned! For a superficial answer to your question, skip to the bottom. Also, because this is such a long-winded tirade, I might have a typo or two making things unclear. I apologize in advance if that's the case.
+
+In computer graphics, we can represent pixels (or in 3D, vertices) as vectors. If your screen is 640x480, here's a 2D vector for the point in the middle of your screen (forgive my shoddy markup):
+
+[320]
+[240]
+[  1]
+
+
+I'll explain why the 1 is important later. Transformations are often represented using matrices because it's then very simple (and very efficient) to chain them together, like you mentioned. To scale the point above by a factor of 1.5, you can left-multiply it by the following matrix:
+
+[1.5   0   0]
+[  0 1.5   0]
+[  0   0   1]
+
+
+You'll get this new point:
+
+[480]
+[360]
+[  1]
+
+
+Which represents the original point, scaled by 1.5 relative to the corner of your screen (0, 0). This is important: scaling is always done with respect to the origin. If you want to scale with some other point as your center (such as the middle of a sprite), you need to "wrap" the scale in translations to and from the origin. Here's the matrix to translate our original point to the origin:
+
+[1  0  -320]
+[0  1  -240]
+[0  0     1]
+
+
+Which yields:
+
+[320*1 + 1*-320]   [0]
+[240*1 + 1*-240] = [0]
+[     1*1      ]   [1]
+
+
+You'll recognize the above as the identity matrix with the displacement coordinates slapped in the upper-right corner. That's why the 1 (the "homogenous coordinate") is necessary: to make room for these coordinates, thus making it possible to translate using multiplication. Otherwise it would have to be represented by matrix addition, which is more intuitive to humans, but would make graphics cards even more complicated than they already are.
+
+Now, matrix multiplication generally isn't commutative, so when "adding" a transformation (by multiplying your matrix) you need to specify whether you're left-multiplying or right-multiplying. The difference it makes is what order your transformations are chained in. By right-multiplying your matrix (using preRotate()) you're indicating that the rotation step should happen before all the other transformations that you've just asked for. This might be what you want, but it usually isn't. 
+
+Often, it doesn't matter. If you only have one transformation, for example, it never matters :) Sometimes, your transformations can happen in either order with the same effect, such as scaling and rotation--my linear algebra is rusty, but I believe that in this case the matrix multiplication actually is commutative because the scale matrix is symmetric, that is, it mirrors itself across the diagonal. But really, just think about it: If I rotate some picture 10 degrees clockwise and then scale it to 200%, it looks the same as if I scaled it first, then rotated it.
+
+If you were doing some weirder compound transformations, you'd begin to notice a discrepancy. My advice is to stick with postRotate(). 
+    

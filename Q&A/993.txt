@@ -1,0 +1,294 @@
+156
+Q:I want to close my application, so that it no longer runs in the background.
+
+How to do that? Is this good practice on Android platform?
+
+If I rely on the "back" button, it closes the app, but it stays in background. There is even application called "TaskKiller" just to kill those apps in the background.
+    
+===============================================================================================
+139
+A:Android has a mechanism in place to close an application safely per its documentation.  In the last Activity that is exited (usually the main Activity that first came up when the application started) just place a couple of lines in the onDestroy() method.  The call to System.runFinalizersOnExit(true) ensures that all objects will be finalized and garbage collected when the the application exits.  You can also kill an application quickly via android.os.Process.killProcess(android.os.Process.myPid())  if you prefer.  The best way to do this is put a method like the following in a helper class and then call it whenever the app needs to be killed.  For example in the destroy method of the root activity (assuming that the app never kills this activity):
+
+Also Android will not notify an application of the HOME key event, so you cannot close the application when the HOME key is pressed.  Android reserves the  HOME key event to itself so that a developer cannot prevent users from leaving their application.  However you can determine with the HOME key is pressed by setting a flag to true in a helper class that assumes that the HOME key has been pressed, then changing the flag to false when an event occurs that shows the HOME key was not pressed and then checking to see of the HOME key pressed in the onStop() method of the activity. 
+
+Don't forget to handle the HOME key for any menus and in the activities that are started by the menus.  The same goes for the SEARCH key.  Below is some example classes to illustrate:
+
+Here's an example of a root activity that kills the application when it is destroyed:
+
+package android.example;
+
+/**
+ * @author Danny Remington - MacroSolve
+ */
+
+public class HomeKey extends CustomActivity {
+
+    public void onDestroy() {
+        super.onDestroy();
+
+        /*
+         * Kill application when the root activity is killed.
+         */
+        UIHelper.killApp(true);
+    }
+
+}
+
+
+Here's an abstract activity that can be extended to handle the HOME key for all activities that extend it:
+
+package android.example;
+
+/**
+ * @author Danny Remington - MacroSolve
+ */
+
+import android.app.Activity;
+import android.view.Menu;
+import android.view.MenuInflater;
+
+/**
+ * Activity that includes custom behavior shared across the application. For
+ * example, bringing up a menu with the settings icon when the menu button is
+ * pressed by the user and then starting the settings activity when the user
+ * clicks on the settings icon.
+ */
+public abstract class CustomActivity extends Activity {
+    public void onStart() {
+        super.onStart();
+
+        /*
+         * Check if the app was just launched. If the app was just launched then
+         * assume that the HOME key will be pressed next unless a navigation
+         * event by the user or the app occurs. Otherwise the user or the app
+         * navigated to this activity so the HOME key was not pressed.
+         */
+
+        UIHelper.checkJustLaunced();
+    }
+
+    public void finish() {
+        /*
+         * This can only invoked by the user or the app finishing the activity
+         * by navigating from the activity so the HOME key was not pressed.
+         */
+        UIHelper.homeKeyPressed = false;
+        super.finish();
+    }
+
+    public void onStop() {
+        super.onStop();
+
+        /*
+         * Check if the HOME key was pressed. If the HOME key was pressed then
+         * the app will be killed. Otherwise the user or the app is navigating
+         * away from this activity so assume that the HOME key will be pressed
+         * next unless a navigation event by the user or the app occurs.
+         */
+        UIHelper.checkHomeKeyPressed(true);
+    }
+
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.settings_menu, menu);
+
+        /*
+         * Assume that the HOME key will be pressed next unless a navigation
+         * event by the user or the app occurs.
+         */
+        UIHelper.homeKeyPressed = true;
+
+        return true;
+    }
+
+    public boolean onSearchRequested() {
+        /*
+         * Disable the SEARCH key.
+         */
+        return false;
+    }
+}
+
+
+Here's an example of a menu screen that handles the HOME key:
+
+/**
+ * @author Danny Remington - MacroSolve
+ */
+
+package android.example;
+
+import android.os.Bundle;
+import android.preference.PreferenceActivity;
+
+/**
+ * PreferenceActivity for the settings screen.
+ * 
+ * @see PreferenceActivity
+ * 
+ */
+public class SettingsScreen extends PreferenceActivity {
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        addPreferencesFromResource(R.layout.settings_screen);
+    }
+
+    public void onStart() {
+        super.onStart();
+
+        /*
+         * This can only invoked by the user or the app starting the activity by
+         * navigating to the activity so the HOME key was not pressed.
+         */
+        UIHelper.homeKeyPressed = false;
+    }
+
+    public void finish() {
+        /*
+         * This can only invoked by the user or the app finishing the activity
+         * by navigating from the activity so the HOME key was not pressed.
+         */
+        UIHelper.homeKeyPressed = false;
+        super.finish();
+    }
+
+    public void onStop() {
+        super.onStop();
+
+        /*
+         * Check if the HOME key was pressed. If the HOME key was pressed then
+         * the app will be killed either safely or quickly. Otherwise the user
+         * or the app is navigating away from the activity so assume that the
+         * HOME key will be pressed next unless a navigation event by the user
+         * or the app occurs.
+         */
+        UIHelper.checkHomeKeyPressed(true);
+    }
+
+    public boolean onSearchRequested() {
+        /*
+         * Disable the SEARCH key.
+         */
+        return false;
+    }
+
+}
+
+
+Here's an example of a helper class that handles the HOME key across the app:
+
+package android.example;
+
+/**
+ * @author Danny Remington - MacroSolve
+ *
+ */
+
+/**
+ * Helper class to help handling of UI.
+ */
+public class UIHelper {
+    public static boolean homeKeyPressed;
+    private static boolean justLaunched = true;
+
+    /**
+     * Check if the app was just launched. If the app was just launched then
+     * assume that the HOME key will be pressed next unless a navigation event
+     * by the user or the app occurs. Otherwise the user or the app navigated to
+     * the activity so the HOME key was not pressed.
+     */
+    public static void checkJustLaunced() {
+        if (justLaunched) {
+            homeKeyPressed = true;
+            justLaunched = false;
+        } else {
+            homeKeyPressed = false;
+        }
+    }
+
+    /**
+     * Check if the HOME key was pressed. If the HOME key was pressed then the
+     * app will be killed either safely or quickly. Otherwise the user or the
+     * app is navigating away from the activity so assume that the HOME key will
+     * be pressed next unless a navigation event by the user or the app occurs.
+     * 
+     * @param killSafely
+     *            Primitive boolean which indicates whether the app should be
+     *            killed safely or quickly when the HOME key is pressed.
+     * 
+     * @see {@link UIHelper.killApp}
+     */
+    public static void checkHomeKeyPressed(boolean killSafely) {
+        if (homeKeyPressed) {
+            killApp(true);
+        } else {
+            homeKeyPressed = true;
+        }
+    }
+
+    /**
+     * Kill the app either safely or quickly. The app is killed safely by
+     * killing the virtual machine that the app runs in after finalizing all
+     * {@link Object}s created by the app. The app is killed quickly by abruptly
+     * killing the process that the virtual machine that runs the app runs in
+     * without finalizing all {@link Object}s created by the app. Whether the
+     * app is killed safely or quickly the app will be completely created as a
+     * new app in a new virtual machine running in a new process if the user
+     * starts the app again.
+     * 
+     * <P>
+     * <B>NOTE:</B> The app will not be killed until all of its threads have
+     * closed if it is killed safely.
+     * </P>
+     * 
+     * <P>
+     * <B>NOTE:</B> All threads running under the process will be abruptly
+     * killed when the app is killed quickly. This can lead to various issues
+     * related to threading. For example, if one of those threads was making
+     * multiple related changes to the database, then it may have committed some
+     * of those changes but not all of those changes when it was abruptly
+     * killed.
+     * </P>
+     * 
+     * @param killSafely
+     *            Primitive boolean which indicates whether the app should be
+     *            killed safely or quickly. If true then the app will be killed
+     *            safely. Otherwise it will be killed quickly.
+     */
+    public static void killApp(boolean killSafely) {
+        if (killSafely) {
+            /*
+             * Notify the system to finalize and collect all objects of the app
+             * on exit so that the virtual machine running the app can be killed
+             * by the system without causing issues. NOTE: If this is set to
+             * true then the virtual machine will not be killed until all of its
+             * threads have closed.
+             */
+            System.runFinalizersOnExit(true);
+
+            /*
+             * Force the system to close the app down completely instead of
+             * retaining it in the background. The virtual machine that runs the
+             * app will be killed. The app will be completely created as a new
+             * app in a new virtual machine running in a new process if the user
+             * starts the app again.
+             */
+            System.exit(0);
+        } else {
+            /*
+             * Alternatively the process that runs the virtual machine could be
+             * abruptly killed. This is the quickest way to remove the app from
+             * the device but it could cause problems since resources will not
+             * be finalized first. For example, all threads running under the
+             * process will be abruptly killed when the process is abruptly
+             * killed. If one of those threads was making multiple related
+             * changes to the database, then it may have committed some of those
+             * changes but not all of those changes when it was abruptly killed.
+             */
+            android.os.Process.killProcess(android.os.Process.myPid());
+        }
+
+    }
+}
+
+    

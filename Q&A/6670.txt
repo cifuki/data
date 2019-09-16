@@ -1,0 +1,108 @@
+38
+Q:I'm currently working on a little app to get started with the services that the Bluetooth Android API can provide. 
+
+Edit -> Answer:
+
+It seems that the issue was due to the specific Nexus 5 devices. Seems like their bluetooth receiver doesn't work well. Solution below should work for other devices
+
+Remark:
+
+
+I\xe2\x80\x99ve read the documentation here: http://developer.android.com/guide/topics/connectivity/bluetooth.html
+as well as the following source code of this tutorial http://www.londatiga.net/it/programming/android/how-to-programmatically-scan-or-discover-android-bluetooth-device/ located on github under /lorensiuswlt/AndroBluetooth
+I\xe2\x80\x99ve finished almost all the features that interested me (such as check for adapter existence, enable/disable the blueooth, querying paired divices, set the adapter discoverable).
+
+
+Issue:
+
+Actually no device is found when i launch the .onDiscovery() method, even though devices are found from Settings/Bluetooth on my Nexus 5.
+
+Here is how I handle it:
+
+public class MainActivity extends AppCompatActivity {
+private BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+
+...
+
+protected void onCreate(Bundle savedInstanceState) {
+IntentFilter filter = new IntentFilter();
+filter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+filter.addAction(BluetoothDevice.ACTION_FOUND);
+filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_STARTED);
+filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+registerReceiver(mReceiver, filter); 
+}
+
+
+The filter is working well as far as i could try, i.e ACTION_STATE_CHANGED (on bluetooth enabling) and the two ACTION_DISCOVERY_***.
+
+The following method is then successfuly called:
+
+public void onDiscovery(View view)
+{
+    mBluetoothAdapter.startDiscovery();
+}
+
+
+And then i have my bluetooth receiver:
+
+private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+    public void onReceive(Context context, Intent intent) {
+        String action = intent.getAction();
+
+        if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)) {
+            final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
+
+            if (state == BluetoothAdapter.STATE_ON) {
+                showToast("ACTION_STATE_CHANGED: STATE_ON");
+            }
+        }
+
+        else if (BluetoothAdapter.ACTION_DISCOVERY_STARTED.equals(action)) {
+            mDeviceList = new ArrayList<>();
+            showToast("ACTION_DISCOVERY_STARTED");
+            mProgressDlg.show();
+        }
+
+        else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action) && !bluetoothSwitchedOFF) {
+            mProgressDlg.dismiss();
+            showToast("ACTION_DISCOVERY_FINISHED");
+
+            Intent newIntent = new Intent(MainActivity.this, DeviceListActivity.class);
+
+            newIntent.putParcelableArrayListExtra("device.list", mDeviceList);
+
+            startActivity(newIntent);
+        }
+
+        else if (BluetoothDevice.ACTION_FOUND.equals(action)) {// When discovery finds a device
+            // Get the BluetoothDevice object from the Intent
+            BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+            mDeviceList.add(device);
+            showToast("Device found = " + device.getName());
+        }
+    }
+};
+
+
+I don't have any issue coming out the logcat and didn't notice any trouble during the test I did. The only problem is that no device is discovered at the end of the scan, when many discoverable ones are available arround. 
+
+I tried to not put too much code in order to not flood the topic. Ask me if you need more.
+
+Thanks for reading me, and thanks in advance for you answers.
+    
+===============================================================================================
+71
+A:What version of Android are you running this on?  If it is Android 6.x, I believe you need to add the ACCESS_COURSE_LOCATION permission to your manifest. For example:
+
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/> 
+
+
+I had a similar issue and this fixed it for me.
+
+UPDATE: Adding documentation direct from Google on this:
+
+
+  To access the hardware identifiers of nearby external devices via Bluetooth and Wi-Fi scans, your app must now have the ACCESS_FINE_LOCATION or ACCESS_COARSE_LOCATION permissions
+
+    

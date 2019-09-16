@@ -1,0 +1,133 @@
+30
+Q:I know there is a lot of information about this topic, but I can't find any that is up to date.
+I see topics like this one relating to rails and android authentication but I see that  TokenAuthenticatable is now removed from devise.
+
+My question is simple: is there a good way to authenticate users from native Android and iPhone apps using Rails 4? Does anyone know of good tutorials or articles that provide a solution ?
+
+Adam Waite Adding a bounty:
+
+I have just opened a 500 bounty on this question because I can't find the correct practice for authenticating a user from an iOS app to a Rails API anywhere. This is what I was considering doing but have no idea if it's secure or not?!:
+
+Let's assume we have a User record. A user has signed up for an account which has created a User record in the database with an email column and a password_digest column.
+
+When the user signs-in I would like that user to remain authenticated on the mobile app until explicitly signing-out.
+
+I imagine we're going to need a token based authentication. I would perhaps create an ApiKey record when the User is created and have that saved as an association on the User record.
+
+When the user signs in/up, the response will contain an API token (something like SecureRandom.hex) which will be saved in the iOS Keychain and used with all subsequent requests to verify the user by passing it in a header and verifying it using something like:
+
+before_filter :restrict_access
+
+private
+
+def restrict_access
+authenticate_or_request_with_http_token do |token, options|
+  ApiKey.exists?(access_token: token)
+end
+
+
+Is this secure? Should I be refreshing the token with every request and including it in the response?
+
+What other options do I have? What do the likes of Facebook, Twitter and Pinterest do?
+
+I am aware of OAuth2.0, but is that not for granting external applications?
+
+Is there a gem that manages any of this?
+
+Sorry, completely unsure here. 
+
+500 to the best answer.
+    
+===============================================================================================
+13
+A:Gist of a solution from my research. Feel free to edit, correct, invalidate, etc.
+
+SessionsController < ApplicationController
+  skip_before_filter :authenticate_user, :only => [:create]
+  def create
+    user = User.where("username = ? OR email = ?", params[:username_or_email], params[:username_or_email]).first
+    if user && user.authenticate(params[:password])
+      api_key = user.find_api_key
+      if !api_key.secret_key || api_key.is_expired?
+        api_key.set_expiry_date
+        api_key.generate_secret_key
+      end
+      api_key.save
+      render json: api_key, status: 201     
+    else
+      status: 401
+    end
+  end
+
+
+Note the ApiAuth.authentic? method and the request object. The request must be signed with an HMAC algorithm on the client.
+
+ApplicationController < ActionController::Base
+  respond_to :json
+  force_ssl
+  protect_from_forgery with: :null_session 
+  before_filter :authenticate_user
+  private
+  def authenticate_user
+    if authenticate_user_from_secret_key
+      return true
+    else
+      head :unauthorized 
+    end
+  end
+  def authenticate_user_from_secret_key
+    userid = ApiAuth.access_id(request)
+    currentuser = userid && User.find_by_id(userid)
+    if ApiAuth.authentic?(request, currentuser.find_api_key.secret_key)
+      return true
+    else
+      return false
+    end
+    false
+  end
+
+
+User creation/registration
+
+UsersController < ApplicationController
+  skip_before_filter :authenticate_user, :only => [:create]
+  def create
+      user = User.create(user_params)
+      if !user.new_record?
+        render json: user.find_apit_key, status: 201
+
+      else
+       # error
+      end
+  end
+
+
+Api key model. Similar to api key model in #352 railscast only difference is ApiAuth key generation.
+
+class ApiKey < ActiveRecord::Base
+  before_create :generate_secret_key, :set_expiry_date
+  belongs_to :user   
+  def generate_secret_key
+    begin
+    self.secret_key = ApiAuth.generate_secret_key
+    end while self.class.exists?(secret_key: secret_key)
+  end
+
+
+User model.
+
+class User < ActiveRecord::Base
+  has_secure_password
+  before_save :ensure_api_key 
+  has_many :api_keys 
+  def find_api_key
+   self.api_keys.active.ios.first_or_create
+  end
+
+
+On the client side the HMAC algorithm must be used to sign requests.
+
+The code is from:
+[SHA1 HMAC Key generation/authentication] https://github.com/mgomes/api_auth
+[Controllers & Models] https://github.com/danahartweg/authenticatable_rest_api  
+    

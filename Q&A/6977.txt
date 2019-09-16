@@ -1,0 +1,73 @@
+37
+Q:I'm trying to update a list inside the adapter using async, I can see there is too much boilerplate. 
+
+Is it the right way to use Kotlin Coroutines?
+
+can this be optimized more?
+
+fun loadListOfMediaInAsync() = async(CommonPool) {
+        try {
+            //Long running task 
+            adapter.listOfMediaItems.addAll(resources.getAllTracks())
+            runOnUiThread {
+                adapter.notifyDataSetChanged()
+                progress.dismiss()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            runOnUiThread {progress.dismiss()}
+        } catch (o: OutOfMemoryError) {
+            o.printStackTrace()
+            runOnUiThread {progress.dismiss()}
+        }
+    }
+
+    
+===============================================================================================
+37
+A:After struggling with this question for days, I think the most simple and clear async-await pattern for Android activities using Kotlin is:
+
+override fun onCreate(savedInstanceState: Bundle?) {
+    //...
+    loadDataAsync(); //"Fire-and-forget"
+}
+
+fun loadDataAsync() = async(UI) {
+    try {
+        //Turn on busy indicator.
+        val job = async(CommonPool) {
+           //We're on a background thread here.
+           //Execute blocking calls, such as retrofit call.execute().body() + caching.
+        }
+        job.await();
+        //We're back on the main thread here.
+        //Update UI controls such as RecyclerView adapter data.
+    } 
+    catch (e: Exception) {
+    }
+    finally {
+        //Turn off busy indicator.
+    }
+}
+
+
+The only Gradle dependencies for coroutines are: kotlin-stdlib-jre7, kotlinx-coroutines-android.
+
+Note: Use job.await() instead of job.join() because await() rethrows exceptions, but join() does not. If you use join() you will need to check job.isCompletedExceptionally after the job completes.
+
+To start concurrent retrofit calls, you can do this:
+
+val jobA = async(CommonPool) { /* Blocking call A */ };
+val jobB = async(CommonPool) { /* Blocking call B */ };
+jobA.await();
+jobB.await();
+
+
+Or:
+
+val jobs = arrayListOf<Deferred<Unit>>();
+jobs += async(CommonPool) { /* Blocking call A */ };
+jobs += async(CommonPool) { /* Blocking call B */ };
+jobs.forEach { it.await(); };
+
+    

@@ -1,0 +1,102 @@
+43
+Q:Is it possible to know whether a Spinner is open or closed? It would even be better if there was some sort of onOpenListener for Spinners.
+
+I've tried using an OnItemSelectedListener like this:
+
+spinnerType.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+
+        @Override
+        public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+            executeSomething();
+
+        }
+
+        @Override
+        public void onNothingSelected(AdapterView<?> parent) {
+            Log.d("nothing" , "selected");  
+        }
+
+    });
+
+
+I can know that the window will close if something is selected (in executeSomething()). But I don't get notified if I click outside of the Dialog, which also closes the spinner
+    
+===============================================================================================
+76
+A:Another option to watch for those events is to extend the Spinner class and use one of its methods(performClick() which will trigger its dialog/popup) followed by monitoring the focus of the window holding this custom Spinner. This should provide you with the wanted closed event for all the possible finishing possibilities(for either the dialog or dropdown mode).    
+
+The custom Spinner class:
+
+public class CustomSpinner extends Spinner {
+
+   /**
+    * An interface which a client of this Spinner could use to receive
+    * open/closed events for this Spinner. 
+    */
+    public interface OnSpinnerEventsListener {
+
+        /**
+         * Callback triggered when the spinner was opened.
+         */
+         void onSpinnerOpened(Spinner spinner);
+
+        /**
+         * Callback triggered when the spinner was closed.
+         */
+         void onSpinnerClosed(Spinner spinner);
+
+    }
+
+    private OnSpinnerEventsListener mListener;
+    private boolean mOpenInitiated = false;
+
+    // implement the Spinner constructors that you need
+
+    @Override
+    public boolean performClick() {
+        // register that the Spinner was opened so we have a status
+        // indicator for when the container holding this Spinner may lose focus
+        mOpenInitiated = true;
+        if (mListener != null) {
+            mListener.onSpinnerOpened(this);
+        }
+        return super.performClick();
+    }
+
+    @Override
+    public void onWindowFocusChanged (boolean hasFocus) {
+        if (hasBeenOpened() && hasFocus) {
+            performClosedEvent();
+        }
+    }
+
+    /**
+    * Register the listener which will listen for events.
+    */
+    public void setSpinnerEventsListener(
+            OnSpinnerEventsListener onSpinnerEventsListener) {
+        mListener = onSpinnerEventsListener;
+    }
+
+    /**
+     * Propagate the closed Spinner event to the listener from outside if needed.
+     */
+    public void performClosedEvent() {
+        mOpenInitiated = false;
+        if (mListener != null) {
+            mListener.onSpinnerClosed(this);
+        }
+    }
+
+    /**
+     * A boolean flag indicating that the Spinner triggered an open event.
+     * 
+     * @return true for opened Spinner 
+     */
+    public boolean hasBeenOpened() {
+        return mOpenInitiated;
+    }
+
+}
+
+    

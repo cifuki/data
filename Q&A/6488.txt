@@ -1,0 +1,142 @@
+39
+Q:Is there a simple way to get the LatLngBounds of the visible map from a CameraPosition with Android Google Maps API v2 so that I can use the OnCameraChangeListener to go fetch new data for the markers.
+
+mMap.setOnCameraChangeListener(new OnCameraChangeListener() {
+            @Override
+            public void onCameraChange(CameraPosition position) {
+                LatLngBounds bounds = ?;
+                fetchNewData(bounds);
+            }
+        });
+
+    
+===============================================================================================
+35
+A:Update since August 2016
+
+Summary the correct answer now for this problem is to use the new onCameraIdle, instead of OnCameraChangeListener, which is now deprecated. Read bellow how.
+
+Now you can listen to "dragEnd"-like event, and even other events on the newest version of Google Maps for Android.
+
+As shown in the docs, you can avoid the problem of multiple (aka "several") calls of the OnCameraChangeListener by using the new listeners. For example, you are now able to check what is the reason behind the camera move, which is the ideal to couple with a fetchData problem as requested. The following code is mostly directly taken from the docs. One more thing, it is necessary to use Google Play Services 9.4.
+
+public class MyCameraActivity extends FragmentActivity implements
+        OnCameraMoveStartedListener,
+        OnCameraMoveListener,
+        OnCameraMoveCanceledListener,
+        OnCameraIdleListener,
+        OnMapReadyCallback {
+
+    private GoogleMap mMap;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_my_camera);
+
+        SupportMapFragment mapFragment =
+            (SupportMapFragment) getSupportFragmentManager()
+                    .findFragmentById(R.id.map);
+        mapFragment.getMapAsync(this);
+    }
+
+    @Override
+    public void onMapReady(GoogleMap map) {
+        mMap = map;
+
+        mMap.setOnCameraIdleListener(this);
+        mMap.setOnCameraMoveStartedListener(this);
+        mMap.setOnCameraMoveListener(this);
+        mMap.setOnCameraMoveCanceledListener(this);
+
+        // Show Sydney on the map.
+        mMap.moveCamera(CameraUpdateFactory
+                .newLatLngZoom(new LatLng(-33.87365, 151.20689), 10));
+    }
+
+    @Override
+    public void onCameraMoveStarted(int reason) {
+
+        if (reason == OnCameraMoveStartedListener.REASON_GESTURE) {
+            Toast.makeText(this, "The user gestured on the map.",
+                           Toast.LENGTH_SHORT).show();
+        } else if (reason == OnCameraMoveStartedListener
+                                .REASON_API_ANIMATION) {
+            Toast.makeText(this, "The user tapped something on the map.",
+                           Toast.LENGTH_SHORT).show();
+        } else if (reason == OnCameraMoveStartedListener
+                                .REASON_DEVELOPER_ANIMATION) {
+            Toast.makeText(this, "The app moved the camera.",
+                           Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    public void onCameraMove() {
+        Toast.makeText(this, "The camera is moving.",
+                       Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onCameraMoveCanceled() {
+        Toast.makeText(this, "Camera movement canceled.",
+                       Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onCameraIdle() {
+        Toast.makeText(this, "The camera has stopped moving. Fetch the data from the server!", Toast.LENGTH_SHORT).show();
+        LatLngBounds bounds = mMap.getProjection().getVisibleRegion().latLngBounds;
+        fetchData(bounds)
+    }
+}
+
+
+
+
+Workaround for a efficient solution before August 2016
+
+As the question is properly answered, I would like to add on that on a likely to be next issue. 
+
+The problem arises when using OnCameraChangeListener to fetch data from the server due to the frequency in which this method is triggered.
+
+There is an issue reported on how crazily frequent this method is trigged when doing a simple map sliding, thus in the example of the question, it would trigger fetchData multiple sequential times for very little camera changes, even for no camera changes, yes, it happens that the camera bounds have not changed, but the method gets triggered.
+
+This could impact on the server side performance and would waste a lot of devices' resources by fetching data sequentially tens of times from the server. 
+
+You can find in that link workarounds for this problem, but there is not yet a official way to do it, e.g., using a desirable dragEnd, or cameraChangeEnd callbacks.
+
+One example bellow, based on the ones from there, is how I avoid the aforementioned problem by playing with the time interval of the calls and discarding the calls with the same boundaries.
+
+// Keep the current camera bounds
+private LatLngBounds currentCameraBounds;
+
+new GoogleMap.OnCameraChangeListener() {
+    private static int CAMERA_MOVE_REACT_THRESHOLD_MS = 500;
+    private long lastCallMs = Long.MIN_VALUE;
+
+    @Override
+    public void onCameraChange(CameraPosition cameraPosition) {
+      LatLngBounds bounds = map.getProjection().getVisibleRegion().latLngBounds;
+      // Check whether the camera changes report the same boundaries (?!), yes, it happens
+      if (currentCameraBounds.northeast.latitude == bounds.northeast.latitude
+         && currentCameraBounds.northeast.longitude == bounds.northeast.longitude
+         && currentCameraBounds.southwest.latitude == bounds.southwest.latitude
+         && currentCameraBounds.southwest.longitude == bounds.southwest.longitude) {
+         return;
+       }
+
+      final long snap = System.currentTimeMillis();
+      if (lastCallMs + CAMERA_MOVE_REACT_THRESHOLD_MS > snap) {
+        lastCallMs = snap;
+        return;
+      }
+
+      fetchData(bounds);
+
+      lastCallMs = snap;
+      currentCameraBounds = bounds;
+
+}
+
+    

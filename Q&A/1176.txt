@@ -1,0 +1,76 @@
+140
+Q:After upgrading my phone to 8.1 Developer Preview my background service no longer starts up properly.
+
+In my long running service I've implemented a startForeground method to start the ongoing notification which is called in on create.
+
+    @TargetApi(Build.VERSION_CODES.O)
+private fun startForeground() {
+    // Safe call, handled by compat lib.
+    val notificationBuilder = NotificationCompat.Builder(this, DEFAULT_CHANNEL_ID)
+
+    val notification = notificationBuilder.setOngoing(true)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .build()
+    startForeground(101, notification)
+}
+
+
+Error message:
+
+11-28 11:47:53.349 24704-24704/$PACKAGE_NAMEE/AndroidRuntime: FATAL EXCEPTION: main
+    Process: $PACKAGE_NAME, PID: 24704
+    android.app.RemoteServiceException: Bad notification for startForeground: java.lang.RuntimeException: invalid channel for service notification: Notification(channel=My channel pri=0 contentView=null vibrate=null sound=null defaults=0x0 flags=0x42 color=0x00000000 vis=PRIVATE)
+        at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1768)
+        at android.os.Handler.dispatchMessage(Handler.java:106)
+        at android.os.Looper.loop(Looper.java:164)
+        at android.app.ActivityThread.main(ActivityThread.java:6494)
+        at java.lang.reflect.Method.invoke(Native Method)
+        at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:438)
+        at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:807)
+
+
+invalid channel for service notification, apparently my old channel the DEFAULT_CHANNEL_ID is no longer appropriate for API 27 I assume. What would be the proper channel? I've tried to look through the documentation 
+    
+===============================================================================================
+171
+A:After some tinkering with different solution it appears that you in 8.1 must create your own notification channel.
+
+private fun startForeground() {
+    val channelId =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                createNotificationChannel("my_service", "My Background Service")
+            } else {
+                // If earlier version channel ID is not used
+                // https://developer.android.com/reference/android/support/v4/app/NotificationCompat.Builder.html#NotificationCompat.Builder(android.content.Context)
+                ""
+            }
+
+    val notificationBuilder = NotificationCompat.Builder(this, channelId )
+    val notification = notificationBuilder.setOngoing(true)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setPriority(PRIORITY_MIN)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .build()
+    startForeground(101, notification)
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+private fun createNotificationChannel(channelId: String, channelName: String): String{
+    val chan = NotificationChannel(channelId,
+            channelName, NotificationManager.IMPORTANCE_NONE)
+    chan.lightColor = Color.BLUE
+    chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+    val service = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    service.createNotificationChannel(chan)
+    return channelId
+}
+
+
+From my understanding background services are now displayed as normal notifications that the user then can select to not show by deselecting the notification channel.
+
+Update:
+Also don't forget to add the foreground permission as required Android P:
+
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    

@@ -1,0 +1,114 @@
+123
+Q:Whenever I generate a signed apk in Android Studio, by default it gives the name as app-release.apk... 
+
+Can we do any settings so that it should prompt and ask me the name which need to be assigned to the apk(the way it do in eclipse)
+
+What I do is - rename the apk after it generated.
+This doesn't give any errors but is there any genuine way so that i can do any changes in settings to get a prompt.
+
+Note::
+
+while generating apk android studio is giving me a prompt to select the location(only)
+    
+===============================================================================================
+123
+A:Yes we can change that but with some more attention
+
+
+
+Now add this in your build.gradle in your project while make sure you have checked the build variant of your project like release or Debug 
+so here i have set my build variant as release but you may select as Debug as well .
+
+
+    buildTypes {
+            release {
+                minifyEnabled false
+                proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+                signingConfig getSigningConfig()
+                applicationVariants.all { variant ->
+                    variant.outputs.each { output ->
+                        def date = new Date();
+                        def formattedDate = date.format('yyyyMMddHHmmss')
+                        output.outputFile = new File(output.outputFile.parent,
+                                output.outputFile.name.replace("-release", "-" + formattedDate)
+    //for Debug use output.outputFile = new File(output.outputFile.parent,
+   //                             output.outputFile.name.replace("-debug", "-" + formattedDate)
+                        )
+                    }
+                }
+            }
+        }
+
+
+
+  You may Do it With different Approach Like this
+
+
+ defaultConfig {
+        applicationId "com.myapp.status"
+        minSdkVersion 16
+        targetSdkVersion 23
+        versionCode 1
+        versionName "1.0"
+        setProperty("archivesBaseName", "COMU-$versionName")
+    }
+
+
+Using Set property method in build.gradle 
+and Don't forget to sync the gradle before running the projects 
+Hope It will solve your problem :)
+
+
+  A New approach to handle this added recently by google update
+  You may now rename your build according to flavor or Variant output
+  //Below source is from developer android documentation
+  For more details follow the above documentation link
+  Using the Variant API to manipulate variant outputs is broken with the new plugin. It still works for simple tasks, such as changing the APK name during build time, as shown below:
+
+
+// If you use each() to iterate through the variant objects,
+// you need to start using all(). That's because each() iterates
+// through only the objects that already exist during configuration time\xe2\x80\x94
+// but those object don't exist at configuration time with the new model.
+// However, all() adapts to the new model by picking up object as they are
+// added during execution.
+android.applicationVariants.all { variant ->
+    variant.outputs.all {
+        outputFileName = "${variant.name}-${variant.versionName}.apk"
+    }
+}
+
+
+
+  Renaming .aab bundle
+  This is nicely answered by David Medenjak
+
+
+tasks.whenTaskAdded { task ->
+    if (task.name.startsWith("bundle")) {
+        def renameTaskName = "rename${task.name.capitalize()}Aab"
+        def flavor = task.name.substring("bundle".length()).uncapitalize()
+        tasks.create(renameTaskName, Copy) {
+            def path = "${buildDir}/outputs/bundle/${flavor}/"
+            from(path)
+            include "app.aab"
+            destinationDir file("${buildDir}/outputs/renamedBundle/")
+            rename "app.aab", "${flavor}.aab"
+        }
+
+        task.finalizedBy(renameTaskName)
+    }
+//@credit to David Medenjak for this block of code
+}
+
+
+
+  Is there need of above code
+
+
+What i have observed in the latest version of the android studio 3.3.1
+
+The rename of .aab bundle is done by the previous code there don't require any task rename an all.
+
+Hope it will help you guys. :)
+    

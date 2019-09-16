@@ -1,0 +1,243 @@
+62
+Q:I'm getting familiar with Android framework and Java and wanted to create a general "NetworkHelper" class which would handle most of the networking code enabling me to just call web-pages from it.
+
+I followed this article from the developer.android.com to create my networking class: http://developer.android.com/training/basics/network-ops/connecting.html
+
+Code:
+
+package com.example.androidapp;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
+import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.os.AsyncTask;
+import android.util.Log;
+
+
+
+/**
+ * @author tuomas
+ * This class provides basic helper functions and features for network communication.
+ */
+
+
+public class NetworkHelper 
+{
+private Context mContext;
+
+
+public NetworkHelper(Context mContext)
+{
+    //get context
+    this.mContext = mContext;
+}
+
+
+/**
+ * Checks if the network connection is available.
+ */
+public boolean checkConnection()
+{
+    //checks if the network connection exists and works as should be
+    ConnectivityManager connMgr = (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+    NetworkInfo networkInfo = connMgr.getActiveNetworkInfo();
+
+    if (networkInfo != null && networkInfo.isConnected())
+    {
+        //network connection works
+        Log.v("log", "Network connection works");
+        return true;
+    }
+    else
+    {
+        //network connection won't work
+        Log.v("log", "Network connection won't work");
+        return false;
+    }
+
+}
+
+public void downloadUrl(String stringUrl)
+{
+    new DownloadWebpageTask().execute(stringUrl);
+
+}
+
+
+
+//actual code to handle download
+private class DownloadWebpageTask extends AsyncTask<String, Void, String>
+{
+
+
+
+    @Override
+    protected String doInBackground(String... urls)
+    {
+        // params comes from the execute() call: params[0] is the url.
+        try {
+            return downloadUrl(urls[0]);
+        } catch (IOException e) {
+            return "Unable to retrieve web page. URL may be invalid.";
+        }
+    }
+
+    // Given a URL, establishes an HttpUrlConnection and retrieves
+    // the web page content as a InputStream, which it returns as
+    // a string.
+    private String downloadUrl(String myurl) throws IOException 
+    {
+        InputStream is = null;
+        // Only display the first 500 characters of the retrieved
+        // web page content.
+        int len = 500;
+
+        try {
+            URL url = new URL(myurl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setReadTimeout(10000 );
+            conn.setConnectTimeout(15000);
+            conn.setRequestMethod("GET");
+            conn.setDoInput(true);
+            // Starts the query
+            conn.connect();
+            int response = conn.getResponseCode();
+            Log.d("log", "The response is: " + response);
+            is = conn.getInputStream();
+
+            // Convert the InputStream into a string
+            String contentAsString = readIt(is, len);
+            return contentAsString;
+
+        // Makes sure that the InputStream is closed after the app is
+        // finished using it.
+        } finally {
+            if (is != null) {
+                is.close();
+            } 
+        }
+    }
+
+    // Reads an InputStream and converts it to a String.
+    public String readIt(InputStream stream, int len) throws IOException, UnsupportedEncodingException 
+    {
+        Reader reader = null;
+        reader = new InputStreamReader(stream, "UTF-8");        
+        char[] buffer = new char[len];
+        reader.read(buffer);
+        return new String(buffer);
+    }
+
+
+    // onPostExecute displays the results of the AsyncTask.
+    @Override
+    protected void onPostExecute(String result) 
+    {
+        //textView.setText(result);
+        Log.v("log", result);
+
+    }
+
+} 
+
+
+}
+
+In my activity class I use the class this way:
+
+connHelper = new NetworkHelper(this);
+
+
+...
+
+if (connHelper.checkConnection())
+    {
+        //connection ok, download the webpage from provided url
+        connHelper.downloadUrl(stringUrl);
+    }
+
+
+Problem I'm having is that I should somehow make a callback back to the activity and it should be definable in "downloadUrl()" function. For example when download finishes, public void "handleWebpage(String data)" function in activity is called with loaded string as its parameter.
+
+I did some googling and found that I should somehow use interfaces to achieve this functionality. After reviewing few similar stackoverflow questions/answers I didn't get it working and I'm not sure if I understood interfaces properly: How do I pass method as a parameter in Java? To be honest using the anonymous classes is new for me and I'm not really sure where or how I should apply the example code snippets in the mentioned thread.
+
+So my question is how I could pass the callback function to my network class and call it after download finishes? Where the interface declaration goes, implements keyword and so on?
+Please note that I'm beginner with Java (have other programming background though) so I'd appreciate a throughout explanation :) Thank you!
+    
+===============================================================================================
+96
+A:Use a callback interface or an abstract class with abstract callback methods.
+
+Callback interface example:
+
+public class SampleActivity extends Activity {
+
+    //define callback interface
+    interface MyCallbackInterface {
+
+        void onDownloadFinished(String result);
+    }
+
+    //your method slightly modified to take callback into account 
+    public void downloadUrl(String stringUrl, MyCallbackInterface callback) {
+        new DownloadWebpageTask(callback).execute(stringUrl);
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        //example to modified downloadUrl method
+        downloadUrl("http://google.com", new MyCallbackInterface() {
+
+            @Override
+            public void onDownloadFinished(String result) {
+                // Do something when download finished
+            }
+        });
+    }
+
+    //your async task class
+    private class DownloadWebpageTask extends AsyncTask<String, Void, String> {
+
+        final MyCallbackInterface callback;
+
+        DownloadWebpageTask(MyCallbackInterface callback) {
+            this.callback = callback;
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            callback.onDownloadFinished(result);
+        }
+
+        //except for this leave your code for this class untouched...
+    }
+}
+
+
+The second option is even more concise. You do not even have to define an abstract method for "onDownloaded event" as onPostExecute does exactly what is needed. Simply extend your DownloadWebpageTask with an anonymous inline class inside your downloadUrl method.
+
+    //your method slightly modified to take callback into account 
+    public void downloadUrl(String stringUrl, final MyCallbackInterface callback) {
+        new DownloadWebpageTask() {
+
+            @Override
+            protected void onPostExecute(String result) {
+                super.onPostExecute(result);
+                callback.onDownloadFinished(result);
+            }
+        }.execute(stringUrl);
+    }
+
+    //...
+
+    

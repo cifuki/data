@@ -1,0 +1,64 @@
+58
+Q:So I want to get the value of a String in several locales regardless of the current locale setting of the device/app. How should I do that?
+
+Basically what I need is a function getString(int id, String locale) rather than getString(int id)
+
+How could I do that?
+
+Thanks
+    
+===============================================================================================
+118
+A:NOTE If your minimum API is 17+, go straight to the bottom of this answer. Otherwise, read on...
+
+If you have various res folders for different locales, you can do something like this:
+
+Configuration conf = getResources().getConfiguration();
+conf.locale = new Locale("pl");
+DisplayMetrics metrics = new DisplayMetrics();
+getWindowManager().getDefaultDisplay().getMetrics(metrics);
+Resources resources = new Resources(getAssets(), metrics, conf);
+String str = resources.getString(id);
+
+
+Alternatively, you can just restart your activity using the method pointed to by @jyotiprakash.
+
+NOTE Calling the Resources constructor like this changes something internally in Android. You will have to invoke the constructor with your original locale to get things back the way they were.
+
+EDIT A slightly different (and somewhat cleaner) recipe for retrieving resources from a specific locale is:
+
+Resources res = getResources();
+Configuration conf = res.getConfiguration();
+Locale savedLocale = conf.locale;
+conf.locale = desiredLocale; // whatever you want here
+res.updateConfiguration(conf, null); // second arg null means don't change
+
+// retrieve resources from desired locale
+String str = res.getString(id);
+
+// restore original locale
+conf.locale = savedLocale;
+res.updateConfiguration(conf, null);
+
+
+As of API level 17, you should use conf.setLocale() instead of directly setting conf.locale. This will correctly update the configuration's layout direction if you happen to be switching between right-to-left and left-to-right locales. (Layout direction was introduced in 17.)
+
+There's no point in creating a new Configuration object (as @Nulano suggests in a comment) because calling updateConfiguration is going to change the original configuration obtained by calling res.getConfiguration().
+
+I would hesitate to bundle this up into a getString(int id, String locale) method if you're going to be loading several string resources for a locale. Changing locales (using either recipe) calls for the framework to do a lot of work rebinding all the resources. It's much better to update locales once, retrieve everything you need, and then set the locale back.
+
+EDIT (Thanks to @Mygod):
+
+If your minimum API level is 17+, there's a much better approach, as shown in this answer on another thread. For instance, you can create multiple Resource objects, one for each locale you need, with:
+
+@NonNull Resources getLocalizedResources(Context context, Locale desiredLocale) {
+    Configuration conf = context.getResources().getConfiguration();
+    conf = new Configuration(conf);
+    conf.setLocale(desiredLocale);
+    Context localizedContext = context.createConfigurationContext(conf);
+    return localizedContext.getResources();
+}
+
+
+Then just retrieve the resources you like from the localized Resource object returned by this method. There's no need to reset anything once you've retrieved the resources.
+    

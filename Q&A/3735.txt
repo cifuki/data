@@ -1,0 +1,177 @@
+61
+Q:I'm struggling with setting an alarm properly, and understanding the mechanism of cancelling and rescheduling alarms.
+
+I have found, that there is an adb command to retrieve all alarms scheduled on device, but I haven't found a documentation, explaining the format of the output.
+
+I do understand, that I'm asking a lot of explanations here, so if anybody will throw a link with detailed explanation about "adb shell dumpsys alarm", I will really appreciate it.
+
+So, here are the questions:
+
+
+
+  Pending alarm batches: 23
+
+
+a. Is '23' a number of currently active, scheduled alarms?
+
+  Batch{4293d3a8 num=1 start=1369361 end=1407261}: 
+    RTC #0: Alarm{4293d358 type 1 com.android.chrome}
+      type=1 whenElapsed=1369361 when=+19s304ms window=-1 repeatInterval=0 count=0
+      operation=PendingIntent{429e4500: PendingIntentRecord{429dbbc8 com.android.chrome broadcastIntent}}
+
+
+a. What is 'num=1', 'start=1369361' and 'end=1407261'? 
+b. 'RTC' stands for RTC alarm, I assume. 
+c. What '#0' stand for? 
+d. What means 'type=1'? 
+e. Is 'when=+19s304ms' meaning that alarm will be triggered in 19 seconds? 
+f. What means 'window=-1'? 
+g. Is 'repeatInterval=0' meaning this is non-repeating alarm? 
+h. Is 'count=0' meaning this alarm wasn't postponed, due to phone sleep state? 
+i. 'operation=PendingIntent{...}' stands for the pending intent, that will be triggered by alarm, I assume. 
+
+  Broadcast ref count: 0
+
+
+a. What is this?
+
+  Top Alarms:
+
+
+a. What is this?
+
+  +47s271ms running, 0 wakeups, 2 alarms: com.username.weatherinfo
+    act=com.username.receivers.CyclicWeatherUpdater.WEATHER_UPDATE_ACTION
+      cmp={com.username.weatherinfo/com.username.receivers.CyclicWeatherUpdater}
+
+
+a. Is '+47s271ms' meaning this alarm will be triggered in 47 seconds? 
+b. What is '0 wakeups' - alarm was never triggered? 
+c. What is '2 alarms'? 
+d. Is 'com.username.weatherinfo' standing for name of package, that was given to pending intent in context field? 
+e. Is 'act' meaning the action, that was sent for intent? 
+f. What is 'cmp'? I see, that it is composed from package name and class name - but from where are they taken? From intent constructor? 
+g. Why part of the alarms have only 'act' or only 'cmp'? I have assumed, that alarms without 'cmp' fields are for implicit broadcast intents. Yet, why there are alarms without 'act' field?
+
+  Alarm Stats:
+
+
+a. What is this?
+
+    
+===============================================================================================
+150
+A:I realize this thread is old, but the answers are not easy to find, and could be of use. I've spent a good bit of time working out what these messages mean.
+
+Q1: Batches
+
+Pending alarm batches: 23
+
+
+Alarms are organized into batches. As described in the documentation:
+
+
+  Beginning in API 19, the trigger time passed to this method is treated as inexact: the alarm will not be delivered before this time, but may be deferred and delivered some time later. The OS will use this policy in order to "batch" alarms together across the entire system, minimizing the number of times the device needs to "wake up" and minimizing battery use. In general, alarms scheduled in the near future will not be deferred as long as alarms scheduled far in the future.
+
+
+There may be more than one alarm per batch. In this case there are 23 batches of alarms, which means there are probably many more than 23 alarms scheduled. In the dumpsys alarm output, the line describing each batch looks like:
+
+Batch{4293d3a8 num=1 start=1369361 end=1407261}:
+
+
+In which: 
+
+
+4293d3a8 is an internal id associated with the batch. 
+num=1 is the number of alarms in this batch. In this case there's only one alarm in the batch.
+the start and end numbers represent the number of milliseconds that have elapsed since the system was last rebooted as described in this post, and also roughly represent the window of time in which the alarms in the batch should be triggered.
+
+
+Q2: Alarms
+
+Each alarm is described by three lines that look like:
+
+RTC #0: Alarm{4293d358 type 1 com.android.chrome} 
+    type=1 whenElapsed=1369361 when=+19s304ms window=-1 repeatInterval=0 count=0
+    operation=PendingIntent{429e4500: PendingIntentRecord{429dbbc8 com.android.chrome broadcastIntent}}
+
+
+In which:
+
+
+The first part, which is one of RTC_WAKEUP, RTC, ELAPSED_WAKEUP, or ELAPSED, represents the type of alarm and corresponds to an integer value 0-3, respectively
+#0 is the number of the alarm within the batch, where numbers go from 0 to n-1 where n is the number of alarms in the batch. If your alarm gets batched with others, the furthest in future "when=" defines the time all alarms in the batch will be triggered.
+4293d358 is an internal id number associated with the alarm
+com.android.chrome is the package name of the class that set the alarm
+type=1, the type of alarm, see first bullet above
+whenElapsed=1369361 refers to the number of milliseconds since the system started at which this alarm will be triggered (approximately)
+when=+19s304ms means the alarm will be triggered in 19 seconds, 304 milliseconds from the time when dumpsys alarm was called. Likewise, a value like +2d13h29m03s882ms refers to a relative time 2 days, 13 hours, 29 minutes... in the future
+window= refers to one of two internal constants having to do with the method in which the alarm is batched. AlarmManager.WINDOW_EXACT=0 and is set when the alarm is scheduled with setExact() or setAlarmClock(). AlarmManager.WINDOW_HEURISTIC=-1 and is set when the alarm is scheduled with setInexactRepeating(). Otherwise, the value is determined by the API version. For API < 19 (KitKat), WINDOW_EXACT is used and for API >= 19, WINDOW_HEURISTIC is used. (I had to dig into the AlarmManager.java source code to figure this out.)
+repeatInterval=900000 is how often the alarm repeats, e.g. every 900000ms or 15 minutes. A value of 0 means the alarm does not repeat.
+count= refers to the number of times that an alarm should have been triggered, but wasn't for some reason. 0 is a good number here. >0 means the alarm was skipped for some reason.
+operation=PendingIntent{...} is a reference to the PendingIntent that gets triggered by the alarm. Depending on whether the PendingIntent was instantiated using getService, getBroadcast, getActivity, or getActivities, the alarm will start a service, send a broadcast, or start one or more activities.
+
+
+Q3: Broadcast Ref Count
+
+To find out about this and the other output items after this I had to dig into the AlarmManagerService.java source code.
+
+In order for some alarms to work the device has to be woken up, and should not go back to sleep until all necessary broadcasts have been sent. The internal variable mBroadcastRefCount is initialized at 0 and is incremented as broadcasts to be sent are queued up. As each broadcast is sent it is decremented and when it gets back to 0, the wakeLock is released and it is okay for the device to go back to sleep.
+
+Broadcast Ref Count: 0 simply means that at the time that dumpsys alarm was run, it was not in the middle of sending any broadcasts.
+
+Q4: Top Alarms
+
+This is the top ten alarms ranked in descending order by total aggregate time that the alarm code has run. This can be used to find alarms that are consuming the greatest amount of system resources, e.g. to find processes that may be at fault for draining battery life.
+
+Q5: Alarm Stats
+
+This section shows stats for all of the alarms that have run since the system was last restarted. This is where you can look to see if the alarms you set in the past have been triggered, if they woke the phone up, etc. The format of these entries is covered next.
+
+Q6: Alarm Stats Entries
+
+Alarm stats entries look like:
+
+com.example.someapp +1s857ms running, 0 wakeups:
+    +1s817ms 0 wakes 83 alarms: cmp={com.example.someapp/com.example.someapp.someservice}
+    +40ms 0 wakes 1 alarms: cmp={com.example.someapp/com.example.someapp.someotherservice}
+
+
+where in the first line:
+
+
+com.example.someapp is the package name of the process that triggered the alarm
++1s857ms running is the total system time consumed by the processes
+0 wakeups is the number of times the device was woken by one of these alarms
+
+
+and then each line after that refers to one of the alarms that was set, with:
+
+
++1s817ms is total system time consumed
+0 wakes is the number of times the device had to be woken up
+83 alarms is the number of times the alarm has been triggered; this will only be >1 for repeating alarms
+cmp={...} the service that was started when the alarm was triggered
+
+
+Alternatively, if the alarm triggered a broadcast, the entry might look like:
+
+android +4m51s566ms running, 281 wakeups:
+    +2m46s583ms 0 wakes 1224 alarms: act=android.intent.action.TIME_TICK
+    +1m25s624ms 89 wakes 89 alarms: act=android.content.syncmanager.SYNC_ALARM
+    +52s898ms 0 wakes 41 alarms: act=com.android.server.action.NETWORK_STATS_POLL
+    ...
+
+
+with:
+
+
+act=... being the name of the intention that was broadcast
+
+
+It is possible for an alarm to have both a cmp={...} and a act=... entry, meaning the alarm both broadcast an intent and started a service.
+
+Summary
+
+Debugging android alarms using the output of adb shell dumpsys alarm can be tricky, and there is no central location where the dumpsys messages are fully explained. It is not always apparent how alarms get batched together, and sometimes it's difficult to get a service or activity to be triggered exactly when desired. Hopefully this will be useful reference for people trying to debug their alarms.
+    

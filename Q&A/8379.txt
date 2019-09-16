@@ -1,0 +1,107 @@
+32
+Q:I am having problems running a timer in a service I have created. The task that the timer calls simply isn't called. I know that the service starts as I have put toasts within it and they are called, but not when they are within the timer. Help appreciated.
+
+service class:
+
+public class LocalService extends Service
+{
+    private static Timer timer = new Timer(); 
+    private Context ctx;
+
+    public IBinder onBind(Intent arg0) 
+    {
+          return null;
+    }
+
+    public void onCreate() 
+    {
+          super.onCreate();
+          ctx = this; 
+          startService();
+    }
+
+    private void startService()
+    {           
+        timer.scheduleAtFixedRate(new mainTask(), 0, 5000);
+    }
+
+    private class mainTask extends TimerTask
+    { 
+        public void run() 
+        {
+            Toast.makeText(ctx, "test", Toast.LENGTH_SHORT).show();
+        }
+    }    
+
+    public void onDestroy() 
+    {
+          super.onDestroy();
+          Toast.makeText(this, "Service Stopped ...", Toast.LENGTH_SHORT).show();
+    }    
+}
+
+
+Main class:
+
+public void onCreate(Bundle savedInstanceState) 
+{
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.main);
+
+    startService(new Intent(RingerSchedule.this, LocalService.class));      
+}   
+
+    
+===============================================================================================
+52
+A:Android does not allow UI events like Toasts from outside the main thread. The run is getting called, but the Toast is being ignored.
+
+To create the Toast on the UI thread, you can use a Handler and an empty Message like so:
+
+public class LocalService extends Service
+{
+    private static Timer timer = new Timer(); 
+    private Context ctx;
+
+    public IBinder onBind(Intent arg0) 
+    {
+          return null;
+    }
+
+    public void onCreate() 
+    {
+          super.onCreate();
+          ctx = this; 
+          startService();
+    }
+
+    private void startService()
+    {           
+        timer.scheduleAtFixedRate(new mainTask(), 0, 5000);
+    }
+
+    private class mainTask extends TimerTask
+    { 
+        public void run() 
+        {
+            toastHandler.sendEmptyMessage(0);
+        }
+    }    
+
+    public void onDestroy() 
+    {
+          super.onDestroy();
+          Toast.makeText(this, "Service Stopped ...", Toast.LENGTH_SHORT).show();
+    }
+
+    private final Handler toastHandler = new Handler()
+    {
+        @Override
+        public void handleMessage(Message msg)
+        {
+            Toast.makeText(getApplicationContext(), "test", Toast.LENGTH_SHORT).show();
+        }
+    };    
+}
+
+    

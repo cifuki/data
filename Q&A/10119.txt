@@ -1,0 +1,37 @@
+27
+Q:I created an application with the create.bat on windows and compiled it with ADT and the latest SDK.
+
+It launches and displays the cordova display but it doesnt fire the deviceready event as it keeps saying "connecting to device". The same applies for the emulator. It works when I change the OS to 4.0 for the emulator though.
+
+Is this normal because 4.2 has just been released and I have to wait for an update ?
+    
+===============================================================================================
+17
+A:It's 1 am and I finally have my app running again. Android 4.2 includes some apparently security related changes to webView.addJavascriptInterface, which stops the default bridge mode from working.
+
+I expect there will be a better fix in the next version, but if you need a quick fix, try this  update to CordovaWebView.exposeJsInterface
+
+private void exposeJsInterface() {
+    int SDK_INT = Build.VERSION.SDK_INT;
+    boolean isHoneycomb = (SDK_INT >= Build.VERSION_CODES.HONEYCOMB && SDK_INT <= Build.VERSION_CODES.HONEYCOMB_MR2);
+    if (isHoneycomb || (SDK_INT < Build.VERSION_CODES.GINGERBREAD)) {
+        Log.i(TAG, "Disabled addJavascriptInterface() bridge since Android version is old.");
+        // Bug being that Java Strings do not get converted to JS strings automatically.
+        // This isn't hard to work-around on the JS side, but it's easier to just
+        // use the prompt bridge instead.
+        return;            
+    } else if (SDK_INT < Build.VERSION_CODES.HONEYCOMB && Build.MANUFACTURER.equals("unknown")) {
+        // addJavascriptInterface crashes on the 2.3 emulator.
+        Log.i(TAG, "Disabled addJavascriptInterface() bridge callback due to a bug on the 2.3 emulator");
+        return;
+
+    } else if (SDK_INT == Build.VERSION_CODES.JELLY_BEAN_MR1) {            
+        Log.i(TAG, "Disabled addJavascriptInterface() bridge callback for 4.2");
+        return;
+
+
+    }
+    this.addJavascriptInterface(exposedJsApi, "_cordovaNative");
+}
+
+    

@@ -1,0 +1,54 @@
+32
+Q:I've been trying for a couple days to compile a native ARM Android binary that will execute on my phone using a terminal application. I want to generate the same type of binary as the standard Posix binaries installed on the phone like ls, mkdir etc. I've downloaded the Android NDK under Mac OS X and have been able to compile simple ELF binaries without errors. However, when I transfer them to the phone, they always segfault. That is, they segfault when compiled with -static in GCC. If I don't use -static, they complain about not being linked, etc. Put simply, they don't work.
+
+My hypothesis is that they are not linking to the Android standard C library properly. Even though I am linking my binaries with the libc provided by the NDK, they still don't work. I read that Android uses the Bionic C library, and tried to download source for it but I'm not sure how to build a library from it (it's all ARM assembly, it seems).
+
+Is it true that the Android C library on the phone is different from the one provided with the Android NDK? Will the one included with the NDK not allow me to compile native binaries I can execute through a terminal? Any guidance here is greatly appreciated!
+
+Update:
+
+I finally got this to work using GCC 4.7.0 on Mac OS X. I downloaded the Bionic headers and then compiled a dynamically linked binary using the C library that comes with the Android NDK. I was able to get a test app to work on the phone using the phone's C lib (the binary was 33K). I also tried to statically link against the NDK's C library, and that also worked.
+
+In order to get this all working I had to pass -nostdlib to GCC and then manually add crtbegin_dynamic.o and crtend_android.o to GCC's command line. It works something like this:
+
+$CC \\
+$NDK_PATH/usr/lib/crtbegin_dynamic.o \\
+hello.c -o hello \\
+$CFLAGS \\
+$NDK_PATH/usr/lib/crtend_android.o
+
+
+For static binaries, use "crtbegin_static.o." This is explained in the crtbegin_dynamic.S/crtbegin_static.S source.
+
+For this experiment, I only used plain 'ol GCC 4.7.0 and Binutils 2.22. I also compiled GCC with newlib, but I am not actually linking my ARM binaries with newlib at all. I am forcing GCC/ld to link directly to the libc provided with the Android NDK, or in the case of dynamic binaries, to the libc on the phone.
+    
+===============================================================================================
+20
+A:Just use the android-ndk. And build a Android.mk like so.
+include $(BUILD_EXECUTABLE) is what tells it build a executable instead of a JNI .lib
+
+Android.mk
+
+ifneq ($(TARGET_SIMULATOR),true)
+
+LOCAL_PATH:= $(call my-dir)
+
+include $(CLEAR_VARS)
+
+LOCAL_CFLAGS += -Wall
+
+
+LOCAL_LDLIBS := -L$(LOCAL_PATH)/lib -llog -g
+
+LOCAL_C_INCLUDES := bionic
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
+
+LOCAL_SRC_FILES:= main.cpp
+
+LOCAL_MODULE := mycmd
+
+include $(BUILD_EXECUTABLE)
+
+endif  # TARGET_SIMULATOR != true
+
+    

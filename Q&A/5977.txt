@@ -1,0 +1,166 @@
+42
+Q:I manage an ONGOING notification from my application (not from a service).
+
+When I kill application from task manager with "End" button, notification disappear.
+
+When I remove application from multitask pannel, application is killed but notification remains.
+
+My questions are:
+
+
+How to catch this event to clear notification?
+What happens when application is removed from multitask pannel? Application is destroyed but process staying alive? Is it normal?
+
+
+
+
+As an update:
+
+All my activities extends MyActivity class (which extends Activity) with methods:
+
+@Override protected void onCreate(Bundle state) {
+    super.onCreate(state);
+    ((MyApplication) getApplication()).onActivityCreate(this, state);
+}
+
+@Override protected void onDestroy() {
+    super.onDestroy();
+    ((MyApplication) getApplication()).onActivityDestroy(this);
+}
+
+
+And my application extends MyApplication class (which extends Application) with methods:
+
+private List<Activity> activities = new ArrayList<Activity>();
+
+protected final void onActivityCreate(Activity activity, Bundle state) {
+    if(activities.isEmpty() && state == null) {
+        onStart();
+    }
+    activities.add(activity);
+}
+
+protected final void onActivityDestroy(Activity activity) {
+    activities.remove(activity);
+    if(activities.isEmpty() && activity.isFinishing()) {
+        onExit();
+    }
+}
+
+protected void onStart() {
+    // some code
+}
+
+protected void onExit() {
+    // some code
+    notificationManager.cancel(NOTIFICATION_ID);
+}
+
+
+activities is a list of all running activities
+
+It's not simplest mechanism but I need it
+
+Should I use a service instead?
+
+
+
+As a new update:
+
+In my onExit() method, if I Log debug message to know what happens like this:
+
+public void onExit() {
+    for(int i = 0; i < 100; i++) {
+        Log.d(TAG, "onExit");
+    }
+}
+
+
+a small amount of log appears once on two, not all (ex: 13/100)
+
+So, I understand that remove application from multitask pannel force to kill application without waiting close methods end to finish properly... But why not process ?!
+
+How can I force to terminate properly ?
+    
+===============================================================================================
+43
+A:Killing Notifications when main app has been killed.
+
+Since your notification and your app are handled in different threads killing your app via MultitaskManager won't kill your notification. As you already correctly investigated killing your app won't even necesarrily result in an onExit() callback.
+
+So what is the solutions?
+
+You could start a service from your activity. A specialty services have: they restart themselves automatically if app-process have been killed for some reason. So you could reuse the automatic restart by killing the notification on restart.
+
+Step 1 create a service that kills
+Simple one. It just kills a notification on create and has his special Binder.
+
+public class KillNotificationsService extends Service {
+
+    public class KillBinder extends Binder {
+        public final Service service;
+
+        public KillBinder(Service service) {
+            this.service = service;
+        }
+
+    }
+
+    public static int NOTIFICATION_ID = 666;
+    private NotificationManager mNM;
+    private final IBinder mBinder = new KillBinder(this);
+
+    @Override
+    public IBinder onBind(Intent intent) {
+            return mBinder;
+    }
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+            return Service.START_STICKY;
+    }
+    @Override
+    public void onCreate() {
+            mNM = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            mNM.cancel(NOTIFICATION_ID);
+    }
+}
+
+
+Step2: Add it to your manifest:
+Add it somewhere inbetween your <application> tags.
+
+<service android:name="KillNotificationsService"></service>
+
+
+Step3: Always create the Service before fireing the notification, and use the static notificationid.
+
+ServiceConnection mConnection = new ServiceConnection() {
+    public void onServiceConnected(ComponentName className,
+            IBinder binder) {
+        ((KillBinder) binder).service.startService(new Intent(
+                MainActivity.this, KillNotificationsService.class));
+        Notification notification = new Notification(
+                R.drawable.ic_launcher, "Text",
+                System.currentTimeMillis());
+        Intent notificationIntent = new Intent(MainActivity.this,
+                Place.class);
+        PendingIntent contentIntent = PendingIntent.getActivity(
+                MainActivity.this, 0, notificationIntent, 0);
+        notification.setLatestEventInfo(getApplicationContext(),
+                "Text", "Text", contentIntent);
+        NotificationManager mNM = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        mNM.notify(KillNotificationsService.NOTIFICATION_ID,
+                notification);
+    }
+
+    public void onServiceDisconnected(ComponentName className) {
+    }
+
+};
+bindService(new Intent(MainActivity.this,
+        KillNotificationsService.class), mConnection,
+        Context.BIND_AUTO_CREATE);
+
+
+It might take a little time until service is restarted (1-5 sec), but it will eventually start and kill the notification.
+    

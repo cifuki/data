@@ -1,0 +1,297 @@
+30
+Q:The following code is working on all the versions of android except the latest 4.2
+
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+
+import javax.crypto.BadPaddingException;
+import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.KeyGenerator;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+
+/**
+ * Util class to perform encryption/decryption over strings. <br/>
+ */
+public final class UtilsEncryption
+{
+    /** The logging TAG */
+    private static final String TAG = UtilsEncryption.class.getName();
+
+    /** */
+    private static final String KEY = "some_encryption_key";
+
+    /**
+     * Avoid instantiation. <br/>
+     */
+    private UtilsEncryption()
+    {
+    }
+
+    /** The HEX characters */
+    private final static String HEX = "0123456789ABCDEF";
+
+    /**
+     * Encrypt a given string. <br/>
+     * 
+     * @param the string to encrypt
+     * @return the encrypted string in HEX
+     */
+    public static String encrypt( String cleartext )
+    {
+        try
+        {
+            byte[] result = process( Cipher.ENCRYPT_MODE, cleartext.getBytes() );
+            return toHex( result );
+        }
+        catch ( Exception e )
+        {
+            System.out.println( TAG + ":encrypt:" + e.getMessage() );
+        }
+        return null;
+    }
+
+    /**
+     * Decrypt a HEX encrypted string. <br/>
+     * 
+     * @param the HEX string to decrypt
+     * @return the decrypted string
+     */
+    public static String decrypt( String encrypted )
+    {
+        try
+        {
+            byte[] enc = fromHex( encrypted );
+            byte[] result = process( Cipher.DECRYPT_MODE, enc );
+            return new String( result );
+        }
+        catch ( Exception e )
+        {
+            System.out.println( TAG + ":decrypt:" + e.getMessage() );
+        }
+        return null;
+    }
+
+
+    /**
+     * Get the raw encryption key. <br/>
+     * 
+     * @param the seed key
+     * @return the raw key
+     * @throws NoSuchAlgorithmException
+     */
+    private static byte[] getRawKey()
+        throws NoSuchAlgorithmException
+    {
+        KeyGenerator kgen = KeyGenerator.getInstance( "AES" );
+        SecureRandom sr = SecureRandom.getInstance( "SHA1PRNG" );
+        sr.setSeed( KEY.getBytes() );
+        kgen.init( 128, sr );
+        SecretKey skey = kgen.generateKey();
+        return skey.getEncoded();
+    }
+
+    /**
+     * Process the given input with the provided mode. <br/>
+     * 
+     * @param the cipher mode
+     * @param the value to process
+     * @return the processed value as byte[]
+     * @throws InvalidKeyException
+     * @throws IllegalBlockSizeException
+     * @throws BadPaddingException
+     * @throws NoSuchAlgorithmException
+     * @throws NoSuchPaddingException
+     */
+    private static byte[] process( int mode, byte[] value )
+        throws InvalidKeyException, IllegalBlockSizeException, BadPaddingException,     NoSuchAlgorithmException,
+        NoSuchPaddingException
+    {
+        SecretKeySpec skeySpec = new SecretKeySpec( getRawKey(), "AES" );
+        Cipher cipher = Cipher.getInstance( "AES" );
+        cipher.init( mode, skeySpec );
+        byte[] encrypted = cipher.doFinal( value );
+        return encrypted;
+    }
+
+    /**
+     * Decode an HEX encoded string into a byte[]. <br/>
+     * 
+     * @param the HEX string value
+     * @return the decoded byte[]
+     */
+    protected static byte[] fromHex( String value )
+    {
+        int len = value.length() / 2;
+        byte[] result = new byte[len];
+        for ( int i = 0; i < len; i++ )
+        {
+            result[i] = Integer.valueOf( value.substring( 2 * i, 2 * i + 2 ), 16     ).byteValue();
+        }
+        return result;
+    }
+
+    /**
+     * Encode a byte[] into an HEX string. <br/>
+     * 
+     * @param the byte[] value
+     * @return the HEX encoded string
+     */
+    protected static String toHex( byte[] value )
+    {
+        if ( value == null )
+        {
+            return "";
+        }
+        StringBuffer result = new StringBuffer( 2 * value.length );
+        for ( int i = 0; i < value.length; i++ )
+        {
+            byte b = value[i];
+
+            result.append( HEX.charAt( ( b >> 4 ) & 0x0f ) );
+            result.append( HEX.charAt( b & 0x0f ) );
+        }
+        return result.toString();
+    }
+}
+
+
+Here's a small unit test that i've created to reproduce the error
+
+import junit.framework.TestCase;
+
+public class UtilsEncryptionTest
+    extends TestCase
+{
+    /** A random string */
+    private static String ORIGINAL = "some string to test";
+
+    /**
+     * The HEX value corresponds to ORIGINAL. <br/>
+     * If you change ORIGINAL, calculate the new value on one of this sites:
+     * <ul>
+     * <li>http://www.string-functions.com/string-hex.aspx</li>
+     * <li>http://www.yellowpipe.com/yis/tools/encrypter/index.php</li>
+     * <li>http://www.convertstring.com/EncodeDecode/HexEncode</li>
+     * </ul>
+     */
+    private static String HEX = "736F6D6520737472696E6720746F2074657374";
+
+    public void testToHex()
+    {
+         String hexString = UtilsEncryption.toHex( ORIGINAL.getBytes() );
+
+         assertNotNull( "The HEX string should not be null", hexString );
+         assertTrue( "The HEX string should not be empty", hexString.length() > 0 );
+         assertEquals( "The HEX string was not encoded correctly", HEX, hexString );
+    }
+
+    public void testFromHex()
+    {
+         byte[] stringBytes = UtilsEncryption.fromHex( HEX );
+
+         assertNotNull( "The HEX string should not be null", stringBytes );
+        assertTrue( "The HEX string should not be empty", stringBytes.length > 0 );
+        assertEquals( "The HEX string was not encoded correctly", ORIGINAL, new String( stringBytes ) );
+    }
+
+    public void testWholeProcess()
+    {
+         String encrypted = UtilsEncryption.encrypt( ORIGINAL );
+         assertNotNull( "The encrypted result should not be null", encrypted );
+         assertTrue( "The encrypted result should not be empty", encrypted.length() > 0 );
+
+         String decrypted = UtilsEncryption.decrypt( encrypted );
+         assertNotNull( "The decrypted result should not be null", decrypted );
+         assertTrue( "The decrypted result should not be empty", decrypted.length() > 0 );
+
+         assertEquals( "Something went wrong", ORIGINAL, decrypted );
+}
+
+
+}
+
+The line throwing the exception is:
+
+byte[] encrypted = cipher.doFinal( value );
+
+
+The full stack trace is:
+
+    W/<package>.UtilsEncryption:decrypt(16414): pad block corrupted
+    W/System.err(16414): javax.crypto.BadPaddingException: pad block corrupted
+    W/System.err(16414):    at com.android.org.bouncycastle.jcajce.provider.symmetric.util.BaseBlockCipher.engineDoFinal(BaseBlockCipher.java:709)
+    W/System.err(16414):    at javax.crypto.Cipher.doFinal(Cipher.java:1111)
+    W/System.err(16414):    at <package>.UtilsEncryption.process(UtilsEncryption.java:117)
+    W/System.err(16414):    at <package>.UtilsEncryption.decrypt(UtilsEncryption.java:69)
+    W/System.err(16414):    at <package>.UtilsEncryptionTest.testWholeProcess(UtilsEncryptionTest.java:74)
+    W/System.err(16414):    at java.lang.reflect.Method.invokeNative(Native Method)
+    W/System.err(16414):    at java.lang.reflect.Method.invoke(Method.java:511)
+    W/System.err(16414):    at junit.framework.TestCase.runTest(TestCase.java:168)
+    W/System.err(16414):    at junit.framework.TestCase.runBare(TestCase.java:134)
+    W/System.err(16414):    at junit.framework.TestResult$1.protect(TestResult.java:115)
+    W/System.err(16414):    at junit.framework.TestResult.runProtected(TestResult.java:133)
+D/elapsed (  588): 14808
+    W/System.err(16414):    at junit.framework.TestResult.run(TestResult.java:118)
+    W/System.err(16414):    at junit.framework.TestCase.run(TestCase.java:124)
+    W/System.err(16414):    at android.test.AndroidTestRunner.runTest(AndroidTestRunner.java:190)
+    W/System.err(16414):    at android.test.AndroidTestRunner.runTest(AndroidTestRunner.java:175)
+    W/System.err(16414):    at android.test.InstrumentationTestRunner.onStart(InstrumentationTestRunner.java:555)
+    W/System.err(16414):    at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:1661)
+
+
+Does anybody have a clue of what might be happening ?
+Is anybody aware of a breaking change on android 4.2 in any of the referenced classes? 
+
+Thanks a lot
+    
+===============================================================================================
+61
+A:From the Android Jellybean page:
+
+
+  Modified the default implementations of SecureRandom and Cipher.RSA to use OpenSSL
+
+
+They changed the default provider for SecureRandom to use OpenSSL instead of the previous Crypto provider.
+
+The following code will produce two different outputs on pre-Android 4.2 and Android 4.2:
+
+SecureRandom rand = SecureRandom.getInstance("SHA1PRNG");
+Log.i(TAG, "rand.getProvider(): " + rand.getProvider().getName());
+
+
+On pre-4.2 devices:
+
+
+  rand.getProvider: Crypto
+
+
+On 4.2 devices:
+
+
+  rand.getProvider: AndroidOpenSSL
+
+
+Fortunately, it's easy to revert to the old behavior:
+
+SecureRandom sr = SecureRandom.getInstance( "SHA1PRNG", "Crypto" );
+
+
+To be sure, it's dangerous to be calling SecureRandom.setSeed at all in light of the Javadocs which state: 
+
+
+  Seeding SecureRandom may be insecure
+  
+  A seed is an array of bytes used to bootstrap random number generation. To produce cryptographically secure random numbers, both the seed and the algorithm must be secure.
+  
+  By default, instances of this class will generate an initial seed using an internal entropy source, such as /dev/urandom. This seed is unpredictable and appropriate for secure use.
+  
+  You may alternatively specify the initial seed explicitly with the seeded constructor or by calling setSeed(byte[]) before any random numbers have been generated. Specifying a fixed seed will cause the instance to return a predictable sequence of numbers. This may be useful for testing but it is not appropriate for secure use.
+
+
+However, for writing unit tests, as you are doing, using setSeed may be okay.
+    

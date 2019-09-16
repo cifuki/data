@@ -1,0 +1,103 @@
+52
+Q:So I have tabs that I want to hide when the Navigation Drawer starts opening. The code I have hides them when it finished opening, but it's not what I want.
+
+mDrawerToggle = new ActionBarDrawerToggle(
+        this,                 
+        mDrawerLayout,        
+        R.drawable.ic_drawer,  
+        R.string.drawer_open,  
+        R.string.drawer_close  
+) {
+    @Override
+    public void onDrawerClosed(View view) {
+        invalidateOptionsMenu(); 
+        setActionBarMode(ActionBar.NAVIGATION_MODE_TABS);
+    }
+
+    @Override
+    public void onDrawerOpened(View drawerView) {
+        invalidateOptionsMenu(); 
+        setActionBarMode(ActionBar.NAVIGATION_MODE_STANDARD);
+    }
+
+};
+mDrawerLayout.setDrawerListener(mDrawerToggle);
+
+
+Here's what I tried:
+
+
+Setting an onClickListener to mDrawerLayout. onClick never gets called
+Setting an onTouchListener to mDrawerLayout. onTouch never gets called
+Researched ActionBarDrawerToggle and DrawerLayout classes. Could not find anything like onDrawerStartedOpening.
+
+    
+===============================================================================================
+74
+A:There are 2 possible ways to do that:
+
+1) Use onDrawerSlide(View drawerView, float slideOffset) callback
+
+slideOffset changes from 0 to 1. 1 means it is completely open, 0 - closed. 
+
+Once offset changes from 0 to !0 - it means it started opening process. Something like:
+
+mDrawerToggle = new ActionBarDrawerToggle(
+        this,                 
+        mDrawerLayout,        
+        R.drawable.ic_drawer,  
+        R.string.drawer_open,  
+        R.string.drawer_close  
+) {
+
+    @Override
+    public void onDrawerSlide(View drawerView, float slideOffset) {
+        if (slideOffset == 0
+                && getActionBar().getNavigationMode() == ActionBar.NAVIGATION_MODE_STANDARD) {
+            // drawer closed
+            getActionBar()
+                    .setNavigationMode(ActionBar.NAVIGATION_MODE_TABS);
+            invalidateOptionsMenu();
+        } else if (slideOffset != 0
+                && getActionBar().getNavigationMode() == ActionBar.NAVIGATION_MODE_TABS) {
+            // started opening
+            getActionBar()
+                    .setNavigationMode(ActionBar.NAVIGATION_MODE_STANDARD);
+            invalidateOptionsMenu();
+        }
+        super.onDrawerSlide(drawerView, slideOffset);
+    }
+};
+mDrawerLayout.setDrawerListener(mDrawerToggle);
+
+
+2) Use onDrawerStateChanged(int newState) callback
+
+You need to listen to STATE_SETTLING states - this state is reported whenever drawer starts moving (either opens or closes). So once you see this state - check whether drawer is opened now and act accordingly:
+
+mDrawerToggle = new ActionBarDrawerToggle(
+        this,                 
+        mDrawerLayout,        
+        R.drawable.ic_drawer,  
+        R.string.drawer_open,  
+        R.string.drawer_close  
+) {
+    @Override
+    public void onDrawerStateChanged(int newState) {
+        if (newState == DrawerLayout.STATE_SETTLING) {
+            if (!isDrawerOpen()) {
+                // starts opening
+                getActionBar()
+                        .setNavigationMode(ActionBar.NAVIGATION_MODE_STANDARD);
+            } else {
+                // closing drawer
+                getActionBar()
+                        .setNavigationMode(ActionBar.NAVIGATION_MODE_TABS);
+            }
+            invalidateOptionsMenu();
+        }
+    }
+};
+mDrawerLayout.setDrawerListener(mDrawerToggle);
+
+    

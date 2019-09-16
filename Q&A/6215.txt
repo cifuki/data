@@ -1,0 +1,50 @@
+41
+Q:I'm using Fragment with listView. I fill ArrayAdapter associated with this listview, by data received in custom Loader(from internet). Custom ArrayAdapter supports infinite scrolling(paging).
+
+What is the best way to store items in ArrayAdapter when user rotate device and keep scroll position in ListView?
+
+I'm thinking about creation of non-visual Fragment with ArrayAdapter, and using setRetainInstance method to save values.
+
+Any suggestions for better solution?
+    
+===============================================================================================
+56
+A:To work with the Android framework and Fragment lifecycle you should implement the onSaveInstanceState method in your Fragment. For simplicity I've assumed that you have an array of String values that you can get to (I generally extend ArrayAdapter to encapsulate view construction and to provide a convenience method to access the entire underlying dataset):
+
+public void onSaveInstanceState(Bundle savedState) {
+
+    super.onSaveInstanceState(savedState);
+
+    // Note: getValues() is a method in your ArrayAdapter subclass
+    String[] values = mAdapter.getValues(); 
+    savedState.putStringArray("myKey", values);
+
+}
+
+
+You can then retrieve the data in your onCreate method (or onCreateView or onActivityCreated - see the Fragment JavaDoc) like this:
+
+public void onCreate (Bundle savedInstanceState) {
+
+    super.onCreate(savedInstanceState);
+
+    if (savedInstanceState != null) {
+        String[] values = savedInstanceState.getStringArray("myKey");
+        if (values != null) {
+           mAdapter = new MyAdapter(values);
+        }
+    }
+
+    ...
+
+}
+
+
+This ensures that all lifecycle events will be handled properly, without loss of data, including device rotation and the user switching to other applications. The danger of not using onSaveInstanceState and using memory is the danger of Android reclaiming that memory. Saved state would not be affected by this but using instance variables or hidden fragments would result in loss of data.
+
+If savedStateInstance is null then there is no state to restore. 
+
+The if (values != null) is simply to guard against the possibility that no array was saved, but if you code your ArrayAdapter to handle a null data set you won't need this.
+
+The ultimate solution, if your rows are instances of one of your own classes and not single data items, is to implement the Parcelable interface on that class, then you can use savedState.putParcelableArray("myKey", myArray). You'd be surprised how useful it is to know how to implement Parcelable - it allows you to pass your classes around inside intents and allows you to write much cleaner code.
+    

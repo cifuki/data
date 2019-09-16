@@ -1,0 +1,164 @@
+30
+Q:In the application I am developing I am using a ViewPager with fragments and each fragment constructs its own menu independently of all of the other fragments in the ViewPager.
+
+The issue is that sometimes the fragments that are initialised by the ViewPager by default (i.e in it's initial state) are not having their items populated into the action items menu. What's worse is that this issue only occurs intermittently. If I swipe through the ViewPager enough so that the fragments are forced to re-initialise them selves, when I swipe back, the menu populates correctly.
+
+Activity code:
+
+package net.solarnz.apps.fragmentsample;
+
+import android.app.Activity;
+import android.app.Fragment;
+import android.app.FragmentManager;
+import android.os.Bundle;
+import android.support.v13.app.FragmentStatePagerAdapter;
+import android.support.v4.view.ViewPager;
+
+public class FragmentSampleActivity extends Activity {
+    private ViewPagerAdapter mViewPagerAdapter;
+    private ViewPager mViewPager;
+
+    /** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        if (mViewPagerAdapter == null) {
+            mViewPagerAdapter = new ViewPagerAdapter(getFragmentManager());
+        }
+
+        mViewPager = (ViewPager) findViewById(R.id.log_pager);
+        mViewPager.setAdapter(mViewPagerAdapter);
+        mViewPager.setCurrentItem(0);
+    }
+
+
+    private class ViewPagerAdapter extends FragmentStatePagerAdapter {
+        public ViewPagerAdapter(FragmentManager fm) {
+            super(fm);
+        }
+
+        @Override
+        public int getCount() {
+            return 8;
+        }
+
+        @Override
+        public Fragment getItem(int position) {
+            Fragment f = Fragment1.newInstance(position);
+            // f.setRetainInstance(true);
+            f.setHasOptionsMenu(true);
+            return f;
+        }
+    }
+}
+
+
+Fragment code:
+
+package net.solarnz.apps.fragmentsample;
+
+import android.app.Fragment;
+import android.os.Bundle;
+import android.view.Menu;
+import android.view.MenuInflater;
+
+public class Fragment1 extends Fragment {
+    int mNum;
+
+    static Fragment newInstance(int num) {
+        Fragment1 f = new Fragment1();
+
+        // Supply num input as an argument.
+        Bundle args = new Bundle();
+        args.putInt("num", num);
+        f.setArguments(args);
+
+        return f;
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setHasOptionsMenu(true);
+        mNum = getArguments() != null ? getArguments().getInt("num") : 0;
+    }
+
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        inflater.inflate(R.menu.menu_list, menu);
+    }
+
+}
+
+
+Layout:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent" >
+
+            <android.support.v4.view.ViewPager
+                android:id="@+id/log_pager"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+</LinearLayout>
+
+
+Menu:
+
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/menu_refresh"
+          android:title="Refresh"
+          android:icon="@android:drawable/ic_delete"
+          android:showAsAction="ifRoom|withText" />
+</menu>
+
+
+Action menu being populated:
+http://i.stack.imgur.com/QFMDd.png
+
+Action menu not being populated: 
+http://i.stack.imgur.com/sH5Pp.png
+    
+===============================================================================================
+22
+A:You should read this (by xcolw...)
+
+Through experimentation it seems like the root cause is invalidateOptionsMenu getting called more than one without a break on the main thread to process queued up jobs. A guess - this would matter if some critical part of menu creation was deferred via a post, leaving the action bar in a bad state until it runs. 
+
+There are a few spots this can happen that aren't obvious:
+
+
+calling viewPager.setCurrentItem multiple times for the same item
+calling viewPager.setCurrentItem in onCreate of the activity. setCurrentItem causes an option menu invalidate, which is immediately followed by the activity's option menu invalidate
+
+
+Workarounds I've found for each
+
+
+Guard the call to viewPager.setCurrentItem
+
+if (viewPager.getCurrentItem() != position)
+    viewPager.setCurrentItem(position);
+
+Defer the call to viewPager.setCurrentItem in onCreate
+
+public void onCreate(...) {
+    ...
+    view.post(new Runnable() {
+        public void run() {
+            // guarded viewPager.setCurrentItem
+        }
+    }
+}
+
+
+
+After these changes options menu inside the view pager seems to work as expected. I hope someone can shed more light into this.
+
+source http://code.google.com/p/android/issues/detail?id=29472
+    

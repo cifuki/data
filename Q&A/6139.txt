@@ -1,0 +1,156 @@
+41
+Q:I have a requirement to center a custom logo (using an ImageView) in the Actionbar for the "Home" activity. I'm using ABS for this project. This is very similar to a another question posted on S.O. (ActionBar logo centered and Action items on sides), but I'm not sure if the ImageView or search menu makes a difference, as I'm not getting the results I'm looking for (a centered image), or if I've just got it wrong. Basically, I set an Icon on the left, insert the custom view in the center, and have a search icon on the right (OptionsMenu). The image does appear a bit to the right of the icon, but it's still left of centered. Any pointers on how to center an ImageView in the actionbar would be greatly appreciated.
+
+Home.java:
+
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_home);
+
+    LayoutInflater inflater = (LayoutInflater) getSupportActionBar().getThemedContext()
+            .getSystemService(LAYOUT_INFLATER_SERVICE);
+
+    final View customActionBarView = inflater.inflate(
+            R.layout.actionbar_custom_view_home, null);
+
+    /* Show the custom action bar view and hide the normal Home icon and title */
+    final ActionBar actionBar = getSupportActionBar();
+    actionBar.setHomeButtonEnabled(true);
+    actionBar.setDisplayHomeAsUpEnabled(false);
+    actionBar.setDisplayShowTitleEnabled(false);
+    actionBar.setIcon(R.drawable.ic_ab_som);
+    actionBar.setCustomView(customActionBarView);
+    actionBar.setDisplayShowCustomEnabled(true);
+
+}
+
+@Override
+public boolean onCreateOptionsMenu(Menu menu) {
+    MenuInflater inflater = new MenuInflater(this);
+    inflater.inflate(R.menu.search, menu);
+    return true;
+}
+
+
+res/layout/actionbar_custom_view_home.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+android:layout_width="fill_parent"
+android:layout_height="wrap_content"
+android:orientation="horizontal"
+android:layout_gravity="center">
+
+<ImageView
+    android:id="@+id/actionBarLogo"
+    android:contentDescription="@string/application_name"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:clickable="false"
+    android:duplicateParentState="false"
+    android:focusable="false"
+    android:longClickable="false"
+    android:padding="@dimen/padding_small"
+    android:src="@drawable/logo_horizontal" />
+
+</LinearLayout>
+
+
+res/menu/search.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item 
+        android:id="@id/search_item"
+        android:icon="?attr/action_search"
+        android:title="@string/search_label"
+        android:showAsAction="ifRoom|collapseActionView">
+    </item>
+</menu>
+
+    
+===============================================================================================
+18
+A:Explained:
+
+
+
+The pink container, is the real space where you will add the view.
+
+The trick is doing some maths, to center the View (whatever) to the middle.
+
+In my case, the View was a TextView. Here's my full method:
+
+public void addTextToActionBar( String textToSet )
+{
+    mActionbar.setDisplayShowCustomEnabled( true );
+
+    // Inflate the custom view
+    LayoutInflater inflater = LayoutInflater.from( this );
+    View header = inflater.inflate( R.layout.actionbar_header, null );
+
+    //Here do whatever you need to do with the view (set text if it's a textview or whatever)
+    TextView tv = (TextView) header.findViewById( R.id.program_title );
+    tv.setText( textToSet );
+
+    // Magic happens to center it.
+    int actionBarWidth = DeviceHelper.getDeviceWidth( this ); //Google for this method. Kinda easy.
+
+    tv.measure( 0, 0 );
+    int tvSize = tv.getMeasuredWidth();
+
+    try
+    {
+        int leftSpace = 0;
+
+        View homeButton = findViewById( android.R.id.home );
+        final ViewGroup holder = (ViewGroup) homeButton.getParent();
+
+        View firstChild =  holder.getChildAt( 0 );
+        View secondChild =  holder.getChildAt( 1 );
+
+        leftSpace = firstChild.getWidth()+secondChild.getWidth();
+    }
+    catch ( Exception ignored )
+    {}
+
+    mActionbar.setCustomView( header );
+
+    if ( null != header )
+    {
+        ActionBar.LayoutParams params = (ActionBar.LayoutParams) header.getLayoutParams();
+
+        if ( null != params )
+        {
+            int leftMargin =  ( actionBarWidth / 2 - ( leftSpace ) ) - ( tvSize / 2 ) ;
+
+            params.leftMargin = 0 >= leftMargin ? 0 : leftMargin;
+        }
+    }
+}
+
+
+Layout:
+
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_horizontal|center_vertical|center"
+    android:orientation="horizontal" >
+
+<TextView
+    android:id="@+id/program_title"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:textColor="@android:color/white"
+    android:contentDescription="@string/content_description_program_title"
+    android:ellipsize="end"
+    android:maxLines="1"
+    android:textSize="22sp"/>
+
+</RelativeLayout>
+
+
+Enjoy.
+    

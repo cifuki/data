@@ -1,0 +1,91 @@
+113
+Q:I\xe2\x80\x99m building an image-intensive social app where images are sent from the server to the device. When the device has smaller screen resolutions, I need to resize the bitmaps, on device, to match their intended display sizes. 
+
+The problem is that using createScaledBitmap causes me to run into a lot of out-of-memory errors after resizing a horde of thumbnail images.
+
+What\xe2\x80\x99s the most memory efficient way to resize bitmaps on Android?
+    
+===============================================================================================
+162
+A:This answer is summarised from Loading large bitmaps Efficiently
+  which explains how to use inSampleSize to load a down-scaled bitmap
+  version.
+  
+  In particular Pre-scaling bitmaps explains the details of various
+  methods, how to combine them, and which are the most memory efficient.
+
+
+There are three dominant ways to resize a bitmap on Android which have different memory properties:
+
+createScaledBitmap API 
+
+This API will take in an existing bitmap, and create a NEW bitmap with the exact dimensions you\xe2\x80\x99ve selected.
+
+On the plus side, you can get exactly the image size you\xe2\x80\x99re looking for (regardless of how it looks). But the downside, is that this API requires an existing bitmap in order to work. Meaning the image would have to be loaded, decoded, and a bitmap created, before being able to create a new, smaller version. This is ideal in terms of getting your exact dimensions, but horrible in terms of additional memory overhead. As such, this is kind-of a deal breaker for most app developers who tend to be memory conscious
+
+inSampleSize flag
+
+BitmapFactory.Options has a property noted as inSampleSize that will resize your image while decoding it, to avoid the need to decode to a temporary bitmap. This integer value used here will load an image at a 1/x reduced size. For example, setting inSampleSize to 2 returns an image that\xe2\x80\x99s  half the size, and Setting it to 4 returns an image that\xe2\x80\x99s 1/ 4th the size. Basically image sizes will always be some power-of-two smaller than your source size.
+
+From a memory perspective, using inSampleSize is a really fast operation. Effectively, it will only decode every Xth pixel of your image into your resulting bitmap. There\xe2\x80\x99s two main issues with inSampleSize though:
+
+
+It doesn\xe2\x80\x99t give you exact resolutions. It only decreases the size of your bitmap by some power of 2.
+It doesn\xe2\x80\x99t produce the best quality resize. Most resizing filters produce good looking images by reading blocks of pixels, and then weighting them to produce the resized pixel in question. inSampleSize avoids all this by just reading every few pixels. The result is quite performant, and low memory, but quality suffers.
+
+
+If you're only dealing with shrinking your image by some pow2 size, and filtering isn't an issue, then you can't find a more memory efficient (or performance efficient) method than inSampleSize.
+
+inScaled, inDensity, inTargetDensity flags
+
+If you need to scale an image to a dimension that\xe2\x80\x99s not equal to a power of two,  then you\xe2\x80\x99ll need the inScaled, inDensity and inTargetDensity flags of BitmapOptions. When inScaled flag has been set, the system will derive the scaling value to apply to your bitmap by dividing the inTargetDensity by the inDensity values.
+
+mBitmapOptions.inScaled = true;
+mBitmapOptions.inDensity = srcWidth;
+mBitmapOptions.inTargetDensity =  dstWidth;
+
+// will load & resize the image to be 1/inSampleSize dimensions
+mCurrentBitmap = BitmapFactory.decodeResources(getResources(), 
+      mImageIDs, mBitmapOptions);
+
+
+Using this method will re-size your image, and also apply a \xe2\x80\x98resizing filter\xe2\x80\x99 to it, that is, the end result will look better because some additional math has been taken into account during the resizing step. But be warned: that extra filter step, takes extra processing time, and can quickly add up for big images, resulting in slow resizes, and extra memory allocations for the filter itself.
+
+It\xe2\x80\x99s generally not a good idea to apply this technique to an image that\xe2\x80\x99s significantly larger than your desired size, due to the extra filtering overhead.
+
+Magic Combination 
+
+From a memory and performance perspective, you can combine these options for the best results. (setting the inSampleSize, inScaled, inDensity and inTargetDensity flags)
+
+inSampleSize will first be applied to the image, getting it to the next power-of-two LARGER than your target size. Then, inDensity & inTargetDensity are used to scale the result to exact dimensions that you want, applying a filter operation to clean up the image. 
+
+Combining these two is a much faster operation, since the inSampleSize step will reduce the number of pixels that the resulting Density-based step will need to apply it\xe2\x80\x99s resizing filter on.
+
+mBitmapOptions.inScaled = true;
+mBitmapOptions.inSampleSize = 4;
+mBitmapOptions.inDensity = srcWidth;
+mBitmapOptions.inTargetDensity =  dstWidth * mBitmapOptions.inSampleSize;
+
+// will load & resize the image to be 1/inSampleSize dimensions
+mCurrentBitmap = BitmapFactory.decodeFile(fileName, mBitmapOptions);
+
+
+If you're needing to fit an image to specific dimensions, and some nicer filtering, then this technique is the best bridge to getting the right size, but done in a fast, low-memory footprint operation.
+
+Getting image dimensions
+
+Getting the image size without decoding the whole image
+In order to resize your bitmap, you\xe2\x80\x99ll need to know the incoming dimensions. You can use the inJustDecodeBounds flag to help you get the dimensions of the image, w/o needing to actually decode the pixel data.
+
+// Decode just the boundaries
+mBitmapOptions.inJustDecodeBounds = true;
+BitmapFactory.decodeFile(fileName, mBitmapOptions);
+srcWidth = mBitmapOptions.outWidth;
+srcHeight = mBitmapOptions.outHeight;
+
+
+//now go resize the image to the size you want
+
+
+You can use this flag to decode the size first, and then calculate the proper values for scaling to your target resolution.
+    

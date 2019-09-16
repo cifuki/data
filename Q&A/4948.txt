@@ -1,0 +1,92 @@
+49
+Q:public class CustomRequest extends JsonObjectRequest {
+
+    public CustomRequest(String url, JSONObject params,
+            Listener<JSONObject> listener, ErrorListener errorListener)
+            throws JSONException {
+        super(Method.POST,url, params, listener,
+                errorListener);
+        this.setShouldCache(Boolean.TRUE);
+    }
+}
+
+
+I was hoping that this piece of code would be enough for me to get implicit caching of responses. I'm not sure if it works or not, because i was under the assumption when a request is sent:
+
+
+it would hit the cache first and send that to onresponse
+then when the results come through from the remote server it would provide it to the onresponse 
+
+
+Update:
+
+I figured how to manually retrieve the cache and reconstruct it into a JSONObject and send it through OnResponse function but that doesn't seem to efficient considering there is implicit caching. JsonObjectRequest class should return JSONObject as the cached entry instead of raw response data.
+
+But i'm still interested to know if i'm making some mistake.
+
+The ambiguity is solely due to the lack of documentation, so i apologize if i'm missing something quite obvious.
+    
+===============================================================================================
+88
+A:See this answer - Set expiration policy for cache using Google's Volley
+
+This means Volley decides whether to cache response or not based only on headers "Cache-Control" and then "Expires", "maxAge".
+
+What you could do is change this method
+com.android.volley.toolbox.HttpHeaderParser.parseCacheHeaders(NetworkResponse response)
+and ignore these headers, set entry.softTtl and entry.ttl fields to whatever value works for you and use your method in your request class. Here is an example:
+
+/**
+ * Extracts a {@link Cache.Entry} from a {@link NetworkResponse}.
+ * Cache-control headers are ignored. SoftTtl == 3 mins, ttl == 24 hours.
+ * @param response The network response to parse headers from
+ * @return a cache entry for the given response, or null if the response is not cacheable.
+ */
+public static Cache.Entry parseIgnoreCacheHeaders(NetworkResponse response) {
+    long now = System.currentTimeMillis();
+
+    Map<String, String> headers = response.headers;
+    long serverDate = 0;
+    String serverEtag = null;
+    String headerValue;
+
+    headerValue = headers.get("Date");
+    if (headerValue != null) {
+        serverDate = HttpHeaderParser.parseDateAsEpoch(headerValue);
+    }
+
+    serverEtag = headers.get("ETag");
+
+    final long cacheHitButRefreshed = 3 * 60 * 1000; // in 3 minutes cache will be hit, but also refreshed on background
+    final long cacheExpired = 24 * 60 * 60 * 1000; // in 24 hours this cache entry expires completely
+    final long softExpire = now + cacheHitButRefreshed;
+    final long ttl = now + cacheExpired;
+
+    Cache.Entry entry = new Cache.Entry();
+    entry.data = response.data;
+    entry.etag = serverEtag;
+    entry.softTtl = softExpire;
+    entry.ttl = ttl;
+    entry.serverDate = serverDate;
+    entry.responseHeaders = headers;
+
+    return entry;
+}
+
+
+Use this method in your Request class like this:
+
+public class MyRequest extends com.android.volley.Request<MyResponse> {
+
+    ...
+
+    @Override
+    protected Response<MyResponse> parseNetworkResponse(NetworkResponse response) {
+        String jsonString = new String(response.data);
+        MyResponse MyResponse = gson.fromJson(jsonString, MyResponse.class);
+        return Response.success(MyResponse, HttpHeaderParser.parseIgnoreCacheHeaders(response));
+    }
+
+}
+
+    

@@ -1,0 +1,84 @@
+652
+Q:The app is crashing when I'm trying to open a file. It works below Android Nougat, but on Android Nougat it crashes. It only crashes when I try to open a file from the SD card, not from the system partition. Some permission problem?
+
+Sample code:
+
+File file = new File("/storage/emulated/0/test.txt");
+Intent intent = new Intent(Intent.ACTION_VIEW);
+intent.setDataAndType(Uri.fromFile(file), "text/*");
+intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+startActivity(intent); // Crashes on this line
+
+
+Log: 
+
+
+  android.os.FileUriExposedException:
+  file:///storage/emulated/0/test.txt exposed beyond app through
+  Intent.getData()
+
+
+Edit:
+
+When targeting Android Nougat, file:// URIs are not allowed anymore. We should use content:// URIs instead. However, my app needs to open files in root directories. Any ideas?
+    
+===============================================================================================
+1156
+A:If your targetSdkVersion >= 24, then we have to use FileProvider class to give access to the particular file or folder to make them accessible for other apps. We create our own class inheriting FileProvider in order to make sure our FileProvider doesn't conflict with FileProviders declared in imported dependencies as described here.
+
+Steps to replace file:// URI with content:// URI:
+
+
+Add a class extending FileProvider
+
+public class GenericFileProvider extends FileProvider {}
+
+Add a FileProvider <provider> tag in AndroidManifest.xml under <application> tag. Specify a unique authority for the android:authorities attribute to avoid conflicts, imported dependencies might specify ${applicationId}.provider and other commonly used authorities.
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    ...
+    <application
+        ...
+        <provider
+            android:name=".GenericFileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths"/>
+        </provider>
+    </application>
+</manifest>
+
+
+
+Then create a provider_paths.xml file in res/xml folder. Folder may be needed to created if it doesn't exist. The content of the file is shown below. It describes that we would like to share access to the External Storage at root folder (path=".") with the name external_files.
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-path name="external_files" path="."/>
+</paths>
+
+
+
+The final step is to change the line of code below in
+
+Uri photoURI = Uri.fromFile(createImageFile());
+
+
+to
+
+Uri photoURI = FileProvider.getUriForFile(context, context.getApplicationContext().getPackageName() + ".my.package.name.provider", createImageFile());
+
+Edit: If you're using an intent to make the system open your file, you may need to add the following line of code:
+
+intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+
+
+Please refer, full code and solution has been explained here.
+    

@@ -1,0 +1,95 @@
+39
+Q:I have an android application that need device current location (latitude and longitude). I've tried some tutorial on the net and specially some solutions from stack overflow, but they doesn't work well for me. My requirement is so simple: First I need it to be fast and need the location once when I the fragment starts. Second I need it to be as precise as possible, I mean it should use GPS first if GPS is not available then use Network provider.
+
+For example, I've tried this solution but it return null after 30 second, but I know there is some all the things is ok because google map and other application works well !!! 
+
+Something that almost all the answers suggest is to use getLastKnownLocation(), but I suppose it's not the current and I don't want it if it is so.
+
+can anyone suggest me some kind of simple and fast way to get the location just ONCE ?!
+
+Thanks in advance
+    
+===============================================================================================
+67
+A:Here, you can use this...
+
+Example usage:
+
+public void foo(Context context) {
+  // when you need location
+  // if inside activity context = this;
+
+  SingleShotLocationProvider.requestSingleUpdate(context, 
+   new SingleShotLocationProvider.LocationCallback() {
+     @Override public void onNewLocationAvailable(GPSCoordinates location) {
+       Log.d("Location", "my location is " + location.toString());
+     }
+   });
+}
+
+
+You might want to verify the lat/long are actual values and not 0 or something. If I remember correctly this shouldn't throw an NPE but you might want to verify that. 
+
+public class SingleShotLocationProvider {
+
+  public static interface LocationCallback {
+      public void onNewLocationAvailable(GPSCoordinates location);
+  }
+
+  // calls back to calling thread, note this is for low grain: if you want higher precision, swap the 
+  // contents of the else and if. Also be sure to check gps permission/settings are allowed.
+  // call usually takes <10ms
+  public static void requestSingleUpdate(final Context context, final LocationCallback callback) {
+      final LocationManager locationManager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+      boolean isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+      if (isNetworkEnabled) {
+          Criteria criteria = new Criteria();
+          criteria.setAccuracy(Criteria.ACCURACY_COARSE);
+          locationManager.requestSingleUpdate(criteria, new LocationListener() {
+              @Override
+              public void onLocationChanged(Location location) {
+                  callback.onNewLocationAvailable(new GPSCoordinates(location.getLatitude(), location.getLongitude()));
+              }
+
+              @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
+              @Override public void onProviderEnabled(String provider) { }
+              @Override public void onProviderDisabled(String provider) { }
+          }, null);
+      } else {
+          boolean isGPSEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
+          if (isGPSEnabled) {
+              Criteria criteria = new Criteria();
+              criteria.setAccuracy(Criteria.ACCURACY_FINE);
+              locationManager.requestSingleUpdate(criteria, new LocationListener() {
+                  @Override
+                  public void onLocationChanged(Location location) {
+                      callback.onNewLocationAvailable(new GPSCoordinates(location.getLatitude(), location.getLongitude()));
+                  }
+
+                  @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
+                  @Override public void onProviderEnabled(String provider) { }
+                  @Override public void onProviderDisabled(String provider) { }
+              }, null);
+          }
+      }
+  }
+
+
+  // consider returning Location instead of this dummy wrapper class
+  public static class GPSCoordinates {
+      public float longitude = -1;
+      public float latitude = -1;
+
+      public GPSCoordinates(float theLatitude, float theLongitude) {
+          longitude = theLongitude;
+          latitude = theLatitude;
+      }
+
+      public GPSCoordinates(double theLatitude, double theLongitude) {
+          longitude = (float) theLongitude;
+          latitude = (float) theLatitude;
+      }
+  }  
+}
+
+    

@@ -1,0 +1,76 @@
+47
+Q:I am developing software that loads information from XML files using Android's implementation of java.xml.parsers.DocumentBuilder and DocumentBuilderFactory.  I am writing unit tests of my objects and I need to be able to provide a variety of xml files that will exercise the code under test.  I am using Eclipse and have a separate Android Test Project.  I cannot find a way to put the test xml into the test project such that the code under test can open the files.  
+
+
+If I put the files in /assets of the test project, the code under test cannot see it.
+If I put the files in the /assets of the code under test, it can of course see the files, but now I'm cluttering up my actual system with test only data files.
+If I hand copy the files to the /sdcard/data directory, I can open them from the code under test, but that interferes with automating my tests.
+
+
+Any suggestions of how to have different xml test files reside in the test package but be visible to the code under test would be greatly appreciated.
+
+Here is how I tried to structure the unit test:
+
+public class AppDescLoaderTest extends AndroidTestCase
+{
+  private static final String SAMPLE_XML = "sample.xml";
+
+  private AppDescLoader       m_appDescLoader;
+  private Application         m_app;
+
+  protected void setUp() throws Exception
+  {
+    super.setUp();
+    m_app = new Application();
+    //call to system under test to load m_app using
+    //a sample xml file
+    m_appDescLoader = new AppDescLoader(m_app, SAMPLE_XML, getContext());
+  }
+
+  public void testLoad_ShouldPopulateDocument() throws Exception
+  {
+    m_appDescLoader.load();
+
+  }    
+}
+
+
+This did not work as the SAMPLE_XML file is in the context of the test, but AndroidTestCase is providing a context for the system under test, which cannot see an asset from the test package.
+
+This is the modified code that worked per answer given:
+
+public class AppDescLoaderTest extends InstrumentationTestCase
+{
+   ...
+  protected void setUp() throws Exception
+  {
+    super.setUp();
+    m_app = new Application();
+    //call to system under test to load m_app using
+    //a sample xml file
+     m_appDescLoader = new AppDescLoader(m_app, SAMPLE_XML, getInstrumentation().getContext());
+  }
+
+    
+===============================================================================================
+68
+A:Option 1: Use InstrumentationTestCase
+
+Suppose you got assets folder in both android project and test project, and you put the XML file in the assets folder. in your test code under test project, this will load xml from the android project assets folder:
+
+getInstrumentation().getTargetContext().getResources().getAssets().open(testFile);
+
+
+This will load xml from the test project assets folder:
+
+getInstrumentation().getContext().getResources().getAssets().open(testFile);
+
+
+Option 2: Use ClassLoader
+
+In your test project, if the assets folder is added to project build path (which was automatically done by ADT plugin before version r14), you can load file from res or assets directory (i.e. directories under project build path) without Context:
+
+String file = "assets/sample.xml";
+InputStream in = this.getClass().getClassLoader().getResourceAsStream(file);
+
+    

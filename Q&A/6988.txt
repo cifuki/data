@@ -1,0 +1,58 @@
+37
+Q:I'm brand new to Android development... coming from iPhone and .Net background. I've seen very similar questions to this one, but none of them dealt with the SimpleCursorAdapter.
+
+I have a basic ListActivity which uses a Cursor to bind data from a SQLite query to my ListView:
+
+ListAdapter adapter = new SimpleCursorAdapter(
+        this, 
+        android.R.layout.simple_list_item_1,  
+        c,        
+        new String[] {"name"},   
+        new int[] {android.R.id.text1}); 
+
+setListAdapter(adapter);
+
+
+Then when an item is clicked:
+
+public void onListItemClick(ListView l, View v, int position, long id) {
+
+    super.onListItemClick(l, v, position,  id);
+
+    //Difference between this:
+    Cursor c = (cursor)l.getItemAtPosition(position);
+    //and this??
+    Cursor c = (Cursor)l.getAdapter().getItem(position);
+
+    int categoryId = c.getInt(0);
+}
+
+
+Is this the proper way to get the id of the element that was selected? It seems strange, because I wouldn't think I could use my cursor after the database is closed (which is is after I bind). What is the point of the id passed in, when I can't seem to find a way of getting the actual item from that id? Also, I don't understand why the getItemAtPosition() would return a cursor... the cursor is bound to the entire list; not just one row. Finally, if this is correct, is there a difference between the two ways shown of getting the cursor? Thanks.
+    
+===============================================================================================
+82
+A:So a couple of points: after you fetch the cursor, you want to call startManagingCursor. This ties the cursor's lifecycle with Activity's lifecycle (so when the Activity gets destroyed the cursor gets closed/cleaned up).
+
+startManagingCursor(c);
+ListAdapter adapter = new SimpleCursorAdapter(
+        this, 
+        android.R.layout.simple_list_item_1,  
+        c,        
+        new String[] {"name"},   
+        new int[] {android.R.id.text1}); 
+setListAdapter(adapter);
+
+
+Also, the database isn't closed, the Cursor typically keeps a live connection to the DB (so the ListView can scroll and do things of that nature that may require future access to the Cursor's contents.
+
+To your core question, the easiest way to do it in onListItemClick is this:
+
+Cursor c = ((SimpleCursorAdapter)l.getAdapter()).getCursor();
+c.moveToPosition(position);
+
+
+You can then use the c.getLong(0) to get the id (assuming you fetched the id column as the first column which is generally the case). However, note that the id is passed in as part of the signature (see the last argument in public void onListItemClick(ListView l, View v, int position, long id)) so you really don't need to fetch it again (but you certainly can if you want to burn the cycles). For accessing other columns you can do the same thing, just change the column index.
+
+Hope that helps.
+    

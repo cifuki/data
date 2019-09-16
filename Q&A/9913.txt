@@ -1,0 +1,86 @@
+27
+Q:I am writing an Android Chat App. I am listening for connections and I receive data and I can see it in the Log.d, but whenever I try to update my UI the application crashes. 
+
+Code snippet: 
+
+private class chatReceiver implements Runnable {
+    @Override
+    public void run() {
+        try {
+            skt = new DatagramSocket(Integer.parseInt(Main.prefs.getString("port_number", "5432")));
+            DatagramPacket rcvPkt = new DatagramPacket(rcvBuf,rcvBuf.length);
+            String ack = "Hello from our SimpleUDPServer";
+            byte[] sndBuf = ack.getBytes();
+            while (true) {
+                Log.d("Server received: " ,"entered loop");
+                skt.receive(rcvPkt);
+                String rcvMsg = new String(rcvBuf, 0, rcvPkt.getLength(), "UTF-8");
+                Log.d("Server received: " ,"receiving" + rcvMsg);
+                if (rcvMsg != null) {
+                    Log.d("Server received: " ,"not equal null");
+                    // I want to update my UI here
+                }
+                DatagramPacket k = new DatagramPacket(sndBuf, sndBuf.length,
+                        rcvPkt.getAddress(), rcvPkt.getPort());
+                skt.send(k);
+                Log.d("Server sent" ,ack);
+
+            }
+        } catch (IOException ex) {
+            Log.d("ThreadStart", "Error Starting thread" + ex.getStackTrace());
+        }
+
+    }
+} 
+
+
+and to update the UI I do use : 
+
+public static void updateUI(Bubble b, View itemView) {
+
+    TextView txt_display_name = (TextView) itemView
+            .findViewById(R.id.display_name);
+    txt_display_name.setText(b.getDisplay_name());
+    TextView txt_chat_body = (TextView) itemView
+            .findViewById(R.id.chat_body);
+    txt_chat_body.setText(b.getChat_body());
+    TextView txt_creation_date = (TextView) itemView
+            .findViewById(R.id.creation_date);
+    txt_creation_date.setText(b.getCreation_time());
+}
+
+
+The application keeps crashing.
+    
+===============================================================================================
+58
+A:You cannot touch anything in the UI thread from a background thread, to do that use Handlers, initialize your background thread passing it a Handler object. When data arrives to use the handler to send a message to the UI. In the UI when the message from the background thread comes, just update the Views.
+
+Example Code Snippet :
+
+in the background thread: 
+
+if(dataArrives){
+    Message msg = handler.obtainMessage();
+    msg.what = UPDATE_IMAGE;
+    msg.obj = bitmap;
+    msg.arg1 = index;
+    handler.sendMessage(msg);
+}
+
+
+in the UI thread:
+
+final Handler handler = new Handler(){
+  @Override
+  public void handleMessage(Message msg) {
+    if(msg.what==UPDATE_IMAGE){
+      images.get(msg.arg1).setImageBitmap((Bitmap) msg.obj);
+    }
+    super.handleMessage(msg);
+  }
+};
+
+
+and pass the handler to the background thread.
+    

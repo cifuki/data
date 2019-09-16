@@ -1,0 +1,44 @@
+31
+Q:I'm trying to replace my Handler method with RxJava.
+My requirement:
+
+
+  I want to call the method getTransactionDetails() only after 5
+  seconds.
+
+
+This my working code using Handler:
+
+new Handler().postDelayed(new Runnable() {
+      @Override
+      public void run() {
+        getTransactionDetails();
+      }
+    }, 5000); 
+
+
+Rx java code - it's not working:
+
+Observable.empty().delay(5000, TimeUnit.MILLISECONDS)
+        .subscribeOn(Schedulers.io())
+        .observeOn(AndroidSchedulers.mainThread())
+        .doOnNext(o -> getTransactionDetails())
+        .subscribe();
+
+    
+===============================================================================================
+41
+A:doOnNext() is for side effects. It could be use for example for logging purpose, because logging doesn't alter the flow of data. But you want to pass down the result of getTransactionDetails(), so you should use map instead.
+
+Second, Observable.empty() create an Observable that just propagate the finish/dispose message, it trigger neither doOnNext() neither map(). You could fix this using Observable.just() instead but a more idiomatic way would be to use Observable.timer():
+
+Observable.timer(5000, TimeUnit.MILLISECONDS)
+        .map(o -> getTransactionDetails())
+        .observeOn(AndroidSchedulers.mainThread())
+        .subscribe( ... );
+
+
+A final note on Schedulers. Observable.timer() and delay() are executed on the computation scheduler by default so you don't need to call .subscribeOn(Schedulers.io()) to execute getTransactionDetails() outside of main thread. Observable.timer() and delay() could take a Scheduler as a parameter if you want to control this. So you need to call .observeOn(AndroidSchedulers.mainThread()) if you want to use getTransactionDetails() result on UI thread. Every operator after observeOn() is executed on the defined Scheduler, so you have to put observeOn() after computation.
+
+Edit: This is of course if you care about the result of getTransactionDetails(). If not, see Clyde answer.
+    

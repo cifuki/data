@@ -1,0 +1,182 @@
+50
+Q:Just recently I have had a problem with a key store. I know there are plenty of questions about this problem already. I have read them all and Googled furiously.
+
+Error:
+
+keytool error: java.io.IOException: Keystore was tampered with, or password was incorrect
+java.io.IOException: Keystore was tampered with, or password was incorrect
+    at sun.security.provider.JavaKeyStore.engineLoad(JavaKeyStore.java:772)
+    at sun.security.provider.JavaKeyStore$JKS.engineLoad(JavaKeyStore.java:55)
+    at java.security.KeyStore.load(KeyStore.java:1214)
+    at sun.security.tools.KeyTool.doCommands(KeyTool.java:885)
+    at sun.security.tools.KeyTool.run(KeyTool.java:340)
+    at sun.security.tools.KeyTool.main(KeyTool.java:333)
+Caused by: java.security.UnrecoverableKeyException: Password verification failed
+    at sun.security.provider.JavaKeyStore.engineLoad(JavaKeyStore.java:770)
+    ... 5 more
+
+
+Software I am using:
+
+Java
+
+java version "1.7.0_21"
+Java(TM) SE Runtime Environment (build 1.7.0_21-b11)
+Java HotSpot(TM) 64-Bit Server VM (build 23.21-b01, mixed mode)
+
+
+Eclipse
+
+Version: 3.8.0
+Build id: I20120502-2000
+
+
+Latest ADT Plugin
+
+Latest Android SDK
+
+Here is what I know:
+
+
+I did not lose the password and it has never changed.
+I cannot retrieve the password(I know the pass).
+I cannot sign an existing application with a different key without releasing a brand new application(So I cannot publish any updates).
+
+
+Here is what I have done:
+
+
+I have uninstalled and re-installed Eclipse many times.
+I have uninstalled and re-installed the android ADT plugin.
+I have removed and re-downloaded lastest Android SDK many times.
+I have uninstalled and re-installed JDK7.
+I have tried using the backups of my keystore.
+I have checked the MD5 checksums using "md5sum KEYSTORE" and compared with the backups(same MD5 output - not tampered).
+I have tried brute-forcing the key store(I have retrieved the password that I knew).
+I created a test key(with current setup) and tested the password and it seems to worked fine(so something has changed).
+I have tried exporting the android .apk manually and then tried to sign it(Outside of Eclipse).
+
+
+Here is how I export a signed application:
+
+
+Through Eclipse: Exporting of using File > Export > Export Android Application.
+Before JDK7: jarsigner -verbose -keystore KEYSTORE FILE ALIAS.
+With JDK7: jarsigner -verbose -sigalg MD5withRSA -digestalg SHA1 -keystore KEYSTORE FILE ALIAS.
+
+
+What is there left to figure out or try?
+
+
+Some of the references/URLs say to remove the "trusted.certs" file?
+Try deleting the "debug.keystore"?
+Would updating Eclipse or any of the Android development tools affect my keystore?
+Would updating Java from jdk6 to jdk7 create any problems?
+Could this have messed with or change how the jarsigner works in anyway?
+
+
+User suggestions:
+
+
+Try using JDK6, but I was able to recently export an application.
+Checked key.store.password or key.alias.password in my local.properties 
+Unchecking the build automatically in eclipse and clean your project
+Try to remove .metadata folder in your workspace and clear all temp folders. 
+
+
+Summary
+
+
+Keystores did not change,
+I have the passwords to the keystores,
+I have successfully exported an application recently using:
+
+
+Eclipse 3.8 (and Eclipse 4.0+),
+Latest Java 7,
+Latest ADT Plugin.
+
+My last successful export and build was a few weeks ago using Eclipse 3.8, latest Android tools and Java 7 with the same password.
+
+
+Update (6/29/14)
+
+
+I have used: keytool -list -keystore KEYSTORE to successfully prove and show that 3 out of my 4 keys work.
+I bruteforced the last key and obtained the password from the keystore(The pass I already knew), but the password does not work when I enter for signing. I have used: java -jar AndroidKeystoreBrute_v1.02.jar -m 3 -k KEYSTORE -d WORDLIST.
+Strangely enough, sometimes when I type my password into eclipse very quickly, my alias will show up and I can successfully export my application. (I know this is crazy).
+Updated Java version.
+
+
+If I type in the password very quickly it works, sometimes.
+
+It seems that opening up Eclipse and entering the password the first time lets me use the keystore.
+
+Obviously, if all else fails, I will have to create a new key store. I really would like to get this resolved, I am just not sure what to do now besides republish with a new key.
+
+If the key cannot be recovered properly, I might open source it on Github.
+
+
+
+Solution (6/29/14):
+
+A special thanks to user Erhannis!
+
+Here is what I did:
+
+The command would error out on me each time: 
+
+keytool -importkeystore -srckeystore old.keystore -destkeystore new.keystore -v
+
+
+Since you told me we could extract private keys from the Java Keystore(.jks), I dug deeper and ended up using a variation of the command. I followed the links you posted here and here:
+
+keytool -importkeystore -srckeystore old.keystore -destkeystore new.keystore -deststoretype pkcs12
+
+
+After extracting the private key and storing as PKCS12, I think extracted my private key and put it back into a brand new Java Keystore:
+
+keytool -importkeystore -srckeystore new.keystore -srcstoretype pkcs12 -destkeystore final.keystore -deststoretype jks
+
+
+
+
+References:
+
+http://developer.android.com/tools/publishing/app-signing.html#signapp
+
+http://code.google.com/p/android-keystore-password-recover/
+
+List of StackOverflow URLs I have read:
+
+How to handle a lost KeyStore password in Android?
+
+Invalid Keystore problem?
+
+Android: I lost my android key store, what should I do?
+
+I lost my .keystore file?
+
+Forgot Keystore password, thinking of Brute-Force detection. will it corrupt the keystore?
+
+I have lost the password for android Keystore file
+
+Problem running my signed, release keystore in Eclipse
+
+Android - Forgot keystore password. Can I decrypt keystore file?
+
+Android release keystore issue: "Keystore was tampered with, or password was incorrect"
+    
+===============================================================================================
+6
+A:I may have had the same problem.  I never did figure out why it was failing (though I wonder if it was because the keystore password was shorter than 6 digits), but I was able to copy my key into a new keystore, which I then renamed to replace the old one, and it mysteriously worked after that (using the new passwords).  Needed the key password, by the way.  Working off https://security.stackexchange.com/a/3795, I did the following:
+
+
+keytool -importkeystore -srckeystore old.keystore -destkeystore new.keystore -v
+Entered the new keystore password twice
+Hit Enter when it asked me for the source keystore password (left it blank)
+Entered the key password
+
+
+After double-checking that the new one worked, I just copied it over the old one.  Hope it works for you; good luck.
+    

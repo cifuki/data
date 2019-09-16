@@ -1,0 +1,74 @@
+35
+Q:I am creating a subclass of ItemDecoration from this gist: https://gist.github.com/alexfu/0f464fc3742f134ccd1e 
+
+How to make it only decorate items with certain condition? For instance, only decorate items with certain positions, type of ViewHolder, etc.
+
+I have modified the above mentioned gist (plus some changes on deprecated Android API) with this code, but all items get decorated anyway:
+
+public boolean isDecorated(View view, RecyclerView parent) {
+    RecyclerView.ViewHolder holder = parent.getChildViewHolder(view);
+    return holder instanceof MenuIconViewHolder || holder instanceof MenuDetailViewHolder;
+}
+
+@Override
+public void getItemOffsets(Rect outRect, View view, RecyclerView parent, RecyclerView.State state) {
+    if (isDecorated(view, parent)) {
+        if (mOrientation == VERTICAL_LIST) {
+            outRect.set(0, 0, 0, mDivider.getIntrinsicHeight());
+        } else {
+            outRect.set(0, 0, mDivider.getIntrinsicWidth(), 0);
+        }
+    } else {
+        super.getItemOffsets(outRect, view, parent, state);
+    }
+}
+
+
+What's wrong with above code? 
+By the way, can it be considered best practice (in respect of separation of concerns) to place that kind of code in ItemDecoration class?
+    
+===============================================================================================
+32
+A:You need to call isDecorated on the draw method as well, because at the moment you don't put the offset on those items but you still draw over it.
+
+The method loops over all the child views currently in the RecyclerView visible on the screen.
+
+public void drawVertical(Canvas c, RecyclerView parent) {
+    final int left = parent.getPaddingLeft();
+    final int right = parent.getWidth() - parent.getPaddingRight();
+
+    final int childCount = parent.getChildCount();
+    for (int i = 0; i < childCount; i++) {
+        final View child = parent.getChildAt(i);
+        if(isDecorated(child, parent))
+        {
+            final RecyclerView.LayoutParams params = (RecyclerView.LayoutParams) child
+                .getLayoutParams();
+            final int top = child.getBottom() + params.bottomMargin;
+            final int bottom = top + mDivider.getIntrinsicHeight();
+            mDivider.setBounds(left, top, right, bottom);
+            mDivider.draw(c);
+        }
+    }
+}
+
+public void drawHorizontal(Canvas c, RecyclerView parent) {
+    final int top = parent.getPaddingTop();
+    final int bottom = parent.getHeight() - parent.getPaddingBottom();
+
+    final int childCount = parent.getChildCount();
+    for (int i = 0; i < childCount; i++) {
+        final View child = parent.getChildAt(i);
+        if(isDecorated(child, parent))
+        {
+            final RecyclerView.LayoutParams params = (RecyclerView.LayoutParams) child
+                .getLayoutParams();
+            final int left = child.getRight() + params.rightMargin;
+            final int right = left + mDivider.getIntrinsicHeight();
+            mDivider.setBounds(left, top, right, bottom);
+            mDivider.draw(c);
+        }
+    }
+}
+
+    

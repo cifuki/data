@@ -1,0 +1,178 @@
+30
+Q:I hope to block some crank call, so I need to hang up some call programmatically in android.
+
+The following fragment is from How to hang up outgoing call in Android?
+Does it mean the technique of hang up call will be block at any time in further Android version?
+Does it mean I can't write an app to hang up a call?
+
+The only way to hang up that I've encountered so far, is to do so through Java Reflection. As it is not part of the public API, you should be careful to use it, and not rely upon it. Any change to the internal composition of Android will effectively break your application.
+    
+===============================================================================================
+73
+A:First, you need to declare this permission in AndroidManifest.xml
+
+<uses-permission android:name="android.permission.CALL_PHONE" />
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+
+Then you setup a BroadcastReceiver service for android.intent.action.PHONE_STATE (incoming calls) and android.intent.action.NEW_OUTGOING_CALL (outgoing calls) by adding the following to AndroidManifest.xml
+
+AndroidManifest.xml
+
+<receiver android:name=".PhoneStateReceiver">
+    <intent-filter android:priority="0">
+        <action android:name="android.intent.action.PHONE_STATE" />
+        <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
+    </intent-filter>
+</receiver>
+
+
+PhoneStateReceiver.JAVA
+
+import java.lang.reflect.Method;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.telephony.TelephonyManager;
+import android.util.Log;
+
+public class PhoneStateReceiver extends BroadcastReceiver {
+
+    public static String TAG="PhoneStateReceiver";
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        if (intent.getAction().equals("android.intent.action.PHONE_STATE")) { 
+            String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
+            Log.d(TAG,"PhoneStateReceiver**Call State=" + state);
+
+            if (state.equals(TelephonyManager.EXTRA_STATE_IDLE)) {
+                Log.d(TAG,"PhoneStateReceiver**Idle");
+            } else if (state.equals(TelephonyManager.EXTRA_STATE_RINGING)) { 
+                // Incoming call
+                String incomingNumber = 
+                        intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
+                Log.d(TAG,"PhoneStateReceiver**Incoming call " + incomingNumber);
+
+                if (!killCall(context)) { // Using the method defined earlier
+                    Log.d(TAG,"PhoneStateReceiver **Unable to kill incoming call");
+                }
+
+            } else if (state.equals(TelephonyManager.EXTRA_STATE_OFFHOOK)) {
+                Log.d(TAG,"PhoneStateReceiver **Offhook");
+            }
+        } else if (intent.getAction().equals("android.intent.action.NEW_OUTGOING_CALL")) { 
+            // Outgoing call
+            String outgoingNumber = intent.getStringExtra(Intent.EXTRA_PHONE_NUMBER);
+            Log.d(TAG,"PhoneStateReceiver **Outgoing call " + outgoingNumber);
+
+            setResultData(null); // Kills the outgoing call
+
+        } else {
+            Log.d(TAG,"PhoneStateReceiver **unexpected intent.action=" + intent.getAction());
+        }
+    }
+
+    public boolean killCall(Context context) {
+        try {
+            // Get the boring old TelephonyManager
+            TelephonyManager telephonyManager =
+                    (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+
+            // Get the getITelephony() method
+            Class classTelephony = Class.forName(telephonyManager.getClass().getName());
+            Method methodGetITelephony = classTelephony.getDeclaredMethod("getITelephony");
+
+            // Ignore that the method is supposed to be private
+            methodGetITelephony.setAccessible(true);
+
+            // Invoke getITelephony() to get the ITelephony interface
+            Object telephonyInterface = methodGetITelephony.invoke(telephonyManager);
+
+            // Get the endCall method from ITelephony
+            Class telephonyInterfaceClass =  
+                    Class.forName(telephonyInterface.getClass().getName());
+            Method methodEndCall = telephonyInterfaceClass.getDeclaredMethod("endCall");
+
+            // Invoke endCall()
+            methodEndCall.invoke(telephonyInterface);
+
+        } catch (Exception ex) { // Many things can go wrong with reflection calls
+            Log.d(TAG,"PhoneStateReceiver **" + ex.toString());
+            return false;
+        }
+        return true;
+    }
+
+}
+
+
+MainActivity.JAVA
+
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
+import android.support.v7.app.AppCompatActivity;
+import android.os.Bundle;
+
+public class MainActivity extends AppCompatActivity {
+
+public static final int MY_PERMISSIONS_REQUEST_READ_PHONE_STATE = 101;
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    if (ContextCompat.checkSelfPermission(this,
+            Manifest.permission.READ_PHONE_STATE)
+            != PackageManager.PERMISSION_GRANTED) {
+
+        // Should we show an explanation?
+        if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+                Manifest.permission.READ_PHONE_STATE)) {
+
+            // Show an explanation to the user *asynchronously* -- don't block
+            // this thread waiting for the user's response! After the user
+            // sees the explanation, try again to request the permission.
+
+        } else {
+
+            // No explanation needed, we can request the permission.
+
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.READ_PHONE_STATE},
+                    MY_PERMISSIONS_REQUEST_READ_PHONE_STATE);
+
+            // MY_PERMISSIONS_REQUEST_READ_PHONE_STATE is an
+            // app-defined int constant. The callback method gets the
+            // result of the request.
+        }
+    }
+}
+
+@Override
+public void onRequestPermissionsResult(int requestCode,
+                                       String permissions[], int[] grantResults) {
+    switch (requestCode) {
+        case MY_PERMISSIONS_REQUEST_READ_PHONE_STATE: {
+            // If request is cancelled, the result arrays are empty.
+            if (grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+
+                // permission was granted, yay!
+
+            } else {
+
+                // permission denied, boo! Disable the
+                // functionality that depends on this permission.
+            }
+            return;
+        }
+
+        // other 'case' lines to check for other
+        // permissions this app might request
+    }
+}
+}
+
+    

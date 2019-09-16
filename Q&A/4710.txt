@@ -1,0 +1,111 @@
+51
+Q:I have an Activity with navigation drawer and full-bleed Fragment (with image in the top that must appear behind translucent system bar on Lollipop). While I had an interim solution where the Fragment was inflated by simply having <fragment> tag in Activity's XML, it looked fine.
+
+Then I had to replace <fragment> with <FrameLayout> and perform fragment transactions, and now the fragment does not appear behind the system bar anymore, despite fitsSystemWindows is set to true across all required hierarchy.
+
+I believe there might be some difference between how <fragment> gets inflated within Activity's layout vs on its own. I googled and found some solutions for KitKat, but neither of those worked for me (Lollipop).
+
+activity.xml
+
+<android.support.v4.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+                                        xmlns:app="http://schemas.android.com/apk/res-auto"
+                                        android:id="@+id/drawer_layout"
+                                        android:layout_height="match_parent"
+                                        android:layout_width="match_parent"
+                                        android:fitsSystemWindows="true">
+
+    <FrameLayout
+            android:id="@+id/fragment_host"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fitsSystemWindows="true">
+
+    </FrameLayout>
+
+    <android.support.design.widget.NavigationView
+            android:id="@+id/nav_view"
+            android:layout_height="match_parent"
+            android:layout_width="wrap_content"
+            android:layout_gravity="start"
+            android:fitsSystemWindows="true"/>
+
+</android.support.v4.widget.DrawerLayout>
+
+
+fragment.xml
+
+<android.support.design.widget.CoordinatorLayout
+        xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:app="http://schemas.android.com/apk/res-auto"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fitsSystemWindows="true">
+
+    <android.support.design.widget.AppBarLayout
+            android:layout_width="match_parent"
+            android:layout_height="224dp"
+            android:fitsSystemWindows="true"
+            android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar">
+...
+
+
+It worked when activity.xml was this way:
+
+<android.support.v4.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+                                        xmlns:app="http://schemas.android.com/apk/res-auto"
+                                        android:id="@+id/drawer_layout"
+                                        android:layout_height="match_parent"
+                                        android:layout_width="match_parent"
+                                        android:fitsSystemWindows="true">
+
+    <fragment xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools"
+              android:id="@+id/fragment"
+              android:name="com.actinarium.random.ui.home.HomeCardsFragment"
+              tools:layout="@layout/fragment_home"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"/>
+
+    <android.support.design.widget.NavigationView
+            android:id="@+id/nav_view"
+            android:layout_height="match_parent"
+            android:layout_width="wrap_content"
+            android:layout_gravity="start"
+            android:fitsSystemWindows="true"/>
+
+</android.support.v4.widget.DrawerLayout>
+
+    
+===============================================================================================
+77
+A:When you use <fragment>, the layout returned in your Fragment's onCreateView is directly attached in place of the <fragment> tag (you'll never actually see a <fragment> tag if you look at your View hierarchy.
+
+Therefore in the <fragment> case, you have
+
+DrawerLayout
+  CoordinatorLayout
+    AppBarLayout
+    ...
+  NavigationView
+
+
+Similar to how cheesesquare works. This works because, as explained in this blog post, DrawerLayout and CoordinatorLayout both have different rules on how fitsSystemWindows applies to them - they both use it to inset their child Views, but also call dispatchApplyWindowInsets() on each child, allowing them access to the fitsSystemWindows="true" property.
+
+This is a difference from the default behavior with layouts such as FrameLayout where when you use fitsSystemWindows="true" is consumes all insets, blindly applying padding without informing any child views (that's the 'depth first' part of the blog post).
+
+So when you replace the <fragment> tag with a FrameLayout and FragmentTransactions, your view hierarchy becomes:
+
+DrawerLayout
+  FrameLayout
+    CoordinatorLayout
+      AppBarLayout
+      ...
+  NavigationView
+
+
+as the Fragment's view is inserted into the FrameLayout. That View doesn't know anything about passing fitsSystemWindows to child views, so your CoordinatorLayout never gets to see that flag or do its custom behavior.
+
+Fixing the problem is actually fairly simple: replace your FrameLayout with another CoordinatorLayout. This ensures the fitsSystemWindows="true" gets passed onto the newly inflated CoordinatorLayout from the Fragment.
+
+Alternate and equally valid solutions would be to make a custom subclass of FrameLayout and override onApplyWindowInsets() to dispatch to each child (in your case just the one) or use the ViewCompat.setOnApplyWindowInsetsListener() method to intercept the call in code and dispatch from there (no subclass required). Less code is usually the easiest to maintain, so I wouldn't necessarily recommend going these routes over the CoordinatorLayout solution unless you feel strongly about it.
+    

@@ -1,0 +1,96 @@
+49
+Q:I'm currently working on an Android application that connects to an instrument via Bluetooth and need to write string commands and receive string responses back. Currently I have the connect/read/write working for TCP/IP over Wi-Fi and now trying to implement Bluetooth. But I am running into some roadblocks. I have been searching the web trying to find examples of something similar and haven't had any luck. I have been using the Android developer resource example: Bluetooth Chat as my main reference point.
+
+My current code seems to work.. Then it throws a Service Discovery Failed exception at the point of the connection. I am using the DeviceListActivity class to do the discovery and selecting of the device I want to connect to. It returns anActivityResult and then my Bluetooth class waits for it to handle that and then does the connect to it.  The code beneath is almost identical to the Bluetooth Chat App.
+
+public void onActivityResult(int requestCode, int resultCode, Intent data) {
+    if(!m_BluetoothAdapter.isEnabled())
+    {
+        m_BluetoothAdapter.enable();
+    }
+    switch (requestCode) {
+        case REQUEST_CONNECT_DEVICE:
+            // When DeviceListActivity returns with a device to connect
+            if (resultCode == Activity.RESULT_OK) {
+                // Get the device MAC address
+                String address = data.getExtras()
+                                     .getString(DeviceListActivity.EXTRA_DEVICE_ADDRESS);
+                // Get the BLuetoothDevice object
+                BluetoothDevice device = m_BluetoothAdapter.getRemoteDevice(address);
+                // Attempt to connect to the device
+                connect(device);
+            }
+            break;
+
+        case REQUEST_ENABLE_BT:
+            // When the request to enable Bluetooth returns
+            if (resultCode == Activity.RESULT_OK) {
+                // Bluetooth is now enabled, so set up a chat session
+            }
+            else {
+                // User did not enable Bluetooth or an error occured
+
+                Toast.makeText(this, "Bluetooth not enabled", Toast.LENGTH_SHORT).show();
+                finish();
+            }
+    }
+}
+
+
+This is my connect function:
+
+private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+
+private void connect(BluetoothDevice device) {
+    m_Device = device;
+    BluetoothSocket tmp = null;
+
+    // Get a BluetoothSocket for a connection with the
+    // given BluetoothDevice
+    try {
+        tmp = device.createRfcommSocketToServiceRecord(MY_UUID);
+    }
+    catch (IOException e) {
+
+    }
+    m_Socket = tmp;
+
+    m_BluetoothAdapter.cancelDiscovery();
+
+    try {
+        // This is a blocking call and will only return on a
+        // successful connection or an exception
+        m_Socket.connect();
+    }
+    catch (IOException e) {
+        try {
+            m_Socket.close();
+        }
+        catch (IOException e2) {
+        }
+        return;
+    }
+}
+
+
+Hopefully, whatever I am doing wrong is simple, but I'm afraid it's never that easy.  This is my first time doing any Bluetooth development, and maybe I'm doing something blatantly wrong... But I'm not sure why I get the service discovery failed exception.
+
+You can pair/find the device at all times manually on the phone... It does require a passcode, but I don't think that is the problem that I am having.
+    
+===============================================================================================
+93
+A:After three days I got it figured out thanks to some very helpful posts.
+
+I had to replace:
+
+tmp = device.createRfcommSocketToServiceRecord(MY_UUID);
+
+
+with: 
+
+Method m = device.getClass().getMethod("createRfcommSocket", new Class[] {int.class});
+         tmp = (BluetoothSocket) m.invoke(device, 1);
+
+
+and voil\xc3\xa0 it works!
+    

@@ -1,0 +1,65 @@
+30
+Q:I was reading an answer to a different question on SO, in which @RomainGuy commented that one could (please correct me if I'm paraphrasing incorrectly) back-port code from later versions of android to earlier versions.  Specifically, I am interested in back-porting code for BitmapRegionDecoder from Android version 2.3.3 (Gingerbread) to version 2.2.2 (Froyo).
+
+I would have rather asked the question more generally as what is the best practice / what should be avoided when back-porting code from newer versions of Android to older versions, but stackoverflow hinted that my question might be closed as being too subjective.
+
+Maybe if there is enough interest in the topic, this question could be "morphed" into a more general one..possibly a community wiki?
+
+In any case, I would appreciate any insight into how this is done..whether specific to my use case, or more general advice.  Do calls to native methods from within the java class complicate the matter (necessarily involving the NDK)?
+
+If it is indeed possible (and reasonable) to cherry-pick and back-port code in this way, I think many would find it very useful to know how.
+    
+===============================================================================================
+9
+A:As @hackbod mentioned BitmapRegionDecoder is based on external skia library. Yet it's may be a benefit.
+
+Let's examine original source:
+
+
+BitmapRegionDecoder.java. Mostly defines wrappers around native methods:
+
+private static native Bitmap nativeDecodeRegion(int lbm,
+    int start_x, int start_y, int width, int height,
+    BitmapFactory.Options options);
+private static native int nativeGetWidth(int lbm);
+private static native int nativeGetHeight(int lbm);
+private static native void nativeClean(int lbm);
+// ...multiply nativeNewInstance overloads follow
+
+
+Class doesn't use any new Java APIs we'd need to backport.
+BitmapRegionDecoder.cpp. Header files it includes consist of ones which are present in Froyo except these two:
+
+
+AutoDecodeCancel.h. The only line it's used in:
+
+AutoDecoderCancel   adc(options, decoder);
+
+
+This class handles SkDecoder instances lifecycle. It's a small piece of code and may be well back-ported.
+SkBitmapRegionDecoder.h
+
+As filename states this is a core component. In fact, all previous were a kind of wrappers around it. The good news is that we may not need to back-port it as it should be possible to take a whole skia library from the Gingerbeard and compile it under Froyo as it is external and doesn't contain any new dependencies.
+
+
+
+P.S. I didn't actually dive deep in the code so please correct me if there's anything I overlooked.
+
+Update:
+
+Source code we need is located in following repositories on branches froyo-release and gingerbread-mr4-release:
+
+
+External skia library repository
+
+
+Header files are in include/core and include/images
+
+Android framework base
+
+
+Java code: graphics/java/android/graphics/BitmapRegionDecoder.java
+Native code: core/jni/android/graphics/...
+
+
+    

@@ -1,0 +1,85 @@
+163
+Q:I've had severe trouble getting LayoutInflater to work as expected, and so did other people: How to use layoutinflator to add views at runtime?.
+
+Why does LayoutInflater ignore the layout parameters I've specified? E.g. why are the layout_width and layout_height values from my resources XML not honored?
+    
+===============================================================================================
+368
+A:I've investigated this issue, referring to the LayoutInflater docs and setting up a small sample demonstration project. The following tutorials shows how to dynamically populate a layout using LayoutInflater.
+
+Before we get started see what LayoutInflater.inflate() parameters look like:
+
+
+resource: ID for an XML layout resource to load (e.g., R.layout.main_page)
+root: Optional view to be the parent of the generated hierarchy (if attachToRoot is true), or else simply an object that provides a set of LayoutParams values for root of the returned hierarchy (if attachToRoot is false.)
+attachToRoot: Whether the inflated hierarchy should be attached to the root parameter? If false, root is only used to create the correct subclass of LayoutParams for the root view in the XML.
+Returns: The root View of the inflated hierarchy. If root was supplied and attachToRoot is true, this is root; otherwise it is the root of the inflated XML file. 
+
+
+Now for the sample layout and code.
+
+Main layout (main.xml):
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+</LinearLayout>
+
+
+Added into this container is a separate TextView, visible as small red square if layout parameters are successfully applied from XML (red.xml):
+
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="25dp"
+    android:layout_height="25dp"
+    android:background="#ff0000"
+    android:text="red" />
+
+
+Now LayoutInflater is used with several variations of call parameters
+
+public class InflaterTest extends Activity {
+
+    private View view;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+      super.onCreate(savedInstanceState);
+
+      setContentView(R.layout.main);
+      ViewGroup parent = (ViewGroup) findViewById(R.id.container);
+
+      // result: layout_height=wrap_content layout_width=match_parent
+      view = LayoutInflater.from(this).inflate(R.layout.red, null);
+      parent.addView(view);
+
+      // result: layout_height=100 layout_width=100
+      view = LayoutInflater.from(this).inflate(R.layout.red, null);
+      parent.addView(view, 100, 100);
+
+      // result: layout_height=25dp layout_width=25dp
+      // view=textView due to attachRoot=false
+      view = LayoutInflater.from(this).inflate(R.layout.red, parent, false);
+      parent.addView(view);
+
+      // result: layout_height=25dp layout_width=25dp 
+      // parent.addView not necessary as this is already done by attachRoot=true
+      // view=root due to parent supplied as hierarchy root and attachRoot=true
+      view = LayoutInflater.from(this).inflate(R.layout.red, parent, true);
+    }
+}
+
+
+The actual results of the parameter variations are documented in the code.
+
+SYNOPSIS: Calling LayoutInflater without specifying root leads to inflate call ignoring the layout parameters from the XML. Calling inflate with root not equal null and attachRoot=true does load the layout parameters, but returns the root object again, which prevents further layout changes to the loaded object (unless you can find it using findViewById()).
+The calling convention you most likely would like to use is therefore this one:
+
+loadedView = LayoutInflater.from(context)
+                .inflate(R.layout.layout_to_load, parent, false);
+
+
+To help with layout issues, the Layout Inspector is highly recommended.
+    

@@ -1,0 +1,66 @@
+45
+Q:Does Robolectric provide any clear benefits compared to Android Test Framework ? I've read the docs regarding both the frameworks but as far as i can see the only clear cut benefit regarding Robolectric is that it runs on JVM rather than the DalvikVM, making it faster than Android framework.
+
+Are there any other major benefits that stand out ?
+    
+===============================================================================================
+77
+A:Update Apr-2015: Gradle build tools and Android Studio now officially support unit testing and prevent android.jar from throwing stub (no real implementation) error. So, yes its possible to run tests on Java VM, when stubs are appropriately mocked. Its a start but is still not comparable with Robolectric's power. There is also a third alternative, Scroll to bottom of this answer.
+
+Now, about Robolectric :
+
+Pros: here are a few points about how it has proved to be useful in unit testing:
+
+
+You need not run an emulator, So you can test some of the project's non UI parts without requiring an emulator or device. This also applies to running tests on continuous integration/ build servers, no emulator instances need be launched.
+With Android Studio, you can quickly run one particular test class, when you are working on the implementation to satisfy the test cases. You can debug as you write code. This is a massive productivity gain.
+Can fake almost every android related thing as shadow objects, even SQLite. Plus each shadow object exposes many useful functions which their normal android counterparts don't offer. With shadow counterparts of android Object, you can do internal checking or call special methods.
+Really shines when testing multi threaded code like AsyncTasks, Loopers and Handlers etc. You can pause and fast-forward thread Loopers, even main thread. Excellent for Handler based callback testing.
+JUnit 4 format supported. Android is still holding onto JUnit 3 last time I checked.
+Can be combined with other test tools like Mockito, Espresso etc etc.
+Supports mock Activity instance creationRobolectric.buildActivity() and its control via ActivityController. Fragment/View manipulation also works on such mock activity instances.
+There are now provided add-on modules that cover multi-dex, v4-support, play services, maps and http client as well. So, its now easy to test code using these library functions as well.
+
+
+Cons: Where I found it not so good:
+
+
+Robolectric excels at aiding Unit testing, but does not cover all the functionality a real device or emulator can offer. For example sensors, gps, open-gl etc etc.
+You'll need an emulator or real device when doing integration or UI testing, so that Activities and services can interact with full android environment (other apps, like using camera app to get a picture for your app), not a limited one. Here you'll need to use the default test framework as it has functions to test UI as well.
+JNI loading seems not to be supported. So code with native dependency can't be tested.
+As of now, Robolectric has a hard wired dependency on google maps jar to work. And will download another android.jar from maven. So, project setup may require a bit of a tinkering. Update: as of v3 it seems to pull all dependencies via Gradle without much fuss.
+Newer Android tools support coverage and reports generation etc, but only when test are run on a device. So with Robolectric you'll have to create extra Gradle tasks (run Jaococ) to do it for you. Update: Gradle 2.9 + ships with jacoco plugin.
+As both gradle and android build tools are shipping out newer build versions at a fast rate, stable Robolectric versions will sometimes start having problems with the changed build tooling. Most typical problems include: sdk version incompatible, manifest not found, build output paths mismatch, resources not loading, build config issues etc. Some issues are also related to bugs in android tools. At times you may even have to write your own custom test runner or apply workarounds till next version fixes those issues. Check out open issues and configure tests accordingly.
+
+
+
+
+Another alternative is simply mock stuff on your own, no frameworks involved. Its the "hard way" but the most customizable way. Its plain JUnit with JMockit:
+
+@RunWith(JMockit.class)
+public class OtherTest {
+    public void testHandlerCallback(@Mocked final FragmentTransaction transaction,
+                                    @Mocked final FragmentManager manager,
+                                    @Mocked final Activity activity,
+                                    @Mocked final LayoutInflater inflater,
+                                    @Mocked final ViewGroup parent) {
+
+        final List<Fragment> fragments = new ArrayList<>();
+        new Expectations() {{
+            activity.getFragmentManager(); result = manager;
+            manager.beginTransaction(); result = transaction;
+            transaction.add(withCapture(fragments), anyString);
+            transaction.commit(); result = new Delegate<Void>() {
+                public int commit() {
+                    View v = fragments.get(0).onCreateView(inflater,parent,null);
+                    Deencapsulation.invoke(v,"onMeasure",0,0);
+                  return  0;  
+                }
+            };
+        }};
+    }
+}
+
+
+Above is a crude and inline example. You can actually create proper re-usable classes (say FragmentTestHarness) that will take a component (say a Fragment) under test and wrap it in completely isolated environment, preparing it for tests.
+    

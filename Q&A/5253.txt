@@ -1,0 +1,154 @@
+46
+Q:I''m following this Tutorial but so far I can't make it work, though this is from a year ago or so...
+
+I'm using androidStudo 1.2.2 and FacebookSDK 4.
+
+I want a simple login into facebook using a custom button, like the one shown in this image:
+
+
+
+Now, in the example from the tutorial I'm having problems with the Session variable, it says it cannot resolve it, neither getActivity()
+
+Has naybody tried this on FacebookSDK4.0?
+
+Is that a correct approach or maybe there is something more updated?
+
+Thanks in advance!
+    
+===============================================================================================
+154
+A:Step 1:
+First add FrameLayout and make facebook button visibility="gone" and add your custom button.
+Don't forgot to put xmlns:facebook="http://schemas.android.com/apk/res-auto" in your main layout.
+
+<FrameLayout
+        android:id="@+id/FrameLayout1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" >
+
+        <com.facebook.login.widget.LoginButton
+            android:id="@+id/login_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/fb"
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:background="#416BC1"
+            android:onClick="onClick"
+            android:text="FaceBook"
+            android:textColor="#ffffff"
+            android:textStyle="bold" />
+    </FrameLayout>
+
+
+Step 2: 
+Initialize FacebookSdk in onCreate before inflecting layout.
+
+FacebookSdk.sdkInitialize(this.getApplicationContext());
+
+Step 3: add this into your java file.
+
+callbackManager = CallbackManager.Factory.create();
+
+fb = (Button) findViewById(R.id.fb);
+loginButton = (LoginButton) findViewById(R.id.login_button);
+
+List < String > permissionNeeds = Arrays.asList("user_photos", "email",
+    "user_birthday", "public_profile", "AccessToken");
+loginButton.registerCallback(callbackManager,
+new FacebookCallback < LoginResult > () {@Override
+    public void onSuccess(LoginResult loginResult) {
+
+        System.out.println("onSuccess");
+
+        String accessToken = loginResult.getAccessToken()
+            .getToken();
+        Log.i("accessToken", accessToken);
+
+        GraphRequest request = GraphRequest.newMeRequest(
+        loginResult.getAccessToken(),
+        new GraphRequest.GraphJSONObjectCallback() {@Override
+            public void onCompleted(JSONObject object,
+            GraphResponse response) {
+
+                Log.i("LoginActivity",
+                response.toString());
+                try {
+                    id = object.getString("id");
+                    try {
+                        URL profile_pic = new URL(
+                            "http://graph.facebook.com/" + id + "/picture?type=large");
+                        Log.i("profile_pic",
+                        profile_pic + "");
+
+                    } catch (MalformedURLException e) {
+                        e.printStackTrace();
+                    }
+                    name = object.getString("name");
+                    email = object.getString("email");
+                    gender = object.getString("gender");
+                    birthday = object.getString("birthday");
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        Bundle parameters = new Bundle();
+        parameters.putString("fields",
+            "id,name,email,gender, birthday");
+        request.setParameters(parameters);
+        request.executeAsync();
+    }
+
+    @Override
+    public void onCancel() {
+        System.out.println("onCancel");
+    }
+
+    @Override
+    public void onError(FacebookException exception) {
+        System.out.println("onError");
+        Log.v("LoginActivity", exception.getCause().toString());
+    }
+});
+
+
+Step 4: 
+Don't forget to add following code.
+
+@Override
+protected void onActivityResult(int requestCode, int responseCode,
+Intent data) {
+    super.onActivityResult(requestCode, responseCode, data);
+    callbackManager.onActivityResult(requestCode, responseCode, data);
+}
+
+
+Step 5: 
+Set your custom button click to FacebookLogin button click.
+
+public void onClick(View v) {
+    if (v == fb) {
+        loginButton.performClick();
+    }
+ }
+
+
+Step 6:
+For programmatically logout use this.
+
+LoginManager.getInstance().logOut();
+
+Step 7: you can find user logged in or not by profile.
+
+profile = Profile.getCurrentProfile().getCurrentProfile();
+if (profile != null) {
+    // user has logged in
+} else {
+    // user has not logged in
+}
+
+    

@@ -1,0 +1,70 @@
+37
+Q:How can I turn off 3G/Data programmatically on Android?
+
+Not Wifi, but 3G/Data.
+    
+===============================================================================================
+53
+A:There is no official way to do this. However, it can be achieved unofficially with reflection.
+
+For Android 2.3 and above:
+
+private void setMobileDataEnabled(Context context, boolean enabled) {
+    final ConnectivityManager conman = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+    final Class conmanClass = Class.forName(conman.getClass().getName());
+    final Field iConnectivityManagerField = conmanClass.getDeclaredField("mService");
+    iConnectivityManagerField.setAccessible(true);
+    final Object iConnectivityManager = iConnectivityManagerField.get(conman);
+    final Class iConnectivityManagerClass = Class.forName(iConnectivityManager.getClass().getName());
+    final Method setMobileDataEnabledMethod = iConnectivityManagerClass.getDeclaredMethod("setMobileDataEnabled", Boolean.TYPE);
+    setMobileDataEnabledMethod.setAccessible(true);
+
+    setMobileDataEnabledMethod.invoke(iConnectivityManager, enabled);
+}
+
+
+This also requires the following permission.
+
+ <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
+
+
+For Android 2.2 and below:
+
+Method dataConnSwitchmethod;
+Class telephonyManagerClass;
+Object ITelephonyStub;
+Class ITelephonyClass;
+
+TelephonyManager telephonyManager = (TelephonyManager) context
+        .getSystemService(Context.TELEPHONY_SERVICE);
+
+if(telephonyManager.getDataState() == TelephonyManager.DATA_CONNECTED){
+    isEnabled = true;
+}else{
+    isEnabled = false;  
+}   
+
+telephonyManagerClass = Class.forName(telephonyManager.getClass().getName());
+Method getITelephonyMethod = telephonyManagerClass.getDeclaredMethod("getITelephony");
+getITelephonyMethod.setAccessible(true);
+ITelephonyStub = getITelephonyMethod.invoke(telephonyManager);
+ITelephonyClass = Class.forName(ITelephonyStub.getClass().getName());
+
+if (isEnabled) {
+    dataConnSwitchmethod = ITelephonyClass
+            .getDeclaredMethod("disableDataConnectivity");
+} else {
+    dataConnSwitchmethod = ITelephonyClass
+            .getDeclaredMethod("enableDataConnectivity");   
+}
+dataConnSwitchmethod.setAccessible(true);
+dataConnSwitchmethod.invoke(ITelephonyStub);
+
+
+This required the following permission:
+
+<uses-permission android:name="android.permission.MODIFY_PHONE_STATE" />
+
+
+Note that both of these are unofficial and may no longer work. No more proof of this kind of thing breaking should be needed, as the 2.2 and below method broke on 2.3.
+    

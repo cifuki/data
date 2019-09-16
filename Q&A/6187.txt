@@ -1,0 +1,23 @@
+41
+Q:Does the Android ART runtime have the same method limit limitations as Dalvik?
+Currently, there's a limit of 64k methods in the primary dex file
+    
+===============================================================================================
+73
+A:The issue is not with the Dalvik runtime nor the DEX file format, but with the current set of Dalvik instructions.  Specifically, the various method invocation methods, which look like this:
+
+invoke-kind {vC, vD, vE, vF, vG}, meth@BBBB
+
+B: method reference index (16 bits)
+
+
+You can reference a very large number of methods in a DEX file, but you can only invoke the first 65536, because that's all the room you have in the method invocation instruction.
+
+I'd like to point out that the limitation is on the number of methods referenced, not the number of methods defined.  If your DEX file has only a few methods, but together they call 70,000 different externally-defined methods, you're going to exceed the limit.
+
+One way to fix this is to add additional instructions that take wider method references.  An approach called "jumbo opcodes" was implemented and released in Android 4.0 (ICS), but was never fully put into action, and was later removed from the tree.  (I occasionally see posts here with error messages from "dx" that reference jumbo ops, or from developers who stumbled over them.)
+
+Note this is not the problem solved by the Facebook hack.  That's due to a fixed-size buffer for holding class/method/field meta-data.  There's no method-specific limit there; you can blow out the buffer by having lots of fields.
+
+My understanding is that the current implementation of ART handles the same set of instructions that Dalvik does, so the situation will be no different.
+    

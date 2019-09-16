@@ -1,0 +1,138 @@
+34
+Q:Here is my ArrayAdapter. I would like to make this more efficient by following the ViewHolder pattern: 
+
+http://developer.android.com/resources/samples/ApiDemos/src/com/example/android/apis/view/List14.html
+
+but am not sure how to accomplish this.    
+
+UPDATE: ViewHolder Pattern
+
+private class QuoteAdapter extends ArrayAdapter<Quote> {
+
+    private ArrayList<Quote> items;
+    // used to keep selected position in ListView
+    private int selectedPos = -1; // init value for not-selected
+
+    public QuoteAdapter(Context context, int textViewResourceId, ArrayList<Quote> items) {
+        super(context, textViewResourceId, items);
+        this.items = items;
+    }
+
+    public void setSelectedPosition(int pos) {
+        selectedPos = pos;
+        // inform the view of this change
+        notifyDataSetChanged();
+    }
+
+    @Override
+    public View getView(int position, View convertView, ViewGroup parent) {
+        View v = convertView;
+        ViewHolder holder; // to reference the child views for later actions
+
+        if (v == null) {
+            LayoutInflater vi = (LayoutInflater)getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+            v = vi.inflate(R.layout.mainrow, null);
+
+            // cache view fields into the holder
+            holder = new ViewHolder();
+            holder.nameText = (TextView) v.findViewById(R.id.nameText);
+            holder.priceText = (TextView) v.findViewById(R.id.priceText);
+            holder.changeText = (TextView) v.findViewById(R.id.changeText);
+
+            // associate the holder with the view for later lookup
+            v.setTag(holder);
+        }
+        else {
+            // view already exists, get the holder instance from the view
+            holder = (ViewHolder)v.getTag();
+        }
+
+        // change the row color based on selected state
+        if (selectedPos == position) {
+            v.setBackgroundResource(R.drawable.stocks_selected_gradient);
+            holder.nameText.setTextColor(Color.WHITE);
+            holder.priceText.setTextColor(Color.WHITE);
+            holder.changeText.setTextColor(Color.WHITE);
+        } else {
+            v.setBackgroundResource(R.drawable.stocks_gradient);
+            holder.nameText.setTextAppearance(getApplicationContext(), R.style.BlueText);
+            holder.priceText.setTextAppearance(getApplicationContext(), R.style.BlueText);
+            holder.changeText.setTextAppearance(getApplicationContext(), R.style.BlueText);
+        }
+
+        Quote q = items.get(position);
+        if (q != null) {
+            if (holder.nameText != null) {
+                holder.nameText.setText(q.getSymbol());
+            }
+            if (holder.priceText != null) {
+                holder.priceText.setText(q.getLastTradePriceOnly());
+            }
+            if (holder.changeText != null) {
+                try {
+                    float floatedChange = Float.valueOf(q.getChange());
+                    if (floatedChange < 0) {
+                        if (selectedPos != position)
+                            holder.changeText.setTextAppearance(getApplicationContext(), R.style.RedText); // red
+                    } else {
+                        if (selectedPos != position)
+                            holder.changeText.setTextAppearance(getApplicationContext(), R.style.GreenText); // green
+                    }
+                } catch (NumberFormatException e) {
+                    System.out.println("not a number");
+                } catch (NullPointerException e) {
+                    System.out.println("null number");
+                }
+                holder.changeText.setText(q.getChange() + " (" + q.getPercentChange() + ")");
+            }
+        }
+        return v;
+    }
+}
+
+    
+===============================================================================================
+50
+A:The ViewHolder is basically a static class instance that you associate with a view when it's created, caching the child views you're looking up at runtime. If the view already exists, retrieve the holder instance and use its fields instead of calling findViewById. 
+
+In your case:
+
+@Override
+public View getView(int position, View convertView, ViewGroup parent) {
+    View v = convertView;
+    ViewHolder holder; // to reference the child views for later actions
+
+    if (v == null) {
+        LayoutInflater vi = 
+            (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+        v = vi.inflate(R.layout.mainrow, null);
+        // cache view fields into the holder
+        holder = new ViewHolder();
+        holder.nameText = (TextView) v.findViewById(R.id.nameText);
+        holder.priceText = (TextView) v.findViewById(R.id.priceText);
+        holder.changeText = (TextView) v.findViewById(R.id.changeText);
+        // associate the holder with the view for later lookup
+        v.setTag(holder);
+    }
+    else {
+        // view already exists, get the holder instance from the view
+        holder = (ViewHolder) v.getTag();
+    }
+    // no local variables with findViewById here
+
+    // use holder.nameText where you were 
+    // using the local variable nameText before
+
+    return v;
+}
+
+// somewhere else in your class definition
+static class ViewHolder {
+    TextView nameText;
+    TextView priceText;
+    TextView changeText;
+}
+
+
+caveat: I didn't try to compile this, so take with a grain of salt.
+    

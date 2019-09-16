@@ -1,0 +1,227 @@
+44
+Q:Code: 
+
+
+public class SMH extends Activity {  
+
+    public void onCreate(Bundle b) {  
+        super.onCreate(b);  
+        setContentView(R.layout.main);  
+
+        TextView tv = (TextView) findViewById(R.id.tv);  
+
+        new CountDownTimer(10000, 2000) {  
+            public void onTick(long m) {  
+               long sec = m/1000+1;  
+               tv.append(sec+" seconds remain\
+");  
+            }  
+            public void onFinish() {  
+               tv.append("Done!");  
+            }  
+        }.start();  
+   }
+
+
+
+Output:
+    10 seconds remain
+    8 seconds remain
+    6 seconds remain
+    4 seconds remain
+    Done! 
+
+Problem:  
+
+How do I get it to show "2 seconds remain"? The time elapsed is indeed 10 seconds, but the last onTick() never happens. If I change the second parameter from 2000 to 1000, then this is the output:  
+
+10 seconds remain
+9 seconds remain
+8 seconds remain
+7 seconds remain
+6 seconds remain
+5 seconds remain
+4 seconds remain
+3 seconds remain
+2 seconds remain
+Done!  
+
+So you see, it seems to be skipping that last onTick() call. And btw, the XML file is basically the default main.xml with the TextView assigned the id tv and the text set to "".
+    
+===============================================================================================
+22
+A:I don't know why the last tick is not working but you can create your own timer with Runable , for example.
+
+class MyCountDownTimer {
+    private long millisInFuture;
+    private long countDownInterval;
+    public MyCountDownTimer(long pMillisInFuture, long pCountDownInterval) {
+            this.millisInFuture = pMillisInFuture;
+            this.countDownInterval = pCountDownInterval;
+        }
+    public void Start() 
+    {
+        final Handler handler = new Handler();
+        Log.v("status", "starting");
+        final Runnable counter = new Runnable(){
+
+            public void run(){
+                if(millisInFuture <= 0) {
+                    Log.v("status", "done");
+                } else {
+                    long sec = millisInFuture/1000;
+                    Log.v("status", Long.toString(sec) + " seconds remain");
+                    millisInFuture -= countDownInterval;
+                    handler.postDelayed(this, countDownInterval);
+                }
+            }
+        };
+
+        handler.postDelayed(counter, countDownInterval);
+    }
+}
+
+
+and to start it,
+
+new MyCountDownTimer(10000, 2000).Start();
+
+
+
+
+EDIT FOR GOOFY'S QUESTION
+
+you should have a variable to hold counter status (boolean) . then you can write a Stop() method like Start().
+
+EDIT-2 FOR GOOFY'S QUESTION
+
+actually there is no bug on stopping counter but there is a bug on start again after stop(resume).
+
+I'm writing a new updated full code that I had just tried and it's working. It's a basic counter that show time on screen with start and stop button.
+
+class for counter
+
+public class MyCountDownTimer {
+    private long millisInFuture;
+    private long countDownInterval;
+    private boolean status;
+    public MyCountDownTimer(long pMillisInFuture, long pCountDownInterval) {
+            this.millisInFuture = pMillisInFuture;
+            this.countDownInterval = pCountDownInterval;
+            status = false;
+            Initialize();
+    }
+
+    public void Stop() {
+        status = false;
+    }
+
+    public long getCurrentTime() {
+        return millisInFuture;
+    }
+
+    public void Start() {
+        status = true;
+    }
+    public void Initialize() 
+    {
+        final Handler handler = new Handler();
+        Log.v("status", "starting");
+        final Runnable counter = new Runnable(){
+
+            public void run(){
+                long sec = millisInFuture/1000;
+                if(status) {
+                    if(millisInFuture <= 0) {
+                        Log.v("status", "done");
+                    } else {
+                        Log.v("status", Long.toString(sec) + " seconds remain");
+                        millisInFuture -= countDownInterval;
+                        handler.postDelayed(this, countDownInterval);
+                    }
+                } else {
+                    Log.v("status", Long.toString(sec) + " seconds remain and timer has stopped!");
+                    handler.postDelayed(this, countDownInterval);
+                }
+            }
+        };
+
+        handler.postDelayed(counter, countDownInterval);
+    }
+}
+
+
+activity class
+
+public class CounterActivity extends Activity {
+    /** Called when the activity is first created. */
+    TextView timeText;
+    Button startBut;
+    Button stopBut;
+    MyCountDownTimer mycounter;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        timeText = (TextView) findViewById(R.id.time);
+        startBut = (Button) findViewById(R.id.start);
+        stopBut = (Button) findViewById(R.id.stop);
+        mycounter = new MyCountDownTimer(20000, 1000);
+        RefreshTimer();
+    }
+
+    public void StartTimer(View v) {
+        Log.v("startbutton", "saymaya basladi");
+        mycounter.Start();
+    }
+
+    public void StopTimer(View v) {
+        Log.v("stopbutton", "durdu");
+        mycounter.Stop();
+    }
+
+    public void RefreshTimer() 
+    {
+        final Handler handler = new Handler();
+        final Runnable counter = new Runnable(){
+
+            public void run(){
+                timeText.setText(Long.toString(mycounter.getCurrentTime()));
+                handler.postDelayed(this, 100);
+            }
+        };
+
+        handler.postDelayed(counter, 100);
+    }
+}
+
+
+main.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:weightSum="1">
+    <TextView android:textAppearance="?android:attr/textAppearanceLarge" 
+              android:text="TextView" android:layout_height="wrap_content" 
+              android:layout_width="wrap_content" 
+              android:id="@+id/time">
+    </TextView>
+    <Button android:text="Start" 
+            android:id="@+id/start" 
+            android:layout_width="wrap_content" 
+            android:layout_height="wrap_content" 
+            android:onClick="StartTimer">
+    </Button>
+    <Button android:text="Stop" 
+            android:id="@+id/stop" 
+            android:layout_width="wrap_content" 
+            android:layout_height="wrap_content" 
+            android:onClick="StopTimer">
+    </Button>
+</LinearLayout>
+
+    

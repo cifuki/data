@@ -1,0 +1,257 @@
+38
+Q:I am writing a simple text/eBook viewer for Android, so I have used a TextView to show the HTML formatted text to the users, so they can browse the text in pages by going back and forth. But my problem is that I can not paginate the text in Android.
+
+I can not (or I don't know how to) get appropriate feedback from the line-breaking and page-breaking algorithms in which TextView uses to break text into lines and pages. Thus, I can not understand where the content ends in the actual display, so that I continue from the remaining in the next page. I want to find way to overcome this problem.
+
+If I know what is the last character painted on the screen, I can easily put enough characters to fill a screen, and knowing where tha actual painting was finished, I can continue at the next page. Is this possible? How?
+
+
+
+Similar questions have been asked several times on StackOverflow, but no satisfactory answer was provided. These are just a few of them:
+
+
+How to paginate long text into pages in Android?
+Ebook reader pagination issue in android
+Paginate text based on rendered text size
+
+
+There was a single answer, which seems to work, but it is slow. It adds characters and lines until the page is filled. I don't think this is a good way to do page breaking:
+
+
+How to break styled text into pages in Android?
+
+
+Rather than this question, it happens that PageTurner eBook reader does it mostly right, although it is somehow slow.
+
+
+https://github.com/nightwhistler/pageturner
+
+
+
+
+
+
+PS: I am not confined to TextView, and I know line breaking and page breaking algorithms can be quite complex (as in TeX), so I am not looking for an optimal answer, but rather a reasonably fast solution that can be usable by the users.
+
+
+
+Update: This seems to be a good start for getting the right answer:
+
+Is there a way of retrieving a TextView's visible line count or range?
+
+Answer: After completing text layout, it is possible to find out the visible text:
+
+ViewTreeObserver vto = txtViewEx.getViewTreeObserver();
+        vto.addOnGlobalLayoutListener(new OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                ViewTreeObserver obs = txtViewEx.getViewTreeObserver();
+                obs.removeOnGlobalLayoutListener(this);
+                height = txtViewEx.getHeight();
+                scrollY = txtViewEx.getScrollY();
+                Layout layout = txtViewEx.getLayout();
+
+                firstVisibleLineNumber = layout.getLineForVertical(scrollY);
+                lastVisibleLineNumber = layout.getLineForVertical(height+scrollY);
+
+            }
+        });
+
+    
+===============================================================================================
+36
+A:Background
+
+What we know about text processing within TextView is that it properly breaks a text by lines according to the width of a view. Looking at the TextView's sources we can see that the text processing is done by the Layout class. So we can make use of the work the Layout class does for us and utilizing its methods do pagination.
+
+Problem
+
+The problem with TextView is that the visible part of text might be cut vertically somewhere at the middle of the last visible line. Regarding said, we should break a new page when the last line that fully fits into a view's height is met.
+
+Algorithm
+
+
+We iterate through the lines of text and check if the line's bottom exceeds the view's height;
+If so, we break a new page and calculate a new value for the cumulative height to compare the following lines' bottom with (see the implementation). The new value is defined as top value (red line in the picture below) of the line that hasn't fit into the previous page + TextView's height.
+
+
+
+
+Implementation
+
+public class Pagination {
+    private final boolean mIncludePad;
+    private final int mWidth;
+    private final int mHeight;
+    private final float mSpacingMult;
+    private final float mSpacingAdd;
+    private final CharSequence mText;
+    private final TextPaint mPaint;
+    private final List<CharSequence> mPages;
+
+    public Pagination(CharSequence text, int pageW, int pageH, TextPaint paint, float spacingMult, float spacingAdd, boolean inclidePad) {
+        this.mText = text;
+        this.mWidth = pageW;
+        this.mHeight = pageH;
+        this.mPaint = paint;
+        this.mSpacingMult = spacingMult;
+        this.mSpacingAdd = spacingAdd;
+        this.mIncludePad = inclidePad;
+        this.mPages = new ArrayList<>();
+
+        layout();
+    }
+
+    private void layout() {
+        final StaticLayout layout = new StaticLayout(mText, mPaint, mWidth, Layout.Alignment.ALIGN_NORMAL, mSpacingMult, mSpacingAdd, mIncludePad);
+
+        final int lines = layout.getLineCount();
+        final CharSequence text = layout.getText();
+        int startOffset = 0;
+        int height = mHeight;
+
+        for (int i = 0; i < lines; i++) {
+            if (height < layout.getLineBottom(i)) {
+                // When the layout height has been exceeded
+                addPage(text.subSequence(startOffset, layout.getLineStart(i)));
+                startOffset = layout.getLineStart(i);
+                height = layout.getLineTop(i) + mHeight;
+            }
+
+            if (i == lines - 1) {
+                // Put the rest of the text into the last page
+                addPage(text.subSequence(startOffset, layout.getLineEnd(i)));
+                return;
+            }
+        }
+    }
+
+    private void addPage(CharSequence text) {
+        mPages.add(text);
+    }
+
+    public int size() {
+        return mPages.size();
+    }
+
+    public CharSequence get(int index) {
+        return (index >= 0 && index < mPages.size()) ? mPages.get(index) : null;
+    }
+}
+
+
+Note 1
+
+The algorithm works not just for TextView (Pagination class uses TextView's parameters in the implementation above). You may pass any set of parameters StaticLayout accepts and later use the paginated layouts to draw text on Canvas/Bitmap/PdfDocument.
+
+You can also use Spannable as yourText parameter for different fonts as well as Html-formatted strings (like in the sample below).
+
+Note 2
+
+When all text has the same font size, all lines have equal height. In that case you might want to consider further optimization of the algorithm by calculating an amount of lines that fits into a single page and jumping to the proper line at each loop iteration.
+
+
+
+Sample
+
+The sample below paginates a string containing both html and Spanned text.
+
+public class PaginationActivity extends Activity {
+    private TextView mTextView;
+    private Pagination mPagination;
+    private CharSequence mText;
+    private int mCurrentIndex = 0;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_pagination);
+
+        mTextView = (TextView) findViewById(R.id.tv);
+
+        Spanned htmlString = Html.fromHtml(getString(R.string.html_string));
+
+        Spannable spanString = new SpannableString(getString(R.string.long_string));
+        spanString.setSpan(new ForegroundColorSpan(Color.BLUE), 0, 24, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        spanString.setSpan(new RelativeSizeSpan(2f), 0, 24, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        spanString.setSpan(new StyleSpan(Typeface.MONOSPACE.getStyle()), 0, 24, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        spanString.setSpan(new ForegroundColorSpan(Color.BLUE), 700, spanString.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        spanString.setSpan(new RelativeSizeSpan(2f), 700, spanString.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        spanString.setSpan(new StyleSpan(Typeface.MONOSPACE.getStyle()), 700, spanString.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        mText = TextUtils.concat(htmlString, spanString);
+
+        mTextView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                // Removing layout listener to avoid multiple calls
+                mTextView.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                mPagination = new Pagination(mText,
+                        mTextView.getWidth(),
+                        mTextView.getHeight(),
+                        mTextView.getPaint(),
+                        mTextView.getLineSpacingMultiplier(),
+                        mTextView.getLineSpacingExtra(),
+                        mTextView.getIncludeFontPadding());
+                update();
+            }
+        });
+
+        findViewById(R.id.btn_back).setOnClickListener(v -> {
+            mCurrentIndex = (mCurrentIndex > 0) ? mCurrentIndex - 1 : 0;
+            update();
+        });
+        findViewById(R.id.btn_forward).setOnClickListener(v -> {
+            mCurrentIndex = (mCurrentIndex < mPagination.size() - 1) ? mCurrentIndex + 1 : mPagination.size() - 1;
+            update();
+        });
+    }
+
+    private void update() {
+        final CharSequence text = mPagination.get(mCurrentIndex);
+        if(text != null) mTextView.setText(text);
+    }
+}
+
+
+Activity's layout:
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="@dimen/activity_vertical_margin"
+    android:paddingBottom="@dimen/activity_vertical_margin" >
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <Button
+            android:id="@+id/btn_back"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@android:color/transparent"/>
+
+        <Button
+            android:id="@+id/btn_forward"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@android:color/transparent"/>
+
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tv"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"/>
+
+</RelativeLayout>
+
+
+Screenshot:
+
+    

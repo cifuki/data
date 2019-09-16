@@ -1,0 +1,81 @@
+94
+Q:I am developing an application where I need to update some info every time user logs in to the system, I also use database in the phone. For all those operations (updates, retrieving data from db and etc.) I use async tasks. As up till now I didn't see why I shouldn't use them, but recently I experienced that if I do some operations some of my async tasks simply stop on pre-execute and don't jump to doInBackground. That was just too strange to leave it like that, so I developed another simple application just to check whats wrong. And strange enough, I get the same behavior when count of total async tasks reach 5, the 6th one stops on pre-execute.
+
+Does android have a limit of asyncTasks on Activity/App? Or is it just some bug and it should be reported? Did anyone experience the same problem and maybe found a workaround to it?
+
+Here is the code:
+
+Simply create 5 of those threads to work in a background:
+
+private class LongAsync extends AsyncTask<String, Void, String>
+{
+    @Override
+    protected void onPreExecute()
+    {
+        Log.d("TestBug","onPreExecute");
+        isRunning = true;
+    }
+
+    @Override
+    protected String doInBackground(String... params)
+    {
+        Log.d("TestBug","doInBackground");
+        while (isRunning)
+        {
+
+        }
+        return null;
+    }
+
+    @Override
+    protected void onPostExecute(String result)
+    {
+        Log.d("TestBug","onPostExecute");
+    }
+}
+
+
+And then create this thread. It will enter preExecute and hang (it will not go to doInBackground).
+
+private class TestBug extends AsyncTask<String, Void, String>
+{
+    @Override
+    protected void onPreExecute()
+    {
+        Log.d("TestBug","onPreExecute");
+
+        waiting = new ProgressDialog(TestActivity.this);
+        waiting.setMessage("Loading data");
+        waiting.setIndeterminate(true);
+        waiting.setCancelable(true);
+        waiting.show();
+    }
+
+    @Override
+    protected String doInBackground(String... params)
+    {
+        Log.d("TestBug","doInBackground");
+        return null;
+    }
+
+    @Override
+    protected void onPostExecute(String result)
+    {
+        waiting.cancel();
+        Log.d("TestBug","onPostExecute");
+    }
+}
+
+    
+===============================================================================================
+206
+A:All AsyncTasks are controlled internally by a shared (static) ThreadPoolExecutor and a LinkedBlockingQueue. When you call execute on an AsyncTask, the ThreadPoolExecutor will execute it when it is ready some time in the future.
+
+The 'when am I ready?' behavior of a ThreadPoolExecutor is controlled by two parameters, the core pool size and the maximum pool size. If there are less than core pool size threads currently active and a new job comes in, the executor will create a new thread and execute it immediately. If there are at least core pool size threads running, it will try to queue the job and wait until there is an idle thread available (i.e. until another job is completed). If it is not possible to queue the job (the queue can have a max capacity), it will create a new thread (up-to maximum pool size threads) for the jobs to run in. Non-core idle threads can eventually be decommissioned according to a keep-alive timeout parameter.
+
+Before Android 1.6, the core pool size was 1 and the maximum pool size was 10. Since Android 1.6, the core pool size is 5, and the maximum pool size is 128. The size of the queue is 10 in both cases. The keep-alive timeout was 10 seconds before 2.3, and 1 second since then.
+
+With all of this in mind, it now becomes clear why the AsyncTask will only appear to execute 5/6 of your tasks. The 6th task is being queued up until one of the other tasks complete. This is a very good reason why you should not use AsyncTasks for long-running operations - it will prevent other AsyncTasks from ever running.
+
+For completeness, if you repeated your exercise with more than 6 tasks (e.g. 30), you will see that more than 6 will enter doInBackground as the queue will become full and the executor is pushed to create more worker threads. If you kept with the long-running task, you should see that 20/30 become active, with 10 still in the queue.
+    

@@ -1,0 +1,269 @@
+32
+Q:I am trying to retrieve Google Access Token to access Google REST API such as YouTube Data API from an authenticated user (using Firebase Authentication).
+
+I have successfully integrated Google Sign-In in my app with the help of Firebase-UI for Android - Auth library. The token retrieved from FirebaseUser.getToken() method is not a valid Google Access Token for REST API.
+
+user.getToken(true).addOnCompleteListener(new OnCompleteListener<GetTokenResult>() {
+    public void onComplete(@NonNull Task<GetTokenResult> task) {
+        if (task.isSuccessful()) {
+            String token = task.getResult().getToken();
+            // 'token' is not a Google Access Token
+        }
+    }
+});
+
+
+In Google Sign-In for Web guide, it's possible to get the access token by calling var token = result.credential.accessToken;, but I can't find the similar method in Android.
+
+Any inputs? Please comment here if I do not provide enough information. Thank you :)
+    
+===============================================================================================
+43
+A:The way you are doing will give you firebase id token, see here.
+
+
+
+There are three types of tokens you will come across in firebase :
+
+
+Firebase ID tokens 
+
+Created by Firebase when a user signs in to a Firebase app. These tokens are signed JWTs that securely identify a user in a Firebase project. These tokens contain basic profile information for a user, including the user's ID string, which is unique to the Firebase project. Because the integrity of ID tokens can be verified, you can send them to a backend server to identify the currently signed-in user. 
+Identity Provider tokens 
+
+Created by federated identity providers, such as Google and Facebook. These tokens can have different formats, but are often OAuth 2.0 access tokens. Firebase apps use these tokens to verify that users have successfully authenticated with the identity provider, and then convert them into credentials usable by Firebase services.
+Firebase Custom tokens 
+
+Created by your custom auth system to allow users to sign in to a Firebase app using your auth system. Custom tokens are JWTs signed using a service account's private key. Firebase apps use these tokens much like they use the tokens returned from federated identity providers.
+
+
+
+
+Now, what you are getting is firebase Id token, what you need is Identity Provider Token.
+
+Its simple to get Identity Provider token, its just one step previous to the step you have shown.
+
+So, the way we sign in google using firebase is mentioned here.
+
+I will add below the complete code which displays a button in UI, which on clicked, will sign in user to google account. And then I will get the google access token, which is then send to firebase, where it is converted to firebase token Id.
+
+I presume that you have configured android app for google sign in, if not, you can go into details here.
+
+
+(To cut things short, just look at Step 5 below, if you have done setup already.)
+
+Code :
+
+
+Configure Google SignIn and GoogleApiClient : 
+
+ // Configure sign-in to request the user's ID, email address, and basic
+ // profile. ID and basic profile are included in DEFAULT_SIGN_IN.
+ GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+    .requestIdToken(getString(R.string.default_web_client_id))
+    .requestEmail()
+    .build();
+
+ // NOTE : 
+ // The string passed to requestIdToken, default_web_client_id, 
+ // can be obtained from credentials page (https://console.developers.google.com/apis/credentials).
+ // There mentioned Web application type client ID is this string.
+
+
+ // ... 
+ // Build a GoogleApiClient with access to the Google Sign-In API and the
+ // options specified by gso.
+ mGoogleApiClient = new GoogleApiClient.Builder(this)
+    .enableAutoManage(this /* Activity */, this /* OnConnectionFailedListener */)
+    .addApi(Auth.GOOGLE_SIGN_IN_API, gso)
+    .build();
+
+Add the Google Sign-In button to your app
+
+<com.google.android.gms.common.SignInButton
+    android:id="@+id/sign_in_button"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content" />
+
+Set SignIn Click Listener
+
+findViewById(R.id.sign_in_button).setOnClickListener(new OnClickListener() {
+    public void onClick(View v){
+        Intent signInIntent = Auth.GoogleSignInApi.getSignInIntent(mGoogleApiClient);
+        startActivityForResult(signInIntent, RC_SIGN_IN);   
+    }
+});
+
+Override OnActivityResult method in Activity : 
+
+@Override
+public void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+
+    // Result returned from launching the Intent from GoogleSignInApi.getSignInIntent(...);
+    if (requestCode == RC_SIGN_IN) {
+        // Google Sign In was successful, authenticate with Firebase
+        GoogleSignInAccount account = result.getSignInAccount();
+        firebaseAuthWithGoogle(account); // This method is implemented in step 5.
+    } else {
+        // Google Sign In failed, update UI appropriately
+        // ...
+    }
+}
+
+Firebase Authentication With Google SignInAccount
+
+String idTokenString = "";
+...
+private void firebaseAuthWithGoogle(GoogleSignInAccount acct) {
+    Log.d(TAG, "Google User Id :" + acct.getId());
+
+    // --------------------------------- //
+    // BELOW LINE GIVES YOU JSON WEB TOKEN, (USED TO GET ACCESS TOKEN) : 
+    Log.d(TAG, "Google JWT : " + acct.getIdToken());
+    // --------------------------------- //
+
+    // Save this JWT in global String : 
+    idTokenString = acct.getIdToken();
+
+    AuthCredential credential = GoogleAuthProvider.getCredential(acct.getIdToken(), null);
+    mAuth.signInWithCredential(credential)
+        .addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
+            @Override
+            public void onComplete(@NonNull Task<AuthResult> task) {
+                Log.d(TAG, "signInWithCredential:onComplete:" + task.isSuccessful());
+
+                if(task.isSuccessful()){
+                    // --------------------------------- //
+                    // BELOW LINE GIVES YOU FIREBASE TOKEN ID : 
+                    Log.d(TAG, "Firebase User Access Token : " + task.getResult().getToken());
+                    // --------------------------------- //
+                }
+                // If sign in fails, display a message to the user. If sign in succeeds
+                // the auth state listener will be notified and logic to handle the
+                // signed in user can be handled in the listener.
+                else {
+                    Log.w(TAG, "signInWithCredential", task.getException());
+                    Toast.makeText(GoogleSignInActivity.this, "Authentication failed.",
+                            Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+}
+
+Final Step : Auth Listeners for Firebase
+
+private FirebaseAuth mAuth;
+private FirebaseAuth.AuthStateListener mAuthListener;
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    // ...
+    mAuth = FirebaseAuth.getInstance();
+    mAuthListener = new FirebaseAuth.AuthStateListener() {
+        @Override
+        public void onAuthStateChanged(@NonNull FirebaseAuth firebaseAuth) {
+            FirebaseUser user = firebaseAuth.getCurrentUser();
+            if (user != null) {
+                // User is signed in
+                Log.d(TAG, "onAuthStateChanged:signed_in:" + user.getUid());
+            } else {
+               // User is signed out
+               Log.d(TAG, "onAuthStateChanged:signed_out");
+            }
+            // ...
+        }
+   };
+   // ...
+}
+
+//...
+
+@Override
+public void onStart() {
+    super.onStart();
+    mAuth.addAuthStateListener(mAuthListener);
+}
+
+@Override
+public void onStop() {
+    super.onStop();
+    if (mAuthListener != null) {
+        mAuth.removeAuthStateListener(mAuthListener);
+    }
+}
+
+
+
+
+
+So, your answer lies in Step 5, which was just before you authenticated to firebase and just after you authenticated in google sign in. 
+
+Hope it helps !
+
+
+
+UPDATE : 
+
+Its important that in Step 1, you request for token Id, otherwise in Step 5, you will get null token id. For more see here. I have updated Step 1.
+
+
+
+UPDATE : 
+
+As per discussion, the retrieved token was JWT token as written here. And what we need is google access token. Below code uses the JWT token to fire at OAuth backend and retrieve this access token :
+
+(Note : I have used okhttp version 2.6.0, other versions might have different methods)
+
+Code : 
+
+...
+OkHttpClient client = new OkHttpClient();
+RequestBody requestBody = new FormEncodingBuilder()
+            .add("grant_type", "authorization_code")
+            .add("client_id", "<Your-client-id>")   // something like : ...apps.googleusercontent.com
+            .add("client_secret", "{Your-client-secret}")
+            .add("redirect_uri","")
+            .add("code", "4/4-GMMhmHCXhWEzkobqIHGG_EnNYYsAkukHspeYUk9E8") // device code.
+            .add("id_token", idTokenString) // This is what we received in Step 5, the jwt token.
+            .build();
+
+final Request request = new Request.Builder()
+        .url("https://www.googleapis.com/oauth2/v4/token")
+        .post(requestBody)
+        .build();
+
+client.newCall(request).enqueue(new Callback() {
+    @Override
+    public void onFailure(final Request request, final IOException e) {
+        Log.e(LOG_TAG, e.toString());                
+    }
+
+    @Override
+    public void onResponse(Response response) throws IOException {
+        try {
+            JSONObject jsonObject = new JSONObject(response.body().string());
+            final String message = jsonObject.toString(5);
+            Log.i(LOG_TAG, message);                    
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+    }
+});
+
+
+
+
+Here is the output which has access token as required : 
+
+I/onResponse: {
+          "expires_in": 3600,
+          "token_type": "Bearer",
+          "refresh_token": "1\\/xz1eb0XU3....nxoALEVQ",
+          "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjQxMWY1Ym......yWVsUA",
+          "access_token": "ya29.bQKKYah-........_tkt980_qAGIo9yeWEG4"
+     }
+
+
+Hope now it helps !
+    

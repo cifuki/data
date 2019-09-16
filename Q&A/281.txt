@@ -1,0 +1,109 @@
+339
+Q:I have seen various versions of the dex erros before, but this one is new. clean/restart etc won't help. Library projects seems intact and dependency seems to be linked correctly. 
+
+Unable to execute dex: method ID not in [0, 0xffff]: 65536
+Conversion to Dalvik format failed: Unable to execute dex: method ID not in [0, 0xffff]: 65536
+
+
+or 
+
+Cannot merge new index 65950 into a non-jumbo instruction
+
+
+or 
+
+java.util.concurrent.ExecutionException: com.android.dex.DexIndexOverflowException: method ID not in [0, 0xffff]: 65536
+
+
+tl;dr: Official solution from Google is finally here!
+
+http://developer.android.com/tools/building/multidex.html 
+
+Only one small tip, you will likely need to do this to prevent out of memory when doing dex-ing. 
+
+dexOptions {
+        javaMaxHeapSize "4g"
+}
+
+
+There's also a jumbo mode that can fix this in a less reliable way: 
+
+dexOptions {
+        jumboMode true
+}
+
+
+Update: If your app is fat and you have too many methods inside your main app, you may need to re-org your app as per
+
+http://blog.osom.info/2014/12/too-many-methods-in-main-dex.html
+    
+===============================================================================================
+374
+A:Update 3 (11/3/2014)
+Google finally released official description.
+
+
+
+Update 2 (10/31/2014)
+Gradle plugin v0.14.0 for Android adds support for multi-dex. To enable, you just have to declare it in build.gradle:
+
+android {
+   defaultConfig {
+      ...
+      multiDexEnabled  true
+   }
+}
+
+
+If your application supports Android prior to 5.0 (that is, if your minSdkVersion is 20 or below) you also have to dynamically patch the application ClassLoader, so it will be able to load classes from secondary dexes. Fortunately, there's a library that does that for you. Add it to your app's dependencies:  
+
+dependencies {
+  ...
+  compile 'com.android.support:multidex:1.0.0'
+} 
+
+
+You need to call the ClassLoader patch code as soon as possible. MultiDexApplication class's documentation suggests three ways to do that (pick one of them, one that's most convenient for you):  
+
+1 - Declare MultiDexApplication class as the application in your AndroidManifest.xml:  
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.android.multidex.myapplication">
+    <application
+        ...
+        android:name="android.support.multidex.MultiDexApplication">
+        ...
+    </application>
+</manifest>
+
+
+2 - Have your Application class extend MultiDexApplication class:
+
+public class MyApplication extends MultiDexApplication { .. }
+
+
+3 - Call MultiDex#install from your Application#attachBaseContext method:
+
+public class MyApplication {
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(base);
+        MultiDex.install(this);
+        ....
+    }
+    ....
+}
+
+
+
+
+Update 1 (10/17/2014):
+As anticipated, multidex support is shipped in revision 21 of Android Support Library. You can find the android-support-multidex.jar in /sdk/extras/android/support/multidex/library/libs folder.
+
+
+
+Multi-dex support solves this problem. dx 1.8 already allows generating several dex files.
+Android L will support multi-dex natively, and next revision of support library is going to cover older releases back to API 4.  
+
+It was stated in this Android Developers Backstage podcast episode by Anwar Ghuloum. I've posted a transcript (and general multi-dex explanation) of the relevant part.
+    

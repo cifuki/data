@@ -1,0 +1,243 @@
+55
+Q:I want to add some child Views (List Items), which come to me from JSON formatted data. Each child list is under a parent list item row. How can I populate it in RecyclerView for each row item (Parent items with child list items)?
+
+I have tried using RecyclerView within RecyclerView parent row (for populating child lists), but here child views are not visible.
+
+Parent Adapter Class
+
+public class DigitizedPrescAdapter extends RecyclerView.Adapter<DigitizedPrescAdapter.ListItemViewHolder>{
+    private List<PrescriptionModal> prescriptionList;
+
+    MedicinesInPrescAdapter adapter;
+
+    public DigitizedPrescAdapter(List<PrescriptionModal> prescriptionListModal) {
+
+        if (prescriptionListModal == null) {
+            throw new IllegalArgumentException(
+                    "PrescriptionList must not be null");
+        }
+        this.prescriptionList = prescriptionListModal;
+    }
+
+    @Override
+    public ListItemViewHolder onCreateViewHolder(
+            ViewGroup viewGroup, int viewType) {
+        View itemView = LayoutInflater.
+                from(viewGroup.getContext()).
+                inflate(R.layout.item_row_digitised_request,
+                        viewGroup,
+                        false);
+        return new ListItemViewHolder(itemView);
+    }
+
+    @Override
+    public void onBindViewHolder(
+            ListItemViewHolder viewHolder, int position) {
+        PrescriptionModal model = prescriptionList.get(position);
+
+        viewHolder.prescnum.setText("Prescription "+ ++position);
+        viewHolder.prescNo.setText("Prescription: "+model.getPrescriptionID());
+        viewHolder.doctorType.setText("Type: "+model.getDoctorType());
+        viewHolder.doctorName.setText("Doctor: "+model.getDoctorName());
+        viewHolder.patientName.setText("Patient: "+model.getPatientName());
+
+        adapter = new MedicinesInPrescAdapter(model.getLstproduct());
+        viewHolder.lstMedicines.setAdapter(adapter);
+
+    }
+
+    @Override
+    public int getItemCount() {
+        return prescriptionList.size();
+    }
+
+    public final static class ListItemViewHolder
+            extends RecyclerView.ViewHolder {
+
+        TextView prescnum;
+        TextView prescNo;
+        TextView doctorType;
+        TextView patientName;
+        TextView doctorName;
+        CheckBox selectAll;
+        RecyclerView lstMedicines;
+
+        public ListItemViewHolder(View itemView) {
+            super(itemView);
+            prescnum = (TextView) itemView.findViewById(R.id.prescnum);
+            prescNo = (TextView) itemView.findViewById(R.id.prescNo);
+            doctorType = (TextView) itemView.findViewById(R.id.doctorType);
+            patientName = (TextView) itemView.findViewById(R.id.patientName);
+            doctorName = (TextView) itemView.findViewById(R.id.doctorName);
+            selectAll = (CheckBox) itemView.findViewById(R.id.selectAll);
+            lstMedicines = (RecyclerView) itemView.findViewById(R.id.lstAllMedicines);
+            MyLinearLayoutManager layoutManager = new MyLinearLayoutManager(itemView.getContext(),LinearLayoutManager.VERTICAL,false);
+            lstMedicines.setHasFixedSize(false);
+            lstMedicines.setLayoutManager(layoutManager);
+        }
+    }
+}
+
+
+Child Adapter Class
+
+public class MedicinesInPrescAdapter extends RecyclerView.Adapter<MedicinesInPrescAdapter.MedicineListItemViewHolder>{
+
+    List<Modal_Product_List> prescriptionProducts;
+
+    public MedicinesInPrescAdapter(List<Modal_Product_List> prescriptionListProd) {
+
+        if (prescriptionListProd == null) {
+            throw new IllegalArgumentException(
+                    "PrescriptionProductList must not be null");
+        }
+        this.prescriptionProducts = prescriptionListProd;
+    }
+
+    @Override
+    public MedicineListItemViewHolder onCreateViewHolder(
+            ViewGroup viewGroup, int viewType) {
+        View itemView = LayoutInflater.
+                from(viewGroup.getContext()).
+                inflate(R.layout.item_row_medicine_productlist,
+                        viewGroup,
+                        false);
+        return new MedicineListItemViewHolder(itemView);
+    }
+
+    @Override
+    public void onBindViewHolder(
+            MedicineListItemViewHolder viewHolder, int position) {
+        Modal_Product_List modelMedicine = prescriptionProducts.get(position);
+
+        viewHolder.medicineName.setText(modelMedicine.getMedicinename());
+        viewHolder.medQty.setText(modelMedicine.getQuantity());
+        viewHolder.days.setText("30");
+        viewHolder.Amount.setText(modelMedicine.getQuantitybasedprice());
+    }
+
+    @Override
+    public int getItemCount() {
+        return prescriptionProducts.size();
+    }
+
+    public final static class MedicineListItemViewHolder
+            extends RecyclerView.ViewHolder {
+
+        TextView medicineName;
+        EditText medQty;
+        TextView days;
+        TextView Amount;
+        CheckBox selectMe;
+
+        public MedicineListItemViewHolder(View itemView) {
+            super(itemView);
+            medicineName = (TextView) itemView.findViewById(R.id.medicineName);
+            medQty = (EditText) itemView.findViewById(R.id.medQty);
+            days = (TextView) itemView.findViewById(R.id.days);
+            Amount = (TextView) itemView.findViewById(R.id.amount);
+            selectMe = (CheckBox) itemView.findViewById(R.id.selectMe);
+        }
+    }
+}
+
+    
+===============================================================================================
+57
+A:I got this issue few days ago and finally solved it. All you have to do is @override the layout manager onMeasure function as below:
+
+CustomLinearLayoutManager
+
+public class CustomLinearLayoutManager extends LinearLayoutManager {
+
+    private static final String TAG = CustomLinearLayoutManager.class.getSimpleName();
+
+    public CustomLinearLayoutManager(Context context) {
+        super(context);
+    }
+
+    public CustomLinearLayoutManager(Context context, int orientation, boolean reverseLayout) {
+        super(context, orientation, reverseLayout);
+    }
+
+    private int[] mMeasuredDimension = new int[2];
+
+    @Override
+    public void onMeasure(RecyclerView.Recycler recycler, RecyclerView.State state, int widthSpec, int heightSpec) {
+
+        final int widthMode = View.MeasureSpec.getMode(widthSpec);
+        final int heightMode = View.MeasureSpec.getMode(heightSpec);
+        final int widthSize = View.MeasureSpec.getSize(widthSpec);
+        final int heightSize = View.MeasureSpec.getSize(heightSpec);
+
+        int width = 0;
+        int height = 0;
+        for (int i = 0; i < getItemCount(); i++) {
+            measureScrapChild(recycler, i, View.MeasureSpec.makeMeasureSpec(i, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(i, View.MeasureSpec.UNSPECIFIED),
+                mMeasuredDimension);
+
+
+            if (getOrientation() == HORIZONTAL) {
+                width = width + mMeasuredDimension[0];
+                if (i == 0) {
+                    height = mMeasuredDimension[1];
+                }
+            } else {
+                height = height + mMeasuredDimension[1];
+                if (i == 0) {
+                    width = mMeasuredDimension[0];
+                }
+            }
+        }
+        switch (widthMode) {
+            case View.MeasureSpec.EXACTLY:
+                width = widthSize;
+            case View.MeasureSpec.AT_MOST:
+            case View.MeasureSpec.UNSPECIFIED:
+        }
+
+        switch (heightMode) {
+            case View.MeasureSpec.EXACTLY:
+                height = heightSize;
+            case View.MeasureSpec.AT_MOST:
+            case View.MeasureSpec.UNSPECIFIED:
+        }
+
+        setMeasuredDimension(width, height);
+    }
+
+    private void measureScrapChild(RecyclerView.Recycler recycler, int position, int widthSpec,
+                               int heightSpec, int[] measuredDimension) {
+        try {
+            View view = recycler.getViewForPosition(0);//fix IndexOutOfBoundsException
+
+            if (view != null) {
+                RecyclerView.LayoutParams p = (RecyclerView.LayoutParams) view.getLayoutParams();
+
+                int childWidthSpec = ViewGroup.getChildMeasureSpec(widthSpec,
+                    getPaddingLeft() + getPaddingRight(), p.width);
+
+                int childHeightSpec = ViewGroup.getChildMeasureSpec(heightSpec,
+                    getPaddingTop() + getPaddingBottom(), p.height);
+
+                view.measure(childWidthSpec, childHeightSpec);
+                measuredDimension[0] = view.getMeasuredWidth() + p.leftMargin + p.rightMargin;
+                measuredDimension[1] = view.getMeasuredHeight() + p.bottomMargin + p.topMargin;
+                recycler.recycleView(view);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        } 
+    }
+}
+
+
+You can just copy and paste the custom layout manager as above and in set up your recyclerview in the parent adapter like this:
+
+RecyclerView.LayoutManager layoutManager = new CustomLinearLayoutManager(mContext);
+holder.childRecyclerView.setLayoutManager(layoutManager);
+
+
+Remember : Don't use same layoutManager as parent adapter, or error will occur.
+    

@@ -1,0 +1,106 @@
+29
+Q:I have a text to speech application where the user can select a language and also select a male or female voice. The problem is that for each language there are different strings used to called the male and female voice but in my preference I only have two options (male and female).
+
+<string-array name="Language">
+    <item>English (US)</item>
+    <item>English (UK)</item>
+    <item>French (France)</item>
+    <item>Spanish (Spain)</item>
+    <item>Italian</item>
+</string-array>
+
+<string-array name="languageAlias">
+    <item>"en-US"</item>
+    <item>"en-GB"</item>
+    <item>"fr-FR"</item>
+    <item>"es-ES"</item>
+    <item>"it-IT"</item>
+</string-array>
+
+<string-array name="Voice">
+    <item>Male</item>
+    <item>Female</item>
+</string-array>
+
+<string-array name="VoiceAlias">
+    <item>"usenglishmale"</item>
+    <item>"usenglishfemale"</item>
+    <item>"ukenglishmale"</item>
+    <item>"ukenglishfemale"</item>
+    <item>"eurfrenchmale"</item>
+    <item>"eurfrenchfemale"</item>
+    <item>"eurspanishmale"</item>
+    <item>"eurspanishfemale"</item>
+    <item>"euritalianmale"</item>
+    <item>"euritalianfemale"</item>        
+</string-array>
+
+
+I'm trying to find a way to only reference the relevant male and female voiceAlias depending on the language selected. Is it possible to do this here or do I have to write some code which changes the values of the voiceAlias array depending on the language selected? 
+
+Thanks in Advance
+    
+===============================================================================================
+58
+A:Ok, you can accomplish this with two ListPreferences and an OnPreferenceChangeListener for each. First the XML:
+
+<ListPreference 
+    android:key="language_preference"
+    android:title="Language"
+    android:entries="@array/Language"
+    android:entryValues="@array/languageAlias"/>
+
+<ListPreference 
+    android:key="gender_preference"
+    android:title="Gender"
+    android:entries="@array/Voice"
+    android:entryValues="@array/VoiceData"/>
+
+
+Let's make a new entry in res/values/array.xml:
+
+<string-array name="VoiceData">
+    <item>0</item>
+    <item>1</item>
+</string-array>
+
+
+And now in your extention of PreferenceActivity, we're going to take the string values which persist in your SharedPreferences and from them create a completely new entry in the SharedPreferences which gets its value from "VoiceAlias".
+
+SharedPreferences shareprefs = getPreferenceManager().getSharedPreferences();
+Resources resources = YourContext.getResources();
+
+private void makeVoiceData() {
+    String languageData = shareprefs.getString("language_preference", "en-US");
+    int genderData = Integer.parseInt(shareprefs.getString("gender_preference", "0"));
+    String[] voiceAlias = resources.getStringArray(R.array.VoiceAlias);
+
+    int a = 0
+    String[] languageAlias = resources.getStringArray(R.array.languageAlias);
+    for (a ; a < languageAlias.length ; a++) {
+        if (languageAlias[a].equals(languageData)) {
+            break;
+        }
+    }
+
+    shareprefs.putString("VoiceAlias", voiceAlias[(2 * a) + genderData]);
+}
+
+ListPreference language_preference = getPreference("language_preference");
+ListPreference gender_preference = getPreference("gender_preference");
+
+language_preference.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
+    public boolean onPreferenceChanged(Preference preference, Object newValue) {
+        shareprefs.putString("language_preference", (String) newValue);
+        makeVoiceData();
+    }
+});
+
+gender_preference.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
+    public boolean onPreferenceChanged(Preference preference, Object newValue) {
+        shareprefs.putString("gender_preference", (String) newValue);
+        makeVoiceData();
+    }
+});
+
+    

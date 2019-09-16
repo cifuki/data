@@ -1,0 +1,154 @@
+40
+Q:I would like to be able securely store some sensitive strings in the Android KeyStore. I get the strings from the server but I have a use case which requires me to persist them. KeyStore will only allow access from the same UID as that assigned to my app, and it will encrypt the data with the device master password, so it's my understanding that I don't have to do any additional encryption to protect my data. My trouble is, I'm missing something about how to write the data. The code I have below works perfectly, as long as the call to KeyStore.store(null) is omitted. That code fails, and as long as I can't store the data after putting it to the KeyStore, then I can't persist it.
+
+I think I'm missing something about the KeyStore API, but I don't know what. Any help appreciated!
+
+String metaKey = "ourSecretKey";
+String encodedKey = "this is supposed to be a secret";
+byte[] encodedKeyBytes = new byte[(int)encodedKey.length()];
+encodedKeyBytes = encodedKey.getBytes("UTF-8");
+KeyStoreParameter ksp = null;
+
+//String algorithm = "DES";
+String algorithm = "DESede";
+SecretKeyFactory secretKeyFactory = SecretKeyFactory.getInstance(algorithm);
+SecretKeySpec secretKeySpec = new SecretKeySpec(encodedKeyBytes, algorithm);
+SecretKey secretKey = secretKeyFactory.generateSecret(secretKeySpec);
+
+KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+
+keyStore.load(null);
+
+KeyStore.SecretKeyEntry secretKeyEntry = new KeyStore.SecretKeyEntry(secretKey);
+keyStore.setEntry(metaKey, secretKeyEntry, ksp);
+
+keyStore.store(null);
+
+String recoveredSecret = "";
+if (keyStore.containsAlias(metaKey)) {
+    KeyStore.SecretKeyEntry recoveredEntry = (KeyStore.SecretKeyEntry)keyStore.getEntry(metaKey, ksp);
+    byte[] bytes = recoveredEntry.getSecretKey().getEncoded();
+    for (byte b : bytes) {
+        recoveredSecret += (char)b;
+     }
+}
+Log.v(TAG, "recovered " + recoveredSecret);
+
+    
+===============================================================================================
+62
+A:I started with the premise that I could use AndroidKeyStore to secure arbitrary blobs of data, and call them "keys". However, the deeper I delved into this, the clearer it became that the KeyStore API is deeply entangled with Security-related objects: Certificates, KeySpecs, Providers, etc. It's not designed to store arbitrary data, and I don't see a straightforward path to bending it to that purpose.
+
+However, the AndroidKeyStore can be used to help me to secure my sensitive data. I can use it to manage the cryptographic keys which I will use to encrypt data local to the app. By using a combination of AndroidKeyStore, CipherOutputStream, and CipherInputStream, we can:
+
+
+Generate, securely store, and retrieve encryption keys on the device
+Encrypt arbitrary data and save it on the device (in the app's directory, where it will be further protected by the file system permissions)
+Access and decrypt the data for subsequent use.
+
+
+Here is some example code which demonstrates how this is achieved.
+
+try {
+    KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+    keyStore.load(null);
+
+    String alias = "key3";
+
+    int nBefore = keyStore.size();
+
+    // Create the keys if necessary
+    if (!keyStore.containsAlias(alias)) {
+
+        Calendar notBefore = Calendar.getInstance();
+        Calendar notAfter = Calendar.getInstance();
+        notAfter.add(Calendar.YEAR, 1);
+        KeyPairGeneratorSpec spec = new KeyPairGeneratorSpec.Builder(this)
+            .setAlias(alias)
+            .setKeyType("RSA")
+            .setKeySize(2048)
+            .setSubject(new X500Principal("CN=test"))
+            .setSerialNumber(BigInteger.ONE)
+            .setStartDate(notBefore.getTime())
+            .setEndDate(notAfter.getTime())
+            .build();
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA", "AndroidKeyStore");
+        generator.initialize(spec);
+
+        KeyPair keyPair = generator.generateKeyPair();
+    }
+    int nAfter = keyStore.size();
+    Log.v(TAG, "Before = " + nBefore + " After = " + nAfter);
+
+    // Retrieve the keys
+    KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry)keyStore.getEntry(alias, null);
+    RSAPrivateKey privateKey = (RSAPrivateKey) privateKeyEntry.getPrivateKey();
+    RSAPublicKey publicKey = (RSAPublicKey) privateKeyEntry.getCertificate().getPublicKey();
+
+    Log.v(TAG, "private key = " + privateKey.toString());
+    Log.v(TAG, "public key = " + publicKey.toString());
+
+    // Encrypt the text
+    String plainText = "This text is supposed to be a secret!";
+    String dataDirectory = getApplicationInfo().dataDir;
+    String filesDirectory = getFilesDir().getAbsolutePath();
+    String encryptedDataFilePath = filesDirectory + File.separator + "keep_yer_secrets_here";
+
+    Log.v(TAG, "plainText = " + plainText);
+    Log.v(TAG, "dataDirectory = " + dataDirectory);
+    Log.v(TAG, "filesDirectory = " + filesDirectory);
+    Log.v(TAG, "encryptedDataFilePath = " + encryptedDataFilePath);
+
+    Cipher inCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding", "AndroidOpenSSL");
+    inCipher.init(Cipher.ENCRYPT_MODE, publicKey);
+
+    Cipher outCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding", "AndroidOpenSSL");
+    outCipher.init(Cipher.DECRYPT_MODE, privateKey);
+
+    CipherOutputStream cipherOutputStream = 
+        new CipherOutputStream(
+            new FileOutputStream(encryptedDataFilePath), inCipher);
+    cipherOutputStream.write(plainText.getBytes("UTF-8"));
+    cipherOutputStream.close();
+
+    CipherInputStream cipherInputStream = 
+        new CipherInputStream(new FileInputStream(encryptedDataFilePath),
+            outCipher);
+    byte [] roundTrippedBytes = new byte[1000]; // TODO: dynamically resize as we get more data
+
+    int index = 0;
+    int nextByte;
+    while ((nextByte = cipherInputStream.read()) != -1) {
+        roundTrippedBytes[index] = (byte)nextByte;
+        index++;
+    }
+    String roundTrippedString = new String(roundTrippedBytes, 0, index, "UTF-8");
+    Log.v(TAG, "round tripped string = " + roundTrippedString);
+
+} catch (NoSuchAlgorithmException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+} catch (NoSuchProviderException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+} catch (InvalidAlgorithmParameterException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+} catch (KeyStoreException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+} catch (CertificateException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+} catch (IOException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+} catch (UnrecoverableEntryException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+} catch (NoSuchPaddingException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+} catch (InvalidKeyException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+} catch (BadPaddingException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+} catch (IllegalBlockSizeException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+} catch (UnsupportedOperationException e) {
+    Log.e(TAG, Log.getStackTraceString(e));
+}
+
+    

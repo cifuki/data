@@ -1,0 +1,213 @@
+41
+Q:My goal is to create a XML file on internal storage and then send it through the share Intent.
+
+I'm able to create a XML file using this code
+
+FileOutputStream outputStream = context.openFileOutput(fileName, Context.MODE_WORLD_READABLE);
+PrintStream printStream = new PrintStream(outputStream);
+String xml = this.writeXml(); // get XML here
+printStream.println(xml);
+printStream.close();
+
+
+I'm stuck trying to retrieve a Uri to the output file in order to share it. I first tried to access the file by converting the file to a Uri
+
+File outFile = context.getFileStreamPath(fileName);
+return Uri.fromFile(outFile);
+
+
+This returns file:///data/data/com.my.package/files/myfile.xml but I cannot appear to attach this to an email, upload, etc.
+
+If I manually check the file length, it's proper and shows there is a reasonable file size.
+
+Next I created a content provider and tried to reference the file and it isn't a valid handle to the file. The ContentProvider doesn't ever seem to be called a any point.
+
+Uri uri = Uri.parse("content://" + CachedFileProvider.AUTHORITY + "/" + fileName);
+return uri;
+
+
+This returns content://com.my.package.provider/myfile.xml but I check the file and it's zero length.
+
+How do I access files properly? Do I need to create the file with the content provider? If so, how?
+
+Update
+
+Here is the code I'm using to share. If I select Gmail, it does show as an attachment but when I send it gives an error Couldn't show attachment and the email that arrives has no attachment.
+
+public void onClick(View view) {
+    Log.d(TAG, "onClick " + view.getId());
+
+    switch (view.getId()) {
+        case R.id.share_cancel:
+            setResult(RESULT_CANCELED, getIntent());
+            finish();
+            break;
+
+        case R.id.share_share:
+
+            MyXml xml = new MyXml();
+            Uri uri;
+            try {
+                uri = xml.writeXmlToFile(getApplicationContext(), "myfile.xml");
+                //uri is  "file:///data/data/com.my.package/files/myfile.xml"
+                Log.d(TAG, "Share URI: " + uri.toString() + " path: " + uri.getPath());
+
+                File f = new File(uri.getPath());
+                Log.d(TAG, "File length: " + f.length());
+                // shows a valid file size
+
+                Intent shareIntent = new Intent();
+                shareIntent.setAction(Intent.ACTION_SEND);
+                shareIntent.putExtra(Intent.EXTRA_STREAM, uri);
+                shareIntent.setType("text/plain");
+                startActivity(Intent.createChooser(shareIntent, "Share"));
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            }
+
+            break;
+    }
+}
+
+
+I noticed that there is an Exception thrown here from inside createChooser(...), but I can't figure out why it's thrown.
+
+
+  E/ActivityThread(572): Activity
+  com.android.internal.app.ChooserActivity has leaked IntentReceiver
+  com.android.internal.app.ResolverActivity$1@4148d658 that was
+  originally registered here. Are you missing a call to
+  unregisterReceiver()?
+
+
+I've researched this error and can't find anything obvious. Both of these links suggest that I need to unregister a receiver.
+
+
+ChooserActivity has leaked IntentReceiver
+Why does Intent.createChooser() need a BroadcastReceiver and how to implement?
+
+
+I have a receiver setup, but it's for an AlarmManager that is set elsewhere and doesn't require the app to register / unregister.
+
+Code for openFile(...)
+
+In case it's needed, here is the content provider I've created.
+
+public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+    String fileLocation = getContext().getCacheDir() + "/" + uri.getLastPathSegment();
+
+    ParcelFileDescriptor pfd = ParcelFileDescriptor.open(new File(fileLocation), ParcelFileDescriptor.MODE_READ_ONLY);
+    return pfd;
+}
+
+    
+===============================================================================================
+38
+A:It is possible to expose a file stored in your apps private directory via a ContentProvider. Here is some example code I made showing how to create a content provider that can do this.
+
+Manifest
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="com.example.providertest"
+  android:versionCode="1"
+  android:versionName="1.0">
+
+  <uses-sdk android:minSdkVersion="11" android:targetSdkVersion="15" />
+
+  <application android:label="@string/app_name"
+    android:icon="@drawable/ic_launcher"
+    android:theme="@style/AppTheme">
+
+    <activity
+        android:name=".MainActivity"
+        android:label="@string/app_name">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+    </activity>
+
+    <provider
+        android:name="MyProvider"
+        android:authorities="com.example.prov"
+        android:exported="true"
+        />        
+  </application>
+</manifest>
+
+
+In your ContentProvider override openFile to return the ParcelFileDescriptor
+
+@Override
+public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {       
+     File cacheDir = getContext().getCacheDir();
+     File privateFile = new File(cacheDir, "file.xml");
+
+     return ParcelFileDescriptor.open(privateFile, ParcelFileDescriptor.MODE_READ_ONLY);
+}
+
+
+Make sure you have copied your xml file to the cache directory
+
+    private void copyFileToInternal() {
+    try {
+        InputStream is = getAssets().open("file.xml");
+
+        File cacheDir = getCacheDir();
+        File outFile = new File(cacheDir, "file.xml");
+
+        OutputStream os = new FileOutputStream(outFile.getAbsolutePath());
+
+        byte[] buff = new byte[1024];
+        int len;
+        while ((len = is.read(buff)) > 0) {
+            os.write(buff, 0, len);
+        }
+        os.flush();
+        os.close();
+        is.close();
+
+    } catch (IOException e) {
+        e.printStackTrace(); // TODO: should close streams properly here
+    }
+}
+
+
+Now any other apps should be able to get an InputStream for your private file by using the content uri (content://com.example.prov/myfile.xml)
+
+For a simple test, call the content provider from a seperate app similar to the following
+
+    private class MyTask extends AsyncTask<String, Integer, String> {
+
+    @Override
+    protected String doInBackground(String... params) {
+
+        Uri uri = Uri.parse("content://com.example.prov/myfile.xml");
+        InputStream is = null;          
+        StringBuilder result = new StringBuilder();
+        try {
+            is = getApplicationContext().getContentResolver().openInputStream(uri);
+            BufferedReader r = new BufferedReader(new InputStreamReader(is));
+            String line;
+            while ((line = r.readLine()) != null) {
+                result.append(line);
+            }               
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try { if (is != null) is.close(); } catch (IOException e) { }
+        }
+
+        return result.toString();
+    }
+
+    @Override
+    protected void onPostExecute(String result) {
+        Toast.makeText(CallerActivity.this, result, Toast.LENGTH_LONG).show();
+        super.onPostExecute(result);
+    }
+}
+
+    

@@ -1,0 +1,316 @@
+35
+Q:I'm using a RecyclerView that contains CardViews with a TextView and a ImageView (Every card represents a city). I also have a onClickListener on every card that leads me to a list of museum in the city. (The RecyclerView is populated by an ArrayList). 
+The list is a RecyclerView composed by the same Cardview that scrolls vertically.
+
+When a city has only one museum, how can I display the unique CardView at the center of the screen?
+
+This is the activity xml:
+
+    <?xml version="1.0" encoding="utf-8"?>
+ <RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingBottom="@dimen/activity_vertical_margin"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="@dimen/activity_vertical_margin"
+    tools:context="com.bebbo203.mymuseum.MuseumActivity">
+
+    <android.support.v7.widget.RecyclerView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/recyclerViewMuseum"
+        android:scrollbars="vertical"
+        android:scrollIndicators="none"
+        android:gravity="center_horizontal"
+        />
+</RelativeLayout>
+
+
+And this is the RecyclerView xml:
+
+ <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:baselineAligned="false"
+              xmlns:card_view="http://schemas.android.com/apk/res-auto">
+
+    <android.support.v7.widget.CardView
+        xmlns:card_view="http://schemas.android.com/apk/res-auto"
+        android:layout_width="match_parent"
+        android:layout_height="150dp"
+        android:id="@+id/cardView"
+        card_view:cardCornerRadius="2dp"
+        card_view:cardUseCompatPadding="true"
+        android:gravity="center_horizontal"
+        android:animateLayoutChanges="true"
+        >
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="150dp"
+                android:id="@+id/imageViewList"
+                android:layout_gravity="center_horizontal|top"
+                android:adjustViewBounds="true"
+                android:scaleType="centerCrop"/>
+
+            <TextView
+                android:id="@+id/textViewList"
+                android:layout_width="match_parent"
+                android:layout_height="150dp"
+                android:textSize="40sp"
+                android:textIsSelectable="false"
+                android:textAlignment="center"
+                android:gravity="fill"
+                android:textStyle="bold"
+                android:layout_weight="1"
+                android:layout_gravity="center_horizontal|top"/>
+
+        </FrameLayout>
+
+    </android.support.v7.widget.CardView>
+
+
+</RelativeLayout>`
+
+
+Thanks for helping.
+
+So this is the MainActivity. A list of Cities. All is good here.
+
+
+When I click on Parigi that has only one museum I wanted to show the single cardview at the center of the screen
+
+
+
+(And if it's possible i would like to make the cardview starting from the center of the screen, not from the top. Like if the central cardview is always at the center when I open the activity. For example translating NationalGallery at the center mantaining the order of the other)
+
+
+    
+===============================================================================================
+18
+A:I've implemented simple HelloWorld app, which shows list of cities and based on how many museums it has - shows full-sized city-card or the centered, wrapped version of it.
+
+
+
+(Yes, I'm not exactly good at arts :-) )
+
+Here's how I did it.
+
+TL;DR:
+
+The crucial part is ItemDecoration: set proper items offset and you'll get what you need; Here's how I've done it:
+
+    RecyclerView recyclerViewMuseum = (RecyclerView)findViewById(R.id.recyclerViewMuseum);
+    recyclerViewMuseum.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+    recyclerViewMuseum.setAdapter(adapter);
+    recyclerViewMuseum.addItemDecoration(new RecyclerView.ItemDecoration() {
+
+        @Override
+        public void getItemOffsets(Rect outRect, View view, RecyclerView parent, RecyclerView.State state) {
+            if (view instanceof CityWithOneMuseumCardView) {
+                int totalWidth = parent.getWidth();
+                int cardWidth = getResources().getDimensionPixelOffset(R.dimen.small_card_width);
+                int sidePadding = (totalWidth - cardWidth) / 2;
+                sidePadding = Math.max(0, sidePadding);
+                outRect.set(sidePadding, 0, sidePadding, 0);
+            }
+        }
+    });
+
+
+Here's my model - City and Museum classes:
+
+public class Museum {
+    public String title;
+    public Museum(String title) {
+        this.title = title;
+    }
+}
+
+public class City {
+    public String title;
+    public int imageRes;
+    public List<Museum> museums = new ArrayList<>();
+
+    public City(String title, int imageRes) {
+        this.title = title;
+        this.imageRes = imageRes;
+    }
+}
+
+
+Then Views: CityWithManyMuseumsCardView and CityWithOneMuseumCardView. Both of them are using helper-interface IItemDisplayer.
+
+public class CityWithOneMuseumCardView extends CardView implements IItemDisplayer<City> {
+
+    public CityWithOneMuseumCardView(Context context) {
+        super(context);
+        LayoutInflater.from(context).inflate(R.layout.one_museum_layout, this);
+    }
+
+    @Override
+    public void displayItem(City city) {
+        TextView cityTitleTextView = (TextView)findViewById(R.id.cityTitleTextView);
+        cityTitleTextView.setText(city.title);
+    }
+}
+
+public class CityWithManyMuseumsCardView extends CardView implements IItemDisplayer<City> {
+
+    public CityWithManyMuseumsCardView(Context context) {
+        super(context);
+        LayoutInflater.from(context).inflate(R.layout.many_museums_layout, this);
+    }
+
+    @Override
+    public void displayItem(City city) {
+        ImageView cityBackgroundImageView = (ImageView)findViewById(R.id.cityBackgroundImageView);
+        cityBackgroundImageView.setImageResource(city.imageRes);
+        TextView cityTitleTextView = (TextView)findViewById(R.id.cityTitleTextView);
+        cityTitleTextView.setText(city.title);
+        TextView cityNumberOrMuseumsTextView = (TextView)findViewById(R.id.cityNumberOrMuseumsTextView);
+        cityNumberOrMuseumsTextView.setText(String.valueOf(city.museums.size()));
+    }
+}
+
+public interface IItemDisplayer<TItem> {
+    public void displayItem(TItem item);
+}
+
+
+And their layouts :
+
+<!-- One Museum card -->
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:background="#BB2050AB"
+    android:layout_width="@dimen/small_card_width"
+    android:layout_height="200dp">
+
+    <TextView
+        android:background="#AA000000"
+        android:textColor="#FFFFFF"
+        android:text="Only one museum available"
+        android:textSize="16sp"
+        android:padding="4dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" />
+
+    <TextView
+        android:id="@+id/cityTitleTextView"
+        android:layout_gravity="bottom"
+        android:background="#AAFFFFFF"
+        android:textColor="#000000"
+        android:textSize="24sp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:gravity="center"
+        android:layout_width="match_parent"
+        android:layout_height="48dp" />
+</FrameLayout>
+
+<!-- Many museums card -->
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="240dp">
+    <ImageView
+        android:id="@+id/cityBackgroundImageView"
+        android:scaleType="fitXY"
+        android:layout_width="500dp"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/cityNumberOrMuseumsTextView"
+        android:layout_gravity="top|end"
+        android:background="#AA000000"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:padding="4dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" />
+
+    <TextView
+        android:id="@+id/cityTitleTextView"
+        android:layout_gravity="bottom"
+        android:background="#AA000000"
+        android:textColor="#FFFFFF"
+        android:textSize="24sp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:gravity="center_vertical"
+        android:layout_width="match_parent"
+        android:layout_height="48dp" />
+</FrameLayout>
+
+
+Then we need to create an adapter for our RecyclerView
+CityAdapter.java
+
+public class CityAdapter  extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+
+    final static int ITEM_TYPE_MANY_MUSEUMS = 0;
+    final static int ITEM_TYPE_ONE_MUSEUM = 1;
+
+    private List<City> items;
+
+    public CityAdapter(List<City> items) {
+        this.items = items;
+    }
+
+    @Override
+    public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup viewGroup, int viewType) {
+        switch (viewType) {
+            case ITEM_TYPE_MANY_MUSEUMS:
+                return new ViewHolder(new CityWithManyMuseumsCardView(viewGroup.getContext()));
+            case ITEM_TYPE_ONE_MUSEUM:
+                return new ViewHolder(new CityWithOneMuseumCardView(viewGroup.getContext()));
+            default:
+                throw new IllegalArgumentException(String.format("Unexpected viewType: %d", viewType));
+        }
+    }
+
+    @Override
+    public int getItemViewType(int position) {
+        if (items == null || items.size() < position) {
+            throw new IllegalArgumentException("Wrong position!");
+        }
+
+        if (items.get(position).museums.size() > 1) {
+            return ITEM_TYPE_MANY_MUSEUMS;
+        } else if (items.get(position).museums.size() == 1){
+            return ITEM_TYPE_ONE_MUSEUM;
+        }
+
+        throw new IllegalArgumentException("Wrong number of museums!");
+    }
+
+    @Override
+    public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+        ((IItemDisplayer<City>) holder.itemView).displayItem(items.get(position));
+    }
+
+    @Override
+    public int getItemCount() {
+        return items.size();
+    }
+
+    public class ViewHolder extends RecyclerView.ViewHolder {
+
+        public ViewHolder(View itemView) {
+            super(itemView);
+        }
+    }
+}
+
+
+I've uploaded this project to my dropbox - feel free to check it out! Hope, it helps.
+    

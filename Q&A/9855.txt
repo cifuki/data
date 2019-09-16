@@ -1,0 +1,99 @@
+28
+Q:I am trying to figure out what it mean to "compile resources".
+
+What I did in order to understand this issue:
+
+I have read many articles about the subject but didn't find a simple answer.
+The best one I have read was this: How does the mapping between android resources and resources ID work?.
+
+How I understand it:
+
+From my understanding, when we compile our project either by ANT (Eclipse) or Gradle (AS).
+We use a tool called aapt - Android Asset Packaging Tool which:
+Is used to generate unique IDs for each of our resources, such as our layouts, our styles and more and store them in a lookup table. Then it persists this lookup table by generating two files:
+
+
+It Generates the R.java file with these unique IDs so we will be able to use our resources from our java code during compilation. 
+It generate the resources.arsc file which can be found in resources*.ap_ file.
+This resources.arsc file will later be packed by the apktool to the apk.
+This arsc file format is a format that will be easily mapped and parsed by the device at runtime.
+
+
+An Example:
+
+So to make it simple: lets say I have this in my activity_main.xml:
+
+    <TextView android:id="@+id/my_textView"
+        android:text="@string/hello_world" 
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" />
+
+
+And I call it from my onCreate using:
+
+findViewById(R.id.my_textView)
+
+
+In my R.java file I will see:
+
+public static final int my_textView=0x7f08003f;
+
+
+Using: aapt dump resources on the generated apk I can see it contains two lines with my_textView:
+ec resource 0x7f08003f com.example.lizi.liortest2:id/my_textView: flags=0x00000000
+resource 0x7f08003f com.example.lizi.liortest2:id/my_textView: t=0x12 d=0x00000000 (s=0x0008 r=0x00)
+
+What I don't understand:
+
+I would have thought that this resources.arsc file will not just contain the resource ID but also all the properties I have defined for the view, such as android:layout_width="wrap_content".
+
+So now during runtime when the VM tries to run findViewById(R.id.my_textView)
+How does it know which view to get / its properties to create?
+
+I simply can't understand how it works... Shouldn't this lookup table contain also the properties data?
+And what is this 0x7f08003f number? (Should it represent a value that will later be mapped to physical memory in which the object will be stored?)
+    
+===============================================================================================
+27
+A:TL;DR: With the help of android compiler(aapt) xml nodes will get translated to Java classes and the corresponding attributes to numerical Ids. Android run-time works with these ids to instantiate classes in order to create the views 
+
+
+
+TL;R
+
+Run this command to dump the binary xml
+aapt d xmltree apk_file_name res/layout/activity_main.xml(aapt can be found in android-sdk-dir/build-tools/23.0.2/aapt.exe)
+
+This will show the xml nodes (e.g. LinearLayout, RelativeLayout, etc) with their attributes(e.g. android:layout_width, android:layout_height) and their values. Note that, the constants match_parent(numeric value 0xffffffff or -1)  or wrap_content(numeric value 0xfffffffe or -2) can be seen there.
+
+As a matter of fact, you can use this command on any other xml files in the apk e.g. AndroidManifest.xml or layout files
+
+
+The apk file is just a zip archive containing all the java class files(classes.dex), all the compiled resource files and a file named resources.arsc.
+This resource.arsc file contains all the meta-information about the resources. Some of those are...
+
+
+the xml nodes(e.g. LinearLayout, RelativeLayout, etc),
+the attributes(e.g. android:layout_width),
+the resource id's.
+
+
+The resource id's refer to the real resources in the apk-file. The attributes are resolved to a value at runtime. The resolution process is smart about any re-direction (@dimen/... as opposed to 4dp or  @color/... as opposed to "#FFaabbcc") and returns a usable value(a dimen value is resolved differently than a color value). 
+
+Whats a compiled XML file:
+A compiled XML file is just the same XML file with the resource references changed to their corresponding ids. For example, a reference @string/ok will be replaced by 0x7f000001. Moreover, the attributes from android namespace is changed to their respective integer values(e.g. wrap_contentis changed to 0xfffffffe or -2) 
+
+How Android resolves resources at runtime:
+The methodinflater.inflate() parses a compiled xml file and creates a view hierarchy by instantiating the xml nodes. Each of the xml nodes is instantiated by a java class(e.g. LinearLayout.java, RelativeLayout.java). To instantiate, the inflater parses the compiled xml file, collects all the attributes of a node and creates a packed structure of type AttributeSet. This AttributeSet is passed to the class constructor. The class constructor has the responsibility of walking the AttributeSet and resolving each of the attribute values.
+
+For example, for a layout containing RelativeLayout, the inflater will pack layout_width and layout_height into a AttributeSet and  pass it to the constructor   RelativeLayout(Context context, AttributeSet attrs, int defStyleAttr, int defStyleRes). In this case, some of the attributes and their values are resolved by RelativeLayout.initFromAttributes() and the rest by the parent ViewGroup.initFromAttributes().
+
+android:id of a view is just another attribute. The inflater stores the id of each view by calling setId(id) on that view after instantiation
+
+Now to answer your question
+R.id is a java array and my_textview is an integer in that array.  The id of the view  my_textview is this integer(starts with 0x7f). The method findViewById() does a depth-first search on that view hierarchy to find the respective view.
+
+Hope this helps. The link you provided in your question already answers how the ids are generated by aapt.
+
+Its a wonderful system of managing resources for devices with multiple dimensions of variations. Moreover, the implementation is really fast !! With this as the foundation, it allows to implement higher level functionality(e.g. Runtime Resource Overlay)
+    

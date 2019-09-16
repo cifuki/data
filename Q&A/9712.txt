@@ -1,0 +1,89 @@
+28
+Q:How in the world does Nova manage this? I'm literally trying to do exactly the same thing: provide users with a button to press to clear and pick their new default launcher. 
+
+I'm able to get the default app name and display it: 
+
+       private String getPrefered(Intent i) {
+       PackageManager pm = this.getActivity().getPackageManager();
+       final ResolveInfo mInfo = pm.resolveActivity(i, 0);
+       return (String) pm.getApplicationLabel(mInfo.activityInfo.applicationInfo);
+   }
+
+
+where Intent i is
+
+Intent home = new Intent("android.intent.action.MAIN");
+        home.addCategory("android.intent.category.HOME");
+
+
+Then I call up the system ResolveActivity,
+
+private void makePrefered() {
+       Intent selector = new Intent("android.intent.action.MAIN");
+       selector.addCategory("android.intent.category.HOME");                          
+       selector.setComponent(new ComponentName("android", "com.android.internal.app.ResolverActivity"));
+       startActivity(selector);
+   }
+
+
+The picker comes up and functions correctly, but it doesn't actually set or clear any values. While debugging it, it seems as if I'm missing some extras? When I call the makePrefered method, I get the following log message,
+
+I/ActivityManager(  602): START {act=android.intent.action.MAIN cat=[android.intent.category.HOME] cmp=android/com.android.internal.app.ResolverActivity u=0} from pid 22641
+
+
+When I use the Nova implementation I see all of this however, 
+
+    I/PackageManager(  602): Result set changed, dropping preferred activity for Intent { act=android.intent.action.MAIN cat=[android.intent.category.HOME] flg=0x10200000 (has extras) } type null
+I/ActivityManager(  602): START {act=android.intent.action.MAIN cat=[android.intent.category.HOME] flg=0x10200000 cmp=android/com.android.internal.app.ResolverActivity (has extras) u=0} from pid 22905
+I/ActivityManager(  602): START {act=android.intent.action.MAIN cat=[android.intent.category.HOME] flg=0x10200000 cmp=com.mycolorscreen.canvas/.Launcher (has extras) u=0} from pid 22905
+
+
+
+How can I get in there and see what's being sent along with that bundle?
+How can I just clear the preferred app? Don't tell me you can't, I've seen enough of those answers. Nova does it and does it exactly the way that I would like to.
+
+    
+===============================================================================================
+50
+A:The code to do this is actually just a very clever work around. 
+
+When a component with 
+
+        <category android:name="android.intent.category.HOME" />
+
+
+is enabled, generally from an install of a new home application, the default home app gets cleared. 
+
+To take advantage of this by creating an empty activity with the home component like this. 
+
+<activity
+            android:name="com.t3hh4xx0r.haxlauncher.FakeHome"
+            android:enabled="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>     
+
+
+When you want to set your new default, you enable this component, then call the home intent
+and then disable your fake home component again.
+
+public static void makePrefered(Context c) {
+       PackageManager p = c.getPackageManager();
+       ComponentName cN = new ComponentName(c, FakeHome.class);
+       p.setComponentEnabledSetting(cN, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP);
+
+       Intent selector = new Intent(Intent.ACTION_MAIN);
+       selector.addCategory(Intent.CATEGORY_HOME);            
+       c.startActivity(selector);
+
+       p.setComponentEnabledSetting(cN, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP);
+   }
+
+
+The end result is that the system thinks a new home app was installed, so the default is cleared allowing you to set yours with no special permissions.
+
+Thank you to Kevin from TeslaCoil and NovaLauncher for the information on how this is done!
+    

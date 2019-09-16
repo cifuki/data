@@ -1,0 +1,224 @@
+28
+Q:It is sad to see that science and math is never given enough attention in Android platform. Maybe this is an easy problem, but I'm a total dude in javascript so I'm struggling to understand how to solve this problem.
+
+What I want to do is simple: I just need to use render mathematic equation. It can be MathJax or JqMath or anything that is small and fast. If I have to do it in a webview, how can I show plain text in paragraph and formatted equation within the same webview?
+
+(anyone comes out with other methods which obviously works, I'll consider that as solution also)
+
+WHAT I'VE DONE SO FAR:
+
+I started with using MathJax to put formula into webview (I dunno if there is any successful jqMath use case out there? Anyone care to share their experience?) I can reproduce all the functionalities just like that of the standalone MathJax App. In that app, a user keys in a string into EditText field and MathJax will render the formula in Latex once user presses a button to confirm.
+
+I don't need user to confirm. I thought this should be easier because there is no user-interaction, but somehow the equation never gets displayed. I know I must be missing something because the codes in the standalone MathJax is meant for user input. Which part of the code should I modify to directly render an equation from a string, say, \\sqrt{b^2-4ac} ?  Here is the initial header for webview:
+
+WebView w = (WebView) findViewById(R.id.webview);
+w.getSettings().setJavaScriptEnabled(true);
+w.getSettings().setBuiltInZoomControls(true);
+w.loadDataWithBaseURL("http://bar", "<script type='text/x-mathjax-config'>"
+                        +"MathJax.Hub.Config({ showMathMenu: false, "
+                        +"jax: ['input/TeX','output/HTML-CSS'], "
+                        +"extensions: ['tex2jax.js'], " 
+                        +"TeX: { extensions: ['AMSmath.js','AMSsymbols.js',"
+                        +"'noErrors.js','noUndefined.js'] } "
+                        +"});</script>"
+                        +"<script type='text/javascript' "
+                        +"src='file:///android_asset/MathJax/MathJax.js'"
+                        +"></script><span id='math'></span>","text/html","utf-8","");
+
+
+And here is how the original webview loads when user presses a button after input to edittext:
+
+WebView w = (WebView) findViewById(R.id.webview);
+EditText e = (EditText) findViewById(R.id.edit);
+w.loadUrl("javascript:document.getElementById('math').innerHTML='\\\\\\\\["
+                  +doubleEscapeTeX(e.getText().toString())
+                  +"\\\\\\\\]';");
+w.loadUrl("javascript:MathJax.Hub.Queue(['Typeset',MathJax.Hub]);");
+
+private static String doubleEscapeTeX(String s) {
+    String t="";
+    for (int i=0; i < s.length(); i++) {
+        if (s.charAt(i) == '\\'') t += '\\\\';
+        if (s.charAt(i) != '\
+') t += s.charAt(i);
+        if (s.charAt(i) == '\\\\') t += "\\\\";
+    }
+    return t;
+}
+
+
+I attempted to replace with a hard-coded string 
+
+w.loadUrl("javascript:document.getElementById('math').innerHTML='\\\\\\\\["
+                  +doubleEscapeTeX("sample string")
+                  +"\\\\\\\\]';");
+
+
+but it doesn't work, the text "sample string" won't even show up in the webview.
+
+[SOLUTION] see Joe's Answer 
+
+To elaborate on his answer, this is an example on how to set a sentence in plain text and then display a formatted equation in display form (all in a single webview):
+
+Replace the last line above at
+
++"></script><span id='math'></span>","text/html","utf-8","");
+
+
+with
+
++"></script><span id='text'>This is plain text.</span> <span id='math'></span>", "text/html", "utf-8", "");
+
+
+Then call
+
+w.setWebViewClient(new WebViewClient() {
+    @Override
+    public void onPageFinished(WebView view, String url) {
+    super.onPageFinished(view, url);
+        if (!url.startsWith("http://bar"))
+            return;
+        w.loadUrl("javascript:document.getElementById('math').innerHTML='\\\\\\\\["
+                    +doubleEscapeTeX("\\\\sqrt{b^2-4ac}") + "\\\\\\\\]';");
+        w.loadUrl("javascript:MathJax.Hub.Queue(['Typeset',MathJax.Hub]);");
+    }
+});
+
+
+This will set a string This is plain text in normal font and center-display the formula  in webview.
+
+EDIT (Android 4.4 issue)
+
+Starting with Android KitKat, you have to replace all the lines loadUrl(...) with evaluateJavascript(...). But this is only available for KitKat (API 19 or above), so you need to do an SDK version check first. For example:
+
+if (android.os.Build.VERSION.SDK_INT < 19) {
+    w.loadUrl("javascript:MathJax.Hub.Queue(['Typeset',MathJax.Hub]);");
+} else {
+    w.evaluateJavascript("javascript:MathJax.Hub.Queue(['Typeset',MathJax.Hub]);",null);
+}
+
+
+UPDATE (AS OF MATHJAX 2.5)
+
+Because there are folders changes, previous code won't work on latest version of MathJax. Besides, the recommended way to minimalize the size of local MathJax is now using Grunt. The template to reduce size of MathJax can be found here.
+
+Assuming you have successfully reduced the size of MathJax, and assuming output of HTML-CSS, here is a simple version that can load MathJax:
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.main);
+    final WebView w = (WebView) findViewById(R.id.webview);
+    w.getSettings().setJavaScriptEnabled(true);
+    w.getSettings().setBuiltInZoomControls(true);
+
+    String Url = "</style>"
+                 + "<script type='text/x-mathjax-config'>"
+                 + "  MathJax.Hub.Config({" + "    showMathMenu: false,"
+                 + "             jax: ['input/TeX','output/HTML-CSS', 'output/CommonHTML'],"
+                 + "      extensions: ['tex2jax.js','MathMenu.js','MathZoom.js', 'CHTML-preview.js'],"
+                 + "         tex2jax: { inlineMath: [ ['$','$'] ], processEscapes: true },"
+                 + "             TeX: {" + "               extensions:['AMSmath.js','AMSsymbols.js',"
+                 + "                           'noUndefined.js']" + "             }"
+                 + "  });"
+                 + "</script>"
+                 + "<script type='text/javascript' src='file:///android_asset/MathJax/MathJax.js'>"
+                 + "</script>"
+                 + "<p style=\\"line-height:1.5; padding: 16 16\\" align=\\"justify\\">"
+                 + "<span >";
+
+    // Demo display equation
+    url += "This is a display equation: $$P=\\frac{F}{A}$$";
+
+    url += "This is also an identical display equation with different format:\\\\[P=\\\\frac{F}{A}\\\\]";
+
+    // equations aligned at equal sign
+    url += "You can also put aligned equations just like Latex:";
+    String align = "\\\\begin{aligned}"
+                + "F\\\\; &= P \\\\times A \\\\\\\\ "
+                + "&= 4000 \\\\times 0.2\\\\\\\\"
+                + "&= 800\\\\; \\\\text{N}\\\\end{aligned}"; 
+    url += align;
+
+    url += "This is an inline equation \\\\sqrt{b^2-4ac}.";
+
+    // Finally, must enclose the brackets
+    url += "</span></p>";
+
+    mWebView.loadDataWithBaseURL("http://bar", url, "text/html", "utf-8", "");
+    mWebView.setWebViewClient(new WebViewClient() {
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            super.onPageFinished(view, url);
+            if (!url.startsWith("http://bar")) return;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+                view.loadUrl(JAVASCRIPT);
+            } else {
+                view.evaluateJavascript(JAVASCRIPT, null);
+            }
+        }
+    });
+}
+
+
+Unlike Joes's answer, there is no need to separate text or math types, MathJax will just format them accordingly.
+
+However, it appears that there is a bug that webview in KitKat devices cannot render capital letter "A". Anyone who knows a way is welcome to provide a workaround for this.
+    
+===============================================================================================
+21
+A:If I understand your problem correctly, it seems the issue is due to the MathJax library has not completed loading (from the loadDataWithBaseURL() call) when you call the additional loadUrl()s to display the formula. The simplest fix is to wait for the onPageFinished() callback to make the call.
+
+For example, the following code seems to work fine on mine:
+
+/** Called when the activity is first created. */
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.main);
+    final WebView w = (WebView) findViewById(R.id.webview);
+    w.getSettings().setJavaScriptEnabled(true);
+    w.getSettings().setBuiltInZoomControls(true);
+    w.loadDataWithBaseURL("http://bar", "<script type='text/x-mathjax-config'>" 
+            + "MathJax.Hub.Config({ "
+            + "showMathMenu: false, " 
+            + "jax: ['input/TeX','output/HTML-CSS'], " 
+            + "extensions: ['tex2jax.js'], "
+            + "TeX: { extensions: ['AMSmath.js','AMSsymbols.js'," 
+            + "'noErrors.js','noUndefined.js'] } "
+            + "});</script>" 
+            + "<script type='text/javascript' " 
+            + "src='file:///android_asset/MathJax/MathJax.js'"
+            + "></script><span id='math'></span>", "text/html", "utf-8", "");
+    w.setWebViewClient(new WebViewClient() {
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            super.onPageFinished(view, url);
+            if (!url.startsWith("http://bar")) return;
+            w.loadUrl("javascript:document.getElementById('math').innerHTML='\\\\\\\\["
+                    + doubleEscapeTeX("sample string") + "\\\\\\\\]';");
+            w.loadUrl("javascript:MathJax.Hub.Queue(['Typeset',MathJax.Hub]);");
+        }
+    });
+}
+
+
+Update: To accommodate additional output in the WebView, I would suggest adding HTML elements to the initial loadDataWithBaseURL() call. So for the example above, instead of this line at the end:
+
+            + "></script><span id='math'></span>", "text/html", "utf-8", "");
+
+
+We can do something like the following:
+
+            + "></script><span id='text'>Formula:</span>"
+            + "<span id='math'></span>", "text/html", "utf-8", "");
+
+
+Additionally, if you need to update that part interactively afterward, you can use the same mechanism that we used for the "math" part, something like:
+
+            w.loadUrl("javascript:document.getElementById('text').innerHTML='"
+                    + newText + "';");
+
+
+You can also use other HTML elements (instead of the <span> that we use above) if you want to have specific styling/formatting.
+    

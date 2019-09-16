@@ -1,0 +1,124 @@
+37
+Q:I used NestedScrollView with CoordinatorLayout to enable scroll animation for Toolbar (by app:layout_scrollFlags="scroll|enterAlways").
+
+NestedScrollView contain the LinearLayout as the root child, I put the 2 TextViews into LinearLayout to enable expand/collapse animation. The one was set Visible
+and other one was set to Gone. And switching visibility by onClick event of LinearLayout
+
+Normally, everything work as expected but when I scrolled the NestedScrollView 
+the onClick event not working properly. I need double click after scroll to get expand/collapse animation
+
+Does anyone have same problem with me ? Please help me
+
+<android.support.design.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:app="http://schemas.android.com/apk/res-auto"
+android:layout_width="match_parent"
+android:layout_height="match_parent">
+
+<android.support.v4.widget.NestedScrollView
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingBottom="98dp"
+        android:paddingLeft="24dp"
+        android:paddingRight="24dp">
+
+        <android.support.v7.widget.AppCompatTextView
+            android:id="@+id/detail_expense_reason_trim"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:singleLine="false"
+            android:textColor="@color/add_new_expense_text_color" />
+
+        <android.support.v7.widget.AppCompatTextView
+            android:id="@+id/detail_expense_reason"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:singleLine="false"
+            android:textColor="@color/add_new_expense_text_color"
+            android:visibility="gone" />
+    </LinearLayout>
+
+</android.support.v4.widget.NestedScrollView>
+
+<android.support.design.widget.AppBarLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <android.support.v7.widget.Toolbar
+        android:id="@+id/detail_expense_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+        app:layout_scrollFlags="scroll|enterAlways"
+        app:popupTheme="@style/ThemeOverlay.AppCompat.Light" />
+</android.support.design.widget.AppBarLayout>
+
+
+
+
+
+
+ @InjectView(R.id.detail_expense_reason)
+AppCompatTextView originalReason;
+
+@InjectView(R.id.detail_expense_reason_trim)
+AppCompatTextView trimReason;
+
+@InjectView(R.id.detail_expense_container)
+LinearLayout expenseContainer;
+
+
+// Handle event
+
+public void onClick() {
+    if (originalReason.getVisibility() == View.VISIBLE) {
+        originalReason.setVisibility(View.GONE);
+        trimReason.setVisibility(View.VISIBLE);
+    } else {
+        originalReason.setVisibility(View.VISIBLE);
+        trimReason.setVisibility(View.GONE);
+    }
+
+}
+
+    
+===============================================================================================
+19
+A:It is a bug of the NestedScrollView, the detail of the bug can be found in here: issue. The problem is that mScroller.isFinished() in onInterceptTouchEvent(MotionEvent ev) will not return true after a fling operation (even if the fling is stopped). Therefore the touch event is intercepted.
+
+This bug have been reported for a while, but still have not been fixed. So I have created by own version of bug fix for this problem. I implemented my own NestedScrollView, copied all the code from NestedScrollView and having the with the following amendments:
+
+public class NestedScrollView extends FrameLayout implements NestedScrollingParent, NestedScrollingChild {
+    ...
+    private void initScrollView() {
+        ...
+        // replace this line:
+        // mScroller = new ScrollerCompat(getContext(), null);
+        mScroller = ScrollerCompat.create(getContext(), null);
+        ...
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        ...
+        switch (action & MotionEventCompat.ACTION_MASK) {
+            ...
+            case MotionEvent.ACTION_DOWN: {
+                ...
+                // replace this line:
+                // mIsBeingDragged = !mScroller.isFinished();
+                mIsBeingDragged = false;
+                ...
+            }
+        }
+    }   
+}
+
+
+And this NestedScrollView should have the same behaviour as the original one.
+    

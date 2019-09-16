@@ -1,0 +1,71 @@
+31
+Q:Parse will shut down at the end of the year, so I decided to start using Firebase. I need to implement a register process with 3 fields : email, username, password (Email & username must be unique for my app). 
+
+Since, Firebase is not providing an easy way to manage username like Parse, I decided to use only the email/password registration and save some additional data like username. Here is my users data structure :
+
+app : {
+    users: {
+       "some-user-uid": {
+            email: "test@test.com"
+            username: "myname"
+       }
+    }
+}
+
+
+But, what I want to do is to make the username unique and to check it before creating an account.
+These are my rules :
+
+{
+    "rules": {
+        ".read": true,
+        ".write": true,
+        "users": {
+            "$uid": {
+                ".write": "auth !== null && auth.uid === $uid",
+                ".read": "auth !== null && auth.provider === 'password'",
+                "username": {".validate": "!root.child('users').child(newData.child('username').val()).exists()"}
+            }
+        }
+   }
+}
+
+
+Thank you very much for your help
+    
+===============================================================================================
+48
+A:Part of the answer is to store an index of usernames, that you check against in your security rules:
+
+app : {
+    users: {
+       "some-user-uid": {
+            email: "test@test.com"
+            username: "myname"
+       }
+    },
+    usernames: {
+        "myname": "some-user-uid"
+    }
+}
+
+
+So the usernames node maps a username to a uid. It essentially reads as "username 'myname' is owned by 'some-user-uid'".
+
+With this data structure, your security rules can check if there is already an entry for a given username:
+
+"users": {
+  "$uid": {
+    ".write": "auth !== null && auth.uid === $uid",
+    ".read": "auth !== null && auth.provider === 'password'",
+    "username": {
+      ".validate": "
+        !root.child('usernames').child(newData.val()).exists() ||
+        root.child('usernames').child(newData.val()).val() == $uid"
+    }
+  }
+}
+
+
+This validates that the username isn't claimed by anyone yet OR it is claimed by the current user.
+    

@@ -1,0 +1,529 @@
+33
+Q:I'm developing an Android application for accessing some battle.net (https://eu.battle.net) account data (for World of Warcraft) and I'm using the org.apache.http.client.HttpClient to do so.
+
+This is the code I'm using:
+
+ public static final String USER_AGENT = "Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.2.8) Gecko/20100722 Firefox/3.6.8 (.NET CLR 3.5.30729)";
+
+  public static class MyHttpClient extends DefaultHttpClient {
+
+    final Context context;
+
+    public MyHttpClient(Context context) {
+      super();
+      this.context = context;
+    }
+
+    @Override
+    protected ClientConnectionManager createClientConnectionManager() {
+      SchemeRegistry registry = new SchemeRegistry();
+      registry.register(new Scheme("http", PlainSocketFactory.getSocketFactory(), 80));
+      // Register for port 443 our SSLSocketFactory with our keystore
+      // to the ConnectionManager
+      registry.register(new Scheme("https", newSslSocketFactory(), 443));
+      return new SingleClientConnManager(getParams(), registry);
+    }
+
+    private SSLSocketFactory newSslSocketFactory() {
+      try {
+        // Get an instance of the Bouncy Castle KeyStore format
+        KeyStore trusted = KeyStore.getInstance("BKS");
+        // Get the raw resource, which contains the keystore with
+        // your trusted certificates (root and any intermediate certs)
+        InputStream in = context.getResources().openRawResource(R.raw.battlenetkeystore);
+        try {
+          // Initialize the keystore with the provided trusted certificates
+          // Also provide the password of the keystore
+          trusted.load(in, "mysecret".toCharArray());
+        } finally {
+          in.close();
+        }
+        // Pass the keystore to the SSLSocketFactory. The factory is responsible
+        // for the verification of the server certificate.
+        SSLSocketFactory sf = new SSLSocketFactory(trusted);
+        // Hostname verification from certificate
+        // http://hc.apache.org/httpcomponents-client-ga/tutorial/html/connmgmt.html#d4e506
+        sf.setHostnameVerifier(SSLSocketFactory.STRICT_HOSTNAME_VERIFIER);
+        return sf;
+      } catch (Exception e) {
+        throw new AssertionError(e);
+      }
+    }
+  }
+
+  private static void maybeCreateHttpClient(Context context) {
+    if (mHttpClient == null) {
+      mHttpClient = new MyHttpClient(context);
+
+      final HttpParams params = mHttpClient.getParams();
+      HttpConnectionParams.setConnectionTimeout(params, REGISTRATION_TIMEOUT);
+      HttpConnectionParams.setSoTimeout(params, REGISTRATION_TIMEOUT);
+      ConnManagerParams.setTimeout(params, REGISTRATION_TIMEOUT);
+      Log.d(TAG, LEAVE + "maybeCreateHttpClient()");
+    }
+  }
+
+public static boolean authenticate(String username, String password, Handler handler,
+      final Context context) {
+
+    final HttpResponse resp;
+
+    final ArrayList<NameValuePair> params = new ArrayList<NameValuePair>();
+    params.add(new BasicNameValuePair(PARAM_USERNAME, username));
+    params.add(new BasicNameValuePair(PARAM_PASSWORD, password));
+
+    HttpEntity entity = null;
+    try {
+      entity = new UrlEncodedFormEntity(params);
+    } catch (final UnsupportedEncodingException e) {
+      // this should never happen.
+      throw new AssertionError(e);
+    }
+
+    final HttpPost post = new HttpPost(THE_URL);
+    post.addHeader(entity.getContentType());
+    post.addHeader("User-Agent", USER_AGENT);
+    post.setEntity(entity);
+
+    maybeCreateHttpClient(context);
+
+    if (mHttpClient == null) {
+      return false;
+    }
+
+    try {
+      resp = mHttpClient.execute(post);
+    } catch (final IOException e) {
+      Log.e(TAG, "IOException while authenticating", e);
+      return false;
+    } finally {
+    }
+}
+
+
+The keystore is retrieved (by OpenSSL) like this:
+
+openssl s_client -connect eu.battle.net:443 -showcerts
+
+
+I have compared the certificates that command produced (http://vipsaran.webs.com/openssl_output.txt) with ones I exported from Firefox (http://vipsaran.webs.com/Firefox_output.zip) and they are the same.
+
+By following advice on this blog, I have setup the above code and imported the (root and intermediate) certs to a keystore (battlenetkeystore.bks) which is used for HttpClient.
+
+This are the commands I used for importing the certs to the keystore:
+
+keytool -importcert -v -file ~/lib/ThawteSSLCA.crt -alias thawtesslca -keystore ~/lib/battlenetkeystore.bks -provider org.bouncycastle.jce.provider.BouncyCastleProvider -providerpath ~/lib/bcprov-jdk16-145.jar -storetype BKS -storepass mysecret -keypass mysecret -keyalg "RSA" -sigalg "SHA1withRSA"
+keytool -importcert -v -file ~/lib/thawtePrimaryRootCA.crt -alias thawteprimaryrootca -keystore ~/lib/battlenetkeystore.bks -provider org.bouncycastle.jce.provider.BouncyCastleProvider -providerpath ~/lib/bcprov-jdk16-145.jar -storetype BKS -storepass mysecret -keypass mysecret -keyalg "RSA" -sigalg "SHA1withRSA"
+
+
+Btw. I have also tried keytool -import without the -keyalg "RSA" -sigalg "SHA1withRSA", but with no change.
+
+The problem is that I'm getting this error:
+
+javax.net.ssl.SSLException: Not trusted server certificate
+    at org.apache.harmony.xnet.provider.jsse.OpenSSLSocketImpl.startHandshake(OpenSSLSocketImpl.java:371)
+    at org.apache.http.conn.ssl.AbstractVerifier.verify(AbstractVerifier.java:92)
+    at org.apache.http.conn.ssl.SSLSocketFactory.createSocket(SSLSocketFactory.java:381)
+    at org.apache.http.impl.conn.DefaultClientConnectionOperator.openConnection(DefaultClientConnectionOperator.java:164)
+    at org.apache.http.impl.conn.AbstractPoolEntry.open(AbstractPoolEntry.java:164)
+    at org.apache.http.impl.conn.AbstractPooledConnAdapter.open(AbstractPooledConnAdapter.java:119)
+    at org.apache.http.impl.client.DefaultRequestDirector.execute(DefaultRequestDirector.java:348)
+    at org.apache.http.impl.client.AbstractHttpClient.execute(AbstractHttpClient.java:555)
+    at org.apache.http.impl.client.AbstractHttpClient.execute(AbstractHttpClient.java:487)
+    at org.apache.http.impl.client.AbstractHttpClient.execute(AbstractHttpClient.java:465)
+    at org.homedns.saran.android.wowcalendarsync.network.NetworkUtilities.authenticateWithPass(NetworkUtilities.java:346)
+    at org.homedns.saran.android.wowcalendarsync.network.NetworkUtilities$1.run(NetworkUtilities.java:166)
+    at org.homedns.saran.android.wowcalendarsync.network.NetworkUtilities$5.run(NetworkUtilities.java:278)
+Caused by: java.security.cert.CertificateException: java.security.cert.CertPathValidatorException: IssuerName(CN=thawte Primary Root CA, OU="(c) 2006 thawte, Inc. - For authorized use only", OU=Certification Services Division, O="thawte, Inc.", C=US) does not match SubjectName(CN=Thawte SSL CA, O="Thawte, Inc.", C=US) of signing certificate
+    at org.apache.harmony.xnet.provider.jsse.TrustManagerImpl.checkServerTrusted(TrustManagerImpl.java:168)
+    at org.apache.harmony.xnet.provider.jsse.OpenSSLSocketImpl.startHandshake(OpenSSLSocketImpl.java:366)
+    ... 12 more
+Caused by: java.security.cert.CertPathValidatorException: IssuerName(CN=thawte Primary Root CA, OU="(c) 2006 thawte, Inc. - For authorized use only", OU=Certification Services Division, O="thawte, Inc.", C=US) does not match SubjectName(CN=Thawte SSL CA, O="Thawte, Inc.", C=US) of signing certificate
+    at org.bouncycastle.jce.provider.PKIXCertPathValidatorSpi.engineValidate(PKIXCertPathValidatorSpi.java:373)
+    at java.security.cert.CertPathValidator.validate(CertPathValidator.java:202)
+    at org.apache.harmony.xnet.provider.jsse.TrustManagerImpl.checkServerTrusted(TrustManagerImpl.java:164)
+    ... 13 more
+
+
+and I can't figure a way to solve it.
+Tried importing the certs into the keystore in different order, aso. but nothing worked.
+
+Please help (and please focus on the solutions based on the Android's Apache HttpClient only).
+    
+===============================================================================================
+56
+A:I expect you've got your own solution by now, but if not:
+
+By combining insights from 
+
+
+Antoine Hauck's blog
+http://blog.synyx.de/2010/06/android-and-self-signed-ssl-certificates/ 
+the excellent answer from bdc above
+easily-googled source code for "EasySSLSocketFactory" and "EasyX509TrustManager" - would provide a link if I wasn't prevented (first time answering!)
+
+
+I managed to achieve a secure connection to https://eu.battle.net/login/en/login.xml with just the following classes.  Note that there is no need to build a keystore since the root CA is trusted by android - the problem is simply that the certs are returned in the wrong order.
+
+(Disclaimer: Didn't spend any time cleaning the code up though.)
+
+EasyX509TrustManager:
+
+package com.trustit.trustme;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
+import java.util.Date;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
+
+public class EasyX509TrustManager implements X509TrustManager 
+{  
+    private X509TrustManager standardTrustManager = null;  
+
+    /** 
+     * Constructor for EasyX509TrustManager. 
+     */  
+    public EasyX509TrustManager(KeyStore keystore) throws NoSuchAlgorithmException, KeyStoreException 
+    {  
+      super();  
+      TrustManagerFactory factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());  
+      factory.init(keystore);  
+      TrustManager[] trustmanagers = factory.getTrustManagers();  
+      if (trustmanagers.length == 0) 
+      {  
+        throw new NoSuchAlgorithmException("no trust manager found");  
+      }  
+      this.standardTrustManager = (X509TrustManager) trustmanagers[0];  
+    }  
+
+    /** 
+     * @see javax.net.ssl.X509TrustManager#checkClientTrusted(X509Certificate[],String authType) 
+     */  
+    public void checkClientTrusted(X509Certificate[] certificates, String authType) throws CertificateException 
+    {  
+      standardTrustManager.checkClientTrusted(certificates, authType);  
+    }  
+
+    /** 
+     * @see javax.net.ssl.X509TrustManager#checkServerTrusted(X509Certificate[],String authType) 
+     */  
+    public void checkServerTrusted(X509Certificate[] certificates, String authType) throws CertificateException 
+    {  
+    // Clean up the certificates chain and build a new one.
+        // Theoretically, we shouldn't have to do this, but various web servers
+        // in practice are mis-configured to have out-of-order certificates or
+        // expired self-issued root certificate.
+        int chainLength = certificates.length;
+        if (certificates.length > 1) 
+        {
+          // 1. we clean the received certificates chain.
+          // We start from the end-entity certificate, tracing down by matching
+          // the "issuer" field and "subject" field until we can't continue.
+          // This helps when the certificates are out of order or
+          // some certificates are not related to the site.
+          int currIndex;
+          for (currIndex = 0; currIndex < certificates.length; ++currIndex) 
+          {
+            boolean foundNext = false;
+            for (int nextIndex = currIndex + 1;
+                           nextIndex < certificates.length;
+                           ++nextIndex) 
+            {
+              if (certificates[currIndex].getIssuerDN().equals(
+                            certificates[nextIndex].getSubjectDN())) 
+              {
+                foundNext = true;
+                // Exchange certificates so that 0 through currIndex + 1 are in proper order
+                if (nextIndex != currIndex + 1) 
+                {
+                  X509Certificate tempCertificate = certificates[nextIndex];
+                  certificates[nextIndex] = certificates[currIndex + 1];
+                  certificates[currIndex + 1] = tempCertificate;
+                }
+                break;
+            }
+            }
+            if (!foundNext) break;
+      }
+
+          // 2. we exam if the last traced certificate is self issued and it is expired.
+          // If so, we drop it and pass the rest to checkServerTrusted(), hoping we might
+          // have a similar but unexpired trusted root.
+          chainLength = currIndex + 1;
+          X509Certificate lastCertificate = certificates[chainLength - 1];
+          Date now = new Date();
+          if (lastCertificate.getSubjectDN().equals(lastCertificate.getIssuerDN())
+                  && now.after(lastCertificate.getNotAfter())) 
+          {
+            --chainLength;
+          }
+      } 
+
+    standardTrustManager.checkServerTrusted(certificates, authType);    
+    }  
+
+    /** 
+     * @see javax.net.ssl.X509TrustManager#getAcceptedIssuers() 
+     */  
+    public X509Certificate[] getAcceptedIssuers() 
+    {  
+      return this.standardTrustManager.getAcceptedIssuers();  
+    }    
+}  
+
+
+EasySSLSocketFactory
+
+package com.trustit.trustme;
+
+import java.io.IOException;  
+import java.net.InetAddress;  
+import java.net.InetSocketAddress;  
+import java.net.Socket;  
+import java.net.UnknownHostException;  
+
+import javax.net.ssl.SSLContext;  
+import javax.net.ssl.SSLSocket;  
+import javax.net.ssl.TrustManager;  
+
+import org.apache.http.conn.ConnectTimeoutException;  
+import org.apache.http.conn.scheme.LayeredSocketFactory;  
+import org.apache.http.conn.scheme.SocketFactory;  
+import org.apache.http.params.HttpConnectionParams;  
+import org.apache.http.params.HttpParams;  
+
+public class EasySSLSocketFactory implements SocketFactory, LayeredSocketFactory 
+{  
+    private SSLContext sslcontext = null;  
+
+    private static SSLContext createEasySSLContext() throws IOException 
+    {  
+      try
+      {  
+        SSLContext context = SSLContext.getInstance("TLS");  
+        context.init(null, new TrustManager[] { new EasyX509TrustManager(null) }, null);  
+        return context;  
+      }
+      catch (Exception e) 
+      {  
+        throw new IOException(e.getMessage());  
+      }  
+    }  
+
+    private SSLContext getSSLContext() throws IOException 
+    {  
+      if (this.sslcontext == null) 
+      {  
+        this.sslcontext = createEasySSLContext();  
+      }  
+      return this.sslcontext;  
+    }  
+
+    /** 
+     * @see org.apache.http.conn.scheme.SocketFactory#connectSocket(java.net.Socket, java.lang.String, int, 
+     *      java.net.InetAddress, int, org.apache.http.params.HttpParams) 
+     */  
+    public Socket connectSocket(Socket sock,
+                                    String host,
+                                    int port, 
+                                    InetAddress localAddress,
+                                    int localPort,
+                                    HttpParams params) 
+
+                throws IOException, UnknownHostException, ConnectTimeoutException 
+    {  
+      int connTimeout = HttpConnectionParams.getConnectionTimeout(params);  
+      int soTimeout = HttpConnectionParams.getSoTimeout(params);  
+      InetSocketAddress remoteAddress = new InetSocketAddress(host, port);  
+      SSLSocket sslsock = (SSLSocket) ((sock != null) ? sock : createSocket());  
+
+      if ((localAddress != null) || (localPort > 0)) 
+      {  
+        // we need to bind explicitly  
+        if (localPort < 0) 
+        {  
+          localPort = 0; // indicates "any"  
+        }  
+        InetSocketAddress isa = new InetSocketAddress(localAddress, localPort);  
+        sslsock.bind(isa);  
+      }  
+
+      sslsock.connect(remoteAddress, connTimeout);  
+      sslsock.setSoTimeout(soTimeout);  
+      return sslsock;    
+    }  
+
+    /** 
+     * @see org.apache.http.conn.scheme.SocketFactory#createSocket() 
+     */  
+    public Socket createSocket() throws IOException {  
+        return getSSLContext().getSocketFactory().createSocket();  
+    }  
+
+    /** 
+     * @see org.apache.http.conn.scheme.SocketFactory#isSecure(java.net.Socket) 
+     */  
+    public boolean isSecure(Socket socket) throws IllegalArgumentException {  
+        return true;  
+    }  
+
+    /** 
+     * @see org.apache.http.conn.scheme.LayeredSocketFactory#createSocket(java.net.Socket, java.lang.String, int, 
+     *      boolean) 
+     */  
+    public Socket createSocket(Socket socket,
+                                   String host, 
+                                   int port,
+                                   boolean autoClose) throws IOException,  
+                                                             UnknownHostException 
+    {  
+      return getSSLContext().getSocketFactory().createSocket(socket, host, port, autoClose);  
+    }  
+
+    // -------------------------------------------------------------------  
+    // javadoc in org.apache.http.conn.scheme.SocketFactory says :  
+    // Both Object.equals() and Object.hashCode() must be overridden  
+    // for the correct operation of some connection managers  
+    // -------------------------------------------------------------------  
+
+    public boolean equals(Object obj) {  
+        return ((obj != null) && obj.getClass().equals(EasySSLSocketFactory.class));  
+    }  
+
+    public int hashCode() {  
+        return EasySSLSocketFactory.class.hashCode();  
+    }  
+}
+
+
+MyHttpClient
+
+package com.trustit.trustme;
+
+import org.apache.http.conn.ClientConnectionManager;
+import org.apache.http.conn.scheme.PlainSocketFactory;
+import org.apache.http.conn.scheme.Scheme;
+import org.apache.http.conn.scheme.SchemeRegistry;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.conn.SingleClientConnManager;
+import org.apache.http.params.HttpParams;
+
+import android.content.Context;
+
+public class MyHttpClient extends DefaultHttpClient 
+{    
+  final Context context;
+
+  public MyHttpClient(HttpParams hparms, Context context)
+  {
+    super(hparms);
+    this.context = context;     
+  }
+
+  @Override
+  protected ClientConnectionManager createClientConnectionManager() {
+    SchemeRegistry registry = new SchemeRegistry();
+    registry.register(new Scheme("http", PlainSocketFactory.getSocketFactory(), 80));
+
+    // Register for port 443 our SSLSocketFactory with our keystore
+    // to the ConnectionManager
+    registry.register(new Scheme("https", new EasySSLSocketFactory(), 443));
+
+    //http://blog.synyx.de/2010/06/android-and-self-signed-ssl-certificates/
+    return new SingleClientConnManager(getParams(), registry);
+  }
+}
+
+
+TrustMe (activity)
+
+package com.trustit.trustme;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+
+import org.apache.http.HttpResponse;
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.params.BasicHttpParams;
+import org.apache.http.params.HttpConnectionParams;
+import org.apache.http.params.HttpParams;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.widget.TextView;
+
+public class TrustMe extends Activity {
+    /** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        TextView tv = (TextView)findViewById(R.id.tv1);
+
+
+        HttpParams httpParameters = new BasicHttpParams();
+        // Set the timeout in milliseconds until a connection is established.
+        int timeoutConnection = 10000;
+        HttpConnectionParams.setConnectionTimeout(httpParameters, timeoutConnection);
+        // Set the default socket timeout (SO_TIMEOUT) 
+        // in milliseconds which is the timeout for waiting for data.
+        int timeoutSocket = 10000;
+        HttpConnectionParams.setSoTimeout(httpParameters, timeoutSocket);
+
+        // Instantiate the custom HttpClient
+        HttpClient client = new MyHttpClient(httpParameters,
+                                             getApplicationContext());
+      HttpGet request = new HttpGet("https://eu.battle.net/login/en/login.xml"); 
+
+        BufferedReader in = null;
+        try 
+        {
+        HttpResponse response = client.execute(request);
+        in = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
+
+        StringBuffer sb = new StringBuffer("");
+        String line = "";
+        String NL = System.getProperty("line.separator");
+        while ((line = in.readLine()) != null)
+        {
+          sb.append(line + NL);
+        }
+        in.close();
+        String page = sb.toString();
+        //System.out.println(page);
+
+        tv.setText(page);
+            }
+        catch (ClientProtocolException e) 
+            {
+                e.printStackTrace();
+            }
+        catch (IOException e) 
+        {
+                e.printStackTrace();
+            }
+        finally
+        {
+        if (in != null) 
+        {
+          try
+          {
+            in.close();
+          }
+          catch (IOException e) 
+          {
+            e.printStackTrace();
+          }
+        }                       
+        }
+    }      
+}
+
+    

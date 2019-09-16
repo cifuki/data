@@ -1,0 +1,38 @@
+34
+Q:Is there any way, how to get Cursor for a query, which I am processing with ORMLite Dao object?
+    
+===============================================================================================
+64
+A:ORMLite now supports next(), previous(), moveRelative(offset), ... methods on the CloseableIterator class.  This should allow you to move the underlying Cursor object around at will.
+
+It also supports the following DAO Cursor methods:
+
+
+dao.mapSelectStarRow(databaseResults) Return the latest row from the database results from a query to select *.  With this you can change the cursor location (for example) and then get the current object.
+dao.getSelectStarRowMapper() Provides a mapper that you can use to map the object outside of the Dao.
+
+
+
+
+When you are building your own query with ORMLite, you use the QueryBuilder object.  queryBuilder.prepare() returns a PreparedQuery which is used by various methods in the DAO.  You can call dao.iterator(preparedQuery) which will return a CloseableIterator which is used to iterate through the results.  There is a iterator.getRawResults() to get access to the DatabaseResults class. Under Android, this can be cast to an AndroidDatabaseResults which has a getCursor() method on it to return the Android Cursor.
+
+Something like the following code:
+
+// build your query
+QueryBuilder<Foo, String> qb = fooDao.queryBuilder();
+qb.where()...;
+// when you are done, prepare your query and build an iterator
+CloseableIterator<Foo> iterator = dao.iterator(qb.prepare());
+try {
+   // get the raw results which can be cast under Android
+   AndroidDatabaseResults results =
+       (AndroidDatabaseResults)iterator.getRawResults();
+   Cursor cursor = results.getRawCursor();
+   ...
+} finally {
+   iterator.closeQuietly();
+}
+
+
+This is a bit complicated but you are definitely having to peer behind the vale to get to this object which is hidden by the database abstraction classes.
+    

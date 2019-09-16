@@ -1,0 +1,165 @@
+57
+Q:Question as in title. A similar question was asked here, and the only workaround that time was to publish the project into a local Maven repository.
+
+Is this problem fixed (as claimed by some) in Android Studio 0.5.+? In its release note there is a statement that says "Support for source folders outside the module content root". Does that mean we can finally import the library from outside the project folder?
+
+I tried File->Import Project.. but it doesn't work. 
+
+EDIT 2: See accepted answer for latest solution (as of 0.8.+)
+
+EDIT:
+
+My project directory structure has only one module main which looks like this
+
+MyApp
+    main
+        build.gradle
+        src
+    build.gradle
+    settings.gradle
+
+
+The library project directory has only one module named like lib (they are all auto-generated when creating a new library project)
+
+MyLibrary
+    lib
+        build.gradle
+        src
+    build.gradle
+    settings.gradle
+
+
+The following line is added into MyApp/settings.gradle:
+
+include ':main', '..:MyLibrary'
+
+
+The following is added into MyApp/main/build.gradle:
+
+dependencies {
+    compile project(':..:MyLibrary')
+}
+
+
+The result is the following error:
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+A problem occurred configuring project ':main'.
+> Configuration with name 'default' not found.
+
+
+As a side note, the library project MyLibrary itself can compile without error. The problem seems to be settings.gradle not being able to recognize the library project structure.
+    
+===============================================================================================
+81
+A:(as of version 2.1+):
+
+Below are the steps that I took to share library source outside of the project directory. Instead of plain Java library, my codes are compiled as Android module, but that library module is not contained inside the main project. It is fine with me as long as there are no code duplications and I only need to maintain one set of library code for all projects:
+
+1) File->new Project. Give a name to your library project (here I use LibraryProject). Continue the remaining steps to create a normal project (since this is intended as a library, I chose "add no activity")
+
+2) By default, Android studio creates the module named as "app" inside the project folder. To prevent names collision with the actual application module, rename the module to something else (Right click "app" module at left panel->Refactor->Rename).
+
+3) In the build.gradle inside your library module folder, change the top line
+
+apply plugin: 'com.android.application'
+
+
+to
+
+apply plugin: 'com.android.library'
+
+
+and then remove the "applicationId" line under "defaultConfig". Also, since this is a library, remove the xlmns:... namespace and <application ..> body from Manifest.xml as well.
+That's all for the library part. Now, to create/modify your main application:
+
+4) If it is a new project, first create new project File->new Project->ApplicationName.
+
+5) Open settings.gradle (there should only be one such file in every project) and include the following line (note the missing leading semi-colon in library module):
+
+include ':app', '..:LibraryProject:yourLibraryModule'
+
+
+6) Then go to File->Project Structure.
+
+7) Under the tab "Dependencies" click the green "+" button at right. Select "Module dependency". Choose your library module, then click OK.
+
+You should now be able to use the library classes in your application.
+
+
+
+ALTERNATIVE METHOD
+If, for some reason, there are still problems with the above method, you can try the following (suggested in here):
+
+1) Repeat steps 1 to 4 above. By default the main and external (library) project look something like this:
+
+  /MainProject
+    + build.gradle
+    + settings.gradle
+    + app/
+      + build.gradle
+      + src/
+
+  /LibraryProject
+    + build.gradle
+    + settings.gradle
+    + app/
+      + build.gradle
+      + src/
+
+
+2) As usual, refactor the modules name (in android studio right-click module->refactor->rename) to something less confusing, such as
+
+  /MainProject
+    + build.gradle
+    + settings.gradle
+    + MainModule/
+      + build.gradle
+      + src/
+
+  /LibraryProject
+    + build.gradle
+    + settings.gradle
+    + LibraryModule/
+      + build.gradle
+      + src/
+
+
+3) Modify the settings.gradle in MainProject:
+
+include ':LibraryModule', ':app'
+project(':LibraryModule').projectDir = new File(settingsDir, '../LibraryProject/LibraryModule')
+
+
+Sync the project and you're done.
+
+
+
+Note on Proguard
+
+Currently you should not use a proguard on external library projects/modules. Instead, you replace the following (original answer here)
+
+buildTypes {
+    release {
+        minifyEnabled true
+        proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-project.txt'
+    }
+    debug {
+        minifyEnabled false
+    }
+}
+
+
+with the following (in build.gradle of the library):
+
+buildTypes {
+    release {
+        consumerProguardFiles 'proguard-project.txt'
+    }
+}
+
+
+where proguard-project.txt is the file that contains the proguard rules for your library project.
+    

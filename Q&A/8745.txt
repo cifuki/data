@@ -1,0 +1,125 @@
+31
+Q:I just finished adding C# Web API components (Web API Models & Controllers) to a localhost copy of an existing project.
+
+This Web API's GET-methods should be called from an Android app. In this link it's explained I should use 10.0.2.2 on the Android Emulator to get the computer's 127.0.0.1.
+
+When I did this, it didn't work for my HttpRequest in the Android app. So I went to the Android browser and typed it directly, and it also didn't work.
+
+Then I tried using 127.0.0.1 instead of localhost in my computer's browser, and for some unknown reason it also doesn't work.. Is there a different between localhost and 127.0.0.1? I always thought they were one and the same.
+
+Here is the 400 error I get when using 127.0.0.1:
+
+
+And with localhost everything works fine.
+
+So, my question: How can I use localhost on the Emulator (or, how can I fix the error I get when using 127.0.0.1 instead of localhost)? Also, I would like to know the difference between localhost and 127.0.0.1, since I always thought they were the same.
+
+Thanks in advance for the responses.
+
+
+
+Edit 1:
+
+In this stackoverflow question they mention the host file in System32 of Windows. I opened this file with Notepad++ (as Administrator) and uncommented the lines with 127.0.0.1   localhost and ::1   localhost. But unfortunally this didn't fixed the problem and I still can't use 127.0.0.1 on my computer as a replacement for localhost. Probably because my problem is the reversed (I can access localhost, but not 127.0.0.1, instead of the other way around.)
+
+
+
+Edit 2:
+
+In this stackoverflow answer it's explained that the differences between localhost and 127.0.0.1 are:
+
+
+127.0.0.1 will be more easily recognized as an IP in some programming languages.
+localhost can be changed to another IP in the computer's host-file (the file mentioned in my Edit 1).
+There are some differences between IPv4 and IPv6.
+
+
+All and all I kinda understand the differences now, I just don't get why my localhost is working, but 127.0.0.1 isn't..
+
+
+
+Edit 3:
+
+Does it have to do something with the port (I use 54408 as port)? I've opened cmd and did the following tests: 
+
+
+ping localhost: I'm getting a response with 4 times Reply from ::1: time<1ms.
+ping 127.0.0.1: I'm getting a response with 4 times Reply from 127.0.0.1: bytes=32 time<1ms TIL=128
+ping localhost:54408: I'm getting an error Ping request could not find localhost:54408. Please check the name and try again.
+ping 127.0.0.1:54408: I'm getting an error Ping request could not find 127.0.0.1:54408. Please check the name and try again.
+
+
+And like I've said before: 127.0.0.1:54408 in the browser gives the error seen in the image above. And localhost:54408 works just fine..
+
+Still no one with an idea on how to fix this?
+
+
+
+Edit 4:
+
+Copy of my hosts-file, located in C:\\Windows\\System32\\drivers\\etc.
+
+# Copyright (c) 1993-2009 Microsoft Corp.
+#
+# This is a sample HOSTS file used by Microsoft TCP/IP for Windows.
+#
+# This file contains the mappings of IP addresses to host names. Each
+# entry should be kept on an individual line. The IP address should
+# be placed in the first column followed by the corresponding host name.
+# The IP address and the host name should be separated by at least one
+# space.
+#
+# Additionally, comments (such as these) may be inserted on individual
+# lines or following the machine name denoted by a '#' symbol.
+#
+# For example:
+#
+#      102.54.94.97     rhino.acme.com          # source server
+#       38.25.63.10     x.acme.com              # x client host
+
+# localhost name resolution is handled within DNS itself.
+127.0.0.1   localhost
+::1         localhost
+
+
+The last two lines used to be:
+
+#      127.0.0.1     localhost
+#      ::1           localhost
+
+
+
+
+Edit 5 / Semi-Solution:
+
+After Jake C's suggestion I went looking for Visual Studio port configuration and found the following site. At the section "To specify a port for a Web application project that uses the Visual Studio Development Server" I followed the instructions and changed the Web option in the Project Properties to Use Visual Studio Development Server with my 54408 port.
+
+This was a great step in the right direction, since 127.0.0.1:54408 homepage now works. However, once I try to log in with the Google OAuth on the C# website, I was getting the following error:
+
+
+One of my ex-colleagues who worked on the C# web project told me once about this stackoverflow post. In the answer of this post is stated that I should add the redirect-urls (in my case 127.0.0.1) to the Google APIs Console.
+Right now I don't have access to this Console for my localhost project however, since it's obtained through SVN. I will ask to one of my supervisors for permission to view the Google APIs Console of this C# web project and perhaps edit the redirect-urls to include 127.0.0.1.
+
+Once I've got it completely working I'll accept Jake C's answer, since his explanation of the Http port configurations did indeed help me find the answer.
+
+
+
+Edit 6:
+
+Ok, I've used my own Google APIs Console and created a new Project with a new Client ID. I've added both the http://localhost:54408/Account/ExternalLoginCallback and http:127.0.0.1:54408/Account/ExternalLoginCallback to the redirect-urls. Then in my C# web project's App_Start/AuthConfig.cs I've changed the Client settings to use this new client.
+
+Once again thanks Jake C for your suggestion to change the http port configurations in Visual Studio. This did the trick for me.
+    
+===============================================================================================
+9
+A:So typically an HTTP 400 Invalid Hostname error usually means you do not have the website set accept all hostnames and/or IP addresses. I presume because this is a C# application you are hosting this on IIS. To fix this open up IIS Manager (Win+R and enter inetmgr), expand the server then Sites, then right-click on the the website where your application is hosted and select bindings. In this list there should be an http binding for port 54408, double-click on this. Under IP address make sure All Unassigned is selected, and under Host name make sure the field is blank. Hit OK, then Close. The setting should take effect immediately without needing to reset IIS.
+
+If you are only testing this through Visual Studio's built in web deployment, there are similar settings to the above somewhere in VS (I'm a little rusty on it so I can't remember exactly where or how). Alternatively you can set up a web site in IIS exactly how you want it and then have VS deploy to that website instead of using its own internal server. I think there might be some debugging drawbacks to doing it this way though (once again I'm a little fuzzy on details, I'll edit them in when I remember them or figure it out).
+
+A little background as to why these settings exist:
+Sometimes a server needs to host multiple sites that are all to be accessed via port 80. So lets say we have foo.com and bar.com and they are too small to warrant getting a separate server for both of them. So instead they are both hosted on a sever with an IP address of 1.2.3.4. Now when you enter the URL foo.com into the browser and hit go, it first resolves the host name to 1.2.3.4, and then it creates a request and part of that request is called the host header. The host header is filled with the hostname of the URL entered, in this case foo.com. When the request is received by the server, it looks at the host header and serves back the content for foo.com.
+
+Now if you were to try and enter 1.2.3.4 into the browser, it would create a request with a blank host header, because none was specified. When the request is received by the server, it doesn't know what to do because there are two websites being hosted by the server and there is no host header to specify which one the browser is looking for, so instead it returns an error.
+
+This is probably what is happening in your situation. Your website is being hosted under the localhost hostname and any other request isn't being responded to. The settings I specified to change are basically telling the server that no matter what IP address (network interface) it comes in on, and no matter what the hostname it is looking for, as long as it is coming in on port 54408, serve this website.
+    

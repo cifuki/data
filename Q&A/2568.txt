@@ -1,0 +1,78 @@
+81
+Q:Looking to find the best way to prevent / detect GPS spoofing on Android. Any suggestions on how this is accomplished, and what can be done to stop it? I am guessing the user has to turn on mock locations to spoof GPS, if this is done, then they can spoof GPS? 
+
+I guess I would need to just detect if Mock Locations are enabled? Any other suggestions?
+    
+===============================================================================================
+114
+A:I have done some investigation and sharing my results here,this may be useful for others.
+
+First, we can check whether MockSetting option is turned ON
+
+public static boolean isMockSettingsON(Context context) {
+    // returns true if mock location enabled, false if not enabled.
+    if (Settings.Secure.getString(context.getContentResolver(),
+                                Settings.Secure.ALLOW_MOCK_LOCATION).equals("0"))
+        return false;
+    else
+        return true;
+}
+
+
+Second, we can check whether are there other apps in the device, which are using android.permission.ACCESS_MOCK_LOCATION (Location Spoofing Apps)
+
+public static boolean areThereMockPermissionApps(Context context) {
+    int count = 0;
+
+    PackageManager pm = context.getPackageManager();
+    List<ApplicationInfo> packages =
+        pm.getInstalledApplications(PackageManager.GET_META_DATA);
+
+    for (ApplicationInfo applicationInfo : packages) {
+        try {
+            PackageInfo packageInfo = pm.getPackageInfo(applicationInfo.packageName,
+                                                        PackageManager.GET_PERMISSIONS);
+
+            // Get Permissions
+            String[] requestedPermissions = packageInfo.requestedPermissions;
+
+            if (requestedPermissions != null) {
+                for (int i = 0; i < requestedPermissions.length; i++) {
+                    if (requestedPermissions[i]
+                        .equals("android.permission.ACCESS_MOCK_LOCATION")
+                        && !applicationInfo.packageName.equals(context.getPackageName())) {
+                        count++;
+                    }
+                }
+            }
+        } catch (NameNotFoundException e) {
+            Log.e("Got exception " , e.getMessage());
+        }
+    }
+
+    if (count > 0)
+        return true;
+    return false;
+}
+
+
+If both above methods, first and second are true, then there are good chances that location may be spoofed or fake. 
+
+Now, spoofing can be avoided by using Location Manager's API.
+
+We can remove the test provider before requesting the location updates from both the providers (Network and GPS)
+
+LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+
+try {
+    Log.d(TAG ,"Removing Test providers")
+    lm.removeTestProvider(LocationManager.GPS_PROVIDER);
+} catch (IllegalArgumentException error) {
+    Log.d(TAG,"Got exception in removing test  provider");
+}
+
+lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0, locationListener);
+
+
+I have seen that removeTestProvider(~) works very well over Jelly Bean and onwards version. This API appeared to be unreliable till Ice Cream Sandwich.
+    

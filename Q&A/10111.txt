@@ -1,0 +1,289 @@
+27
+Q:I am using google place api and want to fetch nearest restaurant and cafe but when i fetching that data using progress bar one error occurs
+
+class LoadPlaces extends AsyncTask<String, String, String> {
+
+    /**
+     * Before starting background thread Show Progress Dialog
+     * */
+    @Override
+    protected void onPreExecute() {
+        super.onPreExecute();
+        pDialog = new ProgressDialog(MainActivity.this);
+        pDialog.setMessage(Html.fromHtml("<b>Search</b><br/>Loading Places..."));
+        pDialog.setIndeterminate(false);
+        pDialog.setCancelable(false);
+        pDialog.show();
+    }
+
+    /**
+     * getting Places JSON
+     * */
+    protected String doInBackground(String... args) {
+        // creating Places class object
+        googlePlaces = new GooglePlaces();
+
+        try {
+            // Separeate your place types by PIPE symbol "|"
+            // If you want all types places make it as null
+            // Check list of types supported by google
+            // 
+            String types = "cafe|restaurant"; // Listing places only cafes, restaurants
+
+            // Radius in meters - increase this value if you don't find any places
+            double radius = 1000; // 1000 meters 
+
+            // get nearest places
+            nearPlaces = googlePlaces.search(gps.getLatitude(),
+                    gps.getLongitude(), radius, types);
+
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+ protected void onPostExecute(String file_url) {
+        // dismiss the dialog after getting all products
+        if(pDialog != null)
+            pDialog.dismiss();
+        // updating UI from Background Thread
+        runOnUiThread(new Runnable() {
+            public void run() {
+                /**
+                 * Updating parsed Places into LISTVIEW
+                 * */
+                // Get json response status
+                String status = nearPlaces.status;
+
+                // Check for all possible status
+                if(status.equals("OK")){
+                    // Successfully got places details
+                    if (nearPlaces.results != null) {
+                        // loop through each place
+                        for (Place p : nearPlaces.results) {
+                            HashMap<String, String> map = new HashMap<String, String>();
+
+                            // Place reference won't display in listview - it will be hidden
+                            // Place reference is used to get "place full details"
+                            map.put(KEY_REFERENCE, p.reference);
+
+                            // Place name
+                            map.put(KEY_NAME, p.name);
+
+
+                            // adding HashMap to ArrayList
+                            placesListItems.add(map);
+                        }
+                        // list adapter
+                        ListAdapter adapter = new SimpleAdapter(MainActivity.this, placesListItems,
+                                R.layout.list_item,
+                                new String[] { KEY_REFERENCE, KEY_NAME}, new int[] {
+                                        R.id.reference, R.id.name });
+
+                        // Adding data into listview
+                        lv.setAdapter(adapter);
+                    }
+                }
+                else if(status.equals("ZERO_RESULTS")){
+                    // Zero results found
+                    alert.showAlertDialog(MainActivity.this, "Near Places",
+                            "Sorry no places found. Try to change the types of places",
+                            false);
+                }
+                else if(status.equals("UNKNOWN_ERROR"))
+                {
+                    alert.showAlertDialog(MainActivity.this, "Places Error",
+                            "Sorry unknown error occured.",
+                            false);
+                }
+                else if(status.equals("OVER_QUERY_LIMIT"))
+                {
+                    alert.showAlertDialog(MainActivity.this, "Places Error",
+                            "Sorry query limit to google places is reached",
+                            false);
+                }
+                else if(status.equals("REQUEST_DENIED"))
+                {
+                    alert.showAlertDialog(MainActivity.this, "Places Error",
+                            "Sorry error occured. Request is denied",
+                            false);
+                }
+                else if(status.equals("INVALID_REQUEST"))
+                {
+                    alert.showAlertDialog(MainActivity.this, "Places Error",
+                            "Sorry error occured. Invalid Request",
+                            false);
+                }
+                else
+                {
+                    alert.showAlertDialog(MainActivity.this, "Places Error",
+                            "Sorry error occured.",
+                            false);
+                }
+            }
+        });
+
+    }
+
+
+and the search method for GooglePlaces class is
+
+public PlacesList search(double latitude, double longitude, double radius, String types)
+        throws Exception {
+
+    this._latitude = latitude;
+    this._longitude = longitude;
+    this._radius = radius;
+
+    try {
+
+        HttpRequestFactory httpRequestFactory = createRequestFactory(HTTP_TRANSPORT);
+        HttpRequest request = httpRequestFactory
+                .buildGetRequest(new GenericUrl(PLACES_SEARCH_URL));
+        request.getUrl().put("key", API_KEY);
+        request.getUrl().put("location", _latitude + "," + _longitude);
+        request.getUrl().put("radius", _radius); // in meters
+        request.getUrl().put("sensor", "false");
+        if(types != null)
+            request.getUrl().put("types", types);
+
+
+
+        PlacesList list = request.execute().parseAs(PlacesList.class);
+        // Check log cat for places response status
+        Log.d("Places Status", "" + list.status);
+        return list;
+
+    } catch (HttpResponseException e) {
+        Log.e("Error:", e.getMessage());
+        return null;
+    }
+
+}
+
+
+and i have used permission like 
+    
+    
+    
+    
+
+but i am getting error in logcat is 
+
+08-14 22:29:59.867: E/AndroidRuntime(331): FATAL EXCEPTION: AsyncTask #1
+08-14 22:29:59.867: E/AndroidRuntime(331): java.lang.RuntimeException: An error occured    while executing doInBackground()
+08-14 22:29:59.867: E/AndroidRuntime(331):  at android.os.AsyncTask$3.done(AsyncTask.java:200)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at java.util.concurrent.FutureTask$Sync.innerSetException(FutureTask.java:273)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at java.util.concurrent.FutureTask.setException(FutureTask.java:124)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:307)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at java.util.concurrent.FutureTask.run(FutureTask.java:137)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1068)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:561)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at java.lang.Thread.run(Thread.java:1096)
+08-14 22:29:59.867: E/AndroidRuntime(331): Caused by: java.lang.NoClassDefFoundError: com.google.common.base.Preconditions
+08-14 22:29:59.867: E/AndroidRuntime(331):  at com.google.api.client.util.ClassInfo.<init>(ClassInfo.java:164)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at com.google.api.client.util.ClassInfo.of(ClassInfo.java:92)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at com.google.api.client.util.GenericData.<init>(GenericData.java:79)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at com.google.api.client.util.GenericData.<init>(GenericData.java:61)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at com.google.api.client.http.GenericUrl.<init>(GenericUrl.java:97)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at com.eheuristic.android.googlemap.GooglePlaces.search(GooglePlaces.java:56)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at com.eheuristic.android.googlemap.MainActivity$LoadPlaces.doInBackground(MainActivity.java:1 85)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at com.eheuristic.android.googlemap.MainActivity$LoadPlaces.doInBackground(MainActivity.java:1)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at android.os.AsyncTask$2.call(AsyncTask.java:185)
+08-14 22:29:59.867: E/AndroidRuntime(331):  at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:305)
+08-14 22:29:59.867: E/AndroidRuntime(331):  ... 4 more
+08-14 22:29:59.967: W/IInputConnectionWrapper(331): showStatusIcon on inactive InputConnection
+08-14 22:30:02.298: E/WindowManager(331): Activity com.eheuristic.android.googlemap.MainActivity has leaked window com.android.internal.policy.impl.PhoneWindow$DecorView@44f72ff0 that was originally added here
+08-14 22:30:02.298: E/WindowManager(331): android.view.WindowLeaked: Activity com.eheuristic.android.googlemap.MainActivity has leaked window com.android.internal.policy.impl.PhoneWindow$DecorView@44f72ff0 that was originally added here
+08-14 22:30:02.298: E/WindowManager(331):   at android.view.ViewRoot.<init>(ViewRoot.java:247)
+08-14 22:30:02.298: E/WindowManager(331):   at android.view.WindowManagerImpl.addView(WindowManagerImpl.java:148)
+08-14 22:30:02.298: E/WindowManager(331):   at android.view.WindowManagerImpl.addView(WindowManagerImpl.java:91)
+08-14 22:30:02.298: E/WindowManager(331):   at android.view.Window$LocalWindowManager.addView(Window.java:424)
+08-14 22:30:02.298: E/WindowManager(331):   at android.app.Dialog.show(Dialog.java:241)
+08-14 22:30:02.298: E/WindowManager(331):   at com.eheuristic.android.googlemap.MainActivity$LoadPlaces.onPreExecute(MainActivity.java:164)
+08-14 22:30:02.298: E/WindowManager(331):   at android.os.AsyncTask.execute(AsyncTask.java:391)
+08-14 22:30:02.298: E/WindowManager(331):   at com.eheuristic.android.googlemap.MainActivity.onCreate(MainActivity.java:104)
+08-14 22:30:02.298: E/WindowManager(331):   at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1047)
+08-14 22:30:02.298: E/WindowManager(331):   at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2627)
+08-14 22:30:02.298: E/WindowManager(331):   at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2679)
+08-14 22:30:02.298: E/WindowManager(331):   at android.app.ActivityThread.access$2300(ActivityThread.java:125)
+08-14 22:30:02.298: E/WindowManager(331):   at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2033)
+08-14 22:30:02.298: E/WindowManager(331):   at android.os.Handler.dispatchMessage(Handler.java:99)
+08-14 22:30:02.298: E/WindowManager(331):   at android.os.Looper.loop(Looper.java:123)
+08-14 22:30:02.298: E/WindowManager(331):   at android.app.ActivityThread.main(ActivityThread.java:4627)
+08-14 22:30:02.298: E/WindowManager(331):   at java.lang.reflect.Method.invokeNative(Native Method)
+08-14 22:30:02.298: E/WindowManager(331):   at java.lang.reflect.Method.invoke(Method.java:521)
+08-14 22:30:02.298: E/WindowManager(331):   at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:868)
+08-14 22:30:02.298: E/WindowManager(331):   at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:626)
+08-14 22:30:02.298: E/WindowManager(331):   at dalvik.system.NativeStart.main(Native Method)
+
+    
+===============================================================================================
+52
+A:You are leaking the dialog.  You need to call pDialog.dismiss(); in the onPostExecute() method of the async task. You should also put...
+
+if(pDialog != null)
+    pDialog.dismiss();
+
+
+in your onPause() method of the activity on the main thread. This will make sure the window is not leaked, even if your application loses the foreground while doing some background execution.  You should have something like this...
+
+public class Login extends Activity implements View.OnClickListener{
+
+    ProgressDialog pd;
+
+    public void onCreate(Bundle savedInstanceState){
+
+        super.onCreate(savedInstanceState);
+        requestWindowFeature(Window.FEATURE_INDETERMINATE_PROGRESS);
+        setContentView(R.layout.login);
+        pd = null;
+    } 
+
+    @Override
+    public void onPause(){
+
+        super.onPause();
+        if(pd != null)
+            pd.dismiss();
+    }
+
+    public void onClick(View v){
+        new SendTask().execute("");
+    }
+
+    /*
+    No networking allowed on the main thread.
+    */
+    private class SendTask extends AsyncTask<String,String,String>{
+
+        int result;
+
+        @Override
+        protected void onPreExecute(){
+            pd = ProgressDialog.show(Login.this,"","Retrieving Inbox...", true,false);
+        }
+
+        @Override
+        protected String doInBackground(String...strings){
+
+            //do networking here
+            result = account.prepare();
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(String unused){
+
+            //check result
+            pd.dismiss();
+            Intent intent = new Intent(Login.this,NextActivity.class);
+            finish();
+            startActivity(intent);
+        }
+     }
+}
+
+    

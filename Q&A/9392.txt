@@ -1,0 +1,111 @@
+29
+Q:I have been using the v23.0.1 support library until now with no problems. Now when I switch to the new v23.1.0 library I am getting a null pointer on widgets in the drawer layout.
+
+mNavigationView = (NavigationView) findViewById(R.id.navigation_view);    
+TextView username = (TextView) mNavigationView.findViewById(R.id.username_textView);
+//       ^^^^^^^^ is now null when using new library
+// which causes the following to fail
+username.setText(mUser.getName());
+
+
+activity layout
+
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.v4.widget.DrawerLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/drawer_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <include layout="@layout/toolbar" />
+
+    ...
+
+</LinearLayout>
+
+<android.support.design.widget.NavigationView
+    android:id="@+id/navigation_view"
+    android:layout_width="wrap_content"
+    android:layout_height="match_parent"
+    android:layout_gravity="start"
+    android:fitsSystemWindows="true"
+    app:headerLayout="@layout/drawer_header"
+    app:menu="@menu/drawer_items" />
+
+</android.support.v4.widget.DrawerLayout>
+
+
+drawer_header.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:fresco="http://schemas.android.com/apk/res-auto"
+android:layout_width="match_parent"
+android:layout_height="150dp"
+android:orientation="vertical">
+
+   <TextView
+    android:id="@+id/username_textView"
+    android:layout_width="match_parent"
+    android:layout_height="0dp" />
+
+    ...
+
+</LinearLayout>
+
+
+Simply changing the gradle file to use the older version makes it work fine instantly so I don't think there is anything horribly wrong with my code. I checked out the revisions in the update and didn't see anything that I would think to cause this.
+
+Surely this will be affecting others also, any clues?
+    
+===============================================================================================
+41
+A:With the design library v 23.1.0 the NavigationView works with a RecyclerView.
+Also the Header is now a type of row.  
+
+It means that the header could not be immediately available in the view hierarchy.
+It can cause issues if you are using methods like navigationView.findViewById(XXX) to get a view inside the header.
+
+There is a bug in the Google Tracker.  
+
+EDIT 12/10/2015: Design library 23.1.1
+
+The 23.1.1 introduces a new API for retrieving header views for NavigationView with getHeaderView()
+
+BEFORE 23.1.1
+
+workaround fot 23.1.0 can be to use a addOnLayoutChangeListener. Somenthing like:
+
+navigationView.addOnLayoutChangeListener( new View.OnLayoutChangeListener()
+{
+    @Override
+    public void onLayoutChange( ... )
+    {
+        navigationView.removeOnLayoutChangeListener( this );
+
+        View view = navigationView.findViewById( ... );
+    }
+} );
+
+
+Another possible workaround are:
+
+
+remove the app:headerLayout attribute from the xml, and then add the header programatically.
+Inflate the headerView programmatically.
+
+
+Use somenthing like this:
+
+View headerLayout = navigationView.inflateHeaderView(R.layout.navigation_header);
+headerLayout.findViewById(xxx);
+
+    

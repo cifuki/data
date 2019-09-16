@@ -1,0 +1,86 @@
+53
+Q:I updated today my support repository to 46.0.0 as the Android Studio notification popped up.
+
+I go the error below :
+
+
+  Error:Execution failed for task ':app:processDevDebugManifest'.
+  
+  
+    Manifest merger failed : Attribute meta-data#android.support.VERSION@value value=(25.3.0) from
+    [com.android.support:support-v13:25.3.0] AndroidManifest.xml:27:9-31
+      is also present at [com.android.support:preference-v7:26.0.0-alpha1]
+    AndroidManifest.xml:24:9-38 value=(26.0.0-alpha1).    Suggestion: add
+    'tools:replace="android:value"' to  element at
+    AndroidManifest.xml:25:5-27:34 to override.
+  
+
+
+I updated all my dependencies to use Revision 26.0.0 Alpha 1 from 25.3.0, but it turns out I need to bump the compileSdk from 25 to 26.
+You can't do that if you have AS 2.3, you need to get the unstable alpha/beta version from canary.
+
+This link shows the changes:
+https://developer.android.com/topic/libraries/support-library/revisions.html#26-0-0-alpha1
+
+And concerning migrating to the new android O, that's the link:
+https://developer.android.com/preview/migration.html
+
+It seems using AS stable version will not work with new repository.
+
+How can I go back to the Android Studio Repository Version 45 instead of the new 46?
+
+** Update: The merged manifest shows one of the generated library manifest contains 
+
+<meta-data
+        android:name="android.support.VERSION"
+        android:value="26.0.0-alpha1" />
+
+
+But since it's a generated file editing is useless, that's why for now I'd stick to rev 45 until the new AS is in stable build
+    
+===============================================================================================
+162
+A:What's the problem
+
+Some libraries depend on version "X or newer" of Android support libraries so Gradle dependency resolution grabs whatever is the newest available ignoring you actually have a precise version specified in your dependencies block.
+
+This is not what you want. You want all support libraries with same version and major version has to match compile SDK version.
+
+What's the solution
+
+Fortunately you can force a specific support library version.
+
+Put this at the end of your app module build.gradle:
+
+configurations.all {
+    resolutionStrategy.eachDependency { DependencyResolveDetails details ->
+        def requested = details.requested
+        if (requested.group == 'com.android.support') {
+            // Skip multidex because it follows a different versioning pattern.
+            if (!requested.name.startsWith("multidex")) {
+                details.useVersion '25.3.0'
+            }
+        }
+    }
+}
+
+
+Of course replace the version with whatever it is you're using.
+
+Version values for support libraries in dependecies block are now irrelevant.
+
+If you have doubts
+
+This is a well documented method and it's working.
+
+What can you do to help
+
+Find the libraries which depend on a range of support library versions
+
+gradlew dependencies --configuration compile -p <module name> | grep ,
+
+
+and let the authors of said libraries know they should transitively depend on the oldest support libs their library can do with.
+
+This aims to avoid the issue altogether.
+    

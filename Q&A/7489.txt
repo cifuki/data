@@ -1,0 +1,107 @@
+35
+Q:I am using PagerSlidingTabStrip in my project and am showing data in fragments. Its a great library which works great. Each Fragment consists of a scholar's lectures which are loaded from a web service. The code to access the web service is in onCreateView method of the Fragment. Currently all the fragment's data is loaded at the same time when they are added to ViewPager. I was wondering if there is any way of loading the Fragment's data only when a user clicks/swipes to a specific tab. Not everything at a time.
+
+Current code is pretty standard, I took help from the provided example [android solution].1
+
+Pager Adapter is as follows:
+
+public class ScholarDetailPagerAdapter extends FragmentPagerAdapter {
+
+    private final String[] TITLES = { "Scholar Info", "Lectures"};
+    Scholar _scholar;
+
+    public ScholarDetailPagerAdapter(FragmentManager fm, Scholar scholar) {
+        super(fm);
+        _scholar = scholar;
+    }
+
+    @Override
+    public CharSequence getPageTitle(int position) {
+        return TITLES[position];
+    }
+
+    @Override
+    public Fragment getItem(int arg0) {
+        if(arg0 == 0)
+            return ScholarsInfoFragment.netInstance(_scholar.Name, _scholar.Information, _scholar.ThumbnailUrl);
+        else
+            return ScholarLecturesFragment.newInstance(_scholar.ScholarId);
+    }
+
+    @Override
+    public int getCount() {
+        return TITLES.length;
+    }
+
+}
+
+
+It returns TWO fragments, Info and Lectures. Lectures fragment calls a web service to get a scholar's lectures.
+
+Activity code is:
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    // set the Above View
+    setContentView(R.layout.tabbed_view);
+    Scholar scholar = getScholar(getIntent());      
+
+    _tabs = (PagerSlidingTabStrip) findViewById(R.id.tabs);
+    _pager = (ViewPager) findViewById(R.id.pager);
+    _adapter = new ScholarDetailPagerAdapter(getSupportFragmentManager(), scholar);
+
+    _pager.setAdapter(_adapter);
+
+    final int pageMargin = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4, getResources()
+            .getDisplayMetrics());
+    _pager.setPageMargin(pageMargin);
+
+    _tabs.setViewPager(_pager);
+} 
+
+
+I tried adding _tabs.setOnPageChangeListener(this); and ended up having onPageSelected(int arg0) in my activity as well. I thought It would be easy now. Then I modified public Fragment getItem(int arg0) in ScholarDetailPagerAdapter above and returned null instead of returning two fragments. But that raised an exception. I thought It would render empty views in pager .. but of course I was wrong.
+
+To make sure Fragment loads data when its respective tab is clicked and is visible, I also have tried overriding its following events and wrote the data loading call in them:
+
+
+onResume() Not worked. Still loads data when added in activity
+Tried overriding onHiddenChanged 
+
+@Override   
+public void onHiddenChanged(boolean hidden) {
+
+    super.onHiddenChanged(hidden);
+
+    if(!hidden){
+        loadLectures();
+    }
+
+
+}
+
+
+This did not work too. No data loaded as if this event is not fired at all.
+
+How do I do that? I simply want to load a fragment when user clicks on a tab.
+
+Thanks in advance
+    
+===============================================================================================
+69
+A:You could override setUserVisibleHint event of the fragment to know if its visible to the user and then load your data. something like following:
+
+boolean _areLecturesLoaded = false;
+
+@Override
+ public void setUserVisibleHint(boolean isVisibleToUser) {
+     super.setUserVisibleHint(isVisibleToUser);
+     if (isVisibleToUser && !_areLecturesLoaded ) {
+      loadLectures(); 
+      _areLecturesLoaded = true;
+     }
+ }
+
+    

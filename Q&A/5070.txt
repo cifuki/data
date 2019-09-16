@@ -1,0 +1,240 @@
+48
+Q:I am developing an app using a NavigationDrawer i.e. DrawerLayout and navigating to different Fragments. When I call a Map_Fragment_Page the application crashes, but not the first time. For the first time it displays the Map properly but after that when I navigate different fragments and again come to Map_Fragment_Page then it crashes giving an error android.view.InflateException: Binary XML file line #8: Error inflating class fragment
+
+I tried so many different solutions and I also also searched on Google but still not getting the required solution. The problem is not yet fixed.
+
+howtoreach.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <fragment
+        android:id="@+id/howtoreach_map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        class="com.google.android.gms.maps.SupportMapFragment"/>
+
+</RelativeLayout>
+
+
+HowToReach.java
+
+    package com.demo.map.howtoreach;
+
+import com.google.android.gms.maps.CameraUpdateFactory;
+import com.google.android.gms.maps.GoogleMap;
+import android.support.v4.app.Fragment;
+import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.MapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.CameraPosition;
+import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
+import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.Polyline;
+import com.google.android.gms.maps.model.PolylineOptions;
+import com.demo.map.R;
+
+import android.app.ProgressDialog;
+import android.content.Context;
+import android.graphics.Color;
+import android.location.Criteria;
+import android.location.Location;
+import android.location.LocationManager;
+import android.os.Bundle;
+import android.os.Handler;
+
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Toast;
+
+public class HowToReach extends Fragment
+{
+    public static final String TAG = "fragment_5";
+    ProgressDialog dialog;
+
+    GoogleMap googleMap;
+    Marker marker;
+
+    LocationManager locationManager;
+    Location location;
+    Criteria criteria;               
+    String provider;
+
+    double latitude, longitude;
+
+    public HowToReach(){}
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState) {
+
+        final View v = inflater.inflate(R.layout.howtoreach, container, false);
+
+        dialog = ProgressDialog.show(getActivity(),"","Loading",true,false);            
+
+        int secondsDelayed = 4;
+        new Handler().postDelayed(new Runnable()
+                {
+                    public void run()
+        {               
+            dialog.dismiss();
+        }
+        }, secondsDelayed * 1000);      
+
+        try
+        {
+            // Loading map                  
+
+            if (googleMap == null)
+            {
+                googleMap = ((SupportMapFragment) getFragmentManager().findFragmentById(R.id.howtoreach_map)).getMap();
+
+                googleMap.setMyLocationEnabled(true);
+
+                locationManager = (LocationManager) getActivity().getSystemService(Context.LOCATION_SERVICE);              
+                criteria = new Criteria();               
+                provider = locationManager.getBestProvider(criteria, true); 
+                location = locationManager.getLastKnownLocation(provider);
+
+                latitude = location.getLatitude();
+                longitude = location.getLongitude();
+
+                // create marker
+                marker = googleMap.addMarker(new MarkerOptions().position(
+                            new LatLng(latitude, longitude)).title("You are Here"));                  
+                marker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
+                marker.showInfoWindow(); 
+
+                CameraPosition cameraPosition = new CameraPosition.Builder().target(
+                        new LatLng(latitude, longitude)).zoom(15).build();
+
+                googleMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));                         
+
+                Polyline line = googleMap.addPolyline(new PolylineOptions()
+                        .add(new LatLng(latitude, longitude), new LatLng(18.520897,73.772396))
+                        .width(2).color(Color.RED).geodesic(true));
+
+                marker = googleMap.addMarker(new MarkerOptions().position(
+                            new LatLng(18.520897, 73.772396)).title("DSK Ranwara Road"));             
+                marker.setIcon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
+
+                // check if map is created successfully or not
+                if (googleMap == null)
+                {
+                    Toast.makeText(getActivity(),"Sorry! unable to create maps", Toast.LENGTH_SHORT).show();
+                }
+            }
+
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+
+        return v;
+
+    }
+}
+
+    
+===============================================================================================
+64
+A:Yes.. I want Map inside a Fragment.
+
+
+You should use a MapView  
+
+http://developer.android.com/reference/com/google/android/gms/maps/MapView.html
+
+public class HowToReach  extends Fragment {
+    MapView mapView;
+    GoogleMap map;
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        View v = inflater.inflate(R.layout.fragment2, container, false);
+        // Gets the MapView from the XML layout and creates it
+
+        try {
+            MapsInitializer.initialize(getActivity());
+        } catch (GooglePlayServicesNotAvailableException e) {
+            Log.e("Address Map", "Could not initialize google play", e);
+        }
+
+        switch (GooglePlayServicesUtil.isGooglePlayServicesAvailable(getActivity()) )
+        {
+            case ConnectionResult.SUCCESS:
+                Toast.makeText(getActivity(), "SUCCESS", Toast.LENGTH_SHORT).show();
+                mapView = (MapView) v.findViewById(R.id.map);
+                mapView.onCreate(savedInstanceState);
+                // Gets to GoogleMap from the MapView and does initialization stuff
+                if(mapView!=null)
+                {
+                    map = mapView.getMap();
+                    map.getUiSettings().setMyLocationButtonEnabled(false);
+                    map.setMyLocationEnabled(true);
+                    CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngZoom(new LatLng(43.1, -87.9), 10);
+                    map.animateCamera(cameraUpdate);
+                }
+                break;
+            case ConnectionResult.SERVICE_MISSING: 
+                Toast.makeText(getActivity(), "SERVICE MISSING", Toast.LENGTH_SHORT).show();
+                break;
+            case ConnectionResult.SERVICE_VERSION_UPDATE_REQUIRED: 
+                Toast.makeText(getActivity(), "UPDATE REQUIRED", Toast.LENGTH_SHORT).show();
+                break;
+            default: Toast.makeText(getActivity(), GooglePlayServicesUtil.isGooglePlayServicesAvailable(getActivity()), Toast.LENGTH_SHORT).show();
+        }
+
+
+
+
+        // Updates the location and zoom of the MapView
+
+        return v;
+    }
+
+    @Override
+    public void onResume() {
+        mapView.onResume();
+        super.onResume();
+    }
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        mapView.onDestroy();
+    }
+    @Override
+    public void onLowMemory() {
+        super.onLowMemory();
+        mapView.onLowMemory();
+    }
+}
+
+
+fragment2.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.google.android.gms.maps.MapView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:id="@+id/map" />
+
+</RelativeLayout>
+
+
+Update:
+
+https://developers.google.com/android/reference/com/google/android/gms/maps/MapView#public-constructors
+
+
+getMap() is deprecated. Use getMapAsync(OnMapReadyCallback) instead. The callback method provides you with a GoogleMap instance guaranteed to be non-null and ready to be used.
+    

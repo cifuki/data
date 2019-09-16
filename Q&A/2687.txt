@@ -1,0 +1,98 @@
+79
+Q:We are building a complex Android application consisting of many screens and workflows spread across many Activities. Our workflows are similar to what you might see on a Bank's ATM machine, for example, there is an Activity to login in that transitions to a main menu Activity which can transition to other activities based on the user's choices.
+
+Since we have so many workflows we need to create automated tests that span multiple activities so we can test a workflow from end to end. For example, using the ATM example, we would want to enter a valid PIN, verify that sends us to the main menu, choose withdraw cash, verify that we are on the withdraw cash screen, etc., etc., and eventually find ourselves back on the main menu or "logged" out.
+
+We've toyed with the test APIs that come with Android (e.g. ActivityInstrumentationTestCase2) and also with Positron, but neither seem capable of testing beyond the bounds of a single Activity, and while we can find some utility in these tools for some unit testing, they won't meet our needs for testing scenarios that cut across multiple Activities.
+
+We are open to an xUnit framework, scripting, GUI recorders/playbacks, etc. and would appreciate any advice.
+    
+===============================================================================================
+65
+A:I feel a bit awkward about answering my own bounty question, but here it is...
+
+I've searched high and low on this and can't believe there is no answer published anywhere. I have come very close. I can definitely run tests that span activities now, but my implementation seems to have some timing issues where the tests don't always pass reliably. This is the only example that I know of that tests across multiple activities successfully. Hopefully my extraction and anonymizing of it did not introduce errors. This is a simplistic test where I type a username and password into a login activity, and then observe a proper welcome message is shown on a different "welcome" activity: 
+
+package com.mycompany;
+
+import android.app.*;
+import android.content.*;
+import android.test.*;
+import android.test.suitebuilder.annotation.*;
+import android.util.*;
+import android.view.*;
+import android.widget.*;
+
+import static org.hamcrest.core.Is.*;
+import static org.hamcrest.core.IsNull.*;
+import static org.hamcrest.core.IsInstanceOf.instanceOf;
+import static org.junit.Assert.*;
+import static com.mycompany.R.id.*;
+
+public class LoginTests extends InstrumentationTestCase {
+
+   @MediumTest
+   public void testAValidUserCanLogIn() {
+
+      Instrumentation instrumentation = getInstrumentation();
+
+      // Register we are interested in the authentication activiry...
+      Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(AuthenticateActivity.class.getName(), null, false);
+
+      // Start the authentication activity as the first activity...
+      Intent intent = new Intent(Intent.ACTION_MAIN);
+      intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+      intent.setClassName(instrumentation.getTargetContext(), AuthenticateActivity.class.getName());
+      instrumentation.startActivitySync(intent);
+
+      // Wait for it to start...
+      Activity currentActivity = getInstrumentation().waitForMonitorWithTimeout(monitor, 5);
+      assertThat(currentActivity, is(notNullValue()));
+
+      // Type into the username field...
+      View currentView = currentActivity.findViewById(username_field);
+      assertThat(currentView, is(notNullValue()));
+      assertThat(currentView, instanceOf(EditText.class));
+      TouchUtils.clickView(this, currentView);
+      instrumentation.sendStringSync("MyUsername");
+
+      // Type into the password field...
+      currentView = currentActivity.findViewById(password_field);
+      assertThat(currentView, is(notNullValue()));
+      assertThat(currentView, instanceOf(EditText.class));
+      TouchUtils.clickView(this, currentView);
+      instrumentation.sendStringSync("MyPassword");
+
+      // Register we are interested in the welcome activity...
+      // this has to be done before we do something that will send us to that
+      // activity...
+      instrumentation.removeMonitor(monitor);
+      monitor = instrumentation.addMonitor(WelcomeActivity.class.getName(), null, false);
+
+      // Click the login button...
+      currentView = currentActivity.findViewById(login_button;
+      assertThat(currentView, is(notNullValue()));
+      assertThat(currentView, instanceOf(Button.class));
+      TouchUtils.clickView(this, currentView);
+
+      // Wait for the welcome page to start...
+      currentActivity = getInstrumentation().waitForMonitorWithTimeout(monitor, 5);
+      assertThat(currentActivity, is(notNullValue()));
+
+      // Make sure we are logged in...
+      currentView = currentActivity.findViewById(welcome_message);
+      assertThat(currentView, is(notNullValue()));
+      assertThat(currentView, instanceOf(TextView.class));
+      assertThat(((TextView)currentView).getText().toString(), is("Welcome, MyUsername!"));
+   }
+}
+
+
+This code is obviously not very readable. I have actually extracted it into a simple library with an English-like API so I can just say things like this:
+
+type("myUsername").intoThe(username_field);
+click(login_button);
+
+
+I've tested to a depth of about 4 activities and am satisfied that the approach works though as I said, there appears to be an occasional timing issue I have not completely figured out. I am still interested in hearing of any other ways of testing across activities.
+    

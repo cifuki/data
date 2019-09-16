@@ -1,0 +1,72 @@
+48
+Q:I am running my app with StrictMode activated in development as documented here StrictMode for lower platform versions
+and noticed an error message that I do not know what to think about nor can I find any reference.
+
+I get a android.os.StrictMode$InstanceCountViolation with values for instances and limit e.g. 
+
+
+  instances=3; limit=2
+
+
+Now I am wondering:
+
+
+A) how is the limit calculated
+B) how can such a violation actually happen and then I would look into evasive actions.
+
+
+Any ideas?
+    
+===============================================================================================
+27
+A:It's all in the code
+
+The key is StrictMode.sExpectedActivityInstanceCount and incrementExpectedActivityCount and decrementExpectedActivityCount:
+
+
+Increment is called in ActivityThread.performLaunchActivity
+just after creating the Activity instance.
+Decrement is called in ActivityThread.performDestroyActivity
+after the activity has been removed from the application.
+
+
+So the limit is less each time an activity is destroyed, however if an instance is leaked the real instance count will be bigger than the limit, to detect if it's leaked they do some GC magic (in decrementExpectedActivityCount):
+
+    System.gc();
+    System.runFinalization(); // added in https://github.com/android/platform_frameworks_base/commit/6f3a38f3afd79ed6dddcef5c83cb442d6749e2ff
+    System.gc();
+
+
+if after this the GC didn't remove the activity from the app's memory it is considered a leak.
+
+Conclusion
+
+Based on the above the only way to prevent is to make sure there are no references to the offending activity after onDestroy. The problem is that some there may be some WeakReferences which are still accessible through some native objects, which seem to have a different lifecycle. Here's how I came to this conclusion:
+
+
+after backing out from MyActivity and seeing the log message
+make a heap dump (.hprof)
+open it in Eclipse Memory Analyzer
+run OQL: select * from instanceof full.package.name.of.MyActivity
+select all with Ctrl+Click or Shift+Click
+right click and Merge Shortest Path to GC Roots > with all references
+
+
+Workaround
+
+If we increase the count initially we'll have more legroom before it reports the leak for specific classes:
+
+// Application.onCreate or nearby where you set up StrictMode detectActivityLeaks
+Method incrementExpectedActivityCount = StrictMode.class.getMethod("incrementExpectedActivityCount", Class.class)
+incrementExpectedActivityCount.invoke(null, MyActivity.class);
+incrementExpectedActivityCount.invoke(null, MyActivity2.class);
+
+
+Further reading
+
+
+WeakReferences
+Eclipse Memory Analyzer (MAT)
+History of StrictMode
+
+    

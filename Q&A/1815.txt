@@ -1,0 +1,109 @@
+106
+Q:I've been trying to get my head around the Android orientation sensors for a while.
+I thought I understood it. Then I realised I didn't. Now I think (hope) I have a better feeling for it again but I am still not 100%. I will try and explain my patchy understanding of it and hopefully people will be able to correct me if I am wrong in parts or fill in any blanks.
+
+I imagine I am standing at 0 degrees longitude (prime meridian) and 0 degrees latitude (equator). This location is actually in the sea off the coast of Africa but bear with me. I hold my phone in front of my face so that the bottom of the phone points to my feet; I am facing North (looking toward Greenwich) so therefore the right hand side of the phone points East towards Africa. In this orientation (with reference to the diagram below) I have the X-axis pointing East, the Z-axis is pointing South and Y-axis point to the sky.
+
+
+
+Now the sensors on the phone allow you to work out the orientation (not location) of the device in this situation. This part has always confused me, probably because I wanted to understand how something worked before I accepted that it did just work. It seems that the phone works out its orientation using a combination of two different techniques.
+
+Before I get to that, imagine being back standing on that imaginary piece of land at 0 degrees latitude and longitude standing in the direction mentioned above. Imagine also that you are blindfolded and your shoes are fixed to a playground roundabout. If someone shoves you in the back you will fall forward (toward North) and put both hands out to break your fall. Similarly if someone shoves you left shoulder you will fall over on your right hand. Your inner ear has "gravitational sensors" (youtube clip) which allow you to detect if you are falling forward/back, or falling left/right or falling down (or up!!). Therefore humans can detect alignment and rotation around the the same X and Z axes as the phone. 
+
+Now imagine someone now rotates you 90 degrees on the roundabout so that you are now facing East. You are being rotated around the Y axis. This axis is different because we can't detect it biologically. We know we are angled by a certain amount but we don't know the direction in relation to the planet's magnetic North pole.
+Instead we need to use a external tool... a magnetic compass. This allows us to ascertain which direction we are facing. The same is true with our phone.
+
+Now the phone also has a 3-axes accelerometer. I have NO idea how they actually work but the way I visualise it is to imagine gravity as constant and uniform 'rain' falling from the sky and to imagine the axes in the figure above as tubes which can detect the amount of rain flowing through. When the phone held upright all the rain will flow through the Y 'tube'. If the phone is gradually rotated so its screen faces the sky the amount of rain flowing through Y will decrease to zero while the volume through Z will steadily increase until the maximum amount of rain is flowing through. Similarly if we now tip the phone onto its side the X tube will eventually collect the max amount of rain. Therefore depending on the orientation of the phone by measuring the amount of rain flowing through the 3 tubes you can calculate the orientation. 
+
+The phone also has an electronic compass which behaves like a normal compass - its "virtual needle" points to magnetic north. Android merges the information from these two sensors so that whenever a SensorEvent of TYPE_ORIENTATION is generated the values[3] array has
+values[0]: Azimuth - (the compass bearing east of magnetic north)
+values[1]: Pitch, rotation around x-axis (is the phone leaning forward or back)
+values[2]: Roll,  rotation around y-axis (is the phone leaning over on its left or right side)
+
+So I think (ie I don't know) the reason Android gives the azimuth (compass bearing) rather than the reading of the third accelerometer is that the compass bearing is just more useful. I'm not sure why they deprecated this type of sensor as now it seems you need to register a listener with the system for SensorEvents of type TYPE_MAGNETIC_FIELD. The event's value[] array needs to bepassed into SensorManger.getRotationMatrix(..) method to get a rotation matrix (see below) which is then passed into the SensorManager.getOrientation(..) method. 
+Does anyone know why the Android team deprecated Sensor.TYPE_ORIENTATION? Is it an efficiency thing? That is what is implied in one of the comments to a similar question but you still need to register a different type of listener in the development/samples/Compass/src/com/example/android/compass/CompassActivity.java example.
+
+
+
+
+
+I'd now like to talk about the rotation matrix. (This is where I am most unsure) 
+So above we have the three figures from the Android documentation, we'll call them A, B and C.
+
+A = SensorManger.getRotationMatrix(..) method figure and represents the World's coordinate system 
+
+B = Coordinate system used by the SensorEvent API.
+
+C= SensorManager.getOrientation(..) method figure
+
+So my understanding is that A represents the "world's coordinate system" which I presume refers to the way  locations on the planet are given as a (latitude, longitude) couple with an optional (altitude). X is the "easting" co-ordinate, Y is the "northing" co-ordinate. Z points to the sky and represents altitude. 
+
+The phones co-ordinate system is shown in figure B is fixed. Its Y axis always points out the top. The rotation matrix is being constantly calculated by the phone and allows mapping between the two. So am I right in thinking that the rotation matrix transforms the coordinate system of B to C? So when you call SensorManager.getOrientation(..) method you use the values[] array with values that correspond to figure C.
+When the phone is pointed to the sky the rotation matrix is identity matrix (the matrix mathematical equivalent of 1) which means no mapping is necessary as the device is aligned with the world's coordinate system.
+
+Ok. I think I better stop now. Like I said before I hope people will tell me where I've messed up or helped people (or confused people even further!)
+    
+===============================================================================================
+26
+A:You might want to check out the One Screen Turn Deserves Another article. It explains why you need the rotation matrix.
+
+In a nutshell, the phone's sensors always use the same coordinate system, even when the device is rotated.  
+
+In applications that are not locked to a single orientation, the screen coordinate system changes when you rotate the device.  Thus, when the device is rotated from its default view mode, the sensor coordinate system is no longer the same as the screen coordinate system.  The rotation matrix in this case is used to transform A to C (B always remains fixed).
+
+Here's a code snippet to show you how it can be used.
+
+SensorManager sm = (SensorManager) getSystemService(SENSOR_SERVICE);
+
+// Register this class as a listener for the accelerometer sensor
+sm.registerListener(this, sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER),
+                    SensorManager.SENSOR_DELAY_NORMAL);
+// ...and the orientation sensor
+sm.registerListener(this, sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD),
+                    SensorManager.SENSOR_DELAY_NORMAL);
+
+//...
+// The following code inside a class implementing a SensorEventListener
+// ...
+
+float[] inR = new float[16];
+float[] I = new float[16];
+float[] gravity = new float[3];
+float[] geomag = new float[3];
+float[] orientVals = new float[3];
+
+double azimuth = 0;
+double pitch = 0;
+double roll = 0;
+
+public void onSensorChanged(SensorEvent sensorEvent) {
+    // If the sensor data is unreliable return
+    if (sensorEvent.accuracy == SensorManager.SENSOR_STATUS_UNRELIABLE)
+        return;
+
+    // Gets the value of the sensor that has been changed
+    switch (sensorEvent.sensor.getType()) {  
+        case Sensor.TYPE_ACCELEROMETER:
+            gravity = sensorEvent.values.clone();
+            break;
+        case Sensor.TYPE_MAGNETIC_FIELD:
+            geomag = sensorEvent.values.clone();
+            break;
+    }
+
+    // If gravity and geomag have values then find rotation matrix
+    if (gravity != null && geomag != null) {
+
+        // checks that the rotation matrix is found
+        boolean success = SensorManager.getRotationMatrix(inR, I,
+                                                          gravity, geomag);
+        if (success) {
+            SensorManager.getOrientation(inR, orientVals);
+            azimuth = Math.toDegrees(orientVals[0]);
+            pitch = Math.toDegrees(orientVals[1]);
+            roll = Math.toDegrees(orientVals[2]);
+        }
+    }
+}
+
+    

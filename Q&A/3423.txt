@@ -1,0 +1,110 @@
+66
+Q:I am using these both methods to get the message thrown by the catch
+block while performing error handling
+Both of them get me the message from the error handling but what
+exactly does these two differ with
+I did some searching from internet and came up with this answer from
+here
+
+
+
+
+
+  Java Exceptions inherit their getMessage and getLocalizedMessage
+  methods from Throwable (see the related link). The difference is that
+  subclasses should override getLocalizedMessage to provide a
+  locale-specific message. For example, imaging that you're adapting
+  code from an American-English speaking company/group to a
+  British-English group. You may want to create custom Exception classes
+  which override the getLocalizedMessage to correct spelling and grammer
+  to what the users and developers who will be using your code might
+  expect. This can also be used for actual translations of Exception
+  messages.
+
+
+
+
+Questions::
+
+
+Does that mean language specific implementations ? like if i use e.getLocalizedMessage() for
+example my app in English - error will be thrown in English , if i
+use my app in Spanish - then error will be thrown in Spanish
+Need some clear explanation on where and when i can use these methods
+to my use
+
+    
+===============================================================================================
+60
+A:As everybody has mentioned above --
+
+To my understanding, getMessage() returns the name of the exception. getLocalizedMessage() returns the name of the exception in the local language of the user (Chinese, Japanese etc.). In order to make this work, the class you are calling getLocalizedMessage() on must have overridden the getLocalizedMessage() method. If it hasn't, the method of one of it's super classes is called which by default just returns the result of getMessage. 
+
+In addition to that, I would like to put some code segment explaining how to use it.
+
+How to use it
+
+Java does nothing magical, but it does provide a way to make our life easier.
+To use getLocalizedMessage() effectively, we have to override the default behavior. 
+
+import java.util.ResourceBundle;
+
+public class MyLocalizedThrowable extends Throwable {
+
+    ResourceBundle labels = ResourceBundle.getBundle("loc.exc.test.message");
+
+    private static final long serialVersionUID = 1L;
+    public MyLocalizedThrowable(String messageKey) {
+        super(messageKey);
+    }
+
+    public String getLocalizedMessage() {
+        return labels.getString(getMessage());
+    }
+}
+
+
+java.util.ResourceBundle is used to do localization. 
+
+In this example, you have to place language-specific property files in the loc/exc/test path. For example:
+
+message_fr.properties (containing some key and value):
+
+key1=this is key one in France
+
+
+message.properties (containing some key and value):
+
+key1=this is key one in English
+
+
+Now, let us assume that our exception generator class is something like
+
+public class ExceptionGenerator {
+
+    public void generateException() throws MyLocalizedThrowable {
+        throw new MyLocalizedThrowable("key1");
+    }
+}
+
+
+and the main class is:
+
+public static void main(String[] args) {
+    //Locale.setDefault(Locale.FRANCE);
+    ExceptionGenerator eg = new ExceptionGenerator();
+
+    try {
+        eg.generateException();
+    } catch (MyLocalizedThrowable e) {
+        System.out.println(e.getLocalizedMessage());
+    }
+}
+
+
+By default, it will return the "English" key value if you are executing in the "English" environment. If you set the local to France, you will get the output from the message_fr file.
+
+When to use it
+
+If your application needs to support l10n/i18n you need to use it. But most of the application does not need to, as most error messages are not for the end customer, but for the support engineer/development engineer.  
+    

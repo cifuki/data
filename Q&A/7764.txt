@@ -1,0 +1,130 @@
+34
+Q:I want to encrypt image from the sd card and store it again in SD card again using AES. The main idea is the application browse an image, then encrypt it when I push a button, then store it in sd card. so my image would be secure. 
+
+I already succeed do string encryption using AES from this tutorial http://www.androidsnippets.com/encryptdecrypt-strings, but I don't have idea how to do this with an image, not string.
+
+This is how I do it with a string:
+
+public static String encrypt(String seed, String cleartext) throws Exception  
+{
+    byte[] rawKey = getRawKey(seed.getBytes());
+    byte[] result = encrypt(rawKey, cleartext.getBytes()); 
+    return toHex(result);
+}
+
+private static byte[] encrypt(byte[] raw, byte[] clear) throws Exception 
+{
+    SecretKeySpec skeySpec = new SecretKeySpec(raw, "AES");
+    Cipher cipher = Cipher.getInstance("AES");
+    cipher.init(Cipher.ENCRYPT_MODE, skeySpec);
+    byte[] encrypted = cipher.doFinal(clear);
+    return encrypted;
+}
+
+
+Can anyone help me give example code how to encrypt an image with AES?
+
+maybe it must using I/O file stream but I don't have an idea how to implement with this code.
+    
+===============================================================================================
+65
+A:If you take user input for the password make sure to read this answer.
+
+You should take a look at:
+CipherInputStream and CipherOutputStream. They are used to encrypt and decrypt byte streams.
+
+I have a file named cleartext. The file contains:
+
+
+Hi, I'm a clear text.
+How are you?
+That's awesome!
+
+
+
+Now, you have an encrypt() function:
+
+static void encrypt() throws IOException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException {
+    // Here you read the cleartext.
+    FileInputStream fis = new FileInputStream("data/cleartext");
+    // This stream write the encrypted text. This stream will be wrapped by another stream.
+    FileOutputStream fos = new FileOutputStream("data/encrypted");
+
+    // Length is 16 byte
+    // Careful when taking user input!!! https://stackoverflow.com/a/3452620/1188357
+    SecretKeySpec sks = new SecretKeySpec("MyDifficultPassw".getBytes(), "AES");
+    // Create cipher
+    Cipher cipher = Cipher.getInstance("AES");
+    cipher.init(Cipher.ENCRYPT_MODE, sks);
+    // Wrap the output stream
+    CipherOutputStream cos = new CipherOutputStream(fos, cipher);
+    // Write bytes
+    int b;
+    byte[] d = new byte[8];
+    while((b = fis.read(d)) != -1) {
+        cos.write(d, 0, b);
+    }
+    // Flush and close streams.
+    cos.flush();
+    cos.close();
+    fis.close();
+}
+
+
+After you execute this function, there should be a file names encrypted. The file contains the encrypted characters.
+
+For decryption you have the decrypt function:
+
+static void decrypt() throws IOException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException {
+    FileInputStream fis = new FileInputStream("data/encrypted");
+
+    FileOutputStream fos = new FileOutputStream("data/decrypted");
+    SecretKeySpec sks = new SecretKeySpec("MyDifficultPassw".getBytes(), "AES");
+    Cipher cipher = Cipher.getInstance("AES");
+    cipher.init(Cipher.DECRYPT_MODE, sks);
+    CipherInputStream cis = new CipherInputStream(fis, cipher);
+    int b;
+    byte[] d = new byte[8];
+    while((b = cis.read(d)) != -1) {
+        fos.write(d, 0, b);
+    }
+    fos.flush();
+    fos.close();
+    cis.close();
+}
+
+
+After the execution of decrypt, there should be a file named decrypted. This file contains the free text.
+
+You write you're a "noob" but depending on the use-case of encryption you could do a lot of harm if you're not doing it the right way. Know your tools!
+
+Usage of CipherOutputStream Oracle documentation:
+
+SecretKeySpec skeySpec = new SecretKeySpec(y.getBytes(), "AES");
+
+FileInputStream fis;
+FileOutputStream fos;
+CipherOutputStream cos;
+// File you are reading from
+fis = new FileInputStream("/tmp/a.txt");
+// File output
+fos = new FileOutputStream("/tmp/b.txt");
+
+// Here the file is encrypted. The cipher1 has to be created.
+// Key Length should be 128, 192 or 256 bit => i.e. 16 byte
+SecretKeySpec skeySpec = new SecretKeySpec("MyDifficultPassw".getBytes(), "AES"); 
+Cipher cipher1 = Cipher.getInstance("AES");  
+cipher1.init(Cipher.ENCRYPT_MODE, skeySpec);
+cos = new CipherOutputStream(fos, cipher1);
+// Here you read from the file in fis and write to cos.
+byte[] b = new byte[8];
+int i = fis.read(b);
+while (i != -1) {
+    cos.write(b, 0, i);
+    i = fis.read(b);
+}
+cos.flush();
+
+
+Thus, the encryption should work. When you reverse the process, you should be able to read the decrypted bytes.
+    

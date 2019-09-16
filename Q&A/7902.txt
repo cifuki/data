@@ -1,0 +1,126 @@
+33
+Q:I want to set a Google map fragment inside vertical ScrollView, when I do the map does not zoom vertically, how can I override the touch event listener on MapView over the listener of ScrollView?
+
+This is my xml code:
+
+  <ScrollView  android:layout_height="wrap_content"
+    android:layout_width="fill_parent"
+     android:layout_above="@id/footer"
+    android:layout_below="@id/title_horizontalScrollView">
+
+   ///other things
+
+
+
+<fragment 
+    android:id="@+id/map"
+    android:layout_width="fill_parent"
+    android:layout_height="300dp"
+    class="com.google.android.gms.maps.SupportMapFragment"
+    />
+
+  //other things
+
+    
+===============================================================================================
+100
+A:Create a custom SupportMapFragmet so that we can override its touch event:
+
+WorkaroundMapFragment.java
+
+import android.content.Context;
+import android.os.Bundle;
+import android.widget.FrameLayout;
+
+import android.view.LayoutInflater;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+
+import com.google.android.gms.maps.SupportMapFragment;
+
+public class WorkaroundMapFragment extends SupportMapFragment {
+    private OnTouchListener mListener;
+
+    @Override
+    public View onCreateView(LayoutInflater layoutInflater, ViewGroup viewGroup, Bundle savedInstance) {
+        View layout = super.onCreateView(layoutInflater, viewGroup, savedInstance);
+
+        TouchableWrapper frameLayout = new TouchableWrapper(getActivity());
+
+        frameLayout.setBackgroundColor(getResources().getColor(android.R.color.transparent));
+
+        ((ViewGroup) layout).addView(frameLayout,
+                new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        return layout;
+    }
+
+    public void setListener(OnTouchListener listener) {
+        mListener = listener;
+    }
+
+    public interface OnTouchListener {
+        public abstract void onTouch();
+    }
+
+    public class TouchableWrapper extends FrameLayout {
+
+        public TouchableWrapper(Context context) {
+            super(context);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent event) {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    mListener.onTouch();
+                    break;
+                case MotionEvent.ACTION_UP:
+                    mListener.onTouch();
+                    break;
+            }
+            return super.dispatchTouchEvent(event);
+        }
+    }
+}
+
+
+In this above class, we intercept the touch event by using TouchableWrapper class that extends the FrameLayout. There is also a custom listener OnTouchListener to dispatch the touch event to the main activity MyMapActivity that handles the map. When touch event occurred, dispatchTouchEvent will be called and the listener mListener will handle it.
+
+Then replace fragment class in xml with this class="packagename.WorkaroundMapFragment" instead of com.google.android.gms.maps.SupportMapFragment
+
+Then in your activity initialise map as follows:
+
+private GoogleMap mMap;
+
+
+inside onCreate do this:
+
+  // check if we have got the googleMap already
+  if (mMap == null) {
+        SupportMapFragment mapFragment = (WorkaroundMapFragment) getChildFragmentManager().findFragmentById(R.id.map);
+        mapFragment.getMapAsync(new OnMapReadyCallback() {
+            Override
+                public void onMapReady(GoogleMap googleMap)
+                    {
+                        mMap = googleMap;
+                        mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+                        mMap.getUiSettings().setZoomControlsEnabled(true);
+
+                        mScrollView = findViewById(R.id.scrollMap); //parent scrollview in xml, give your scrollview id value
+                        ((WorkaroundMapFragment) getChildFragmentManager().findFragmentById(R.id.map))
+                                .setListener(new WorkaroundMapFragment.OnTouchListener() {
+                            @Override
+                            public void onTouch()
+                                {
+                                        mScrollView.requestDisallowInterceptTouchEvent(true);
+                                }
+                            });
+                    }
+        });
+    }
+
+
+Update :  Answer updated to getMapAsync based on answer by @javacoder123
+    

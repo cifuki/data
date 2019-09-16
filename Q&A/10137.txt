@@ -1,0 +1,112 @@
+27
+Q:let's assume I have a database table test_table with 2 columns and a corresponding create script in the SQLiteOpenHelper:
+
+DB_VERSION = 1:
+public void onCreate(SQLiteDatabase db)
+{
+db.execSql("CREATE table test_table (COL_A, COL_B);
+}
+
+
+This is the initial app version 1, which is published in the Play Store.
+
+After a while there's an update to the app and the utilized database.
+I guess the SQLiteOpenHelper class has to be adapted like this:
+
+DB_VERSION = 2:
+public void onCreate(SQLiteDatabase db)
+{
+db.execSql("CREATE table test_table (COL_A, COL_B, COL_C)");
+}
+
+public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion)
+{
+db.execSql("ALTER TABLE test_table ADD Column COL_C");
+}
+
+
+After some time, another app update:
+
+DB_VERSION = 3:
+public void onCreate(SQLiteDatabase db)
+{
+db.execSql("CREATE table test_table (COL_A, COL_B, COL_C, COL_D)");
+}
+
+public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion)
+{
+db.execSql("ALTER TABLE test_table ADD Column COL_D");
+}
+
+
+--> This is where I need advice.
+If the user installs app version 1, he has Columns A and B. 
+If he then updates to version 2, onUpgrade fires and adds a column C. 
+New users who install from scratch get the 3 columns via the create statement.
+If the user then updates to version 3, onUpgrade fires again and a column D is added.
+But WHAT IF the user installs app version 1, then skips the update of version 2 and updates version 3? Then he would have missed the
+
+public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion)
+
+    {
+    db.execSql("ALTER TABLE test_table ADD Column COL_C");
+    }
+
+
+part and only 
+
+public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion)
+
+    {
+    db.execSql("ALTER TABLE test_table ADD Column COL_D");
+    }
+
+
+would be called, which leads to a table test_table(COL_A, COL_B, COL_D)??
+
+What's the correct way of handling database upgrades of a live app, so the user doesn't lose his data? 
+Do you have to check all possible (old) versions in the onUpgrade() method and execute different alter table statements based on that version?
+
+I am asking because in my app, the user has the possibility to export and import the data, which is nothing more than export: copy the whole database away and import: replace the app database with the backup copy database.
+
+What happens if the user has app version 1, exports the database, upgrades the app (new database structure) and imports the old version 1 backup? 
+--> How will SQLiteOpenHelper behave? 
+--> What is the correct way to handle db upgrades together with import/export functionality?
+    
+===============================================================================================
+33
+A:What's the correct way of handling database upgrades of a live app, so the user doesn't lose his data? Do you have to check all possible (old) versions in the onUpgrade() method and execute different alter table statements based on that version?
+
+
+By and large, yes.
+
+A common approach to this is to do pair-wise upgrades:
+
+public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+  if (oldVersion<2) {
+    // do upgrade from 1 to 2
+  }
+
+  if (oldVersion<3) {
+    // do upgrade from 2 to 3, which will also cover 1->3,
+    // since you just upgraded 1->2
+  }
+
+  // and so on
+}
+
+
+This roughly equates to Rails migrations, for example.
+
+
+  What happens if the user has app version 1, exports the database, upgrades the app (new database structure) and imports the old version 1 backup? --> How will SQLiteOpenHelper behave?
+
+
+If by "copy the whole database away", you literally mean a full file copy of the SQLite database file, then when SQLiteOpenHelper goes to open the restored backup, it will that the database has the old schema version and will go through onUpgrade() as normal.
+
+
+  What is the correct way to handle db upgrades together with import/export functionality?
+
+
+I suspect the answer is: either make your backup by copying the entire file, or also arrange to backup and restore the schema version, which you can get by calling getVersion() on a SQLiteDatabase object. That being said, I haven't dealt with this scenario much, and there may be more issues that I am not thinking of.
+    

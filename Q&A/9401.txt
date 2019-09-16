@@ -1,0 +1,149 @@
+29
+Q:The goal is simply to draw a bitmap and over the top of it draw shapes that ERASE the underlying area of the bitmap.
+
+I have created simple proof of concept code to try and understand how exactly I should go about this. In the various threads here I have found numerous hints about using:
+
+android.graphics.PorterDuff.Mode.CLEAR
+
+
+The code below simply creates a screen with a blue background and adds a custom view. This view draws on its canvas a pink background, the bitmap image (with a slight border to show the pink background), and yellow overlaying circles representing each PorterDuffXfermode.
+
+import android.app.Activity;
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.Paint.Style;
+import android.graphics.PorterDuff.Mode;
+import android.graphics.RectF;
+import android.os.Bundle;
+import android.view.View;
+import android.view.Window;
+import android.widget.RelativeLayout;
+
+public class Test extends Activity {
+    Drawing d = null;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        RelativeLayout.LayoutParams rlp = null;
+
+        // Create the view for the xfermode test
+        d = new Drawing(this);
+        rlp = new RelativeLayout.LayoutParams(600, 900);
+        rlp.addRule(RelativeLayout.CENTER_IN_PARENT);
+        d.setLayoutParams(rlp);
+
+        RelativeLayout rl = new RelativeLayout(this);
+        rl.setBackgroundColor(Color.rgb(0, 0, 255));
+        rl.addView(d);
+
+        // Show the layout with the test view
+        setContentView(rl);
+    }
+
+    public class Drawing extends View {
+        Paint[] pDraw = null;
+        Bitmap bm = null;
+
+        public Drawing(Context ct) {
+            super(ct);
+
+            // Generate bitmap used for background
+            bm = BitmapFactory.decodeFile("mnt/sdcard/Pictures/test.jpg");
+
+            // Generate array of paints
+            pDraw = new Paint[16];
+
+            for (int i = 0; i<pDraw.length; i++) {
+                pDraw[i] = new Paint();
+                pDraw[i].setARGB(255, 255, 255, 0);
+                pDraw[i].setStrokeWidth(20);
+                pDraw[i].setStyle(Style.FILL);
+            }
+
+            // Set all transfer modes
+            pDraw[0].setXfermode(new PorterDuffXfermode(Mode.CLEAR));
+            pDraw[1].setXfermode(new PorterDuffXfermode(Mode.DARKEN));
+            pDraw[2].setXfermode(new PorterDuffXfermode(Mode.DST));
+            pDraw[3].setXfermode(new PorterDuffXfermode(Mode.DST_ATOP));
+            pDraw[4].setXfermode(new PorterDuffXfermode(Mode.DST_IN));
+            pDraw[5].setXfermode(new PorterDuffXfermode(Mode.DST_OUT));
+            pDraw[6].setXfermode(new PorterDuffXfermode(Mode.DST_OVER));
+            pDraw[7].setXfermode(new PorterDuffXfermode(Mode.LIGHTEN));
+            pDraw[8].setXfermode(new PorterDuffXfermode(Mode.MULTIPLY));
+            pDraw[9].setXfermode(new PorterDuffXfermode(Mode.SCREEN));
+            pDraw[10].setXfermode(new PorterDuffXfermode(Mode.SRC));
+            pDraw[11].setXfermode(new PorterDuffXfermode(Mode.SRC_ATOP));
+            pDraw[12].setXfermode(new PorterDuffXfermode(Mode.SRC_IN));
+            pDraw[13].setXfermode(new PorterDuffXfermode(Mode.SRC_OUT));
+            pDraw[14].setXfermode(new PorterDuffXfermode(Mode.SRC_OVER));
+            pDraw[15].setXfermode(new PorterDuffXfermode(Mode.XOR));
+        }
+
+        @Override
+        public void onDraw(Canvas canv) {
+            // Background colour for canvas
+            canv.drawColor(Color.argb(255, 255, 0, 255));
+
+            // Draw the bitmap leaving small outside border to see background
+            canv.drawBitmap(bm, null, new RectF(15, 15, getMeasuredWidth() - 15, getMeasuredHeight() - 15), null);
+
+            float w, h;
+            w = getMeasuredWidth();
+            h = getMeasuredHeight();
+
+            // Loop, draws 4 circles per row, in 4 rows on top of bitmap
+            // Drawn in the order of pDraw (alphabetical)
+            for(int i = 0; i<4; i++) {
+                for(int ii = 0; ii<4; ii++) {
+                    canv.drawCircle((w / 8) * (ii * 2 + 1), (h / 8) * (i * 2 + 1), w / 8 * 0.8f, pDraw[i*4 + ii]);
+                }
+            }
+        }
+    }
+
+}
+
+
+This is the result of the test:
+
+
+
+The CLEAR mode is the top left, which shows as black.
+
+In another example where I was trying to use this I had a DialogFragment where CLEAR mode erased the entire DialogFragment so that the activity beneath could be seen. Hence the reason I used many different background colours in this test.
+
+Could this possibly be clearing the pixels of the entire activity like that other example led me to believe? I would've thought only the pixels of canvas related to the view could be erased, but in my other example the pixels of the custom view, underlying image view and DialogFragment background were all cleared.
+
+Could someone please help me understand what exactly is going on and why I am going so terribly wrong?
+
+Thanks. 
+
+EDIT:
+I have reproduced an example that confirms my suspicions. When adding this exact custom view, but in a DialogFragment, the underlying activity becomes visible.
+
+
+
+This seems a pretty clear indicator to me that the Mode.CLEAR is somehow erasing the canvas of the views underneath as well? My guess would be the black in the first example is that of the top level view? 
+
+I am thinking I am doing something very wrong somewhere :S
+    
+===============================================================================================
+36
+A:The problem is hardware acceleration.  Turn it OFF for the particular View that you are painting with CLEAR.  If you're using a custom view, do this in the constructors:
+
+if (android.os.Build.VERSION.SDK_INT >= 11) 
+{
+     setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+}
+
+
+You can also call setLayerType on a view reference.
+    

@@ -1,0 +1,151 @@
+116
+Q:I've got a massive problem with the way the android fragment backstack seems to work and would be most grateful for any help that is offered.
+
+Imagine you have 3 Fragments
+
+[1] [2] [3]
+
+I want the user to be able to navigate [1] > [2] > [3] but on the way back (pressing back button) [3] > [1].
+
+As I would have imagined this would be accomplished by not calling addToBackStack(..) when creating the transaction that brings fragment [2] into the fragment holder defined in XML.
+
+The reality of this seems as though that if I dont want [2] to appear again when user presses back button on [3], I must not call addToBackStack in the transaction that shows fragment [3]. This seems completely counter-intuitive (perhaps coming from the iOS world).
+
+Anyway if i do it this way, when I go from [1] > [2] and press back I arrive back at [1] as expected.
+
+If I go [1] > [2] > [3] and then press back I jump back to [1] (as expected).
+Now the strange behavior happens when I try and jump to [2] again from [1]. First of all [3] is briefly displayed before [2] comes into view. If I press back at this point [3] is displayed, and if I press back once again the app exits.
+
+Can anyone help me to understand whats going on here? 
+
+
+And here is the layout xml file for my main activity:
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+          android:layout_width="fill_parent"
+          android:layout_height="fill_parent"
+          android:orientation="vertical" >
+
+<fragment
+        android:id="@+id/headerFragment"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        class="com.fragment_test.FragmentControls" >
+    <!-- Preview: layout=@layout/details -->
+</fragment>
+<FrameLayout
+        android:id="@+id/detailFragment"
+        android:layout_width="match_parent"
+        android:layout_height="fill_parent"
+
+        />
+
+
+
+
+
+
+
+Update
+This is the code I'm using to build by nav heirarchy
+
+    Fragment frag;
+    FragmentTransaction transaction;
+
+
+    //Create The first fragment [1], add it to the view, BUT Dont add the transaction to the backstack
+    frag = new Fragment1();
+
+    transaction = getSupportFragmentManager().beginTransaction();
+    transaction.replace(R.id.detailFragment, frag);
+    transaction.commit();
+
+    //Create the second [2] fragment, add it to the view and add the transaction that replaces the first fragment to the backstack
+    frag = new Fragment2();
+
+    transaction = getSupportFragmentManager().beginTransaction();
+    transaction.replace(R.id.detailFragment, frag);
+    transaction.addToBackStack(null);
+    transaction.commit();
+
+
+    //Create third fragment, Dont add this transaction to the backstack, because we dont want to go back to [2] 
+    frag = new Fragment3();
+    transaction = getSupportFragmentManager().beginTransaction();
+    transaction.replace(R.id.detailFragment, frag);
+    transaction.commit();
+
+
+     //END OF SETUP CODE-------------------------
+    //NOW:
+    //Press back once and then issue the following code:
+    frag = new Fragment2();
+    transaction = getSupportFragmentManager().beginTransaction();
+    transaction.replace(R.id.detailFragment, frag);
+    transaction.addToBackStack(null);
+    transaction.commit();
+
+    //Now press back again and you end up at fragment [3] not [1]
+
+
+Many thanks
+    
+===============================================================================================
+200
+A:Explanation: on what's going on here?
+
+If we keep in mind that .replace() is equal with .remove().add() that we know by the documentation:
+
+
+  Replace an existing fragment that was added to a container. This is essentially the same as calling remove(Fragment) for all currently added fragments that were added with the same containerViewId and then add(int, Fragment, String) with the same arguments given here.
+
+
+then what's happening is like this (I'm adding numbers to the frag to make it more clear):
+
+// transaction.replace(R.id.detailFragment, frag1);
+Transaction.remove(null).add(frag1)  // frag1 on view
+
+// transaction.replace(R.id.detailFragment, frag2).addToBackStack(null);
+Transaction.remove(frag1).add(frag2).addToBackStack(null)  // frag2 on view
+
+// transaction.replace(R.id.detailFragment, frag3);
+Transaction.remove(frag2).add(frag3)  // frag3 on view
+
+
+(here all misleading stuff starts to happen)
+
+Remember that .addToBackStack() is saving only transaction not the fragment as itself! So now we have frag3 on the layout:
+
+< press back button >
+// System pops the back stack and find the following saved back entry to be reversed:
+// [Transaction.remove(frag1).add(frag2)]
+// so the system makes that transaction backward!!!
+// tries to remove frag2 (is not there, so it ignores) and re-add(frag1)
+// make notice that system doesn't realise that there's a frag3 and does nothing with it
+// so it still there attached to view
+Transaction.remove(null).add(frag1) //frag1, frag3 on view (OVERLAPPING)
+
+// transaction.replace(R.id.detailFragment, frag2).addToBackStack(null);
+Transaction.remove(frag3).add(frag2).addToBackStack(null)  //frag2 on view
+
+< press back button >
+// system makes saved transaction backward
+Transaction.remove(frag2).add(frag3) //frag3 on view
+
+< press back button >
+// no more entries in BackStack
+< app exits >
+
+
+Possible solution
+
+Consider implementing FragmentManager.BackStackChangedListener to watch for changes in the back stack and apply your logic in onBackStackChanged() methode:
+
+
+Trace a count of transaction;
+Check particular transaction by name FragmentTransaction.addToBackStack(String name);
+Etc.
+
+    

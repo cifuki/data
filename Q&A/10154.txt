@@ -1,0 +1,58 @@
+27
+Q:I've started getting a 
+
+DEBUG/skia(xxxx): --- decoder->decode returned false 
+
+
+issue on a few profile images from Facebook that I use in ImageViews.  Most work perfectly, but every once in a while I discover one that never works.
+
+I am compiling my application against Android 1.6 for backward compatibility reasons.
+
+I did some digging and discovered a number of threads on the issue.  I'm already using the FlushedInputStream discussed here: http://code.google.com/p/android/issues/detail?id=6066
+
+Bitmap b = BitmapFactory.decodeStream(new FlushedInputStream(is));
+imageView.setImageBitmap(b);
+
+
+Here's an example that's causing me trouble:
+http://profile.ak.fbcdn.net/hprofile-ak-snc4/hs269.snc3/23132_639284607_390_q.jpg
+
+Can someone check out the image and help me figure out what's causing the trouble?
+    
+===============================================================================================
+33
+A:There is a bug in FlushedInputStream(is). it fails on slow connections but you can try my magical code to fix it.
+
+Bitmap b = BitmapFactory.decodeStream(new FlushedInputStream(is));
+imageView.setImageBitmap(b);
+
+
+create a static class outside your method
+
+ static class FlushedInputStream extends FilterInputStream {
+        public FlushedInputStream(InputStream inputStream) {
+            super(inputStream);
+        }
+
+        @Override
+        public long skip(long n) throws IOException {
+            long totalBytesSkipped = 0L;
+            while (totalBytesSkipped < n) {
+                long bytesSkipped = in.skip(n - totalBytesSkipped);
+                if (bytesSkipped == 0L) {
+                    int b = read();
+                    if (b < 0) {
+                        break;  // we reached EOF
+                    } else {
+                        bytesSkipped = 1; // we read one byte
+                    }
+                }
+                totalBytesSkipped += bytesSkipped;
+            }
+            return totalBytesSkipped;
+        }
+    }
+
+
+and here you go.. now you will not have any problem.
+    

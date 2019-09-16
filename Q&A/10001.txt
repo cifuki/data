@@ -1,0 +1,78 @@
+27
+Q:I need some help with debugging my application. First of all: In emulator and on some other devices my app is running fine. On my device I got a force close (without a force close message).
+
+The "crash" happens if the Activity of the app is changed.
+
+Here is some code of the MainActivity class. It just reads html content from a web page over webview. And no, it is NOT possible to do this over HttpRequest because I was not able to simulate the post request.
+
+public class MainActivity extends Activity {
+
+    public final static String EXTRA_HTML = "com.example.com.test.HTML";
+
+    private WebView mWebView;
+    private ProgressDialog mDialog;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);  
+        mWebView = (WebView) findViewById(R.id.webView1);
+        CookieSyncManager.createInstance(this);
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.removeAllCookie();
+        mWebView.setBackgroundColor(0);
+        mWebView.setWebChromeClient(new WebChromeClient() {
+            public boolean onConsoleMessage(ConsoleMessage cmsg) {
+                if (cmsg.message().startsWith("MAGIC")) {
+                    mDialog.cancel();
+                    /*HashMap<String, String> message = new HashMap<String, String>();*/
+                    String msg = cmsg.message().substring(5);
+                    Intent intent = new Intent(MainActivity.this,
+                        ReadDataActivity.class);
+                    /*message.put("message", msg);*/
+                    /*intent.putExtra(EXTRA_HTML, message);*/
+                                    intent.putExtra(EXTRA_HTML, msg);
+                    startActivity(intent);
+                }
+                return false;
+            }
+        });
+        mWebView.getSettings().setJavaScriptEnabled(true);
+        mWebView.getSettings().setPluginState(PluginState.OFF);
+        mWebView.getSettings().setLoadsImagesAutomatically(false);
+        mWebView.getSettings().setBlockNetworkImage(true);
+        mWebView.getSettings().setAppCacheEnabled(true);
+        mWebView.getSettings().setSavePassword(true);
+        mWebView.getSettings()
+                .setCacheMode(WebSettings.LOAD_NORMAL);
+        mWebView.setWebViewClient(new WebViewClient() {
+
+            public void onPageFinished(WebView view, String address) {
+                if (address.indexOf("mySession") != -1) {
+                    view.loadUrl("javascript:console.log('MAGIC'+document.getElementsByTagName('html')[0].innerHTML);");
+                }
+});
+
+                mWebView.loadUrl("http://www.myurl.de");
+
+}
+
+
+So, in the onConsoleMessage() method I just pass the html code to another Activity class which read, parse and display the content.
+
+The problem is now that at this point when the ReadDataActivity class should be loaded the application just close and go back to the home screen without any message or user dialog.
+
+Is it possible that the html code which is passed as a string to the ReadDataActivity is to big? I also try to add the html code as a string in a HashMap but the problem is the same.
+
+Some ideas what I can do to debug the problem? Maybe I should try to create a Parcelable object?
+
+In the emulator everything is working fine.
+    
+===============================================================================================
+50
+A:As per my experience (sometime ago), you are able to put up to 1MB of data in a Bundle encapsulated inside Intent. I think, this restriction was valid up till Froyo or GingerBread.
+
+However, in order to overcome this issue, I would suggest you to save your content on a temp file and pass the path/URI of your temp file to your second activity. Then in your second activity, read the contents out from file, perform your desired operation and finally delete that file.
+
+If you want, you may also incorporate Shared_Preferences for this task - if you think handling files is cumbersome.
+    

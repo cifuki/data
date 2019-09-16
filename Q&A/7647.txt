@@ -1,0 +1,96 @@
+34
+Q:I am trying to build a calendar app for Android. I am struck in the middle. I have managed to retrieve the information such as time and task from the user.
+
+I don't know how to add this into android events. Is there anything like setEvent or something similar?
+    
+===============================================================================================
+76
+A:Nope, it is more complicated than just calling a method, if you want to transparently add it into the user's calendar.
+
+You've got a couple of choices;
+
+
+Calling the intent to add an event on the calendar
+This will pop up the Calendar  application and let the user add the event. You can pass some parameters to prepopulate fields:
+
+Calendar cal = Calendar.getInstance();              
+Intent intent = new Intent(Intent.ACTION_EDIT);
+intent.setType("vnd.android.cursor.item/event");
+intent.putExtra("beginTime", cal.getTimeInMillis());
+intent.putExtra("allDay", false);
+intent.putExtra("rrule", "FREQ=DAILY");
+intent.putExtra("endTime", cal.getTimeInMillis()+60*60*1000);
+intent.putExtra("title", "A Test Event from android app");
+startActivity(intent);
+
+
+Or the more complicated one:
+Get a reference to the calendar with this method
+(It is highly recommended not to use this method, because it could break on newer Android versions):
+
+private String getCalendarUriBase(Activity act) {
+
+    String calendarUriBase = null;
+    Uri calendars = Uri.parse("content://calendar/calendars");
+    Cursor managedCursor = null;
+    try {
+        managedCursor = act.managedQuery(calendars, null, null, null, null);
+    } catch (Exception e) {
+    }
+    if (managedCursor != null) {
+        calendarUriBase = "content://calendar/";
+    } else {
+        calendars = Uri.parse("content://com.android.calendar/calendars");
+        try {
+            managedCursor = act.managedQuery(calendars, null, null, null, null);
+        } catch (Exception e) {
+        }
+        if (managedCursor != null) {
+            calendarUriBase = "content://com.android.calendar/";
+        }
+    }
+    return calendarUriBase;
+}
+
+
+and add an event and a reminder this way:
+
+// get calendar
+Calendar cal = Calendar.getInstance();     
+Uri EVENTS_URI = Uri.parse(getCalendarUriBase(this) + "events");
+ContentResolver cr = getContentResolver();
+
+// event insert
+ContentValues values = new ContentValues();
+values.put("calendar_id", 1);
+values.put("title", "Reminder Title");
+values.put("allDay", 0);
+values.put("dtstart", cal.getTimeInMillis() + 11*60*1000); // event starts at 11 minutes from now
+values.put("dtend", cal.getTimeInMillis()+60*60*1000); // ends 60 minutes from now
+values.put("description", "Reminder description");
+values.put("visibility", 0);
+values.put("hasAlarm", 1);
+Uri event = cr.insert(EVENTS_URI, values);
+
+// reminder insert
+Uri REMINDERS_URI = Uri.parse(getCalendarUriBase(this) + "reminders");
+values = new ContentValues();
+values.put( "event_id", Long.parseLong(event.getLastPathSegment()));
+values.put( "method", 1 );
+values.put( "minutes", 10 );
+cr.insert( REMINDERS_URI, values );
+
+
+You'll also need to add these permissions to your manifest for this method:
+
+<uses-permission android:name="android.permission.READ_CALENDAR" />
+<uses-permission android:name="android.permission.WRITE_CALENDAR" />
+
+
+
+Update: ICS Issues
+
+The above examples use the undocumented Calendar APIs, new public Calendar APIs have been released for ICS, so for this reason, to target new android versions you should use CalendarContract.
+
+More infos about this can be found at this blog post.
+    

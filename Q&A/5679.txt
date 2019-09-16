@@ -1,0 +1,57 @@
+44
+Q:I have an Activity calling a Service defined in IDownloaderService.aidl:
+
+public class Downloader extends Activity {
+ IDownloaderService downloader = null;
+// ...
+
+
+In Downloader.onCreate(Bundle) I tried to bindService
+
+Intent serviceIntent = new Intent(this, DownloaderService.class);
+if (bindService(serviceIntent, sc, BIND_AUTO_CREATE)) {
+  // ...
+
+
+and within the ServiceConnection object sc I did this
+
+public void onServiceConnected(ComponentName name, IBinder service) {
+  Log.w("XXX", "onServiceConnected");
+  downloader = IDownloaderService.Stub.asInterface(service);
+  // ...
+
+
+By adding all kinds of Log.xx I found that the code after if(bindService(...))  actually goes BEFORE ServiceConnection.onServiceConnected is being called - that is, when downloader is still null - which gets me into trouble. All the samples in ApiDemos avoid this timing problem by only calling services when triggered by user actions. But what should I do to right use this service after bindService succeeds? How can I wait for ServiceConnection.onServiceConnected being called reliably? 
+
+Another question related. Are all the event handlers: Activity.onCreate, any View.onClickListener.onClick, ServiceConnection.onServiceConnected, etc. actually called in the same thread (mentioned in the doc as the "main thread")? Are there interleaves between them, or Android would schedule all events come into being handled one-by-one? Or, When exactly is ServiceConnection.onServiceConnected actually going to be called? Upon completion of Activity.onCreate or sometime when A.oC is still running?
+    
+===============================================================================================
+49
+A:How can I wait for
+  ServiceConnection.onServiceConnected
+  being called reliably?
+
+
+You don't. You exit out of onCreate() (or wherever you are binding) and you put you "needs the connection established" code in onServiceConnected().
+
+
+  Are all the event handlers:
+  Activity.onCreate, any
+  View.onClickListener.onClick,
+  ServiceConnection.onServiceConnected,
+  etc. actually called in the same
+  thread
+
+
+Yes.
+
+
+  When exactly is
+  ServiceConnection.onServiceConnected
+  actually going to be called? Upon
+  completion of Activity.onCreate or
+  sometime when A.oC is still running?
+
+
+Your bind request probably is not even going to start until after you leave onCreate(). Hence, onServiceConnected() will called sometime after you leave onCreate().
+    

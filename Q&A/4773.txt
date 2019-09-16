@@ -1,0 +1,170 @@
+50
+Q:I just copy all the jar files of Http but Android Studio cann't import all these jar files.It gives an error : 
+Cannot resolve symbol HttpGet,HttpClient,HttpResponse.
+
+My Activity file is here:-
+
+public class MainActivity extends AppCompatActivity {
+
+ArrayList<Product>  productslist;
+ProductAdapter adapter;
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+
+    productslist = new ArrayList<Product>();
+    new JSONAsyncTask().execute("http://opencart.codeniques.com/myshop/?route=feed/web_api/products&id=60&key=test123");
+
+    ListView listView = (ListView)findViewById(R.id.list);
+    adapter = new ProductAdapter(getApplicationContext(),R.layout.row,productslist);
+
+    listView.setAdapter(adapter);
+
+    listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        @Override
+        public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+            Toast.makeText(getApplicationContext(),productslist.get(position).getName(),Toast.LENGTH_LONG).show();
+        }
+    });
+}
+
+class JSONAsyncTask extends AsyncTask<String,Void,Boolean>{
+
+    ProgressDialog dialog;
+
+    @Override
+    protected void onPreExecute() {
+        super.onPreExecute();
+        dialog = new ProgressDialog(MainActivity.this);
+        dialog.setMessage("Loading, please wait");
+        dialog.setTitle("Connecting server");
+        dialog.show();
+        dialog.setCancelable(false);
+    }
+
+    @Override
+    protected Boolean doInBackground(String... params) {
+        try{
+            HttpGet httppost = new HttpGet(params[0]);
+            HttpClient httpclient = new DefaultHttpClient();
+            HttpResponse response = httpclient.execute(httppost);
+
+            int status = response.getStatusLine().getStatusCode();
+
+            if(status == 200){
+                HttpEntity entity = response.getEntity();
+                String data = EntityUtils.toString(entity);
+
+                JSONObject jsono = new JSONObject(data);
+                JSONArray jarray = jsono.getJSONArray("products");
+
+                for (int i = 0; i < jarray.length(); i++) {
+                    JSONObject object = jarray.getJSONObject(i);
+
+                    Product actor = new Product();
+
+                    actor.setId(object.getString("id"));
+                    actor.setName(object.getString("name"));
+                    actor.setDescription(object.getString("description"));
+                    actor.setHref(object.getString("href"));
+                    actor.setPrice(object.getString("pirce"));
+                    actor.setImage(object.getString("thumb"));
+                    actor.setSpecial(object.getString("special"));
+                    actor.setRating(object.getString("rating"));
+
+                    productslist.add(actor);
+            }
+                return  true;
+            }
+        }catch (JSONException e){
+            Log.e("Error :",e.getMessage());
+        }catch (ParseException e){
+            Log.e("Error :",e.getMessage());
+        }catch (IOException e){
+            Log.e("Error :",e.getMessage());
+        }catch (Exception e){
+            Log.e("Error :",e.getMessage());
+        }
+        return  false;
+    }
+    @Override
+    protected void onPostExecute(Boolean aBoolean) {
+        dialog.cancel();
+        adapter.notifyDataSetChanged();
+        if(aBoolean == false){
+            Toast.makeText(getApplicationContext(), "Unable to fetch data from server", Toast.LENGTH_LONG).show();
+        }
+    }
+}}
+
+
+and here my gradle is here:-
+
+apply plugin: 'com.android.application'
+android {
+compileSdkVersion 23
+buildToolsVersion "22.0.1"
+
+defaultConfig {
+    applicationId "android.catalyst.com.newjsonarray"
+    minSdkVersion 16
+    targetSdkVersion 23
+    versionCode 1
+    versionName "1.0"
+}
+buildTypes {
+    release {
+        minifyEnabled false
+        proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+    }}}
+dependencies {
+compile fileTree(dir: 'libs', include: ['*.jar'])
+
+testCompile 'junit:junit:4.12'
+compile 'com.android.support:appcompat-v7:23.0.1'
+compile 'com.android.support:design:23.0.1'}
+
+    
+===============================================================================================
+96
+A:Just add this in your dependencies
+
+compile 'org.apache.httpcomponents:httpcore:4.4.1'
+compile 'org.apache.httpcomponents:httpclient:4.5'
+
+
+Finally 
+
+dependencies {
+compile fileTree(dir: 'libs', include: ['*.jar'])    
+testCompile 'junit:junit:4.12'
+compile 'com.android.support:appcompat-v7:23.0.1'
+compile 'com.android.support:design:23.0.1'
+compile 'org.apache.httpcomponents:httpcore:4.4.1'
+compile 'org.apache.httpcomponents:httpclient:4.5'
+}
+
+
+And also add this code:
+
+ android {
+    useLibrary 'org.apache.http.legacy'
+         }
+
+
+FYI
+
+
+  Specify requirement for Apache HTTP Legacy library If your app is
+  targeting API level 28 (Android 9.0) or above, you must include the
+  following declaration within the  element of
+  AndroidManifest.xml.
+
+
+ <uses-library
+      android:name="org.apache.http.legacy"
+      android:required="false" />
+
+    

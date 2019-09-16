@@ -1,0 +1,84 @@
+42
+Q:I'm trying to implement @IntDef annotation in Android development.
+
+First Method: it looks great with the definition separated in a Constant.java class:
+
+public class Constant {
+   @IntDef(value={SORT_PRICE, SORT_TIME, SORT_DURATION})
+   @Retention(RetentionPolicy.SOURCE)
+   public @interface SortType{}
+   public static final int SORT_PRICE = 0;
+   public static final int SORT_TIME = 1;
+   public static final int SORT_DURATION = 2;
+}
+
+
+Usage:
+
+@Constant.SortType int sortType = Constant.SORT_PRICE;
+
+
+But things get a lot messier when there's multiple definition (e.g UserType, StoreType, etc) in one file. 
+
+Second Method: So I came up with something like this to separate values between definition:
+
+public class Constant {
+   @IntDef(value={SortType.SORT_PRICE, SortType.SORT_TIME, SortType.SORT_DURATION})
+   @Retention(RetentionPolicy.SOURCE)
+   public @interface SortTypeDef{}
+
+   public static class SortType{
+       public static final int PRICE = 0;
+       public static final int TIME = 1;
+       public static final int DURATION = 2;
+   }
+}
+
+
+Usage:
+
+@Constant.SortTypeDef int sortType = Constant.SortType.PRICE;
+
+
+But as you can see, I created two different name for it: SortTypeDef and SortType
+
+Third Method: I tried to move the list of possible values inside @interface:
+
+public class Constant {
+   @IntDef(value={SortType.SORT_PRICE, SortType.SORT_TIME, SortType.SORT_DURATION})
+   @Retention(RetentionPolicy.SOURCE)
+   public @interface SortType{
+       int PRICE = 0;
+       int TIME = 1;
+       int DURATION = 2;
+   }
+}
+
+
+Usage 
+
+@Constant.SortType int sortType = Constant.SortType.PRICE;
+
+
+While it does work, I don't know what is the drawback.
+Is it okay to put the possible values of @IntDef inside @interface? Is there any performance differences across the three methods above?
+    
+===============================================================================================
+10
+A:Short answer: for simple projects, it is OK, but for more complex ones the first method is preferred.
+
+Long answer: 
+Although bytecode for sortType is identical in all three cases, there is a difference.  The key lies in the Retention annotation, which sets retention policy to SOURCE.  That means that your SortType annotation is "to be discarded by the compiler", so bytecode for annotation itself is not generated.
+
+First method defines regular static fields outside the annotations, with the regular bytecode generated for them.  Second and third cases define constants within annotations, and bytecode for the constants is not generated.
+
+If compiler has access to the source file containing your SortType declaration, either method is fine and bytecode for sortType is identical.  But if source code is not accessible (e.g. you have only compiled library), annotation is not accessible.  For the first approach, only annotation itself is not accessible, but for the latter ones, constants values are not accessible too.
+
+I used to prefer the third method as the most clean and structured.  I used to until one day I ran into an issue: when I started writing Espresso  tests for that code, compiler did not have access to the source code defining the annotation.  I had to either switch to the canonical IntDef declaration or to use integer values instead of symbolic constants for the test.
+
+So the bottom line is:
+
+
+stick to the canonical way unless your annotation is internal to your code and you do not refer to it from anywhere else, including tests
+
+    

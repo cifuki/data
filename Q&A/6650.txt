@@ -1,0 +1,97 @@
+38
+Q:I cannot figure out the exact semantics of withValueBackReference.
+
+I've read the example code (for example the code which adds a new contact) using this method, providing a backReference value of 0. What does this mean?
+
+The documentation says:
+
+
+  A column value from the back references takes precedence over a value specified in withValues(ContentValues)
+
+    
+===============================================================================================
+162
+A:This question relates to batch operation on a content provider.  The example is modified from this related question.
+
+When creating a batch of operations first create a list of operations to perform using:
+
+ArrayList<ContentProviderOperation> operations = new ArrayList<ContentProviderOperation>();
+
+
+then apply them to the content provider using the applyBatch method.
+
+ContentProviderResult[] results = this.getContentResolver().applyBatch(FooBar.AUTHORITY, operations);
+
+
+That is the basic concept so let's apply it.  Suppose we have a content provider which handles uris for Foo records and some child records called Bar.  
+
+
+  content://com.stackoverflow.foobar/foo
+  
+  content://com.stackoverflow.foobar/foo/#/bar
+
+
+For now we'll just insert 2 new Foo recordscalled "Foo A" and "Foo B", here's the example.
+
+ArrayList<ContentProviderOperation> operations = new ArrayList<ContentProviderOperation>();
+
+//add a new ContentProviderOperation - inserting a FOO record with a name and a decscription
+operations.add(ContentProviderOperation.newInsert(intent.getData())
+    .withValue(FOO.NAME, "Foo A")
+    .withValue(FOO.DESCRIPTION, "A foo of impeccable nature")
+    .build());
+
+//let's add another
+operations.add(ContentProviderOperation.newInsert(intent.getData())
+    .withValue(FOO.NAME, "Foo B")
+    .withValue(FOO.DESCRIPTION, "A foo of despicable nature")
+    .build());
+
+ContentProviderResult[] results = this.getContentResolver().applyBatch(FooBar.AUTHORITY, operations);
+
+
+Nothing special here, we are adding 2 ContentProviderOperation items to our list and then applying the list to our content provider.  The results array filled with the id's of the new records that we have just inserted.
+
+So say we wanted to do something similar but we also want to add some child records into our content provider in one batch operation.  We want to attach the child records to the Foo records we just created.  The problem is we don't know the id of the parent Foo records because the batch has not been run.  This is where the withValueBackReference helps us.  Let's see an example:
+
+ArrayList<ContentProviderOperation> operations = new ArrayList<ContentProviderOperation>();
+
+//add a new ContentProviderOperation - inserting a Foo record with a name and a decscription
+operations.add(ContentProviderOperation.newInsert(intent.getData())
+    .withValue(FOO.NAME, "Foo A")
+    .withValue(FOO.DESCRIPTION, "Foo of impeccable nature")
+    .build());
+
+//let's add another
+operations.add(ContentProviderOperation.newInsert(intent.getData())
+    .withValue(FOO.NAME, "Foo B")
+    .withValue(FOO.DESCRIPTION, "Foo of despicable nature")
+    .build());
+
+//now add a Bar record called [Barbarella] and relate it to [Foo A]
+operations.add(ContentProviderOperation.newInsert(intent.getData()
+    .buildUpon()
+    .appendPath("#") /* We don't know this yet */
+    .appendPath("bar")
+    .build())
+.withValueBackReference (BAR.FOO_ID, 0) /* Index is 0 because Foo A is the first operation in the array*/
+.withValue(BAR.NAME, "Barbarella")
+.withValue(BAR.GENDER, "female")
+.build());
+
+//add a Bar record called [Barbarian] and relate it to [Foo B]
+operations.add(ContentProviderOperation.newInsert(intent.getData()
+    .buildUpon()
+    .appendPath("#") /* We don't know this yet */
+    .appendPath("bar")
+    .build())
+.withValueBackReference (BAR.FOO_ID, 1) /* Index of parent Foo B is 1*/
+.withValue(BAR.NAME, "Barbarian")
+.withValue(BAR.GENDER, "male")
+.build());
+
+ContentProviderResult[] results = this.getContentResolver().applyBatch(FooBar.AUTHORITY, operations);
+
+
+So the withValueBackReference() method allows us to insert the related records before we know the id of the parent we want to relate them to.  The back reference index is simply the index of the operation that will return the id we want to look for.  It is perhaps easier to think of it in terms of which result you would expect to contain the id. e.g results[1] would contain the id for "Foo B" so the index we use to back reference to "Foo B"  is 1.
+    

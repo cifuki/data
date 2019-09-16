@@ -1,0 +1,115 @@
+81
+Q:I'm trying to reproduce the same progress that DownloadManager shows in Notification bar inside my app, but my progress never is published. I'm trying to update it using runOnUiThread(), but for some reason it's not been updated.
+
+my download:
+
+String urlDownload = "https://dl.dropbox.com/s/ex4clsfmiu142dy/test.zip?token_hash=AAGD-XcBL8C3flflkmxjbzdr7_2W_i6CZ_3rM5zQpUCYaw&dl=1";
+DownloadManager.Request request = new DownloadManager.Request(Uri.parse(urlDownload));
+
+request.setDescription("Testando");
+request.setTitle("Download");
+request.allowScanningByMediaScanner();
+request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "teste.zip");
+
+final DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+
+final long downloadId = manager.enqueue(request);
+
+final ProgressBar mProgressBar = (ProgressBar) findViewById(R.id.progressBar1);
+
+new Thread(new Runnable() {
+
+    @Override
+    public void run() {
+
+        boolean downloading = true;
+
+        while (downloading) {
+
+            DownloadManager.Query q = new DownloadManager.Query();
+            q.setFilterById(downloadId);
+
+            Cursor cursor = manager.query(q);
+            cursor.moveToFirst();
+            int bytes_downloaded = cursor.getInt(cursor
+                    .getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
+            int bytes_total = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
+
+            if (cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)) == DownloadManager.STATUS_SUCCESSFUL) {
+                downloading = false;
+            }
+
+            final double dl_progress = (bytes_downloaded / bytes_total) * 100;
+
+            runOnUiThread(new Runnable() {
+
+                @Override
+                public void run() {
+
+                    mProgressBar.setProgress((int) dl_progress);
+
+                }
+            });
+
+            Log.d(Constants.MAIN_VIEW_ACTIVITY, statusMessage(cursor));
+            cursor.close();
+        }
+
+    }
+}).start();
+
+
+my statusMessage method: 
+
+private String statusMessage(Cursor c) {
+    String msg = "???";
+
+    switch (c.getInt(c.getColumnIndex(DownloadManager.COLUMN_STATUS))) {
+    case DownloadManager.STATUS_FAILED:
+        msg = "Download failed!";
+        break;
+
+    case DownloadManager.STATUS_PAUSED:
+        msg = "Download paused!";
+        break;
+
+    case DownloadManager.STATUS_PENDING:
+        msg = "Download pending!";
+        break;
+
+    case DownloadManager.STATUS_RUNNING:
+        msg = "Download in progress!";
+        break;
+
+    case DownloadManager.STATUS_SUCCESSFUL:
+        msg = "Download complete!";
+        break;
+
+    default:
+        msg = "Download is nowhere in sight";
+        break;
+    }
+
+    return (msg);
+}
+
+
+My log is working perfectly, while my download is running says "Download in progress!" and when it is complete "Download complete!", but the same doesn't occurs on my progress, why? I really need some help, other logics to do that are really appreciated
+    
+===============================================================================================
+59
+A:You are dividing two integers:
+
+final double dl_progress = (bytes_downloaded / bytes_total) * 100;
+
+
+As bytes_downloaded is less than bytes_total, (bytes_downloaded / bytes_total) will be 0, and your progress will therefore always be 0.
+
+Change your calculation to
+
+final int dl_progress = (int) ((bytes_downloaded * 100l) / bytes_total);
+
+
+to obtain the progress in whole (albeit floored) percentiles.
+    

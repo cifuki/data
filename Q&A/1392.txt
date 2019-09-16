@@ -1,0 +1,163 @@
+126
+Q:Yesterday (17-10-2014) I have update Android SDK and support-library-v4.jar of my App, now I get deprecation warning related to ActionBarDrawerToggle, reading the documentation seems that I have to use the ActionBarDrawerToggle in support-library-v7.appcompact.jar.
+
+Here some parts of my Activity that could be relevants:
+
+import android.app.ActionBar;
+import android.app.Activity;
+import android.content.res.Configuration;
+import android.os.Bundle;
+import android.support.v4.app.ActionBarDrawerToggle;
+import android.support.v4.app.FragmentActivity;
+import android.support.v4.view.GravityCompat;
+import android.support.v4.widget.DrawerLayout;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
+import android.view.View;
+import android.webkit.WebView;
+import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.RelativeLayout;
+import android.widget.TextView;
+
+
+public class MyActivity extends FragmentActivity {
+    private ActionBar bar;
+    private CustomActionBarDrawerToggle mDrawerToggle;
+    private DrawerLayout mDrawer;
+    private ListView mDrawerList;
+
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_infoviewer);
+
+        bar = this.getActionBar();
+
+        bar.setDisplayHomeAsUpEnabled(true);
+
+        bar.setHomeButtonEnabled(true);
+        bar.setDisplayShowTitleEnabled(false);
+        mDrawer = (DrawerLayout) findViewById(R.id.drawer_layout);
+
+        mDrawer.setBackgroundColor(getResources().getColor(R.color.White));
+        initNavMenu();
+        try {
+            mDrawerToggle = new CustomActionBarDrawerToggle(this, mDrawer);
+        } catch (RuntimeException e) {
+            e.printStackTrace();
+        }
+
+        mDrawer.setDrawerListener(mDrawerToggle);
+    }
+
+    ....
+
+    private void initNavMenu() {
+        NavMenuAdapter mAdapter = MyDrawers.getDefaultDrawer(MyActivity.this, true);
+        mDrawerList = (ListView) findViewById(R.id.drawer);
+        mDrawerList.setBackgroundColor(getResources().getColor(R.color.GreenMoneyDark));
+        if (mDrawerList != null) mDrawerList.setAdapter(mAdapter);
+        mDrawerList.setOnItemClickListener(new DrawerItemClickListener(MyActivity.this, mDrawer, mDrawerList));
+    }
+
+    @Override
+    protected void onPostCreate(Bundle savedInstanceState) {
+        super.onPostCreate(savedInstanceState);
+        // Sync the toggle state after onRestoreInstanceState has occurred.
+        mDrawerToggle.syncState();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        mDrawerToggle.onConfigurationChanged(newConfig);
+    }
+
+    private class CustomActionBarDrawerToggle extends ActionBarDrawerToggle {
+
+        public CustomActionBarDrawerToggle(Activity mActivity,
+                                           DrawerLayout mDrawerLayout) {
+            super(mActivity, mDrawerLayout, R.drawable.action_drawer,
+                    R.string.ns_menu_open, R.string.ns_menu_close);
+        }
+
+        @Override
+        public void onDrawerClosed(View view) {
+            bar.setTitle(getString(R.string.ns_menu_close));
+            invalidateOptionsMenu(); // creates call to onPrepareOptionsMenu()
+        }
+
+        @Override
+        public void onDrawerOpened(View drawerView) {
+            bar.setTitle(getString(R.string.ns_menu_open));
+            invalidateOptionsMenu(); // creates call to onPrepareOptionsMenu()
+        }
+    }
+
+}
+
+
+I have tried to copy support-library-v7 and replace 
+
+import android.support.v4.app.ActionBarDrawerToggle;
+
+
+with
+
+ import android.support.v7.app.ActionBarDrawerToggle;
+
+
+this has caused compilation problem in 
+
+ public CustomActionBarDrawerToggle(Activity mActivity,
+                                               DrawerLayout mDrawerLayout) {
+                super(mActivity, mDrawerLayout, R.drawable.action_drawer,
+                        R.string.ns_menu_open, R.string.ns_menu_close);
+            }
+
+
+So I have tried to replace R.drawable.action_drawer with 
+
+public CustomActionBarDrawerToggle(Activity mActivity,
+                                           DrawerLayout mDrawerLayout) {
+            super(mActivity, mDrawerLayout,new Toolbar(MyActivity.this) ,
+                    R.string.ns_menu_open, R.string.ns_menu_close);
+        }
+
+
+this compiles but crash at Runtime with 
+
+ java.lang.NoClassDefFoundError: Failed resolution of: Landroid/support/v7/appcompat/R$attr;
+            at android.support.v7.widget.Toolbar.<init>(Toolbar.java:190)
+            at android.support.v7.widget.Toolbar.<init>(Toolbar.java:186)
+
+
+Note that android-support-v7-appcompat.jar is correctly added in project dependencies
+
+    
+===============================================================================================
+66
+A:Adding only android-support-v7-appcompat.jar to library dependencies is not enough, you have also to import in your project the module that you can find in your SDK at the path \\android-sdk\\extras\\android\\support\\v7\\appcompatand after that add module dependencies configuring the project structure in this way
+
+
+
+otherwise are included only the class files of support library and the app is not able to load the other resources causing the error.
+
+In addition as reVerse suggested replace this
+
+public CustomActionBarDrawerToggle(Activity mActivity,
+                                           DrawerLayout mDrawerLayout) {
+            super(mActivity, mDrawerLayout,new Toolbar(MyActivity.this) ,
+                    R.string.ns_menu_open, R.string.ns_menu_close);
+        }
+
+
+with
+
+public CustomActionBarDrawerToggle(Activity mActivity,
+                                           DrawerLayout mDrawerLayout) {
+            super(mActivity, mDrawerLayout, R.string.ns_menu_open, R.string.ns_menu_close);
+        }
+
+    

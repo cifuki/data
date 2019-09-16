@@ -1,0 +1,98 @@
+32
+Q:I've been playing with Android programming on and off for a couple of weeks, and I'm trying to get something to work that seems simple, but I think I am missing something.
+
+What I am trying to do is have the background fade from, say, white to black smoothly.
+
+I've tried a few things, none of which seem to work.
+
+The first thing I did was using a for loop and the setBackgroundColor method for LinearLayout, changing the R, G, and B values together from 0 to 255. It doesn't work.
+
+I can do one-of settings changes, but when I do the loop I get nothing but the last value. What I think is happening is the UI is locking up while the loop is in progress and unfreezing when the loop ends. I've tried putting delays in the loop (ugly nested loop delays and Thread.sleep), all to no avail.
+
+Can anyone give me any pointers as to how to get this working? Do I need a second thread to do the change to the color? I've got a vague idea of threads, although I have never used them.
+
+My sample code showing roughly what I am trying to do is as follows:
+
+main.xml is:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:id="@+id/screen"
+    >
+<TextView  
+    android:layout_width="fill_parent" 
+    android:layout_height="wrap_content" 
+    android:text="@string/hello"
+    />
+</LinearLayout>
+
+
+And my java code is (the 0.01 inc. is just to act as an ugly delay mechanism to try to see the viewing of colors change slowly):
+
+package nz.co.et.bgfader;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.widget.LinearLayout;
+
+public class bgfader extends Activity {
+
+    LinearLayout screen;
+
+/** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        screen = (LinearLayout) findViewById(R.id.screen);
+        for (int i = 0; i < 65535; i+=0.01) {
+            screen.setBackgroundColor(0xff000000 + i);
+        }
+    }
+}
+
+
+Any help would be greatly appreciated
+
+Cheers
+
+Steve 
+    
+===============================================================================================
+11
+A:In your loop, your setting on background is so fast that the UI is not (will not) able to schedule the update of display. Yes, you better use a second thread to update the background or else you will stall the UI thread. Try following:
+
+LinearLayout screen;
+Handler handler = new Handler();
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.main);
+
+    screen = (LinearLayout) findViewById(R.id.screen);
+
+    (new Thread(){
+        @Override
+        public void run(){
+            for(int i=0; i<255; i++){
+                handler.post(new Runnable(){
+                    public void run(){
+                        screen.setBackgroundColor(Color.argb(255, i, i, i));
+                    }
+                });
+                // next will pause the thread for some time
+                try{ sleep(10); }
+                catch{ break; }
+            }
+        }
+    }).start();
+}
+
+
+This is a threaded version of your code. 
+    

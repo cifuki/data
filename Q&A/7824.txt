@@ -1,0 +1,118 @@
+34
+Q:I'm trying to create and delete an alarm in two different methods which are both called at different moments in the application logic.
+
+However when I call AlarmManager's cancel() method, the alarm isn't deleted.
+
+Here's my addAlarm() Method :
+
+AlarmManager alarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
+
+Intent intent = new Intent(PROX_ALERT_INTENT);
+intent.putExtra("ALERT_TIME", alert.date);
+intent.putExtra("ID_ALERT", alert.idAlert);
+intent.putExtra("TITLE", alert.title);
+intent.putExtra("GEO_LOC", alert.isGeoLoc);
+PendingIntent pendingIntent = PendingIntent.getBroadcast(mContext,
+        alert.idAlert, intent, PendingIntent.FLAG_CANCEL_CURRENT);
+
+Calendar calendar = Calendar.getInstance();
+calendar.setTime(alert.date);
+alarmManager.set(AlarmManager.RTC_WAKEUP, calendar.getTimeInMillis(), pendingIntent);
+Log.e("ADD ALERT - WithoutGeoLoc - ",alert.toString());
+
+
+Here's my deleteAlarm() Method :
+
+AlarmManager alarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
+
+Intent intent = new Intent(PROX_ALERT_INTENT);
+intent.putExtra("ALERT_TIME", alert.date);
+intent.putExtra("ID_ALERT", alert.idAlert);
+intent.putExtra("TITLE", alert.title);
+intent.putExtra("GEO_LOC", alert.isGeoLoc);
+PendingIntent pendingIntent = PendingIntent.getBroadcast(mContext,
+        alert.idAlert, intent, PendingIntent.FLAG_CANCEL_CURRENT);
+
+alarmManager.cancel(pendingIntent);
+Log.e(TAG,"REMOVE ALERT - without GeoLoc"+alert.toString());
+
+
+Here's my Logcat :
+
+01-23 17:44:07.411: E/ADD ALERT - WithoutGeoLoc -(18789): Alert [latitude=0.0, longitude=0.0, title=bfwu, comments=null, address=null, currency=hrk, idAlert=1, date=Sat Feb 23 17:44:04 CET 2013, isGeoLoc=null]
+01-23 17:44:13.032: E/REMOVE ALERT without GeoLoc - (18789): Alert [latitude=0.0, longitude=0.0, title=bfwu, comments=null, address=null, currency=hrk, idAlert=1, date=Sat Feb 23 17:44:04 CET 2013, isGeoLoc=null]
+
+
+Here's a list of pendingIntents in the AlarmManager
+
+Current Alarm Manager state:
+Realtime wakeup (now=2013-01-23 17:44:37):
+RTC_WAKEUP #48: Alarm{2c1d0588 type 0 com.my.app}
+type=0 when=+364d23h59m33s288ms repeatInterval=0 count=0
+operation=PendingIntent{2c0a6cb0: PendingIntentRecord{2c1d04e8 com.my.app  broadcastIntent}}
+RTC_WAKEUP #47: Alarm{2c2298a0 type 0 com.my.app}
+type=0 when=+30d23h59m27s360ms repeatInterval=0 count=0
+operation=PendingIntent{2c292af8: PendingIntentRecord{2c22a628 com.my.app broadcastIntent}}
+
+
+A couple notes:
+
+
+RTC_WAKEUP #47 is My Original Alarm
+RTC_WAKEUP #48 is a New Alarm that should have overwritten #47 rather than create a new one.
+
+
+I have compared the two intents (not pendingIntents) from my add and delete methods using Intent's filterEquals() method which returns true ... Yet the alarm is not deleted. What am I doing wrong?
+
+
+
+UPDATE
+
+Here's my saveAlert() method that calls addAlarm() and deleteAlarm()
+
+private void saveAlert() {
+    // *** If Modifying Alert => REMOVE OLD ALERT (then add new one)
+    Intent intent1 = null, intent2 = null;
+
+    if (alert.idAlert != null) {
+        if (alert.isGeoLoc == null || alert.isGeoLoc == false) {
+            intent2 = ProximityService.removeProximityAlertWithoutGeoLoc(getApplicationContext(), devisesApp.alertsGlobal.getAlertById(alert));
+        } else {
+            ProximityService.removeProximityAlert(getApplicationContext(), alert);
+        }
+    }
+    // *** Add Alert
+    if (alert.isGeoLoc == null || alert.isGeoLoc == false) {
+        intent1 = ProximityService.addProximityAlertWithoutGeoLoc(getApplicationContext(), alert, devisesApp.alertsGlobal);
+    } else {
+        ProximityService.addProximityAlert(getApplicationContext(), alert, devisesApp.alertsGlobal);
+    }
+
+    Log.i(TAG, "[saveAlert] Alert ID : " + alert.idAlert);
+    devisesApp.alertsGlobal.addById(alert);
+    Log.i("INTENT EQUALS", intent1.filterEquals(intent2) + ""); // This returns true
+}
+
+    
+===============================================================================================
+45
+A:Try this flag:
+
+PendingIntent.FLAG_UPDATE_CURRENT
+
+
+Instead of:
+
+PendingIntent.FLAG_CANCEL_CURRENT 
+
+
+So the PendingIntent will look like this:
+
+PendingIntent pendingIntent = PendingIntent.getBroadcast(mContext, 
+        alert.idAlert, intent, PendingIntent.FLAG_UPDATE_CURRENT)  
+
+
+(Make sure that you use same alert object and mContext!)
+
+A side note: If you want one global AlarmManager, put the AlarmManager in a static variable (and initialize it only if it's null).
+    

@@ -1,0 +1,399 @@
+56
+Q:I'm currently trying to stream live microphone audio from an Android device to a Java program. I started off with sending the live audio between two android devices to confirm my method was correct. The audio could be heard perfectly with barely any delay on the receiving device. Next I send the same audio stream to a small Java program and I verified that the data was being sent here correctly too. Now what I want to do is encode this data and somehow play it back on the server running the Java program. I would rather play it in a web browser using HTML5 or JavaScript but I am open to alternative methods such as VLC.
+
+Here is the code for the Android app which sends the live microphone audio
+
+public class MainActivity extends Activity {
+
+
+private Button startButton,stopButton;
+
+public byte[] buffer;
+public static DatagramSocket socket;
+    AudioRecord recorder;
+
+private int sampleRate = 44100;   
+private int channelConfig = AudioFormat.CHANNEL_CONFIGURATION_MONO;    
+private int audioFormat = AudioFormat.ENCODING_PCM_16BIT;       
+int minBufSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
+    private boolean status = true;
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+     startButton = (Button) findViewById (R.id.start_button);
+     stopButton = (Button) findViewById (R.id.stop_button);
+
+     startButton.setOnClickListener(startListener);
+     stopButton.setOnClickListener(stopListener);
+
+     minBufSize += 2048;
+}
+
+@Override
+public boolean onCreateOptionsMenu(Menu menu) {
+    getMenuInflater().inflate(R.menu.main, menu);
+    return true;
+}
+
+private final OnClickListener stopListener = new OnClickListener() {
+
+    @Override
+    public void onClick(View arg0) {
+                status = false;
+                recorder.release();
+                Log.d("VS","Recorder released");
+    }
+};
+
+private final OnClickListener startListener = new OnClickListener() {
+
+    @Override
+    public void onClick(View arg0) {
+                status = true;
+                startStreaming();           
+    }
+};
+
+
+
+public void startStreaming()
+{
+    Thread streamThread = new Thread(new Runnable(){
+        @Override
+        public void run()
+        {
+            try{
+
+                DatagramSocket socket = new DatagramSocket();
+                Log.d("VS", "Socket Created");
+
+                byte[] buffer = new byte[minBufSize];
+
+                Log.d("VS","Buffer created of size " + minBufSize);
+
+
+                Log.d("VS", "Address retrieved");
+                recorder = new AudioRecord(MediaRecorder.AudioSource.MIC,sampleRate,channelConfig,audioFormat,minBufSize);
+                Log.d("VS", "Recorder initialized");
+
+
+                recorder.startRecording();
+
+
+                InetAddress IPAddress = InetAddress.getByName("192.168.1.5");
+                byte[] sendData = new byte[1024];
+                byte[] receiveData = new byte[1024];
+
+
+                while (status == true)
+                {
+                    DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, 50005);
+                    socket.send(sendPacket);
+                }
+
+            } catch(UnknownHostException e) {
+                Log.e("VS", "UnknownHostException");
+            } catch (IOException e) {
+                Log.e("VS", "IOException");
+                e.printStackTrace();
+            } 
+
+
+        }
+
+    });
+    streamThread.start();
+}
+}
+
+
+And here is the code for the Java program reading in the data..
+
+class Server
+{
+   public static void main(String args[]) throws Exception
+      {
+         DatagramSocket serverSocket = new DatagramSocket(50005);
+            byte[] receiveData = new byte[1024];
+            byte[] sendData = new byte[1024];
+            while(true)
+               {
+                  DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+
+
+
+              serverSocket.receive(receivePacket);
+              String sentence = new String( receivePacket.getData().toString());
+
+              System.out.println("RECEIVED: " + sentence);
+           }
+  }
+}
+
+
+I know that I should encode the audio on the app side before sending this to the Java program but I'm not to sure how to go about encoding while using AudioRecorder. I would prefer not to use NDK as I have no experience with it and do not really have time to learn how to use it....yet :)
+    
+===============================================================================================
+56
+A:So I got my problem fixed. The problem was mainly on the receiving side. The receiver takes in the audio stream and pushes it out to the PC's speakers. The resulting voice is still quite laggy and broken but it works none the less. Playing around with the buffer size may improve this.
+
+Edit : you use a thread to read the audio in order the avoid lag. Also, it is better to use a sampling size of 16 000 as it is ok for voice. 
+
+Android Code:
+
+package com.example.mictest2;
+
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+
+import android.app.Activity;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.widget.Button;
+
+public class Send extends Activity {
+private Button startButton,stopButton;
+
+public byte[] buffer;
+public static DatagramSocket socket;
+private int port=50005;
+
+AudioRecord recorder;
+
+private int sampleRate = 16000 ; // 44100 for music
+private int channelConfig = AudioFormat.CHANNEL_CONFIGURATION_MONO;    
+private int audioFormat = AudioFormat.ENCODING_PCM_16BIT;       
+int minBufSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
+private boolean status = true;
+
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    startButton = (Button) findViewById (R.id.start_button);
+    stopButton = (Button) findViewById (R.id.stop_button);
+
+    startButton.setOnClickListener (startListener);
+    stopButton.setOnClickListener (stopListener);
+
+}
+
+private final OnClickListener stopListener = new OnClickListener() {
+
+    @Override
+    public void onClick(View arg0) {
+                status = false;
+                recorder.release();
+                Log.d("VS","Recorder released");
+    }
+
+};
+
+private final OnClickListener startListener = new OnClickListener() {
+
+    @Override
+    public void onClick(View arg0) {
+                status = true;
+                startStreaming();           
+    }
+
+};
+
+public void startStreaming() {
+
+
+    Thread streamThread = new Thread(new Runnable() {
+
+        @Override
+        public void run() {
+            try {
+
+                DatagramSocket socket = new DatagramSocket();
+                Log.d("VS", "Socket Created");
+
+                byte[] buffer = new byte[minBufSize];
+
+                Log.d("VS","Buffer created of size " + minBufSize);
+                DatagramPacket packet;
+
+                final InetAddress destination = InetAddress.getByName("192.168.1.5");
+                Log.d("VS", "Address retrieved");
+
+
+                recorder = new AudioRecord(MediaRecorder.AudioSource.MIC,sampleRate,channelConfig,audioFormat,minBufSize*10);
+                Log.d("VS", "Recorder initialized");
+
+                recorder.startRecording();
+
+
+                while(status == true) {
+
+
+                    //reading data from MIC into buffer
+                    minBufSize = recorder.read(buffer, 0, buffer.length);
+
+                    //putting buffer in the packet
+                    packet = new DatagramPacket (buffer,buffer.length,destination,port);
+
+                    socket.send(packet);
+                    System.out.println("MinBufferSize: " +minBufSize);
+
+
+                }
+
+
+
+            } catch(UnknownHostException e) {
+                Log.e("VS", "UnknownHostException");
+            } catch (IOException e) {
+                e.printStackTrace();
+                Log.e("VS", "IOException");
+            } 
+        }
+
+    });
+    streamThread.start();
+ }
+ }
+
+
+Android XML:
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:tools="http://schemas.android.com/tools"
+android:layout_width="match_parent"
+android:layout_height="match_parent"
+android:paddingBottom="@dimen/activity_vertical_margin"
+android:paddingLeft="@dimen/activity_horizontal_margin"
+android:paddingRight="@dimen/activity_horizontal_margin"
+android:paddingTop="@dimen/activity_vertical_margin"
+tools:context=".MainActivity" >
+
+<TextView
+    android:id="@+id/textView1"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="@string/hello_world" />
+
+<Button
+    android:id="@+id/start_button"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_below="@+id/textView1"
+    android:layout_centerHorizontal="true"
+    android:layout_marginTop="130dp"
+    android:text="Start" />
+
+<Button
+    android:id="@+id/stop_button"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_alignLeft="@+id/button1"
+    android:layout_below="@+id/button1"
+    android:layout_marginTop="64dp"
+    android:text="Stop" />
+
+</RelativeLayout>
+
+
+Server code:
+
+package com.datagram;
+
+import java.io.ByteArrayInputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.FloatControl;
+import javax.sound.sampled.SourceDataLine;
+
+class Server {
+
+AudioInputStream audioInputStream;
+static AudioInputStream ais;
+static AudioFormat format;
+static boolean status = true;
+static int port = 50005;
+static int sampleRate = 44100;
+
+public static void main(String args[]) throws Exception {
+
+
+    DatagramSocket serverSocket = new DatagramSocket(50005);
+
+
+    byte[] receiveData = new byte[1280]; 
+    // ( 1280 for 16 000Hz and 3584 for 44 100Hz (use AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat) to get the correct size)
+
+    format = new AudioFormat(sampleRate, 16, 1, true, false);
+
+    while (status == true) {
+        DatagramPacket receivePacket = new DatagramPacket(receiveData,
+                receiveData.length);
+
+        serverSocket.receive(receivePacket);
+
+        ByteArrayInputStream baiss = new ByteArrayInputStream(
+                receivePacket.getData());
+
+        ais = new AudioInputStream(baiss, format, receivePacket.getLength());
+
+        // A thread solve the problem of chunky audio 
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                toSpeaker(receivePacket.getData(), sourceDataLine);
+            }
+        }).start();
+    }
+}
+
+public static void toSpeaker(byte soundbytes[]) {
+    try {
+
+        DataLine.Info dataLineInfo = new DataLine.Info(SourceDataLine.class, format);
+        SourceDataLine sourceDataLine = (SourceDataLine) AudioSystem.getLine(dataLineInfo);
+
+        sourceDataLine.open(format);
+
+        FloatControl volumeControl = (FloatControl) sourceDataLine.getControl(FloatControl.Type.MASTER_GAIN);
+        volumeControl.setValue(100.0f);
+
+        sourceDataLine.start();
+        sourceDataLine.open(format);
+
+        sourceDataLine.start();
+
+        System.out.println("format? :" + sourceDataLine.getFormat());
+
+        sourceDataLine.write(soundbytes, 0, soundbytes.length);
+        System.out.println(soundbytes.toString());
+        sourceDataLine.drain();
+        sourceDataLine.close();
+    } catch (Exception e) {
+        System.out.println("Not working in speakers...");
+        e.printStackTrace();
+    }
+}
+}
+
+
+I hope this helps save someone a few hours of pain :)
+    

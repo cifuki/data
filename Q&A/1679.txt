@@ -1,0 +1,286 @@
+111
+Q:After a lot of research on forums, now I know that there is no way to find IMSI or SIM serial number for both the SIM cards in a dual SIM phone (except for contacting the manufacturer). Now my changed question is, can we at all detect that the phone has two SIMs? I believe it can be detected with some intelligence. Few ways I can think of are:
+
+
+Dialing an USSD code and tracing the logs for IMEI number (I tried this with *139# in India. It worked.) This will give me IMEI number for the SIM from which I dialed the USSD code. (It is presumed that the phone follows android guidelines and has two IMEI numbers.)
+Storing the SIM serial number and/or IMSI for the SIM. And after detection of any other IMSI/Serial number even if the phone was not rebooted (i.e. the SIM was switched) by tracing some logs or by some broadcast event handling.
+By dialing *06# you will get to see both IMEI numbers. By some way, get those two numbers. (Something like screen capturing and image parsing for text.)
+
+
+If anyone can think of some other ways, they are most welcome. I would really appreciate any kind of help regarding this. Also, if anyone has any information about any manufacturers APIs or links to contact them, please do share with the community people.
+    
+===============================================================================================
+180
+A:Update 23 March'15 : 
+
+
+  Official multiple SIM API is available now from Android 5.1 onwards 
+
+
+Other possible option : 
+
+You can use Java reflection to get both IMEI numbers. 
+
+Using these IMEI numbers you can check whether the phone is a DUAL SIM or not. 
+
+Try following activity : 
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.widget.TextView;
+
+public class MainActivity extends Activity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        TelephonyInfo telephonyInfo = TelephonyInfo.getInstance(this);
+
+        String imeiSIM1 = telephonyInfo.getImsiSIM1();
+        String imeiSIM2 = telephonyInfo.getImsiSIM2();
+
+        boolean isSIM1Ready = telephonyInfo.isSIM1Ready();
+        boolean isSIM2Ready = telephonyInfo.isSIM2Ready();
+
+        boolean isDualSIM = telephonyInfo.isDualSIM();
+
+        TextView tv = (TextView) findViewById(R.id.tv);
+        tv.setText(" IME1 : " + imeiSIM1 + "\
+" +
+                " IME2 : " + imeiSIM2 + "\
+" +
+                " IS DUAL SIM : " + isDualSIM + "\
+" +
+                " IS SIM1 READY : " + isSIM1Ready + "\
+" +
+                " IS SIM2 READY : " + isSIM2Ready + "\
+");
+    }
+}
+
+
+And here is TelephonyInfo.java : 
+
+import java.lang.reflect.Method;
+
+import android.content.Context;
+import android.telephony.TelephonyManager;
+
+public final class TelephonyInfo {
+
+    private static TelephonyInfo telephonyInfo;
+    private String imeiSIM1;
+    private String imeiSIM2;
+    private boolean isSIM1Ready;
+    private boolean isSIM2Ready;
+
+    public String getImsiSIM1() {
+        return imeiSIM1;
+    }
+
+    /*public static void setImsiSIM1(String imeiSIM1) {
+        TelephonyInfo.imeiSIM1 = imeiSIM1;
+    }*/
+
+    public String getImsiSIM2() {
+        return imeiSIM2;
+    }
+
+    /*public static void setImsiSIM2(String imeiSIM2) {
+        TelephonyInfo.imeiSIM2 = imeiSIM2;
+    }*/
+
+    public boolean isSIM1Ready() {
+        return isSIM1Ready;
+    }
+
+    /*public static void setSIM1Ready(boolean isSIM1Ready) {
+        TelephonyInfo.isSIM1Ready = isSIM1Ready;
+    }*/
+
+    public boolean isSIM2Ready() {
+        return isSIM2Ready;
+    }
+
+    /*public static void setSIM2Ready(boolean isSIM2Ready) {
+        TelephonyInfo.isSIM2Ready = isSIM2Ready;
+    }*/
+
+    public boolean isDualSIM() {
+        return imeiSIM2 != null;
+    }
+
+    private TelephonyInfo() {
+    }
+
+    public static TelephonyInfo getInstance(Context context){
+
+        if(telephonyInfo == null) {
+
+            telephonyInfo = new TelephonyInfo();
+
+            TelephonyManager telephonyManager = ((TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE));
+
+            telephonyInfo.imeiSIM1 = telephonyManager.getDeviceId();;
+            telephonyInfo.imeiSIM2 = null;
+
+            try {
+                telephonyInfo.imeiSIM1 = getDeviceIdBySlot(context, "getDeviceIdGemini", 0);
+                telephonyInfo.imeiSIM2 = getDeviceIdBySlot(context, "getDeviceIdGemini", 1);
+            } catch (GeminiMethodNotFoundException e) {
+                e.printStackTrace();
+
+                try {
+                    telephonyInfo.imeiSIM1 = getDeviceIdBySlot(context, "getDeviceId", 0);
+                    telephonyInfo.imeiSIM2 = getDeviceIdBySlot(context, "getDeviceId", 1);
+                } catch (GeminiMethodNotFoundException e1) {
+                    //Call here for next manufacturer's predicted method name if you wish
+                    e1.printStackTrace();
+                }
+            }
+
+            telephonyInfo.isSIM1Ready = telephonyManager.getSimState() == TelephonyManager.SIM_STATE_READY;
+            telephonyInfo.isSIM2Ready = false;
+
+            try {
+                telephonyInfo.isSIM1Ready = getSIMStateBySlot(context, "getSimStateGemini", 0);
+                telephonyInfo.isSIM2Ready = getSIMStateBySlot(context, "getSimStateGemini", 1);
+            } catch (GeminiMethodNotFoundException e) {
+
+                e.printStackTrace();
+
+                try {
+                    telephonyInfo.isSIM1Ready = getSIMStateBySlot(context, "getSimState", 0);
+                    telephonyInfo.isSIM2Ready = getSIMStateBySlot(context, "getSimState", 1);
+                } catch (GeminiMethodNotFoundException e1) {
+                    //Call here for next manufacturer's predicted method name if you wish
+                    e1.printStackTrace();
+                }
+            }
+        }
+
+        return telephonyInfo;
+    }
+
+    private static String getDeviceIdBySlot(Context context, String predictedMethodName, int slotID) throws GeminiMethodNotFoundException {
+
+        String imei = null;
+
+        TelephonyManager telephony = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+
+        try{
+
+            Class<?> telephonyClass = Class.forName(telephony.getClass().getName());
+
+            Class<?>[] parameter = new Class[1];
+            parameter[0] = int.class;
+            Method getSimID = telephonyClass.getMethod(predictedMethodName, parameter);
+
+            Object[] obParameter = new Object[1];
+            obParameter[0] = slotID;
+            Object ob_phone = getSimID.invoke(telephony, obParameter);
+
+            if(ob_phone != null){
+                imei = ob_phone.toString();
+
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new GeminiMethodNotFoundException(predictedMethodName);
+        }
+
+        return imei;
+    }
+
+    private static  boolean getSIMStateBySlot(Context context, String predictedMethodName, int slotID) throws GeminiMethodNotFoundException {
+
+        boolean isReady = false;
+
+        TelephonyManager telephony = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+
+        try{
+
+            Class<?> telephonyClass = Class.forName(telephony.getClass().getName());
+
+            Class<?>[] parameter = new Class[1];
+            parameter[0] = int.class;
+            Method getSimStateGemini = telephonyClass.getMethod(predictedMethodName, parameter);
+
+            Object[] obParameter = new Object[1];
+            obParameter[0] = slotID;
+            Object ob_phone = getSimStateGemini.invoke(telephony, obParameter);
+
+            if(ob_phone != null){
+                int simState = Integer.parseInt(ob_phone.toString());
+                if(simState == TelephonyManager.SIM_STATE_READY){
+                    isReady = true;
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new GeminiMethodNotFoundException(predictedMethodName);
+        }
+
+        return isReady;
+    }
+
+
+    private static class GeminiMethodNotFoundException extends Exception {
+
+        private static final long serialVersionUID = -996812356902545308L;
+
+        public GeminiMethodNotFoundException(String info) {
+            super(info);
+        }
+    }
+}
+
+
+Edit :
+
+Getting access of methods like "getDeviceIdGemini" for other SIM slot's detail has prediction that method exist.
+
+If that method's name doesn't match with one given by device manufacturer than it will not work. You have to find corresponding method name for those devices. 
+
+Finding method names for other manufacturers can be done using Java reflection as follows : 
+
+public static void printTelephonyManagerMethodNamesForThisDevice(Context context) {
+
+    TelephonyManager telephony = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+    Class<?> telephonyClass;
+    try {
+        telephonyClass = Class.forName(telephony.getClass().getName());
+        Method[] methods = telephonyClass.getMethods();
+        for (int idx = 0; idx < methods.length; idx++) {
+
+            System.out.println("\
+" + methods[idx] + " declared by " + methods[idx].getDeclaringClass());
+        }
+    } catch (ClassNotFoundException e) {
+        e.printStackTrace();
+    }
+} 
+
+
+EDIT :  
+
+As Seetha pointed out in her comment : 
+
+telephonyInfo.imeiSIM1 = getDeviceIdBySlot(context, "getDeviceIdDs", 0);
+telephonyInfo.imeiSIM2 = getDeviceIdBySlot(context, "getDeviceIdDs", 1); 
+
+
+It is working for her. She was successful in getting two IMEI numbers for both the SIM in Samsung Duos device.
+
+Add <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+EDIT 2 : 
+
+The method used for retrieving data is for Lenovo A319 and other phones by that manufacture (Credit Maher Abuthraa): 
+
+telephonyInfo.imeiSIM1 = getDeviceIdBySlot(context, "getSimSerialNumberGemini", 0); 
+telephonyInfo.imeiSIM2 = getDeviceIdBySlot(context, "getSimSerialNumberGemini", 1); 
+
+    

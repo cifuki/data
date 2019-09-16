@@ -1,0 +1,215 @@
+61
+Q:Background
+
+I'm making a live wallpaper that can show a video. In the beginning I thought this is going to be very hard, so some people suggested using OpenGL solutions or other, very complex solutions (such as this one).
+
+Anyway, for this, I've found various places talking about it, and based on this github library (which has some bugs), I finally got it to work.
+
+The problem
+
+While I've succeeded showing a video, I can't find the way to control how it's shown compared to the screen resolution.
+
+Currently it always gets to be stretched to the screen size, meaning that this (video taken from here) :
+
+
+
+gets to show as this:
+
+
+
+Reason is the different aspect ratio : 560x320 (video resolution) vs 1080x1920 (device resolution).
+
+Note: I'm well aware of solutions of scaling videos, that are available on various Github repositories (such as here), but I'm asking about a live wallpaper. As such, it doesn't have a View, so it's more limited about how to do things. To be more specifically, a solution can't have any kind of layout, a TextureView or a SurfaceView, or any other kind of View.
+
+What I've tried
+
+I tried to play with various fields and functions of the SurfaceHolder, but with no luck so far. Examples:
+
+
+setVideoScalingMode - it either crashes or doesn't do anything.
+changing surfaceFrame - same.
+
+
+Here's the current code I've made (full project available here) :
+
+class MovieLiveWallpaperService : WallpaperService() {
+    override fun onCreateEngine(): WallpaperService.Engine {
+        return VideoLiveWallpaperEngine()
+    }
+
+    private enum class PlayerState {
+        NONE, PREPARING, READY, PLAYING
+    }
+
+    inner class VideoLiveWallpaperEngine : WallpaperService.Engine() {
+        private var mp: MediaPlayer? = null
+        private var playerState: PlayerState = PlayerState.NONE
+
+        override fun onSurfaceCreated(holder: SurfaceHolder) {
+            super.onSurfaceCreated(holder)
+            Log.d("AppLog", "onSurfaceCreated")
+            mp = MediaPlayer()
+            val mySurfaceHolder = MySurfaceHolder(holder)
+            mp!!.setDisplay(mySurfaceHolder)
+            mp!!.isLooping = true
+            mp!!.setVolume(0.0f, 0.0f)
+            mp!!.setOnPreparedListener { mp ->
+                playerState = PlayerState.READY
+                setPlay(true)
+            }
+            try {
+                //mp!!.setDataSource(this@MovieLiveWallpaperService, Uri.parse("http://techslides.com/demos/sample-videos/small.mp4"))
+                mp!!.setDataSource(this@MovieLiveWallpaperService, Uri.parse("android.resource://" + packageName + "/" + R.raw.small))
+            } catch (e: Exception) {
+            }
+        }
+
+        override fun onDestroy() {
+            super.onDestroy()
+            Log.d("AppLog", "onDestroy")
+            if (mp == null)
+                return
+            mp!!.stop()
+            mp!!.release()
+            playerState = PlayerState.NONE
+        }
+
+        private fun setPlay(play: Boolean) {
+            if (mp == null)
+                return
+            if (play == mp!!.isPlaying)
+                return
+            when {
+                !play -> {
+                    mp!!.pause()
+                    playerState = PlayerState.READY
+                }
+                mp!!.isPlaying -> return
+                playerState == PlayerState.READY -> {
+                    Log.d("AppLog", "ready, so starting to play")
+                    mp!!.start()
+                    playerState = PlayerState.PLAYING
+                }
+                playerState == PlayerState.NONE -> {
+                    Log.d("AppLog", "not ready, so preparing")
+                    mp!!.prepareAsync()
+                    playerState = PlayerState.PREPARING
+                }
+            }
+        }
+
+        override fun onVisibilityChanged(visible: Boolean) {
+            super.onVisibilityChanged(visible)
+            Log.d("AppLog", "onVisibilityChanged:" + visible + " " + playerState)
+            if (mp == null)
+                return
+            setPlay(visible)
+        }
+
+    }
+
+    class MySurfaceHolder(private val surfaceHolder: SurfaceHolder) : SurfaceHolder {
+        override fun addCallback(callback: SurfaceHolder.Callback) = surfaceHolder.addCallback(callback)
+
+        override fun getSurface() = surfaceHolder.surface!!
+
+        override fun getSurfaceFrame() = surfaceHolder.surfaceFrame
+
+        override fun isCreating(): Boolean = surfaceHolder.isCreating
+
+        override fun lockCanvas(): Canvas = surfaceHolder.lockCanvas()
+
+        override fun lockCanvas(dirty: Rect): Canvas = surfaceHolder.lockCanvas(dirty)
+
+        override fun removeCallback(callback: SurfaceHolder.Callback) = surfaceHolder.removeCallback(callback)
+
+        override fun setFixedSize(width: Int, height: Int) = surfaceHolder.setFixedSize(width, height)
+
+        override fun setFormat(format: Int) = surfaceHolder.setFormat(format)
+
+        override fun setKeepScreenOn(screenOn: Boolean) {}
+
+        override fun setSizeFromLayout() = surfaceHolder.setSizeFromLayout()
+
+        override fun setType(type: Int) = surfaceHolder.setType(type)
+
+        override fun unlockCanvasAndPost(canvas: Canvas) = surfaceHolder.unlockCanvasAndPost(canvas)
+    }
+}
+
+
+The questions
+
+I'd like to know how to adjust the scale the content based on what we have for ImageView, all while keeping the aspect ratio  :
+
+
+center-crop - fits to 100% of the container (the screen in this case), cropping on sides (top&bottom or left&right) when needed. Doesn't stretch anything. This means the content seems fine, but not all of it might be shown.
+fit-center - stretch to fit width/height
+center-inside - set as original size, centered, and stretch to fit width/height only if too large.
+
+    
+===============================================================================================
+4
+A:So I wasn't yet able to get all scale types that you've asked but I've been able to get fit-xy and center-crop working fairly easily using exo player. The full code can be seen at https://github.com/yperess/StackOverflow/tree/50091878 and I'll update it as I get more. Eventually I'll also fill the MainActivity to allow you to choose the scaling type as the settings (I'll do this with a simple PreferenceActivity) and read the shared preferences value on the service side.
+
+The overall idea is that deep down MediaCodec already implements both fit-xy and center-crop which are really the only 2 modes you would need if you had access to a view hierarchy. This is the case because fit-center, fit-top, fit-bottom would all really just be fit-xy where the surface has a gravity and is scaled to match the video size * minimum scaling. To get these working what I believe will need to happen is we'd need to create an OpenGL context and provide a SurfaceTexture. This SurfaceTexture can be wrapped with a stub Surface which can be passed to exo player. Once the video is loaded we can set the size of these since we created them. We also have a callback on SurfaceTexture to let us know when a frame is ready. At this point we should be able to modify the frame (hopefully just using a simple matrix scale and transform).
+
+The key components here are creating the exo player:
+
+    private fun initExoMediaPlayer(): SimpleExoPlayer {
+        val videoTrackSelectionFactory = AdaptiveTrackSelection.Factory(bandwidthMeter)
+        val trackSelector = DefaultTrackSelector(videoTrackSelectionFactory)
+        val player = ExoPlayerFactory.newSimpleInstance(this@MovieLiveWallpaperService,
+                trackSelector)
+        player.playWhenReady = true
+        player.repeatMode = Player.REPEAT_MODE_ONE
+        player.volume = 0f
+        if (mode == Mode.CENTER_CROP) {
+            player.videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+        } else {
+            player.videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
+        }
+        if (mode == Mode.FIT_CENTER) {
+            player.addVideoListener(this)
+        }
+        return player
+    }
+
+
+Then loading the video:
+
+    override fun onSurfaceCreated(holder: SurfaceHolder) {
+        super.onSurfaceCreated(holder)
+        if (mode == Mode.FIT_CENTER) {
+            // We need to somehow wrap the surface or set some scale factor on exo player here.
+            // Most likely this will require creating a SurfaceTexture and attaching it to an
+            // OpenGL context. Then for each frame, writing it to the original surface but with
+            // an offset
+            exoMediaPlayer.setVideoSurface(holder.surface)
+        } else {
+            exoMediaPlayer.setVideoSurfaceHolder(holder)
+        }
+
+        val videoUri = RawResourceDataSource.buildRawResourceUri(R.raw.small)
+        val dataSourceFactory = DataSource.Factory { RawResourceDataSource(context) }
+        val mediaSourceFactory = ExtractorMediaSource.Factory(dataSourceFactory)
+        exoMediaPlayer.prepare(mediaSourceFactory.createMediaSource(videoUri))
+    }
+
+
+UPDATE:
+
+Got it working, I'll need tomorrow to clean it up before I post the code but here's a sneak preview...
+
+
+What I ended up doing it basically taking GLSurfaceView and ripping it apart. If you look at the source for it the only thing missing that's making it impossible to use in a wallpaper is the fact that it only starts the GLThread when attached to the window. So if you replicate the same code but allow to manually start the GLThread you can go ahead. After that you just need to keep track of how big your screen is vs the video after scaling to the minimum scale that would fit and shift the quad on which you draw to.
+
+Known issues with the code:
+1. There's a small bug with the GLThread I haven't been able to fish out. Seems like there's a simple timing issue where when the thread pauses I get a call to signallAll() that's not actually waiting on anything.
+2. I didn't bother dynamically modifying the mode in the renderer. It shouldn't be too hard. Add a preference listener when creating the Engine then update the renderer when scale_type changes.
+
+UPDATE:
+All issues have been resolved. signallAll() was throwing because I missed a check to see that we actually have the lock. I also added a listener to update the scale type dynamically so now all scale types use the GlEngine.
+
+ENJOY!
+    

@@ -1,0 +1,41 @@
+28
+Q:I saw some SO posts which discussed about how to end a phone call programmtically, for example, this one. Yep, people focus on the result but no one actually explain the reason why it works?
+
+I tried the code, it works well. But I would like to know more details about what is going on underneath? Why by creating the ITelephony.aidl , the android hidden internal ITelephony interface is exposed in our project? How does ourself created ITelephony.aidl & the automatically generated java (/gen/ITelephony.java) link to android's ITelephony interface? Is it only because of the name matching (package name & aidl file name)?
+
+TelephonyManager tm = (TelephonyManager) context
+                .getSystemService(Context.TELEPHONY_SERVICE);
+
+Class c = Class.forName(tm.getClass().getName());
+Method m = c.getDeclaredMethod("getITelephony");
+m.setAccessible(true);
+
+//Why does the android internal ITelephony interface is exposed after created the ITelephony.aidl?
+com.android.internal.telephony.ITelephony telephonyService = (ITelephony) m.invoke(tm);
+telephonyService.endCall(); 
+
+    
+===============================================================================================
+80
+A:Actually, adding ITelephony.aidl to your project isn't necessary, it is just a convenience. You could just as well do it this way:
+
+TelephonyManager tm = (TelephonyManager) context
+            .getSystemService(Context.TELEPHONY_SERVICE);
+Class c = Class.forName(tm.getClass().getName());
+Method m = c.getDeclaredMethod("getITelephony");
+m.setAccessible(true);
+Object telephonyService = m.invoke(tm); // Get the internal ITelephony object
+c = Class.forName(telephonyService.getClass().getName()); // Get its class
+m = c.getDeclaredMethod("endCall"); // Get the "endCall()" method
+m.setAccessible(true); // Make it accessible
+m.invoke(telephonyService); // invoke endCall()
+
+
+Under the covers this all works using Java reflection to access private (ie: not publicly documented) methods. You can figure out what methods are there, and what they do, by reading the open-source (ie: publicly available) Android source code. Once you know what is there and what it does, you can use reflection to get to it, even though it is "hidden".
+
+The TelephonyManager class is implemented using a remote service. If you want to request the TelephonyManager to do something for you, you call a method on the TelephonyManager (that's the publicly documented part) and internally it makes a call to the remote telephony service to actually do the work. This is done using AIDL, which is a kind of "remote procedure call". The remote service can do things that aren't exposed publicly via the TelephonyManager class. What you are doing here is getting the client-side of the "remote procedure call" interface using getITelephony(). This returns an object of type ITelephony. This class has a method named endCall(). Once we have the object of type ITelephony, we can get its Class object and then get the method endCall() from the Class. Once we have the method, we make it accessible and than call it. The method endCall() is in the client-side of the remote procedure call. The method now sends a message to the telephony manager service (which is running in a remote server) and asks it to end the call.
+
+Since the source code for the ITelephony.aidl is publicly available, you can put the source code in your project and your IDE will generate ITelephony.java (which contains the client-side of the remote procedure call) from ITelephony.aidl. You can then just import that and your IDE will now know about the ITelephony class and its methods. This allows the compiler to generate the correct byte-code when compiling your project. When you run this code on an Android device, you call in to the Android framework to get the ITelephony object and then you cast it to com.android.internal.telephony.ITelephony. From then on, you can access the methods and fields of the object using the generated ITelephony.java as long as the Java code you have for ITelephony matches the actual class definition of the returned ITelephony object. If the class definitions don't match, the VM will throw an appropriate exception.
+
+I hope this answers your question. I wasn't exactly sure how much you already knew about this, so maybe I mentioned stuff you already know. If so, sorry about that. If this isn't clear, please indicate what exactly you don't understand.
+    

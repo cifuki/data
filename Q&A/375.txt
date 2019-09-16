@@ -1,0 +1,69 @@
+290
+Q:I have an ArrayList with custom objects. Each custom object contains a variety of strings and numbers. I need the array to stick around even if the user leaves the activity and then wants to come back at a later time, however I don't need the array available after the application has been closed completely. I save a lot of other objects this way by using the SharedPreferences but I can't figure out how to save my entire array this way. Is this possible? Maybe SharedPreferences isn't the way to go about this? Is there a simpler method?
+    
+===============================================================================================
+401
+A:After API 11 the SharedPreferences Editor accept Sets. You could convert your List into a HashSet or something similar and store it like that. When your read it back, convert it into an ArrayList, sort it if needed and you're good to go.
+
+//Retrieve the values
+Set<String> set = myScores.getStringSet("key", null);
+
+//Set the values
+Set<String> set = new HashSet<String>();
+set.addAll(listOfExistingScores);
+scoreEditor.putStringSet("key", set);
+scoreEditor.commit();
+
+
+
+
+You can also serialize your ArrayList and then save/read it to/from SharedPreferences. Below is the solution:
+
+EDIT:
+Ok, below is the solution to save ArrayList as serialized object to SharedPreferences and then read it from SharedPreferences.
+
+Because API supports only storing and retrieving of strings to/from SharedPreferences (after API 11, its simpler), we have to serialize and de-serialize the ArrayList object which has the list of tasks into string.
+
+In the addTask() method of the TaskManagerApplication class, we have to get the instance of the shared preference and then store the serialized ArrayList using the putString() method:
+
+public void addTask(Task t) {
+  if (null == currentTasks) {
+    currentTasks = new ArrayList<task>();
+  }
+  currentTasks.add(t);
+
+  // save the task list to preference
+  SharedPreferences prefs = getSharedPreferences(SHARED_PREFS_FILE, Context.MODE_PRIVATE);
+  Editor editor = prefs.edit();
+  try {
+    editor.putString(TASKS, ObjectSerializer.serialize(currentTasks));
+  } catch (IOException e) {
+    e.printStackTrace();
+  }
+  editor.commit();
+}
+
+
+Similarly we have to retrieve the list of tasks from the preference in the onCreate() method:
+
+public void onCreate() {
+  super.onCreate();
+  if (null == currentTasks) {
+    currentTasks = new ArrayList<task>();
+  }
+
+  // load tasks from preference
+  SharedPreferences prefs = getSharedPreferences(SHARED_PREFS_FILE, Context.MODE_PRIVATE);
+
+  try {
+    currentTasks = (ArrayList<task>) ObjectSerializer.deserialize(prefs.getString(TASKS, ObjectSerializer.serialize(new ArrayList<task>())));
+  } catch (IOException e) {
+    e.printStackTrace();
+  } catch (ClassNotFoundException e) {
+    e.printStackTrace();
+  }
+}
+
+
+You can get ObjectSerializer class from Apache Pig project ObjectSerializer.java
+    

@@ -1,0 +1,82 @@
+32
+Q:I am currently working on an android project that requires me to invoke a web service that will return me a json file. I have been using GSON library to parse all the json file and get a JSON object. It has been working well until I come across this json data which the key fields are dynamic. An example of this file is as below:
+
+{ "0": { "count":"5"},
+  "1": { "title":"...", "desc":"" },
+  "2": { "title":"...", "desc":"" },
+  "3": { "title":"...", "desc":"" },
+  "4": { "title":"...", "desc":"" },
+  "5": { "title":"...", "desc":"" },
+  "routes": { "route1":"...", "route3":"" },
+}
+
+
+I am able to get the count based on the key id of "0", but I am not sure how do I make use of this value to get the other key objects (key id 1-5), which consist of the data that I needed. Will really appreciate if anyone is able to help me in this matter. Thanks.
+    
+===============================================================================================
+39
+A:The most straightforward approach I can think of is to just treat the structure as a Map (of Map).
+
+With Gson, this is relatively easy to do, as long as the Map structure is statically known, every branch from the root has the same depth, and everything is a String.
+
+import java.io.FileReader;
+import java.lang.reflect.Type;
+import java.util.Map;
+
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+
+public class GsonFoo
+{
+  public static void main(String[] args) throws Exception
+  {
+    Gson gson = new Gson();
+    Type mapType = new TypeToken<Map<String,Map<String, String>>>() {}.getType();
+    Map<String,Map<String, String>> map = gson.fromJson(new FileReader("input.json"), mapType);
+    System.out.println(map);
+
+    // Get the count...
+    int count = Integer.parseInt(map.get("0").get("count"));
+
+    // Get each numbered entry...
+    for (int i = 1; i <= count; i++)
+    {
+      System.out.println("Entry " + i + ":");
+      Map<String, String> numberedEntry = map.get(String.valueOf(i));
+      for (String key : numberedEntry.keySet())
+        System.out.printf("key=%s, value=%s\
+", key, numberedEntry.get(key));
+    }
+
+    // Get the routes...
+    Map<String, String> routes = map.get("routes");
+
+    // Get each route...
+    System.out.println("Routes:");
+    for (String key : routes.keySet())
+      System.out.printf("key=%s, value=%s\
+", key, routes.get(key));
+  }
+}
+
+
+For more dynamic Map structure handling, I strongly suggest switching to use Jackson, instead of Gson, as Jackson will deserialize any JSON object of any arbitrary complexity into a Java Map, with just one simple line of code, and it will automatically retain the types of primitive values.
+
+import java.io.File;
+import java.util.Map;
+
+import org.codehaus.jackson.map.ObjectMapper;
+
+public class JacksonFoo
+{
+  public static void main(String[] args) throws Exception
+  {
+    ObjectMapper mapper = new ObjectMapper();
+    Map map = mapper.readValue(new File("input.json"), Map.class);
+    System.out.println(map);
+  }
+}
+
+
+The same can be achieved with Gson, but it requires dozens of lines of code.  (Plus, Gson has other shortcomings that make switching to Jackson well worth it.)
+    

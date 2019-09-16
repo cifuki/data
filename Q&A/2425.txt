@@ -1,0 +1,117 @@
+85
+Q:I'm having a hard time understanding how to use full text search (FTS) with Android. I've read the SQLite documentation on the FTS3 and FTS4 extensions. And I know it's possible to do on Android. However, I'm having a hard time finding any examples that I can comprehend.
+
+The basic database model
+
+A SQLite database table (named example_table) has 4 columns. However, there is only one column (named text_column) that needs to be indexed for a full text search. Every row of text_column contains text varying in length from 0 to 1000 words. The total number of rows is greater than 10,000. 
+
+
+How would you set up the table and/or the FTS virtual table? 
+How would you perform an FTS query on text_column?
+
+
+Additional notes:
+
+
+Because only one column needs to be indexed, only using an FTS table (and dropping example_table) would be inefficient for non-FTS queries.
+For such a large table, storing duplicate entries of text_column in the FTS table would be undesirable. This post suggests using an external content table.
+External content tables use FTS4, but FTS4 is not supported before Android API 11. An answer can assume an API >= 11, but commenting on options for supporting lower versions would be helpful.
+Changing data in the original table does not automatically update the FTS table (and vice versa). Including triggers in your answer is not necessary for this basic example, but would be helpful nonetheless.
+
+    
+===============================================================================================
+111
+A:Most Basic Answer
+
+I'm using the plain sql below so that everything is as clear and readable as possible. In your project you can use the Android convenience methods. The db object used below is an instance of SQLiteDatabase.
+
+Create FTS Table
+
+db.execSQL("CREATE VIRTUAL TABLE fts_table USING fts3 ( col_1, col_2, text_column )");
+
+
+This could go in the onCreate() method of your extended SQLiteOpenHelper class.
+
+Populate FTS Table
+
+db.execSQL("INSERT INTO fts_table VALUES ('3', 'apple', 'Hello. How are you?')");
+db.execSQL("INSERT INTO fts_table VALUES ('24', 'car', 'Fine. Thank you.')");
+db.execSQL("INSERT INTO fts_table VALUES ('13', 'book', 'This is an example.')");
+
+
+It would be better to use SQLiteDatabase#insert or prepared statements than execSQL.
+
+Query FTS Table
+
+String[] selectionArgs = { searchString };
+Cursor cursor = db.rawQuery("SELECT * FROM fts_table WHERE fts_table MATCH ?", selectionArgs);
+
+
+You could also use the SQLiteDatabase#query method. Note the MATCH keyword. 
+
+Fuller Answer
+
+The virtual FTS table above has a problem with it. Every column is indexed, but this is a waste of space and resources if some columns don't need to be indexed. The only column that needs an FTS index is probably the text_column.
+
+To solve this problem we will use a combination of a regular table and a virtual FTS table. The FTS table will contain the index but none of the actual data from the regular table. Instead it will have a link to the content of the regular table. This is called an external content table.
+
+
+
+Create the Tables
+
+db.execSQL("CREATE TABLE example_table (_id INTEGER PRIMARY KEY, col_1 INTEGER, col_2 TEXT, text_column TEXT)");
+db.execSQL("CREATE VIRTUAL TABLE fts_example_table USING fts4 (content='example_table', text_column)");
+
+
+Notice that we have to use FTS4 to do this rather than FTS3. FTS4 is not supported in Android before API version 11. You could either (1) only provide search functionality for API >= 11, or (2) use an FTS3 table (but this means the database will be larger because the full text column exists in both databases).
+
+Populate the Tables
+
+db.execSQL("INSERT INTO example_table (col_1, col_2, text_column) VALUES ('3', 'apple', 'Hello. How are you?')");
+db.execSQL("INSERT INTO example_table (col_1, col_2, text_column) VALUES ('24', 'car', 'Fine. Thank you.')");
+db.execSQL("INSERT INTO example_table (col_1, col_2, text_column) VALUES ('13', 'book', 'This is an example.')");
+
+
+(Again, there are better ways in do inserts than with execSQL. I am just using it for its readability.)
+
+If you tried to do an FTS query now on fts_example_table you would get no results. The reason is that changing one table does not automatically change the other table. You have to manually update the FTS table:
+
+db.execSQL("INSERT INTO fts_example_table (docid, text_column) SELECT _id, text_column FROM example_table");
+
+
+(The docid is like the rowid for a regular table.) You have to make sure to update the FTS table (so that it can update the index) every time you make a change (INSERT, DELETE, UPDATE) to the external content table. This can get cumbersome. If you are only making a prepopulated database, you can do 
+
+db.execSQL("INSERT INTO fts_example_table(fts_example_table) VALUES('rebuild')");
+
+
+which will rebuild the whole table. This can be slow, though, so it is not something you want to do after every little change. You would do it after finishing all the inserts on the external content table. If you do need to keep the databases in sync automatically, you can use triggers. Go here and scroll down a little to find directions.
+
+Query the Databases
+
+String[] selectionArgs = { searchString };
+Cursor cursor = db.rawQuery("SELECT * FROM fts_example_table WHERE fts_example_table MATCH ?", selectionArgs);
+
+
+This is the same as before, except this time you only have access to text_column (and docid). What if you need to get data from other columns in the external content table? Since the docid of the FTS table matches the rowid (and in this case _id) of the external content table, you can use a join. (Thanks to this answer for help with that.)
+
+String sql = "SELECT * FROM example_table WHERE _id IN " +
+        "(SELECT docid FROM fts_example_table WHERE fts_example_table MATCH ?)";
+String[] selectionArgs = { searchString };
+Cursor cursor = db.rawQuery(sql, selectionArgs);
+
+
+Further Reading
+
+Go through these documents carefully to see other ways of using FTS virtual tables:
+
+
+SQLite FTS3 and FTS4 Extensions (SQLite docs)
+Storing and Searching for Data (Android docs)
+
+
+Additional Notes
+
+
+Set operators (AND, OR, NOT) in SQLite FTS queries have Standard Query Syntax and Enhanced Query Syntax. Unfortunately, Android apparently does not support the Enhanced Query Syntax (see here, here, here, and here). That means mixing AND and OR becomes difficult (requiring the use of UNION or checking PRAGMA compile_options it seems). Very unfortunate. Please add a comment if there is an update in this area. 
+
+    

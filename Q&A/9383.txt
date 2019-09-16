@@ -1,0 +1,164 @@
+29
+Q:I want to set up a HandlerThread from the GUI thread. Then some time later, when a button is clicked on the GUI, it runs callHello(), which then send a message to a HelloLogger object residing on the non-GUI thread which asynchronously logs "Hello World". I have tried a number of things, some block indefinitely, some never receive the message, etc etc. The code below is more or less as close as I have got, please could someone modify it to work? 
+
+public class HandlerThreadExample {
+
+    private MyHandlerThread mMyHandlerThread;
+    private Looper mLooper;
+    private Handler mHandler;
+
+    public HandlerThreadExample(){
+        mMyHandlerThread = new MyHandlerThread();
+        mMyHandlerThread.start();
+        mLooper = mMyHandlerThread.getLooper();
+    }
+    public void callHello() {
+        mHandler.sendEmptyMessage(1);
+    }
+    private class MyHandlerThread extends HandlerThread {
+        private HelloLogger mHelloLogger;
+        private Handler mHandler;
+        public MyHandlerThread() {
+            super("The MyHandlerThread thread", HandlerThread.NORM_PRIORITY);
+        }
+        public void run (){
+            mHelloLogger = new HelloLogger();
+            mHandler = new Handler(getLooper()){
+                public void handleMessage(Message msg){
+                    mHelloLogger.logHello();
+                }
+            };
+            super.run();
+        }
+    }
+    private class HelloLogger {
+        public HelloLogger (){
+        }
+        public void logHello(){
+            Log.d("HandlerThreadExample", "Hello World");
+        }
+    }
+}
+
+
+Best examples found:
+
+
+HandlerThread Test
+How to create a Looper thread, then send it a message immediately?
+Async calls with Handler
+HandlerThread vs Executor - When is one more appropriate over the other?
+Best use of HandlerThread over other similar classes
+Android HandlerThread
+HandlerThread examples
+Android: Passing data between main and worker threads
+Java Synchronised
+Sending messages between threads using activity thread queue and Handler class
+Intro to Loopers and Handlers
+developer.android: Specifying the Code to Run on a Thread
+
+
+At least now I can close the damned tabs
+
+Solution courtesy of help from pskink
+
+public class HandlerThreadExample2 {
+    private static int MSG_START_HELLO = 0;
+    private static int MSG_HELLO_COMPLETE = 1;
+    private HandlerThread ht;
+    private Handler mHtHandler;
+    private Handler mUiHandler;
+    private boolean helloReady = false;
+    public HandlerThreadExample2(){
+        ht = new HandlerThread("The new thread");
+        ht.start();
+        Log.d(App.TAG, "UI: handler thread started");
+        mUiHandler = new Handler(){
+            public void handleMessage(Message msg){
+                if (msg.what == MSG_HELLO_COMPLETE){
+                    Log.d(App.TAG, "UI Thread: received notification of sleep completed ");
+                    helloReady = true;              }
+            }
+        };
+        mHtHandler = new Handler(ht.getLooper()){
+            public void handleMessage (Message msg){
+                if (msg.what == MSG_START_HELLO){
+                    Log.d(App.TAG, "handleMessage " + msg.what + " in " + Thread.currentThread() + " now sleeping");
+                    try {
+                        Thread.sleep(2000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    Log.d(App.TAG, "Woke up, notifying UI thread...");
+                    mUiHandler.sendEmptyMessage(MSG_HELLO_COMPLETE);
+                }
+            }
+        };
+    }
+    public void sendLongHello(){
+        if (helloReady){
+            Log.d(App.TAG, "sending hello " + Thread.currentThread());      
+            mHtHandler.sendEmptyMessage(MSG_START_HELLO);
+            helloReady = false;
+        } else {
+            Log.e(App.TAG, "Cannot do hello yet - not ready");
+        }
+    }
+}
+
+    
+===============================================================================================
+53
+A:This is a working example:
+
+HandlerThread ht = new HandlerThread("MySuperAwesomeHandlerThread");
+ht.start();
+Handler h = new Handler(ht.getLooper()) {
+    public void handleMessage(Message msg) {
+        Log.d(TAG, "handleMessage " + msg.what + " in " + Thread.currentThread());
+    };
+};
+for (int i = 0; i < 5; i++) {
+    Log.d(TAG, "sending " + i + " in " + Thread.currentThread());
+    h.sendEmptyMessageDelayed(i, 3000 + i * 1000);
+}
+
+
+UPDATE:
+
+Make two class fields: 
+
+Handler mHtHandler;
+Handler mUiHandler;
+
+
+and try this:
+
+HandlerThread ht = new HandlerThread("MySuperAwsomeHandlerThread");
+ht.start();
+Callback callback = new Callback() {
+    @Override
+    public boolean handleMessage(Message msg) {
+        if (msg.what == 0) {
+            Log.d(TAG, "got a meaasage in " + Thread.currentThread() + ", now sleeping... ");
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            Log.d(TAG, "woke up, notifying ui thread...");
+            mUiHandler.sendEmptyMessage(1);
+        } else
+        if (msg.what == 1) {
+            Log.d(TAG, "got a notification in " + Thread.currentThread());
+        }
+        return false;
+    }
+};
+mHtHandler = new Handler(ht.getLooper(), callback);
+mUiHandler = new Handler(callback);
+mHtHandler.sendEmptyMessageDelayed(0, 3000);
+
+
+You can of course get rid of Callback interface and create two Handlers with overridden handleMessage method...
+    

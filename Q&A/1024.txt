@@ -1,0 +1,92 @@
+153
+Q:I am using Retrofit library in my app, and I'd like to set a timeout of 60 seconds. Does Retrofit have some way to do this? 
+
+I set Retrofit this way:
+
+RestAdapter restAdapter = new RestAdapter.Builder()
+    .setServer(BuildConfig.BASE_URL)
+    .setConverter(new GsonConverter(gson))
+    .build();
+
+
+How can I set the timeout?
+    
+===============================================================================================
+286
+A:You can set timeouts on the underlying HTTP client. If you don't specify a client, Retrofit will create one with default connect and read timeouts.  To set your own timeouts, you need to configure your own client and supply it to the RestAdapter.Builder.
+
+An option is to use the OkHttp client, also from Square.
+
+1. Add the library dependency
+
+In the build.gradle, include this line:
+
+compile 'com.squareup.okhttp:okhttp:x.x.x'
+
+
+Where x.x.x is the desired library version.
+
+2. Set the client 
+
+For example, if you want to set a timeout of 60 seconds, do this way for Retrofit before version 2 and Okhttp before version 3 (FOR THE NEWER VERSIONS, SEE THE EDITS):
+
+public RestAdapter providesRestAdapter(Gson gson) {
+    final OkHttpClient okHttpClient = new OkHttpClient();
+    okHttpClient.setReadTimeout(60, TimeUnit.SECONDS);
+    okHttpClient.setConnectTimeout(60, TimeUnit.SECONDS);
+
+    return new RestAdapter.Builder()
+        .setEndpoint(BuildConfig.BASE_URL)
+        .setConverter(new GsonConverter(gson))
+        .setClient(new OkClient(okHttpClient))
+        .build();
+}
+
+
+
+
+EDIT 1
+
+For okhttp versions since 3.x.x, you have to set the dependency this way:
+
+compile 'com.squareup.okhttp3:okhttp:x.x.x'
+
+
+And set the client using the builder pattern:
+
+final OkHttpClient okHttpClient = new OkHttpClient.Builder()
+        .readTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .build();
+
+
+More info in Timeouts
+
+
+
+EDIT 2
+
+Retrofit versions since 2.x.x also uses the builder pattern, so change the return block above to this:
+
+return new Retrofit.Builder()
+    .baseUrl(BuildConfig.BASE_URL)
+    .addConverterFactory(GsonConverterFactory.create())
+    .client(okHttpClient)
+    .build();
+
+
+If using a code like my providesRestAdapter method, then change the method return type to Retrofit.
+
+More info in Retrofit 2 \xe2\x80\x94 Upgrade Guide from 1.9
+
+
+
+
+ps: If your minSdkVersion is greater than 8, you can use TimeUnit.MINUTES:
+
+okHttpClient.setReadTimeout(1, TimeUnit.MINUTES);
+okHttpClient.setConnectTimeout(1, TimeUnit.MINUTES);
+
+
+For more details about the units, see TimeUnit.
+    

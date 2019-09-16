@@ -1,0 +1,206 @@
+57
+Q:Like the questions someone encountered before
+I tested one the nexus s(4.0.4 with google play service available) and avd (4.2.2 with google api), in both case locationclient's getLastLocation() always return null.
+
+public class MainActivity extends Activity implements LocationListener,
+        GooglePlayServicesClient.ConnectionCallbacks,
+        GooglePlayServicesClient.OnConnectionFailedListener {
+
+    private LocationClient mLocationClient;
+    private LocationRequest mLocationRequest;
+    boolean mUpdatesRequested = false;
+    boolean mConnected = false;
+    SharedPreferences mPrefs;
+    SharedPreferences.Editor mEditor;
+    private TextView mText;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        mText = (TextView) findViewById(R.id.text);
+        mLocationRequest = LocationRequest.create();
+        mLocationRequest
+                .setInterval(LocationUtils.UPDATE_INTERVAL_IN_MILLISECONDS);
+    mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+        mLocationRequest
+.setFastestInterval(LocationUtils.FAST_INTERVAL_CEILING_IN_MILLISECONDS);
+        mUpdatesRequested = false;
+        mPrefs = getSharedPreferences(LocationUtils.SHARED_PREFERENCES,
+                Context.MODE_PRIVATE);
+        mEditor = mPrefs.edit();
+        mLocationClient = new LocationClient(this, this, this);
+    }
+    @Override
+    public void onStart() {
+        super.onStart();
+        /*
+         * Connect the client. Don't re-start any requests here; instead, wait
+         * for onResume()
+         */
+        mLocationClient.connect();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // If the app already has a setting for getting location updates, get it
+        if (mPrefs.contains(LocationUtils.KEY_UPDATES_REQUESTED)) {
+            mUpdatesRequested = mPrefs.getBoolean(
+                    LocationUtils.KEY_UPDATES_REQUESTED, false);
+            // Otherwise, turn off location updates until requested
+        } else {
+            mEditor.putBoolean(LocationUtils.KEY_UPDATES_REQUESTED, false);
+            mEditor.commit();
+        }
+    }
+    @Override
+    public void onStop() {
+        // If the client is connected
+        if (mLocationClient.isConnected()) {
+            stopPeriodicUpdates();
+        }
+        // After disconnect() is called, the client is considered "dead".
+        mLocationClient.disconnect();
+        super.onStop();
+    }
+
+    @Override
+    public void onPause() {
+        // Save the current setting for updates
+        mEditor.putBoolean(LocationUtils.KEY_UPDATES_REQUESTED,
+                mUpdatesRequested);
+        mEditor.commit();
+        super.onPause();
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        getMenuInflater().inflate(R.menu.main, menu);
+        return true;
+    }
+    public void getLocation(View v) {
+        // If Google Play Services is available
+        if (isGooglePlayServicesAvailable()) {
+            if (!mConnected)
+                mText.setText("location client is not connected to service yet");
+            else {
+                // Get the current location
+                Location currentLocation = mLocationClient.getLastLocation();
+                // Display the current location in the UI
+                mText.setText(LocationUtils.getLocationString(currentLocation));
+            }
+        }
+    }
+
+    private boolean isGooglePlayServicesAvailable() {
+
+        // Check that Google Play services is available
+        int resultCode = GooglePlayServicesUtil
+                .isGooglePlayServicesAvailable(this);
+
+        // If Google Play services is available
+        if (ConnectionResult.SUCCESS == resultCode) {
+            // In debug mode, log the status
+            Log.d(LocationUtils.APPTAG, "google play service is available");
+
+            // Continue
+            return true;
+            // Google Play services was not available for some reason
+        } else {
+            // Display an error dialog
+            Dialog dialog = GooglePlayServicesUtil.getErrorDialog(resultCode,
+                    this, 0);
+            if (dialog != null) {
+                Log.e(LocationUtils.APPTAG,
+                        "google play service is unavailable");
+            }
+            return false;
+        }
+    }
+
+    private void stopPeriodicUpdates() {
+        mLocationClient.removeLocationUpdates(this);
+        // mConnectionState.setText(R.string.location_updates_stopped);
+    }
+
+    @Override
+    public void onConnectionFailed(ConnectionResult arg0) {
+        mConnected = false;
+        Log.d(LocationUtils.APPTAG, "connection failed");
+    }
+
+    @Override
+    public void onConnected(Bundle arg0) {
+        mConnected = true;
+        Log.d(LocationUtils.APPTAG,
+                "location client connected to the location server");
+        LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        lm.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 0, 0,
+                new android.location.LocationListener() {
+                    @Override
+                    public void onStatusChanged(String provider, int status,
+                            Bundle extras) {}
+
+                    @Override
+                    public void onProviderEnabled(String provider) {}
+
+                    @Override
+                    public void onProviderDisabled(String provider) {}
+
+                    @Override
+                    public void onLocationChanged(final Location location) {
+                    }
+                });
+        Log.d(LocationUtils.APPTAG, "done trying to get location");
+    }
+
+    @Override
+    public void onDisconnected() {
+        // TODO Auto-generated method stub
+        mConnected = false;
+        Log.d(LocationUtils.APPTAG,
+                "location client disconnected from the location server");
+    }
+
+    @Override
+    public void onLocationChanged(Location arg0) {}
+
+}
+
+
+most of them came from examples given by google. In the code above  hava tried the method like that:
+
+LocationRequest request = LocationRequest.create();
+request.setNumUpdates(1);
+mLocationClient.requestLocationUpdates(request, this);
+
+
+and 
+
+LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+
+        lm.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 0, 0,
+                new android.location.LocationListener() {
+                    @Override
+                    public void onStatusChanged(String provider, int status,Bundle extras) {}
+
+                    @Override
+                    public void onProviderEnabled(String provider) {}
+
+                    @Override
+                    public void onProviderDisabled(String provider) {}
+
+                    @Override
+                    public void onLocationChanged(final Location location) {}
+                });
+
+
+In onConnected() before calling getLastLocation(), but still get no luck.
+Where's the mistake, Thanks in advance.
+    
+===============================================================================================
+51
+A:Currently the Fused Location Provider will only maintain background location if at least one client is connected to it.  Once the first client connects, it will immediately try to get a location.  If your activity is the first client to connect and you call getLastLocation() right away in onConnected(), that might not be enough time for the first location to come in.
+    

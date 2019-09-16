@@ -1,0 +1,105 @@
+30
+Q:I am trying to read attribute values from themes and styles which were designed for platforms that are newer than I am running my application on.
+
+Please don't ask why. If you know anything about the libraries I write then you should already know that I like to push the capabilities of the platform :)
+
+I am operating under the presumption that when Android styles are compiled the attribute constants are what is used for the keys and therefore should theoretically be able to be read on any platform somehow. This is what I have observed to be happening with layout XMLs in my other libraries with no trouble.
+
+Here is a base test case which shows the problem. This should be compiled using Android 3.0+.
+
+<resources>
+    <style name="Theme.BreakMe">
+        <item name="android:actionBarStyle">@style/Widget.BreakMe</item>
+    </style>
+    <style name="Widget.BreakMe" parent="android:Widget">
+        <item name="android:padding">20dp</item>
+    </style>
+</resources>
+
+
+The fact that this uses android:actionBarStyle specifically is irreleveant. All that should be understood is that its an attribute which was only available starting with Android 3.0.
+
+Here are the way that I have tried to access these values thus far on platforms prior to Android 3.0.
+
+<TextView
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Break Me"
+    style="?android:attr/actionBarStyle"
+    />
+
+
+and
+
+<declare-styleable name="Whatever">
+    <item name="datStyle" format="reference" />
+</declare-styleable>
+
+<style name="Theme.BreakMe.Take2">
+    <item name="datStyle">?android:attr/actionBarSize</item>
+</style>
+
+<TextView
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Break Me"
+    style="?attr/datStyle"
+    />
+
+
+and
+
+TypedValue outValue = new TypedValue();
+context.getTheme().resolveAttribute(android.R.attr.actionBarStyle, outValue, true);
+
+
+and
+
+int[] Theme = new int[] { android.R.attr.actionBarSize };
+int Theme_actionBarSize = 0;
+TypedArray a = context.obtainStyledAttributes(attrs, Theme);
+int ref = a.getResourceId(Theme_actionBarSize, 0);
+
+
+and
+
+TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.ActionBar, android.R.attr.actionBarStyle, 0);
+
+
+All of them result in this error in LogCat:
+
+E/ResourceType(5618): Style contains key with bad entry: 0x010102ce
+
+
+The 0x010102ce constant is the attribute value of android.R.attr.actionBarStyle which seems to indicate the platform is rejecting the attribute before I can even get a chance to access its value.
+
+I am looking for any other way to read attributes like this from the Theme. I'm fairly sure that once I've obtained the style reference I won't have trouble reading its attributes.
+
+Is there any possible way to do this?
+    
+===============================================================================================
+15
+A:I am operating under the presumption that when Android styles are compiled the attribute constants are what is used for the keys and therefore should theoretically be able to be read on any platform somehow.
+
+
+Possibly, though that is not how I am interpreting the C++ source code that raises the error you are seeing. Check out ResTable::Theme::applyStyle() in frameworks/base/libs/utils/ResourceTypes.cpp.
+
+My interpretation is that Android has what amounts to an in-memory table of packages->types->possible entries:
+
+numEntries = curPI->types[t].numEntries;
+
+
+Your entry index is higher than the highest known entry:
+
+if (e >= numEntries) {
+    LOGE("Style contains key with bad entry: 0x%08x\
+", attrRes);
+    bag++;
+    continue;
+}
+
+
+It is possible that they handle this different for android versus other packages -- android uses known values at firmware build time (and your generated entry index is higher, because it is from a newer platform), non-android ones assume anything's valid.
+
+If my guesswork is correct, what you want to do will not work. That being said, my C++ days are seriously in my rear-view mirror, so I may be misinterpreting what I'm seeing.
+    

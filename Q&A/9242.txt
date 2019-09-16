@@ -1,0 +1,91 @@
+29
+Q:I am trying to implement an endless scroll listview but when I call notifyDataSetChanged() the whole list refreshes then the scroll position goes back to the top.
+
+Is this the normal behavior? how can I make it simply add the items added without refreshing and keep the scroll position?
+    
+===============================================================================================
+63
+A:Such behaviour is not normal. Without seeing your code I can suggest following:
+
+1) You are not calling notifyDataSetChanged() from the UI thread. The correct way:
+
+runOnUiThread(new Runnable() {
+    public void run() {
+        adapter.notifyDataSetChanged();
+    }
+});
+
+
+2) You accidentally or not are making a call to adapter.notifyDataSetInvalidated();
+
+3) In your adapter you override the adapter.notifyDataSetChanged(); method and added instruction to go to top  
+
+4) If you're using a list to populate adapter - you supply new list every time, so adapter settings are refreshed. You should always supply the same list. However you can change it as much as you want. If you're resetting the list use list.clear instead of list = new ArrayList();
+
+Here is an example of my adapter:
+
+public class Adapter extends BaseAdapter {
+
+    private Activity activity;
+    private ArrayList<HashMap<String, String>> data;
+    private static LayoutInflater inflater = null;
+    public ImageLoader imageLoader;
+
+    public MediaItemAdapter(Activity a, ArrayList<HashMap<String, String>> d) {
+        activity = a;
+        data = d;
+        inflater = (LayoutInflater) activity
+                .getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+        imageLoader = new ImageLoader(activity.getApplicationContext());
+    }
+
+    public int getCount() {
+        return data.size();
+    }
+
+    public Object getItem(int position) {
+        return position;
+    }
+
+    public long getItemId(int position) {
+        return position;
+    }
+
+    public View getView(int position, View convertView, ViewGroup parent) {
+        View vi = convertView;
+        if (convertView == null) {
+            vi = inflater.inflate(R.layout.item_composer, null);
+        }
+        TextView title = (TextView) vi.findViewById(R.id.item_title); // title
+        TextView price = (TextView) vi.findViewById(R.id.price);
+
+
+        return vi;
+    }
+
+
+}
+
+
+Call for adapter:
+
+List myList = new ArrayList<HashMap<String, String>>();
+Adapter ma = new Adapter(this, myList);
+
+
+myList can be empty before adapter initialization.
+
+Then do some operation with my list:
+
+myList.add(someElement);
+ma.notifyDataSetChanged();
+
+
+if you need delete all items:
+
+myList.clear();
+ma.notifyDataSetChanged();
+
+
+Such implementation is pretty endless, I saw more then 15 thousand elements without any problems.
+    

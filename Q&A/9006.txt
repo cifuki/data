@@ -1,0 +1,112 @@
+30
+Q:When I am trying to build project with value of meta-data tag as a string reference, crashlytics fail with following error:
+
+Crashlytics found an invalid API key: @string/crashlytics. 
+Check the Crashlytics plugin to make sure that the application has been added successfully! 
+Contact support@crashlytics.com for assistance.
+
+
+Doesn't work
+
+<meta-data
+    android:name="com.crashlytics.ApiKey"
+    android:value="@string/crashlytics"/>
+
+
+Works
+
+<meta-data
+    android:name="com.crashlytics.ApiKey"
+    android:value="1234567890..."/>
+
+
+I am want to define different keys inside string.xml for different productFlavors of my android project.
+
+Update
+
+After writing to crashlytics support:
+
+
+  Currently we only are able to evaluate the AndroidManifest.xml at build time so we don't look at any strings resources so we only support a hard coded string. I'll definitely share this with the team that you're interested so we can look into supporting this in a future release.
+
+    
+===============================================================================================
+52
+A:Edit: The solution accepted is working only if you are using an old version of Crashlytics (I was using v1.1.11). If you are using Fabric SDK you will notice
+  the tasks of the plugin have changed considerably and the script below
+  will not work. Also the API secret is not needed anymore, therefore
+  you can just use the <meta> in the manifest to specify the API key along with a manifest placeholder defined in your flavor:
+  
+  
+  in build.gradle:
+  
+  
+flavor1 {
+    ...
+    manifestPlaceholders = [crashlyticsApiKey: CRASHLYTICS_API_SECRET_HERE]
+    ...
+}
+
+  
+  in AndroidManifest.xml:
+  
+  
+...
+<meta-data
+    android:name="com.crashlytics.ApiKey"
+    android:value="${crashlyticsApiKey}" />
+...
+
+  
+  
+
+
+There is another undocumented way to specify the Crashlytics key as noted here, and it is to use the crashlytics.properties (in the root of your project) to specify that value along with the API secret:
+
+apiKey=YOUR_API_KEY
+apiSecret=YOUR_API_SECRET
+
+
+Unfortuntately this will not allow you to simply specify a different crashlytics.properties for each flavor, because it needs to be in the root of your project in order to be picked correctly by the gradle plugin. That means you need to generate that file dynamically.
+The idea is to add the key/secret values in your flavor as custom properties, and generate the crashlytics.properties at buildtime, using the values from the current flavor to fill the file.
+
+The build.gradle inside your android module should look like this:
+
+...
+productFlavors {
+
+    flavor1 {
+        ...
+        set("crashlyticsApiKey", CRASHLYTICS_API_KEY_HERE)
+        set("crashlyticsApiSecret", CRASHLYTICS_API_SECRET_HERE)
+        ...
+    }
+    ...
+}
+
+File crashlyticsProperties = new File("${project.projectDir.absolutePath}/crashlytics.properties")
+applicationVariants.all { variant ->
+    variant.productFlavors.each { flavor ->
+        def variantSuffix = variant.name.capitalize()
+        def generateResourcesTask = project.tasks.getByName("crashlyticsGenerateResources${variantSuffix}")
+        def generatePropertiesTask = task("crashlyticsGenerateProperties${variantSuffix}") << {
+            Properties properties = new Properties()
+            println "...copying apiSecret for ${variant.name}"
+            properties.put("apiSecret", flavor.crashlyticsApiSecret)
+            println "...copying apiKey for ${variant.name}"
+            properties.put("apiKey", flavor.crashlyticsApiKey)
+            properties.store(new FileWriter(crashlyticsProperties), "")
+        }
+        generateResourcesTask.dependsOn generatePropertiesTask
+        def cleanResourcesTask = project.tasks.getByName("crashlyticsCleanupResourcesAfterUpload${variantSuffix}")
+        cleanResourcesTask.doLast {
+            println "...removing crashlytics.properties"
+            crashlyticsProperties.delete()
+        }
+    }
+}
+...
+
+
+Basically the script hooks in the building process and generates/fills the properties file just before the Crashlytics gradle plugin does its magic.
+    

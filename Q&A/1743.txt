@@ -1,0 +1,87 @@
+108
+Q:I want to make a file uploader. And I hence I need a file chooser but I don't want to write this by myself. I find OI file manager and I think it suits me.
+But how can I force user to install OI file manager?
+If I cannot , is there a better way to include a file manager in my app?
+Thx
+    
+===============================================================================================
+255
+A:EDIT (02 Jan 2012):
+
+I created a small open source Android Library Project that streamlines this process, while also providing a built-in file explorer (in case the user does not have one present). It's extremely simple to use, requiring only a few lines of code.
+
+You can find it at GitHub: aFileChooser.
+
+
+
+ORIGINAL
+
+If you want the user to be able to choose any file in the system, you will need to include your own file manager, or advise the user to download one. I believe the best you can do is look for "openable" content in an Intent.createChooser() like this:
+
+private static final int FILE_SELECT_CODE = 0;
+
+private void showFileChooser() {
+    Intent intent = new Intent(Intent.ACTION_GET_CONTENT); 
+    intent.setType("*/*"); 
+    intent.addCategory(Intent.CATEGORY_OPENABLE);
+
+    try {
+        startActivityForResult(
+                Intent.createChooser(intent, "Select a File to Upload"),
+                FILE_SELECT_CODE);
+    } catch (android.content.ActivityNotFoundException ex) {
+        // Potentially direct the user to the Market with a Dialog
+        Toast.makeText(this, "Please install a File Manager.", 
+                Toast.LENGTH_SHORT).show();
+    }
+}
+
+
+You would then listen for the selected file's Uri in onActivityResult() like so:
+
+@Override
+protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    switch (requestCode) {
+        case FILE_SELECT_CODE:
+        if (resultCode == RESULT_OK) {
+            // Get the Uri of the selected file 
+            Uri uri = data.getData();
+            Log.d(TAG, "File Uri: " + uri.toString());
+            // Get the path
+            String path = FileUtils.getPath(this, uri);
+            Log.d(TAG, "File Path: " + path);
+            // Get the file instance
+            // File file = new File(path);
+            // Initiate the upload
+        }
+        break;
+    }
+    super.onActivityResult(requestCode, resultCode, data);
+}
+
+
+The getPath() method in my FileUtils.java is: 
+
+public static String getPath(Context context, Uri uri) throws URISyntaxException {
+    if ("content".equalsIgnoreCase(uri.getScheme())) {
+        String[] projection = { "_data" };
+        Cursor cursor = null;
+
+        try {
+            cursor = context.getContentResolver().query(uri, projection, null, null, null);
+            int column_index = cursor.getColumnIndexOrThrow("_data");
+            if (cursor.moveToFirst()) {
+                return cursor.getString(column_index);
+            }
+        } catch (Exception e) {
+            // Eat it
+        }
+    }
+    else if ("file".equalsIgnoreCase(uri.getScheme())) {
+        return uri.getPath();
+    }
+
+    return null;
+} 
+
+    

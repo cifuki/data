@@ -1,0 +1,101 @@
+54
+Q:I recently grew tired of constantly having to know String keys to pass arguments into Bundles when creating my Fragments. So I decided to make constructors for my Fragments that would take the parameters I wanted to set, and put those variables into the Bundles with the correct String keys, therefore eliminating the need for other Fragments and Activities needing to know those keys.
+
+public ImageRotatorFragment() {
+    super();
+    Log.v(TAG, "ImageRotatorFragment()");
+}
+
+public ImageRotatorFragment(int imageResourceId) {
+    Log.v(TAG, "ImageRotatorFragment(int imageResourceId)");
+
+    // Get arguments passed in, if any
+    Bundle args = getArguments();
+    if (args == null) {
+        args = new Bundle();
+    }
+    // Add parameters to the argument bundle
+    args.putInt(KEY_ARG_IMAGE_RES_ID, imageResourceId);
+    setArguments(args);
+}
+
+
+And then I pull out those arguments like normal.
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    Log.v(TAG, "onCreate");
+
+    // Set incoming parameters
+    Bundle args = getArguments();
+    if (args != null) {
+        mImageResourceId = args.getInt(KEY_ARG_IMAGE_RES_ID, StaticData.getImageIds()[0]);
+    }
+    else {
+        // Default image resource to the first image
+        mImageResourceId = StaticData.getImageIds()[0];
+    }
+}
+
+
+However, Lint took issue with this, saying not to have subclasses of Fragment with constructors with other parameters, requiring me to use @SuppressLint("ValidFragment") to even run the app. The thing is, this code works perfectly fine. I can use ImageRotatorFragment(int imageResourceId) or the old school method ImageRotatorFragment() and call setArguments() manually on it. When Android needs to recreate the Fragment (orientation change or low memory), it calls the ImageRotatorFragment() constructor and then passes the same argument Bundle with my values, which get set correctly.
+
+So I have been searching for the "suggested" approach and see a lot of examples using newInstance() to create Fragments with parameters, which seems to do the same thing my constructor is. So I made my own to test it, and it works just as flawlessly as before, minus Lint whining about it.
+
+public static ImageRotatorFragment newInstance(int imageResourceId) {
+    Log.v(TAG, "newInstance(int imageResourceId)");
+
+    ImageRotatorFragment imageRotatorFragment = new ImageRotatorFragment();
+
+    // Get arguments passed in, if any
+    Bundle args = imageRotatorFragment.getArguments();
+    if (args == null) {
+        args = new Bundle();
+    }
+    // Add parameters to the argument bundle
+    args.putInt(KEY_ARG_IMAGE_RES_ID, imageResourceId);
+    imageRotatorFragment.setArguments(args);
+
+    return imageRotatorFragment;
+}
+
+
+I personally find that using constructors is a much more common practice than knowing to use newInstance() and passing parameters. I believe you can use this same constructor technique with Activities and Lint will not complain about it. So basically my question is, why does Google not want you to use constructors with parameters for Fragments?
+
+My only guess is so you don't try to set an instance variable without using the Bundle, which won't get set when the Fragment gets recreated. By using a static newInstance() method, the compiler won't let you access an instance variable. 
+
+public ImageRotatorFragment(int imageResourceId) {
+    Log.v(TAG, "ImageRotatorFragment(int imageResourceId)");
+
+    mImageResourceId = imageResourceId;
+}
+
+
+I still don't feel like this is enough reason to disallow the use of parameters in constructors. Anyone else have insight into this?
+    
+===============================================================================================
+60
+A:I personally find that using constructors is a much more common practice than knowing to use newInstance() and passing parameters.
+
+
+The factory method pattern is used fairly frequently in modern software development.
+
+
+  So basically my question is, why does Google not want you to use constructors with parameters for Fragments?
+
+
+You answered your own question:
+
+
+  My only guess is so you don't try to set an instance variable without using the Bundle, which won't get set when the Fragment gets recreated.
+
+
+Correct.
+
+
+  I still don't feel like this is enough reason to disallow the use of parameters in constructors.
+
+
+You are welcome to your opinion. You are welcome to disable this Lint check, either on a per-constructor or per-workspace fashion.
+    

@@ -1,0 +1,156 @@
+41
+Q:In my android application, i want to set Notification icons dynamically which will be loaded from URL. For that, i have used setLargeIcon property of NotificationBuilder in receiver.I reffered many link and tried various solutions but couldn't get desired output. Though i downloaded that image from url and setting that bitmap in notification, it is not being displayed. Instead it displays the setSmallIcon image as large icon. I don't know where i am going wrong. Here i am posting my code. Please help me to solve this issue. Thank you.
+
+Code:
+
+@SuppressLint("NewApi")
+public class C2DMMessageReceiver extends BroadcastReceiver {
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        String action = intent.getAction();
+        if ("com.google.android.c2dm.intent.RECEIVE".equals(action)) {
+            Log.e("C2DM", "received message");
+            final String fullName = intent.getStringExtra("message");
+            final String payload1 = intent.getStringExtra("message1");
+            final String payload2 = intent.getStringExtra("message2");
+            final String userImage = intent.getStringExtra("userImage");
+
+            Log.e("userImage Url :", userImage); //it shows correct url
+
+            new sendNotification(context)
+                    .execute(fullName, payload1, userImage);
+        }
+    }
+
+private class sendNotification extends AsyncTask<String, Void, Bitmap> {
+
+        Context ctx;
+        String message;
+
+        public sendNotification(Context context) {
+            super();
+            this.ctx = context;
+        }
+
+        @Override
+        protected Bitmap doInBackground(String... params) {
+
+            InputStream in;
+            message = params[0] + params[1];
+            try {
+
+                in = new URL(params[2]).openStream();
+                Bitmap bmp = BitmapFactory.decodeStream(in);
+                return bmp;
+
+            } catch (MalformedURLException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Bitmap result) {
+
+            super.onPostExecute(result);
+            try {
+                NotificationManager notificationManager = (NotificationManager) ctx
+                        .getSystemService(Context.NOTIFICATION_SERVICE);
+
+                Intent intent = new Intent(ctx, NotificationsActivity.class);
+                intent.putExtra("isFromBadge", false);
+
+
+                Notification notification = new Notification.Builder(ctx)
+                        .setContentTitle(
+                                ctx.getResources().getString(R.string.app_name))
+                        .setContentText(message)
+                        .setSmallIcon(R.drawable.ic_launcher)
+                        .setLargeIcon(result).build();
+
+                // hide the notification after its selected
+                notification.flags |= Notification.FLAG_AUTO_CANCEL;
+
+                notificationManager.notify(1, notification);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    
+===============================================================================================
+36
+A:Changed my code as below and its working now :
+
+private class sendNotification extends AsyncTask<String, Void, Bitmap> {
+
+        Context ctx;
+        String message;
+
+        public sendNotification(Context context) {
+            super();
+            this.ctx = context;
+        }
+
+        @Override
+        protected Bitmap doInBackground(String... params) {
+
+            InputStream in;
+            message = params[0] + params[1];
+            try {
+
+ URL url = new URL(params[2]);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setDoInput(true);
+        connection.connect();
+        in = connection.getInputStream();
+        Bitmap myBitmap = BitmapFactory.decodeStream(in);
+        return myBitmap;
+
+
+
+
+            } catch (MalformedURLException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Bitmap result) {
+
+            super.onPostExecute(result);
+            try {
+                NotificationManager notificationManager = (NotificationManager) ctx
+                        .getSystemService(Context.NOTIFICATION_SERVICE);
+
+                Intent intent = new Intent(ctx, NotificationsActivity.class);
+                intent.putExtra("isFromBadge", false);
+
+
+                Notification notification = new Notification.Builder(ctx)
+                        .setContentTitle(
+                                ctx.getResources().getString(R.string.app_name))
+                        .setContentText(message)
+                        .setSmallIcon(R.drawable.ic_launcher)
+                        .setLargeIcon(result).build();
+
+                // hide the notification after its selected
+                notification.flags |= Notification.FLAG_AUTO_CANCEL;
+
+                notificationManager.notify(1, notification);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    

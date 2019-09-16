@@ -1,0 +1,101 @@
+33
+Q:I'm rather new to Android. 
+Im trying to send SMS from Android application. 
+When using the SMS Intent the SMS window opens and the user needs to approve the SMS and send it.
+
+Is there a way to automatically send the SMS without the user confirming it? 
+
+Thanks,
+Lior
+    
+===============================================================================================
+39
+A:You can  use this method to send an sms. If the sms is greater than 160 character then sendMultipartTextMessage is used.
+
+private void sendSms(String phonenumber,String message, boolean isBinary)
+{
+    SmsManager manager = SmsManager.getDefault();
+
+    PendingIntent piSend = PendingIntent.getBroadcast(this, 0, new Intent(SMS_SENT), 0);
+    PendingIntent piDelivered = PendingIntent.getBroadcast(this, 0, new Intent(SMS_DELIVERED), 0);
+
+    if(isBinary)
+    {
+            byte[] data = new byte[message.length()];
+
+            for(int index=0; index<message.length() && index < MAX_SMS_MESSAGE_LENGTH; ++index)
+            {
+                    data[index] = (byte)message.charAt(index);
+            }
+
+            manager.sendDataMessage(phonenumber, null, (short) SMS_PORT, data,piSend, piDelivered);
+    }
+    else
+    {
+            int length = message.length();
+
+            if(length > MAX_SMS_MESSAGE_LENGTH)
+            {
+                    ArrayList<String> messagelist = manager.divideMessage(message);
+
+                    manager.sendMultipartTextMessage(phonenumber, null, messagelist, null, null);
+            }
+            else
+            {
+                    manager.sendTextMessage(phonenumber, null, message, piSend, piDelivered);
+            }
+    }
+}
+
+
+Update
+
+piSend and piDelivered are Pending Intent They can trigger a broadcast when the method finish sending an SMS
+
+Here is sample code for broadcast receiver 
+
+    private BroadcastReceiver receiver = new BroadcastReceiver() {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String message = null;
+
+            switch (getResultCode()) {
+            case Activity.RESULT_OK:
+                message = "Message sent!";
+                break;
+            case SmsManager.RESULT_ERROR_GENERIC_FAILURE:
+                message = "Error. Message not sent.";
+                break;
+            case SmsManager.RESULT_ERROR_NO_SERVICE:
+                message = "Error: No service.";
+                break;
+            case SmsManager.RESULT_ERROR_NULL_PDU:
+                message = "Error: Null PDU.";
+                break;
+            case SmsManager.RESULT_ERROR_RADIO_OFF:
+                message = "Error: Radio off.";
+                break;
+            }
+
+            AppMsg.makeText(SendMessagesWindow.this, message,
+                    AppMsg.STYLE_CONFIRM).setLayoutGravity(Gravity.BOTTOM)
+                    .show();
+      }
+  };
+
+
+and you can register it using below line in your Activity
+
+registerReceiver(receiver, new IntentFilter(SMS_SENT));  // SMS_SENT is a constant
+
+
+Also don't forget to unregister broadcast in onDestroy
+
+@Override
+protected void onDestroy() {
+    unregisterReceiver(receiver);
+    super.onDestroy();
+}
+
+    

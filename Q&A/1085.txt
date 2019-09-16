@@ -1,0 +1,69 @@
+147
+Q:I know that the question about turning on/off GPS programatically on android has been discussed many times, and the answer is always the same: 
+
+
+  "You can't for security/privacy reasons, you have to forward to location preferences screen and let the user enable/disable it."
+
+
+I understand that, however I recently bought Tasker from the market and, among many other things that you can accomplish with it, you can set rules to auto-enable GPS on entering pre-determined applications and disable it on exit (see here for the tutorial on how to do it, and it just works!) and this app can't be signed with the firmware signing key as it works on many android versions and different devices and you don't even need to be rooted.
+
+I would like to do this in my app. Of course, I don't want to blow up the users privacy, so I would first ask the user if he wants to turn it on automatically with the typical "remember my decision" checkbox and if he answers yes, enable it.
+
+Does anybody have any idea or clue on how Tasker achieves this?
+    
+===============================================================================================
+160
+A:the GPS can be toggled by exploiting a bug in the power manager widget. see this xda thread for discussion.
+
+here's some example code i use
+
+private void turnGPSOn(){
+    String provider = Settings.Secure.getString(getContentResolver(), Settings.Secure.LOCATION_PROVIDERS_ALLOWED);
+
+    if(!provider.contains("gps")){ //if gps is disabled
+        final Intent poke = new Intent();
+        poke.setClassName("com.android.settings", "com.android.settings.widget.SettingsAppWidgetProvider"); 
+        poke.addCategory(Intent.CATEGORY_ALTERNATIVE);
+        poke.setData(Uri.parse("3")); 
+        sendBroadcast(poke);
+    }
+}
+
+private void turnGPSOff(){
+    String provider = Settings.Secure.getString(getContentResolver(), Settings.Secure.LOCATION_PROVIDERS_ALLOWED);
+
+    if(provider.contains("gps")){ //if gps is enabled
+        final Intent poke = new Intent();
+        poke.setClassName("com.android.settings", "com.android.settings.widget.SettingsAppWidgetProvider");
+        poke.addCategory(Intent.CATEGORY_ALTERNATIVE);
+        poke.setData(Uri.parse("3")); 
+        sendBroadcast(poke);
+    }
+}
+
+
+use the following to test if the existing version of the power control widget is one which will allow you to toggle the gps.
+
+private boolean canToggleGPS() {
+    PackageManager pacman = getPackageManager();
+    PackageInfo pacInfo = null;
+
+    try {
+        pacInfo = pacman.getPackageInfo("com.android.settings", PackageManager.GET_RECEIVERS);
+    } catch (NameNotFoundException e) {
+        return false; //package not found
+    }
+
+    if(pacInfo != null){
+        for(ActivityInfo actInfo : pacInfo.receivers){
+            //test if recevier is exported. if so, we can toggle GPS.
+            if(actInfo.name.equals("com.android.settings.widget.SettingsAppWidgetProvider") && actInfo.exported){
+                return true;
+            }
+        }
+    }
+
+    return false; //default
+}
+
+    

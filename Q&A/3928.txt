@@ -1,0 +1,431 @@
+59
+Q:Issue with latest 3.0 build (Beta 2)
+My project has 1 sub module by a 3rd party so I only have access to their build.gradle.
+
+My project has 3 flavours, snap, uat, production. Each has 2 build types, debug and release. When I try build I get this.
+
+Error:Cannot choose between the following configurations of project :lp_messaging_sdk:
+  - debugApiElements
+  - debugRuntimeElements
+  - releaseApiElements
+  - releaseRuntimeElements
+All of them match the consumer attributes:
+  - Configuration 'debugApiElements':
+      - Found com.android.build.api.attributes.BuildTypeAttr 'debug' but wasn't required.
+      - Found com.android.build.gradle.internal.dependency.AndroidTypeAttr 'Aar' but wasn't required.
+      - Found com.android.build.gradle.internal.dependency.VariantAttr 'debug' but wasn't required.
+      - Found org.gradle.api.attributes.Usage 'java-api' but wasn't required.
+  - Configuration 'debugRuntimeElements':
+      - Found com.android.build.api.attributes.BuildTypeAttr 'debug' but wasn't required.
+      - Found com.android.build.gradle.internal.dependency.AndroidTypeAttr 'Aar' but wasn't required.
+      - Found com.android.build.gradle.internal.dependency.VariantAttr 'debug' but wasn't required.
+      - Found org.gradle.api.attributes.Usage 'java-runtime' but wasn't required.
+  - Configuration 'releaseApiElements':
+      - Found com.android.build.api.attributes.BuildTypeAttr 'release' but wasn't required.
+      - Found com.android.build.gradle.internal.dependency.AndroidTypeAttr 'Aar' but wasn't required.
+      - Found com.android.build.gradle.internal.dependency.VariantAttr 'release' but wasn't required.
+      - Found org.gradle.api.attributes.Usage 'java-api' but wasn't required.
+  - Configuration 'releaseRuntimeElements':
+      - Found com.android.build.api.attributes.BuildTypeAttr 'release' but wasn't required.
+      - Found com.android.build.gradle.internal.dependency.AndroidTypeAttr 'Aar' but wasn't required.
+      - Found com.android.build.gradle.internal.dependency.VariantAttr 'release' but wasn't required.
+      - Found org.gradle.api.attributes.Usage 'java-runtime' but wasn't required.
+
+
+I read there was issues with sub modules and build types but then read it was fixed.
+You had to add the same build types or something to the sub modules build.gradle and then add 
+
+buildTypeMatching  'debug', 'release'
+
+
+When I do this however, I get this error,
+
+Error:Could not select value from candidates [debug, release] using AlternateDisambiguationRule.BuildTypeRule.
+
+apply plugin: 'com.android.application'
+
+android {
+
+    repositories {
+        flatDir {
+            dirs project(':lp_messaging_sdk').file('aars')
+        }
+    }
+
+    // Android parameters
+    compileSdkVersion = 26
+    buildToolsVersion = '26.0.1'
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    dexOptions {
+        preDexLibraries true
+    }
+
+    defaultConfig {
+        minSdkVersion 19
+        versionName buildName
+        versionCode buildVersion
+        multiDexEnabled true
+        resConfigs "en", "fr", "fr-rCA"
+    }
+
+    signingConfigs {
+        release {
+
+        }
+    }
+
+    flavorDimensions "default"
+
+    productFlavors {
+        snap {
+            ext.betaDistributionGroupAliases = "INTERNAL"
+            ext.betaDistributionReleaseNotesFilePath = 'changelog.txt'
+            ext.betaDistributionNotifications = true
+            dimension "default"
+        }
+
+        uat {
+            ext.betaDistributionGroupAliases = "INTERNAL"
+            ext.betaDistributionNotifications = true
+        }
+
+        production {
+        }
+    }
+
+    buildTypes {
+        debug {
+            versionNameSuffix createVersionNameSuffix()
+            applicationIdSuffix '.debug'
+            minifyEnabled true
+            testCoverageEnabled false
+            buildConfigField "String", "PLAY_STORE_VERSION_NAME", '"' + PLAY_STORE_VERSION_NAME + '"'
+            // Workaround for : https://code.google.com/p/android/issues/detail?id=212882
+            proguardFiles fileTree(dir: 'proguard', include: ['*.pro']).asList().toArray()
+            ext.enableCrashlytics = false
+        }
+
+        release {
+            versionNameSuffix createVersionNameSuffix()
+            minifyEnabled true
+            testCoverageEnabled = false
+            signingConfig signingConfigs.release
+            buildConfigField "String", "PLAY_STORE_VERSION_NAME", '"' + PLAY_STORE_VERSION_NAME + '"'
+            // Workaround for : https://code.google.com/p/android/issues/detail?id=212882
+            proguardFiles fileTree(dir: 'proguard', include: ['*.pro']).asList().toArray()
+        }
+
+    }
+
+    //Used to ignore duplicated entries added to meta-inf
+    packagingOptions {
+        exclude 'LICENSE.txt'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/license'
+        exclude 'META-INF/license.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
+        exclude 'META-INF/notice'
+        exclude 'META-INF/notice.txt'
+        exclude 'META-INF/services/javax.annotation.processing.Processor'
+    }
+
+    dexOptions {
+        javaMaxHeapSize "2048m"
+        dexInProcess true
+    }
+
+    lintOptions {
+        abortOnError true
+        xmlReport true
+        htmlReport true
+        disable 'MissingTranslation', 'InvalidPackage'
+        disable 'GradleCompatible', 'GradleCompatible'
+        disable 'NewApi', 'NewApi'
+        disable 'GradleDependency'
+        disable 'UnusedResources'
+        disable 'IconDensities'
+        disable 'TypographyDashes'
+        disable 'ContentDescription'
+        htmlOutput file("$project.buildDir/reports/lint/lint-result.html")
+        xmlOutput file("$project.buildDir/reports/lint/lint-result.xml")
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+greendao {
+    schemaVersion 13
+    targetGenDir 'src/main/java/'
+}
+
+ext.betaDistributionReleaseNotes = System.getenv("CHANGELOG")
+
+def createVersionNameSuffix() {
+    def buildNumber = System.env.BUILD_NUMBER
+    def buildTimestamp = new Date().format('HH:mm dd/MM/yy')
+    return buildNumber ? " ($buildNumber)" : " ($buildTimestamp)"
+}
+
+def getBuildVersionFromName(String buildName) {
+    List data = buildName.tokenize(".")
+    String resultString = "19";
+
+    for (String s : data) {
+        resultString += s;
+    }
+
+    if (System.env.BUILD_NUMBER) {
+        resultString += System.env.BUILD_NUMBER
+    }
+
+    return Integer.parseInt(resultString);
+}
+
+//Verify the app before creating a Pull Request
+task verifyPR
+verifyPR.dependsOn('clean')
+verifyPR.dependsOn('lint')
+verifyPR.dependsOn('checkstyle')
+verifyPR.dependsOn('pmd')
+verifyPR.dependsOn('testSnapDebugUnitTest')
+
+dependencies {
+    // Android Dependencies
+    compile 'com.android.support:appcompat-v7:26.0.1'
+    compile 'com.android.support:design:26.0.1'
+    compile 'com.android.support:recyclerview-v7:26.0.1'
+    compile 'com.android.support:multidex:1.0.2'
+
+    // Dagger Dependencies
+    apt 'com.google.dagger:dagger-compiler:2.11'
+    compile 'org.glassfish:javax.annotation:10.0-b28'
+    compile 'com.google.dagger:dagger:2.11'
+
+    // Rx Dependencies
+    compile 'io.reactivex:rxandroid:1.2.1'
+    compile 'io.reactivex:rxjava:1.3.0'
+    compile 'com.jakewharton.rxbinding:rxbinding-appcompat-v7:0.4.0'
+    compile 'com.jakewharton.rxbinding:rxbinding-support-v4:0.4.0'
+    compile 'com.squareup.whorlwind:whorlwind:1.0.1'
+    compile 'com.tbruyelle.rxpermissions:rxpermissions:0.9.4@aar'
+    compile 'com.jenzz:RxAppState:2.0.0'
+
+    // Tools
+    compile 'com.crashlytics.sdk.android:crashlytics:2.6.5'
+
+    // ButterKnife
+    compile 'com.jakewharton:butterknife:8.4.0'
+
+    // Google Maps
+    compile 'com.google.android.gms:play-services-maps:11.0.4'
+    compile "com.google.android.gms:play-services-analytics:11.0.4"
+    compile 'com.google.android.gms:play-services-location:11.0.4'
+    compile 'com.google.android.gms:play-services-places:11.0.4'
+    compile 'com.google.android.gms:play-services-gcm:11.0.4'
+
+    // Geofence
+    compile('pl.charmas.android:android-reactive-location:0.10@aar') {
+        transitive = true
+    }
+
+    // Retrofit
+    compile 'com.squareup.retrofit2:retrofit:2.3.0'
+    compile 'com.squareup.retrofit2:adapter-rxjava:2.3.0'
+
+    // OKHTTP
+    compile 'com.squareup.okhttp:okhttp-urlconnection:2.7.5'
+
+    // Libphonenumber
+    compile 'com.googlecode.libphonenumber:libphonenumber:7.3.2'
+
+    // UI
+    compile 'com.tubb.smrv:swipemenu-recyclerview:5.0.2'
+
+    // EventBus
+    compile 'org.greenrobot:eventbus:3.0.0'
+
+    // Database
+    compile 'org.greenrobot:greendao:3.2.0'
+
+    // Chuck HTTP Inspector
+    debugCompile 'com.readystatesoftware.chuck:library:1.0.4'
+    releaseCompile 'com.readystatesoftware.chuck:library-no-op:1.0.4'
+
+    // ViewPager Indicator
+    compile 'com.github.JakeWharton:ViewPagerIndicator:2.4.1'
+
+    // Amplitude
+    compile 'com.amplitude:android-sdk:2.13.2'
+
+    // TESTS
+    testCompile 'junit:junit:4.12'
+    testCompile "org.mockito:mockito-core:1.10.19"
+    testCompile "org.powermock:powermock-module-junit4:1.6.5"
+    testCompile "org.powermock:powermock-module-junit4-rule:1.6.4"
+    testCompile "org.powermock:powermock-api-mockito:1.6.5"
+    testCompile "org.powermock:powermock-classloading-xstream:1.6.4"
+
+    compile project(':lp_messaging_sdk')
+}
+
+
+And here is the 3rd party library build.gradle
+
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion 26
+    buildToolsVersion "26.0.1"
+
+    defaultConfig {
+        minSdkVersion 14
+        targetSdkVersion 26
+        versionCode 250
+        versionName "2.5.0"
+    }
+
+    flavorDimensions "default"
+
+    productFlavors {
+        snap {
+            ext.betaDistributionGroupAliases = "INTERNAL"
+            ext.betaDistributionReleaseNotesFilePath = 'changelog.txt'
+            ext.betaDistributionNotifications = true
+            dimension "default"
+        }
+
+        uat {
+            ext.betaDistributionGroupAliases = "INTERNAL"
+            ext.betaDistributionNotifications = true
+        }
+
+        production {
+
+        }
+    }
+
+    signingConfigs {
+        release {
+
+        }
+    }
+
+    buildTypeMatching 'snap', 'debug', 'release'
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            minifyEnabled true
+            testCoverageEnabled false
+            buildConfigField "String", "PLAY_STORE_VERSION_NAME", '"' + PLAY_STORE_VERSION_NAME + '"'
+            // Workaround for : https://code.google.com/p/android/issues/detail?id=212882
+            proguardFiles fileTree(dir: 'proguard', include: ['*.pro']).asList().toArray()
+            ext.enableCrashlytics = false
+        }
+
+        release {
+            minifyEnabled true
+            testCoverageEnabled = false
+            signingConfig signingConfigs.release
+            buildConfigField "String", "PLAY_STORE_VERSION_NAME", '"' + PLAY_STORE_VERSION_NAME + '"'
+            // Workaround for : https://code.google.com/p/android/issues/detail?id=212882
+            proguardFiles fileTree(dir: 'proguard', include: ['*.pro']).asList().toArray()
+        }
+    }
+
+    defaultConfig {
+        consumerProguardFiles 'proguard.cfg'
+    }
+
+    repositories {
+        flatDir {
+            dirs 'aars'
+        }
+    }
+
+    lintOptions {
+        disable 'InvalidPackage'
+    }
+}
+
+dependencies {
+    compile 'com.android.support:appcompat-v7:26.0.1'
+    compile 'com.android.support:design:26.0.1'
+    compile 'com.android.support:recyclerview-v7:26.0.1'
+    compile 'com.android.support:percent:26.0.1'
+    compile 'com.android.support.constraint:constraint-layout:1.0.2'
+
+    compile 'com.squareup.picasso:picasso:2.5.2'
+    compile 'com.neovisionaries:nv-websocket-client:1.31'
+    compile 'com.squareup.okhttp3:okhttp:3.8.0'
+
+    compile(name: 'infra', ext: 'aar')
+    compile(name: 'messaging', ext: 'aar')
+    compile(name: 'messaging_ui', ext: 'aar')
+    compile(name: 'ui', ext: 'aar')
+}
+
+
+Does anybody know how I can solve this issue? 
+Thanks
+    
+===============================================================================================
+89
+A:Try 
+
+implementation project(path: ':lp_messaging_sdk', configuration: 'default')
+
+  Note:
+
+You can avoid this bug by update gradle to 4.3 check this.
+
+Explanation :
+
+Using Dependency Configurations makes it easy to define and specify what to use in sub-project.
+
+In my answer, we used default configuration and this will publish and expose only the "release" flavor to other Android projects and modules.
+
+Assume you need to include this flavor only with demo flavor or with release flavor, it would be like :
+
+configurations {
+  // Initializes placeholder configurations that the Android plugin can use when targeting
+  // the corresponding variant of the app.
+  demoDebugCompile {}
+  fullReleaseCompile {}
+  ...
+}
+dependencies {
+  // If the library configures multiple build variants using product flavors,
+  // you must target one of the library's variants using its full configuration name.
+  demoDebugCompile project(path: ':lp_messaging_sdk', configuration: 'demoDebug')
+  fullReleaseCompile project(path: ':lp_messaging_sdk', configuration: 'fullRelease')
+  ...
+}
+
+
+And so, in your case, you may use your build flavors, and that's what appeared in the error log. 
+
+Cannot choose between the following configurations of project :lp_messaging_sdk
+
+
+And that's mean, that your lp_messaging_sdk have various build configurations:-
+
+  - debugApiElements
+  - debugRuntimeElements
+  - releaseApiElements
+  - releaseRuntimeElements
+
+
+And android-studio telling you, that "I can't choose one configuration from these various, Would you define one for me?"
+
+You can read more over here.
+    

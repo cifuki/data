@@ -1,0 +1,65 @@
+32
+Q:There is an app in the market place called Floating images. This app has one of the smoothest scrolling logic. Basically the app has a blank canvas covering whole screen and then there are some images displayed on top of the blank canvas. User can swipe and the app moves the image in the direction of swipe. Plus it does kinetic scrolling too. Plus there are no scrollbars so it seems like the developer has created a custom view implementing all smooth scrolling logic. 
+
+it would be awesome if i could get the source of it.. but anyone has any pseudo code or logic on how to implement this kind of feature. Any leads , site links would be helpful.
+    
+===============================================================================================
+64
+A:I have no experience with OpenGL nor accelerometer, but swipe (called fling in Android's API) is not hard to achieve. First thing you need when making such a custom View, is implementing a GestureDetector and call its onTouchEvent() in your view's onTouchEvent()
+
+GestureDetector mGD = new GestureDetector(getContext(),
+                                        new SimpleOnGestureListener() {
+
+    @Override
+    public boolean onScroll(MotionEvent e1, MotionEvent e2,
+                                float distanceX, float distanceY) {
+        // beware, it can scroll to infinity
+        scrollBy((int)distanceX, (int)distanceY);
+        return true;
+    }
+
+    @Override
+    public boolean onFling(MotionEvent e1, MotionEvent e2, float vX, float vY) {
+        mScroller.fling(getScrollX(), getScrollY(),
+                -(int)vX, -(int)vY, 0, (int)mMaxScrollX, 0, (int)mMaxScrollY);
+        invalidate(); // don't remember if it's needed
+        return true;
+    }
+
+    @Override
+    public boolean onDown(MotionEvent e) {
+        if(!mScroller.isFinished() ) { // is flinging
+            mScroller.forceFinished(true); // to stop flinging on touch
+        }
+        return true; // else won't work
+    }
+});
+
+@Override
+public boolean onTouchEvent(MotionEvent event) {
+    return mGD.onTouchEvent(event);
+}
+
+
+While OnGestureListener.onScroll() calls directly View.scrollBy(), for the onFling() method you'll need a Scroller.
+
+Scroller is a simple object that, as reference says, encapsulates scrolling. It can be used for continuous scrolling or to react to flings. Scroller.fling() begin a "simulation" of fling scroll inside itself, and by watching it you can copy its smoothness with a continuous redrawing animation:
+
+@Override
+protected void onDraw(Canvas canvas) {
+    // ....your drawings....
+
+    // scrollTo invalidates, so until animation won't finish it will be called
+    // (used after a Scroller.fling() )
+    if(mScroller.computeScrollOffset()) {
+        scrollTo(mScroller.getCurrX(), mScroller.getCurrY());
+    }
+}
+
+
+that is, until animation is running, calculate the point we reached and scroll there.
+
+As a last note: remember to return true in your OnGestureListener.onDown(), even if you don't want to do anything on down, or it won't work.
+
+And be careful, because Scroller in Android 2.2 has a bug for which the fling animation will not actually end even if it reaches the limits you passed as arguments (yet computed offset respects them, so it won't actually move).
+    

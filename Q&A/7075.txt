@@ -1,0 +1,40 @@
+37
+Q:I have a jQuery Mobile web app which targets iOS and Android devices. A component of the application is a background task, which periodically checks for a.) changes to local data and b.) connectivity to the server. If both are true, the task pushes the changes.
+
+I'm using a simple setTimeout()-based function to execute this task. Each failure or success condition calls setTimeout() on the background task, ensuring that it runs on 30 second intervals. I update a status div with the timestamp of the last task runtime for debugging purposes.
+
+In any desktop browser, this works just fine; however, on iOS or Android, after some period of time, the task stops executing. I'm wondering if this is related to the power conservation settings of the devices--when iOS enters stand-by, does it terminate JavaScript execution? That is what appears to happen.
+
+If so, what is the best way to resume? Is there an on-wake event which I can hook into? If not, what other options are there which don't involve hooking into events dependent on user interaction (I don't want to bind the entire page to a click event just to restart the background task).
+    
+===============================================================================================
+29
+A:Looks like Javascript execution is paused on MobileSafari when the browser page isn't focused. It also seems if setInterval() events are late, they are simply fired as soon as the browser is focused. This means we should be able to keep a setInterval() running, and assume the browser lost/regained focus if the setInterval function took much longer than usual.
+
+This code alerts after switching back from a browser tab, after switching back from another app, and after resuming from sleep. If you set your threshold a bit longer than your setTimeout(), you can assume your timeout wouldn't finish if this fires.
+
+If you wanted to stay on the safe side: you could save your timeout ID (returned by setTimeout) and set this to a shorter threshold than your timeout, then run clearTimeout() and setTimeout() again if this fires.
+
+<script type="text/javascript">
+var lastCheck = 0;
+
+function sleepCheck() {
+        var now = new Date().getTime();
+        var diff = now - lastCheck;
+        if (diff > 3000) {
+                alert('took ' + diff + 'ms');
+        }
+        lastCheck = now;
+}
+
+window.onload = function() {
+        lastCheck = new Date().getTime();
+        setInterval(sleepCheck, 1000);
+}
+</script>
+
+
+Edit: It appears this can sometimes trigger more than once in a row on resume, so you'd need to handle that somehow. (After letting my android browser sleep all night, it woke up to two alert()s. I bet Javascript got resumed at some arbitrary time before fully sleeping.)
+
+I tested on Android 2.2 and the latest iOS - they both alert as soon as you resume from sleep.
+    

@@ -1,0 +1,53 @@
+47
+Q:Looking at the SharedPreferences docs it says: 
+
+
+  "Note: currently this class does not
+  support use across multiple processes.
+  This will be added later."
+
+
+So in and of itself it doesn't appear to be Thread Safe. However, what kind of guarantees are made in regards to commit() and apply()?
+
+For example:
+
+synchronized(uniqueIdLock){
+   uniqueId = sharedPreferences.getInt("UNIQUE_INCREMENTING_ID", 0);
+   uniqueId++;
+   sharedPreferences.edit().putInt("UNIQUE_INCREMENTING_ID", uniqueId).commit();
+}
+
+
+Would it be guaranteed that the uniqueId was always unique in this case?
+
+If not, is there a better way to keep track of a unique id for an application that persists?
+    
+===============================================================================================
+85
+A:Processes and Threads are different. The SharedPreferences implementation in Android is thread-safe but not process-safe. Normally your app will run all in the same process, but it's possible for you to configure it in the AndroidManifest.xml so, say, the service runs in a separate process than, say, the activity.
+
+To verify the thready safety, see the ContextImpl.java's SharedPreferenceImpl from AOSP. Note there's a synchronized wherever you'd expect there to be one.
+
+private static final class SharedPreferencesImpl implements SharedPreferences {
+...
+    public String getString(String key, String defValue) {
+        synchronized (this) {
+            String v = (String)mMap.get(key);
+            return v != null ? v : defValue;
+        }
+   }
+...
+    public final class EditorImpl implements Editor {
+        public Editor putString(String key, String value) {
+            synchronized (this) {
+                mModified.put(key, value);
+                return this;
+            }
+        }
+    ...
+    }
+}
+
+
+However for your case of the unique id it seems you'd still want a synchronized as you don't want it to change between the get and the put.
+    

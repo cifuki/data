@@ -1,0 +1,152 @@
+57
+Q:I'm using the new RecyclerView-Layout in a SwipeRefreshLayout and experienced a strange behaviour. When scrolling the list back to the top sometimes the view on the top gets cut in.
+
+
+
+If i try to scroll to the top now - the Pull-To-Refresh triggers. 
+
+
+
+If i try and remove the Swipe-Refresh-Layout around the Recycler-View the Problem is gone. And its reproducable on any Phone (not only L-Preview devices). 
+
+ <android.support.v4.widget.SwipeRefreshLayout
+    android:id="@+id/contentView"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:visibility="gone">
+
+    <android.support.v7.widget.RecyclerView
+        android:id="@+id/hot_fragment_recycler"
+        xmlns:android="http://schemas.android.com/apk/res/android"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</android.support.v4.widget.SwipeRefreshLayout>
+
+
+That's my layout - the rows are built dynamically by the RecyclerViewAdapter (2 Viewtypes in this List). 
+
+public class HotRecyclerAdapter extends TikDaggerRecyclerAdapter<GameRow> {
+
+private static final int VIEWTYPE_GAME_TITLE = 0;
+private static final int VIEWTYPE_GAME_TEAM = 1;
+
+@Inject
+Picasso picasso;
+
+public HotRecyclerAdapter(Injector injector) {
+    super(injector);
+}
+
+@Override
+public void onBindViewHolder(RecyclerView.ViewHolder viewHolder, int position, int viewType) {
+    switch (viewType) {
+        case VIEWTYPE_GAME_TITLE: {
+            TitleGameRowViewHolder holder = (TitleGameRowViewHolder) viewHolder;
+            holder.bindGameRow(picasso, getItem(position));
+            break;
+        }
+        case VIEWTYPE_GAME_TEAM: {
+            TeamGameRowViewHolder holder = (TeamGameRowViewHolder) viewHolder;
+            holder.bindGameRow(picasso, getItem(position));
+            break;
+        }
+    }
+}
+
+@Override
+public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup viewGroup, int viewType) {
+    switch (viewType) {
+        case VIEWTYPE_GAME_TITLE: {
+            View view = inflater.inflate(R.layout.game_row_title, viewGroup, false);
+            return new TitleGameRowViewHolder(view);
+        }
+        case VIEWTYPE_GAME_TEAM: {
+            View view = inflater.inflate(R.layout.game_row_team, viewGroup, false);
+            return new TeamGameRowViewHolder(view);
+        }
+    }
+    return null;
+}
+
+@Override
+public int getItemViewType(int position) {
+    GameRow row = getItem(position);
+    if (row.isTeamGameRow()) {
+        return VIEWTYPE_GAME_TEAM;
+    }
+    return VIEWTYPE_GAME_TITLE;
+}
+
+
+Here's the Adapter. 
+
+   hotAdapter = new HotRecyclerAdapter(this);
+
+    recyclerView.setHasFixedSize(false);
+    recyclerView.setAdapter(hotAdapter);
+    recyclerView.setItemAnimator(new DefaultItemAnimator());
+    recyclerView.setLayoutManager(new LinearLayoutManager(getActivity()));
+
+    contentView.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
+        @Override
+        public void onRefresh() {
+            loadData();
+        }
+    });
+
+    TypedArray colorSheme = getResources().obtainTypedArray(R.array.main_refresh_sheme);
+    contentView.setColorSchemeResources(colorSheme.getResourceId(0, -1), colorSheme.getResourceId(1, -1), colorSheme.getResourceId(2, -1), colorSheme.getResourceId(3, -1));
+
+
+And the code of the Fragment containing the Recycler and the SwipeRefreshLayout. 
+
+If anyone else has experienced this behaviour and solved it or at least found the reason for it?
+    
+===============================================================================================
+52
+A:Before you use this solution:
+RecyclerView is not complete yet, TRY NOT TO USE IT IN PRODUCTION UNLESS YOU'RE LIKE ME!
+
+As for November 2014, there are still bugs in RecyclerView that would cause canScrollVertically to return false prematurely. This solution will resolve all scrolling problems.
+
+The drop in solution:
+
+public class FixedRecyclerView extends RecyclerView {
+    public FixedRecyclerView(Context context) {
+        super(context);
+    }
+
+    public FixedRecyclerView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public FixedRecyclerView(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+    }
+
+    @Override
+    public boolean canScrollVertically(int direction) {
+        // check if scrolling up
+        if (direction < 1) {
+            boolean original = super.canScrollVertically(direction);
+            return !original && getChildAt(0) != null && getChildAt(0).getTop() < 0 || original;
+        }
+        return super.canScrollVertically(direction);
+
+    }
+}
+
+
+You don't even need to replace RecyclerView in your code with FixedRecyclerView, replacing the XML tag would be sufficient! (The ensures that when RecyclerView is complete, the transition would be quick and simple)
+
+Explanation:
+
+Basically, canScrollVertically(boolean) returns false too early,so we check if the RecyclerView is scrolled all the way to the top of the first view (where the first child's top would be 0) and then return.
+
+EDIT:
+And if you don't want to extend RecyclerView for some reason, you can extend SwipeRefreshLayout and override the canChildScrollUp() method and put the checking logic in there.
+
+EDIT2:
+RecyclerView has been released and so far there's no need to use this fix.
+    

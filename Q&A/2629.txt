@@ -1,0 +1,128 @@
+80
+Q:I've just refactored an app into a framework library and an application, but now when I try and start the app in the emulator I get the following error stack trace:
+
+06-02 18:22:35.529: E/AndroidRuntime(586): FATAL EXCEPTION: main
+06-02 18:22:35.529: E/AndroidRuntime(586): java.lang.RuntimeException: Unable to instantiate activity ComponentInfo{com.matthewrathbone.eastersays/com.matthewrathbone.eastersays.EasterSimonSaysActivity}: java.lang.ClassNotFoundException: com.matthewrathbone.eastersays.EasterSimonSaysActivity in loader dalvik.system.PathClassLoader[/data/app/com.matthewrathbone.eastersays-1.apk]
+06-02 18:22:35.529: E/AndroidRuntime(586):  at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2585)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2679)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at android.app.ActivityThread.access$2300(ActivityThread.java:125)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2033)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at android.os.Handler.dispatchMessage(Handler.java:99)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at android.os.Looper.loop(Looper.java:123)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at android.app.ActivityThread.main(ActivityThread.java:4627)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at java.lang.reflect.Method.invokeNative(Native Method)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at java.lang.reflect.Method.invoke(Method.java:521)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:868)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:626)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at dalvik.system.NativeStart.main(Native Method)
+06-02 18:22:35.529: E/AndroidRuntime(586): Caused by: java.lang.ClassNotFoundException: com.matthewrathbone.eastersays.EasterSimonSaysActivity in loader dalvik.system.PathClassLoader[/data/app/com.matthewrathbone.eastersays-1.apk]
+06-02 18:22:35.529: E/AndroidRuntime(586):  at dalvik.system.PathClassLoader.findClass(PathClassLoader.java:243)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at java.lang.ClassLoader.loadClass(ClassLoader.java:573)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at java.lang.ClassLoader.loadClass(ClassLoader.java:532)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at android.app.Instrumentation.newActivity(Instrumentation.java:1021)
+06-02 18:22:35.529: E/AndroidRuntime(586):  at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2577)
+06-02 18:22:35.529: E/AndroidRuntime(586):  ... 11 more
+
+
+Usually this means that the manifest file is wrong in some way, but I've double checked everything I can think of.
+
+Here is my activity class:
+
+package com.matthewrathbone.eastersays;
+
+import android.os.Bundle;
+
+import com.rathboma.simonsays.Assets.Season;
+import com.rathboma.simonsays.SeasonPicker;
+import com.rathboma.simonsays.SimonSaysActivity;
+
+    public class EasterSimonSaysActivity extends SimonSaysActivity {
+
+      @Override
+      protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+      }
+
+      @Override
+      protected void onDestroy() {
+        // TODO Auto-generated method stub
+        super.onDestroy();
+      }
+
+      @Override
+      public SeasonPicker getSeasonPicker() {
+       return new SeasonPicker(){
+        @Override
+        public Season getSeason() {
+          // TODO Auto-generated method stub
+          return Season.EASTER;
+        }
+       };
+      }
+    }
+
+
+As you can see, it's listed correctly in the manifest:
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.matthewrathbone.eastersays"
+    android:versionCode="1"
+    android:versionName="1.0" >
+
+    <uses-sdk android:minSdkVersion="7" android:targetSdkVersion="15" />
+
+    <application
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name" >
+        <activity
+            android:name=".EasterSimonSaysActivity"
+            android:label="@string/app_name" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
+
+
+I have no idea how to fix this, and would appreciate any help. I've scanned many similar questions on SO without seeing this particular behavior.
+
+More info:
+
+
+I've checked inside the generated APK and the class has an entry in
+the classes.dex file 
+I've tried cleaning/building the project in
+eclipse 
+I've tried using a totally new device image that doesn't have
+a copy of the APK on it already 
+I've changed the library project into
+a regular java, then changed back into an android project, no
+difference
+Adding the abstract SimonSaysActivity to the manifest makes no difference.
+I've tried making every dependency an android library project, and syncing the android version that they require, it did not help
+
+
+Found the solution (see below). To everyone that posted an answer / comment: You all rock, thanks for helping me work through the problems!
+
+Looks like this is introduced by an SDK tools upgrade. Thanks to @Nick below in the comments for this link:
+http://iqadd.com/item/noclassdeffounderror-adt-fix
+    
+===============================================================================================
+147
+A:I spent some time play with my own project, and I am able to replicate your problem and get exactly the same exception stack trace when trying to run my main project, so I think this could be the cause:
+
+Just like what I thought, it is all about how you reference your Android library project in the Android main project, a simple Eclipse configuration settings.
+
+The Wrong Way:
+Right click main project, choose Properties -> Java Build Path -> Projects -> Add..., this add the Android library Project as a dependency project in Android main project's build path, this does not work. If all required Android-related resources are defined in main project, you will not get any error at compile time, but when run the application, you get the exception described in the question.
+
+The Correct Way:
+Right click main project, choose Properties -> Android, in the Library section, add your Android library project here. Check out official dev guide Referencing a library project. This should fix all your problem. Also note that you have to use relative path reference the actual Android library project, as stated in the Library Project - Development considerations.
+
+Hope this helps.
+    

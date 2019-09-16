@@ -1,0 +1,152 @@
+35
+Q:I'm using AudioRecord to record 16 bit PCM data in android. After recording the data and saving it to a file, I read it back to save it as .wav file.
+
+The problem is that the WAV files are recognized by media players but play nothing but pure noise. My best guess at the moment is that my wav file headers are incorrect but I have been unable to see what exactly the problem is. (I think this because I can play the raw PCM data that I recorded in Audacity)
+
+Here's my code for reading the raw PCM file and saving it as a .wav:
+
+private void properWAV(File fileToConvert, float newRecordingID){
+    try {
+        long mySubChunk1Size = 16;
+        int myBitsPerSample= 16;
+        int myFormat = 1;
+        long myChannels = 1;
+        long mySampleRate = 22100;
+        long myByteRate = mySampleRate * myChannels * myBitsPerSample/8;
+        int myBlockAlign = (int) (myChannels * myBitsPerSample/8);
+
+        byte[] clipData = getBytesFromFile(fileToConvert);
+
+        long myDataSize = clipData.length;
+        long myChunk2Size =  myDataSize * myChannels * myBitsPerSample/8;
+        long myChunkSize = 36 + myChunk2Size;
+
+        OutputStream os;        
+        os = new FileOutputStream(new File("/sdcard/onefile/assessor/OneFile_Audio_"+ newRecordingID+".wav"));
+        BufferedOutputStream bos = new BufferedOutputStream(os);
+        DataOutputStream outFile = new DataOutputStream(bos);
+
+        outFile.writeBytes("RIFF");                                 // 00 - RIFF
+        outFile.write(intToByteArray((int)myChunkSize), 0, 4);      // 04 - how big is the rest of this file?
+        outFile.writeBytes("WAVE");                                 // 08 - WAVE
+        outFile.writeBytes("fmt ");                                 // 12 - fmt 
+        outFile.write(intToByteArray((int)mySubChunk1Size), 0, 4);  // 16 - size of this chunk
+        outFile.write(shortToByteArray((short)myFormat), 0, 2);     // 20 - what is the audio format? 1 for PCM = Pulse Code Modulation
+        outFile.write(shortToByteArray((short)myChannels), 0, 2);   // 22 - mono or stereo? 1 or 2?  (or 5 or ???)
+        outFile.write(intToByteArray((int)mySampleRate), 0, 4);     // 24 - samples per second (numbers per second)
+        outFile.write(intToByteArray((int)myByteRate), 0, 4);       // 28 - bytes per second
+        outFile.write(shortToByteArray((short)myBlockAlign), 0, 2); // 32 - # of bytes in one sample, for all channels
+        outFile.write(shortToByteArray((short)myBitsPerSample), 0, 2);  // 34 - how many bits in a sample(number)?  usually 16 or 24
+        outFile.writeBytes("data");                                 // 36 - data
+        outFile.write(intToByteArray((int)myDataSize), 0, 4);       // 40 - how big is this data chunk
+        outFile.write(clipData);                                    // 44 - the actual data itself - just a long string of numbers
+
+        outFile.flush();
+        outFile.close();
+
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+
+}
+
+
+private static byte[] intToByteArray(int i)
+    {
+        byte[] b = new byte[4];
+        b[0] = (byte) (i & 0x00FF);
+        b[1] = (byte) ((i >> 8) & 0x000000FF);
+        b[2] = (byte) ((i >> 16) & 0x000000FF);
+        b[3] = (byte) ((i >> 24) & 0x000000FF);
+        return b;
+    }
+
+    // convert a short to a byte array
+    public static byte[] shortToByteArray(short data)
+    {
+        /*
+         * NB have also tried:
+         * return new byte[]{(byte)(data & 0xff),(byte)((data >> 8) & 0xff)};
+         * 
+         */
+
+        return new byte[]{(byte)(data & 0xff),(byte)((data >>> 8) & 0xff)};
+    }
+
+
+I haven't included getBytesFromFile() since it takes up too much space and its a tried and tested method.
+Anyway, here's the code that does the actual recording:
+
+public void run() { 
+    Log.i("ONEFILE", "Starting main audio capture loop...");
+
+    int frequency = 22100;
+    int channelConfiguration = AudioFormat.CHANNEL_CONFIGURATION_MONO;
+    int audioEncoding = AudioFormat.ENCODING_PCM_16BIT; 
+
+    final int bufferSize = AudioRecord.getMinBufferSize(frequency, channelConfiguration, audioEncoding); 
+
+    AudioRecord audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, frequency, channelConfiguration, audioEncoding, bufferSize);
+
+    audioRecord.startRecording();
+    ByteArrayOutputStream recData = new ByteArrayOutputStream(); 
+    DataOutputStream dos = new DataOutputStream(recData);
+
+    short[] buffer = new short[bufferSize];  
+    audioRecord.startRecording();
+
+    while (!stopped) {  
+        int bufferReadResult = audioRecord.read(buffer, 0, bufferSize);
+
+        for(int i = 0; i < bufferReadResult;i++) {
+            try {
+                dos.writeShort(buffer[i]);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }  
+    audioRecord.stop();
+    try {
+        dos.flush();
+        dos.close();
+    } catch (IOException e1) {
+        e1.printStackTrace();
+    }
+
+    audioRecord.stop();
+
+    byte[] clipData = recData.toByteArray();
+
+    File file = new File(audioOutputPath);
+    if(file.exists())
+        file.delete();
+    file = new File(audioOutputPath);
+    OutputStream os;
+    try {
+        os = new FileOutputStream(file);
+
+        BufferedOutputStream bos = new BufferedOutputStream(os);
+        DataOutputStream outFile = new DataOutputStream(bos);
+
+        outFile.write(clipData);  
+
+        outFile.flush();
+        outFile.close();
+
+    } catch (FileNotFoundException e) {
+        e.printStackTrace();
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+}
+
+
+Please suggest what could be going wrong.
+    
+===============================================================================================
+16
+A:I've been wrestling with this exact same question for hours now, and my issue was mostly that when recording in 16 bits you have to be very careful about what you write to the output. The WAV file expects the data in Little Endian format, but using writeShort writes it to the output as Big Endian. I also got interesting results when using the other functions so I returned to writing bytes in the correct order and that works.
+
+I used a Hex editor extensively while debugging this. I can recommend you do the same. Also, the header in the answer above works, I used it to check versus my own code and this header is rather foolproof.
+    

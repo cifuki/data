@@ -1,0 +1,35 @@
+67
+Q:I'm working on a high-performance Android application (a game), and though I try to code for readability first, I like to keep in the back of my mind a picture of what is happening under the hood. With C++, I've developed a fairly good intuition about what the compiler will and won't do for me. I'm trying to do the same for Java/Android.
+
+Hence this question. I could find very little about this topic on the web. Will the Java compiler, Dalvik converter (dx) and/or JITter (on Android 2.2+) perform optimizations like the following?
+
+
+Method inlining. Under what conditions? private methods can always safely be inlined; will this be done? How about public final methods? Methods on objects of other classes? static methods? What if the runtime type of the object can easily be deduced by the compiler? Should I declare methods as final or static wherever possible?
+Common subexpression elimination. For example, if I access someObject.someField twice, will the lookup be done only once? What if it's a call to a getter? What if I use some arithmetic expression twice; will it be evaluated only once? What if I use the result of some expression, whose value I know not to change, as the upper bound of a for loop?
+Bounds checking on array lookups. Will the toolchain eliminate this in certain conditions, like the archetypical for loop?
+Value inlining. Will accesses to some public static final int always be inlined? Even if they're in another class? Even if they're in another package?
+Branch prediction. How big an issue is this even? Is branching a large performance hit on a typical Android device?
+Simple arithmetic. Will someInt * 2 be replaced by someInt << 1?
+
+
+Etcetera...
+    
+===============================================================================================
+104
+A:This is Ben, one of the engineers working on the JIT @ Google. When Bill and I started on this project, the goal was to deliver a working JIT as soon as possible with minimal impact to resource contention (eg memory footprint, CPU hijacked by the compiler thread) so that it can run on low-end devices as well. Therefore we used a very primitive trace based model. That is, the compilation entity passed to the JIT compiler is a basic block, sometimes as short as a single instruction. Such traces will be stitched together at runtime through a technique called chaining so that the interpreter and code cache lookup won't be invoked often. To some degree the major source of speedup comes from eliminating the repeated interpreter parsing overhead on frequently executed code paths.
+
+That said, we do have quite a few local optimizations implemented with the Froyo JIT:
+
+
+Register allocation (8 registers for v5te target since the JIT produces Thumb code / 16 registers for v7)
+Scheduling (eg redundant ld/st elimination for Dalvik registers, load hoisting, store sinking)
+Redundant null check elimination (if such redundancy can be found in a basic block).
+Loop formation and optimization for simple counted loops (ie no side-exit in the loop body). For such loops, array accesses based on extended induction variables are optimized so that null and range checks are only performed in the loop prologue. 
+One entry inline cache per virtual callsite w/ dynamic patching at runtime.
+Peephole optimizations like power-reduction on literal operands for mul/div.
+
+
+In Gingerbread we added simple inlining for getters/setters. Since the underlying JIT frontend is still simple trace based, if the callee has branches in there it won't be inlined. But the inline cache mechanism is implemented so that virtual getters/setters can be inlined without problems.
+
+We are currently working on enlarging the compilation scope beyond a simple trace so that the compiler has a larger window for code analysis and optimization. Stay tuned.
+    

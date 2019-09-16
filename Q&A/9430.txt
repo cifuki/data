@@ -1,0 +1,212 @@
+29
+Q:UPDATE JULY 2018:
+
+If you are using ConstraintLayout 1.1.0, the correct property to use is app:layout_constrainedWidth="true" in place of the old app:layout_constraintWidth_default="wrap" (and the height counterpart). See updated answer. 
+
+UPDATE NOVEMBER 2017:
+
+If you are using ConstraintLayout 1.0.0 stable (or above) (1.0.2 at this time), see the updated Answer for a simpler solution without the need to nest layouts. 
+
+Original Question:
+
+Using ConstraintLayouts-Beta3 released on Nov 3rd 2016. (source) 
+
+I'm trying to do the following:
+
+|                                        |
+|<-[TextView]<->[ImageView] -----------> |
+|                                        |
+
+
+Which I have achieved with a layout like so:
+
+  <TextView
+      android:id="@+id/textView"
+      android:layout_height="wrap_content"
+      android:layout_width="wrap_content"
+
+      app:layout_constraintHorizontal_chainStyle="packed"
+
+      app:layout_constraintLeft_toLeftOf="parent"
+      app:layout_constraintTop_toTopOf="parent"
+      app:layout_constraintRight_toLeftOf="@+id/caret"
+      app:layout_constraintHorizontal_bias="0.0"
+
+      android:text="Some Text"
+      android:textAlignment="viewStart"
+      android:gravity="start" />
+
+  <ImageView
+      android:id="@+id/caret"
+      android:layout_width="wrap_content"
+      android:layout_height="8dp"
+      app:layout_constraintDimensionRatio="1:1"
+
+      app:layout_constraintLeft_toRightOf="@+id/textView"
+      app:layout_constraintRight_toRightOf="parent"
+
+      app:layout_constraintTop_toTopOf="@+id/textView"
+      app:layout_constraintBottom_toBottomOf="@+id/textView"
+
+
+      app:layout_constraintHorizontal_bias="0.0"
+
+      android:contentDescription=""
+      app:srcCompat="@drawable/ic_selection"
+      android:layout_marginStart="8dp"/>
+
+
+This looks ok, but when the text is longer than the available space\xe2\x80\xa6
+
+|                                        |
+|<-[TextView Larger Than The Space Avail]|
+|                                        |
+
+
+The text view has a style that specifies these: 
+
+<item name="android:lines">1</item>
+<item name="android:maxLines">1</item>
+<item name="android:ellipsize">end</item>
+
+
+So it should work, but I'm not sure what constraints I need to have the image slide until the right and then stop there and let the text view understand there's no more space.
+
+What am I missing?
+
+Note: If I set the textview's width to the 0dp, it works, but then the image is always on the right (horizontal Bias seems to be ignored for it)
+
+Note2: I have tried this with beta2 as well, in fact, it seems like Beta3 has a bug in the visual editor. 
+
+UPDATE: I tried to replicate this in Xcode/AutoLayout:
+
+This is how it looks with a Short Text
+
+
+
+Now the same layout, I just type a long text in the text view\xe2\x80\xa6
+
+
+
+As you can see the trail (right) constraint for the image view says: you're 8 or more points from the right margin. 
+
+It's also pinned to the left to the label (textView). 
+
+From what I have just learned from Twitter, this may not be possible on Android's ConstraintLayout at the moment: Source
+    
+===============================================================================================
+38
+A:UPDATE JULY 2018:
+
+If you are using ConstraintLayout 1.1.0, the correct property to use is app:layout_constrainedWidth="true" in place of the old app:layout_constraintWidth_default="wrap" (and the height counterpart)
+
+UPDATE NOVEMBER 2017
+
+I\xe2\x80\x99m using Constraint Layouts 1.0.2 and I have found a less nested solution using app:layout_constraintWidth_default="wrap" (a property that got introduced in 1.0.0 but the Beta this post was using didn\xe2\x80\x99t have).
+
+Instead of the FrameLayout that contains a LinearLayout you can now remove all that and have it this way: 
+
+    <android.support.constraint.ConstraintLayout
+      android:id="@+id/new_way_container"
+      android:layout_height="wrap_content"
+      android:layout_width="0dp" // THIS GUY USES ALL THE WIDTH.
+      app:layout_constraintEnd_toEndOf="parent"
+      app:layout_constraintStart_toStartOf="parent"
+      app:layout_constraintTop_toTopOf="parent">
+
+      <TextView
+        android:ellipsize="end"
+        android:id="@+id/some_text"
+        android:layout_height="wrap_content"
+        android:layout_width="0dp" //NO WRAP CONTENT, USE CONSTRAINTS
+        android:lines="1"
+        android:maxLines="1"
+        app:layout_constraintEnd_toStartOf="@+id/disclosure_arrow"
+        app:layout_constraintHorizontal_bias="0.0"
+        app:layout_constraintHorizontal_chainStyle="packed" //CHAIN IT for biasing.
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintWidth_default="wrap" /> //THIS IS THE KEY THAT WILL CAUSE THIS TO WORK
+
+      <ImageView
+        android:id="@+id/disclosure_arrow"
+        android:layout_height="wrap_content"
+        android:layout_width="10dp"
+        app:layout_constraintBottom_toTopOf="@id/some_text"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/some_text"
+        app:layout_constraintTop_toBottomOf="@id/some_text"
+        app:srcCompat="@drawable/your_vector_image" />
+    </android.support.constraint.ConstraintLayout>
+
+
+This effectively does exactly what I want, without hacks or guidelines or hardcoded sizes. 
+
+The TextView will use the size provided by the Constraints (which under normal circumstances would mean it would either be wrong or will grow beyond the \xe2\x80\x98parent\xe2\x80\x99), but thanks to the new attribute, those constraints are allowed to be bent/broken if the content is smaller/larger. 
+
+I have to say it works much better than iOS Priorities. (At least it\xe2\x80\x99s a lot easier to grasp to me). Thumbs up for Google on this one :)
+
+OLD ANSWER (in case you still need it).
+
+Based upon Nicolas Roard's answer, I was going to create a custom container that would basically calculate the available space, and programmatically set the maxWidth on the TextView. Instead of adding another class, unit test, possible set of bugs, etc., to the project, I tried a slightly less efficient method of nesting a couple of layouts; considering we've been nesting layouts since the age of dawn and that this is not going to be on any scrolling list view or moving too much (or at all) and that I am using ConstraintLayouts to flatten most of the hierarchy (like never before!), then I don't think a little nesting until this is better supported is that bad. 
+
+So what I did was basically, use a FrameLayout, which is by design optimized (or thought) to have one child (tho it can contain more). This FrameLayout is the one that has the ConstraintLayout rules applied like so: 
+
+  <FrameLayout
+      android:id="@+id/hostTextWithCaretContainer"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      app:layout_constraintLeft_toLeftOf="parent"
+      app:layout_constraintTop_toTopOf="parent"
+      app:layout_constraintRight_toRightOf="parent">
+
+      <!-- MY CONTENT GOES HERE -->
+
+  </FrameLayout>
+
+
+So in my real app, this FrameLayout is inside another ConstraintLayout that has an icon to its left and some other stuff, but for the sake of this example, imagine you have to "pin" the left/right of this FrameLayout to whatever space you want to occupy. In this example you can see I'm using parent in all constraints, but there could be other widgets left and right of this FrameLayout; thanks to ConstraintLayout's magic, this will occupy all that available space.
+
+Now here comes the 2nd part of the trick\xe2\x80\xa6 since ConstraintLayout guarantees that the FrameLayout will use "all the space" we have and never more (or less), I can now use a LinearLayout inside\xe2\x80\xa6 like so\xe2\x80\xa6
+
+     <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+      <TextView
+          android:id="@+id/textView"
+          android:layout_height="wrap_content"
+          android:layout_width="0dp"
+          tools:text="Some Text"
+          android:text="Some Text"
+          android:textAlignment="viewStart"
+          android:layout_gravity="center_vertical"
+          android:gravity="start"
+          android:ellipsize="end"
+          android:maxLines="1"
+          android:layout_weight="1"/>
+
+      <ImageView
+          android:id="@+id/caret"
+          android:layout_width="8dp"
+          android:layout_height="8dp"
+          app:srcCompat="@drawable/ic_selection"
+          android:contentDescription=""
+          android:layout_gravity="center_vertical"
+          android:layout_marginStart="8dp"
+          android:layout_marginEnd="8dp" />
+
+    </LinearLayout>
+
+
+Astute readers will notice that the LinearLayout has wrap_content in its width, that's very important for then the child TextView can have a width of 0dp and a weight of 1, meaning it will take all available free space after all the other widgets have calculated their width. 
+
+In this particular case the other child (ImageView) caret has no weight specified and a fixed width, therefore the TextView doesn't have to share/split the free space with anybody else and it can take it all (but only free space, remember its width is 0dp). 
+
+This less efficient approach, effectively achieves exactly what I wanted, albeit with less ConstraintLayout Magic if you will.
+
+On the plus side, I didn't have to create a custom view, perform math and issue a requestLayout() after all my math was done; this less efficient approach will/should scale and until ConstraintLayout offers a valid alternative, it may be enough as it is. 
+
+ Shoutout to the Google engineer(s) who replied on social media and eventually took the time to think about this. Maybe in the future, when they are writing tasks and story points about ConstraintLayout 1.1, they remember this and come up with a good solution 
+    

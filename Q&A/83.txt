@@ -1,0 +1,110 @@
+636
+Q:I had reports from users with Android 8 that my app (that uses back-end feed) does not show content. After investigation I found following Exception happening on Android 8:
+
+08-29 12:03:11.246 11285-11285/ E/: [12:03:11.245, main]: Exception: IOException java.io.IOException: Cleartext HTTP traffic to * not permitted
+at com.android.okhttp.HttpHandler$CleartextURLFilter.checkURLPermitted(HttpHandler.java:115)
+at com.android.okhttp.internal.huc.HttpURLConnectionImpl.execute(HttpURLConnectionImpl.java:458)
+at com.android.okhttp.internal.huc.HttpURLConnectionImpl.connect(HttpURLConnectionImpl.java:127)
+at com.deiw.android.generic.tasks.AbstractHttpAsyncTask.doConnection(AbstractHttpAsyncTask.java:207)
+at com.deiw.android.generic.tasks.AbstractHttpAsyncTask.extendedDoInBackground(AbstractHttpAsyncTask.java:102)
+at com.deiw.android.generic.tasks.AbstractAsyncTask.doInBackground(AbstractAsyncTask.java:88)
+at android.os.AsyncTask$2.call(AsyncTask.java:333)
+at java.util.concurrent.FutureTask.run(FutureTask.java:266)
+at android.os.AsyncTask$SerialExecutor$1.run(AsyncTask.java:245)
+at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1162)
+at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:636)
+at java.lang.Thread.run(Thread.java:764)
+
+
+(I've removed package name, URL and other possible identifiers)
+
+On Android 7 and lower everything works, I do not set android:usesCleartextTraffic in Manifest (and setting it to true does not help, that is the default value anyway), neither do I use Network Security Information. If I call NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(), it returns false for Android 8, true for older version, using the same apk file.
+I tried to find some mention of this on Google info about Android O, but without success.
+    
+===============================================================================================
+1373
+A:According to Network security configuration - 
+
+
+  Starting with Android 9 (API level 28), cleartext support is disabled
+  by default.
+
+
+Also have a look at - https://koz.io/android-m-and-the-war-on-cleartext-traffic/
+
+Option 1 - 
+
+Create file res/xml/network_security_config.xml - 
+
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">Your URL(ex: 127.0.0.1)</domain>
+    </domain-config>
+</network-security-config>
+
+
+AndroidManifest.xml - 
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest ...>
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application
+        ...
+        android:networkSecurityConfig="@xml/network_security_config"
+        ...>
+        ...
+    </application>
+</manifest>
+
+
+Option 2 - 
+
+android:usesCleartextTraffic Doc
+
+AndroidManifest.xml - 
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest ...>
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application
+        ...
+        android:usesCleartextTraffic="true"
+        ...>
+        ...
+    </application>
+</manifest>
+
+
+Also as @david.s' answer pointed out android:targetSandboxVersion can be a problem too -
+
+According to Manifest Docs - 
+
+
+  android:targetSandboxVersion
+  
+  The target sandbox for this app to use. The higher the sandbox version
+  number, the higher the level of security. Its default value is 1; you
+  can also set it to 2. Setting this attribute to 2 switches the app to
+  a different SELinux sandbox. The following restrictions apply to a
+  level 2 sandbox:
+  
+  
+  The default value of usesCleartextTraffic in the Network Security    Config is false.
+  Uid sharing is not permitted.
+  
+
+
+So Option 3 - 
+
+If you have android:targetSandboxVersion in <manifest> then reduce it to 1
+
+AndroidManifest.xml - 
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest android:targetSandboxVersion="1">
+    <uses-permission android:name="android.permission.INTERNET" />
+    ...
+</manifest>
+
+    

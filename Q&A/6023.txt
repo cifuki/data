@@ -1,0 +1,149 @@
+42
+Q:When I updated my Android Studio to 3.0 in the stable channel and ran the project, I started getting the below error.
+
+Error:Execution failed for task ':app:transformDexArchiveWithExternalLibsDexMergerForDebug'.
+com.android.builder.dexing.DexArchiveMergerException: Unable to merge dex
+
+
+I tried cleaning and rebuilding the project, but it didn't work. Any help will be appreciated.
+
+Project level build.gradle
+
+buildscript {
+repositories {
+    jcenter()
+    google()
+}
+dependencies {
+    classpath 'com.android.tools.build:gradle:3.0.0'
+    classpath 'com.google.gms:google-services:3.1.0'
+
+
+    // NOTE: Do not place your application dependencies here; they belong
+    // in the individual module build.gradle files
+}
+} 
+allprojects {
+repositories {
+    jcenter()
+    google()
+}
+}
+task clean(type: Delete) {
+delete rootProject.buildDir
+}
+
+
+App level build.gradle
+
+apply plugin: 'com.android.application'
+android {
+compileSdkVersion 26
+buildToolsVersion '26.0.2'
+defaultConfig {
+    applicationId "com.med.app"
+    minSdkVersion 21
+    targetSdkVersion 26
+    versionCode 1
+    versionName "1.0"
+    testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+    resConfigs "auto"
+    multiDexEnabled true
+
+}
+buildTypes {
+    release {
+        minifyEnabled false
+        proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+    }
+}
+}
+dependencies {
+compile fileTree(dir: 'libs', include: ['*.jar'])
+androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+    exclude group: 'com.android.support', module: 'support-annotations'
+})
+
+compile 'com.android.support.constraint:constraint-layout:1.0.2'
+testCompile 'junit:junit:4.12'
+
+//appcompat libraries
+compile 'com.android.support:appcompat-v7:26.1.0'
+compile 'com.android.support:design:26.1.0'
+
+
+//butterknife
+compile 'com.jakewharton:butterknife:8.8.1'
+annotationProcessor 'com.jakewharton:butterknife-compiler:8.8.1'
+
+//picasso
+compile 'com.squareup.picasso:picasso:2.5.2'
+
+//material edittext
+compile 'com.rengwuxian.materialedittext:library:2.1.4'
+
+// Retrofit & OkHttp & and OkHttpInterceptor & gson
+compile 'com.squareup.retrofit2:retrofit:2.3.0'
+compile 'com.squareup.retrofit2:converter-gson:2.3.0'
+compile 'com.google.code.gson:gson:2.8.2'
+compile 'com.squareup.okhttp3:logging-interceptor:3.8.0'
+
+// FirebaseUI for Firebase Auth
+compile 'com.firebaseui:firebase-ui-auth:3.1.0'
+}
+apply plugin: 'com.google.gms.google-services'
+
+
+I have tried all the answers given but I am unable to solve this error. Please help.
+    
+===============================================================================================
+30
+A:Add an explicit dependency to play-services-auth along with your firebase-ui-auth dependency:
+
+// FirebaseUI for Firebase Auth
+    compile 'com.firebaseui:firebase-ui-auth:3.1.0'
+    compile 'com.google.android.gms:play-services-auth:11.4.2'
+
+
+This is because firebase-ui-auth has a transitive dependency to play-services-auth and must be used with the corresponding version of play-services-auth. Please see this explanation.
+
+firebase-ui-auth
+|--- com.google.firebase:firebase-auth
+|--- com.google.android.gms:play-services-auth
+
+
+Earlier versions of the Gradle build tool did not include transitive dependencies so now versions can conflict with other play-services versions.
+
+My Issue Explained and Answered (In case anyone wants to know)
+
+When you upgrade to Android Studio 3.0 and update the gradle build tool version to 3.0.0, compiling of dependencies is now done differently than in earlier versions.
+
+I recently encountered the same issue. I was using these dependencies which worked fine through Gradle version 2.3.3:
+
+implementation 'org.apache.httpcomponents:httpmime:4.3.6'
+implementation 'org.apache.httpcomponents:httpclient-android:4.3.5.1'
+
+
+After the upgrade to gradle-build-version 3.0.0, I got the same error. Digint into it, I found that the transitive dependency of httpmime conflicted with the file httpclient-android was including.
+
+Description
+
+Let me explain this in detail. Earlier, while using gradle-tool-version 2.3.3, I was using httpclient-android to fetch and use the class named org.apache.http.entity.ContentType.java 
+Expanding the transitive dependencies of org.apache.httpcomponents:httpmime:4.3.6 showed that it has org.apache.httpcomponents:httpcore:4.3.6 which is the same package I wanted to use. But while compiling or syncing the build, it was excluding org.apache.http.entity.ContentType.java so I needed to add this dependency which includes ContentType.java:
+
+implementation 'org.apache.httpcomponents:httpclient-android:4.3.5.1'
+
+
+Everything worked fine after that.
+
+Once I upgraded the gradle-build-version to 3.0.0, things changed. It now included all transitive dependencies. So while compiling with the latest Android Studio with gradle-build-tool version 3.0.0, my ContentType.java was being compiled twice. Once from org.apache.httpcomponents:httpcore:4.3.6 (which is an implicit transitive dependency of httpmime) and again from org.apache.httpcomponents:httpclient-android:4.3.5.1 which I was using earlier.
+
+To resolve this issue I had to remove the existing org.apache.httpcomponents:httpclient-android:4.3.5.1 dependency as httpmime would itself fetch the relevant class required for my application.
+
+The solution for my situation: only use required dependencies and remove the httpclient-android
+
+implementation 'org.apache.httpcomponents:httpmime:4.3.6'
+
+
+Note that this is just the case for me. You'll need to dig into your own dependencies and apply the solution accordingly.
+    

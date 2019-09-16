@@ -1,0 +1,147 @@
+36
+Q:Possible Duplicate:
+  Android RuntimeException: Unable to instantiate the service  
+
+
+
+
+I have been trying to fix the following problem all day but nothing seems to work.
+
+I have a widget which gets it's views updated via an IntentService. But i keep getting an InstantiationException when trying to start this service. Below is the stack trace of the error and the code i use to launch the service. I don't believe i need to post the code of the service as it is never even started, but if someone thinks otherwise i will of course do so. 
+
+STACKTRACE
+
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163): FATAL EXCEPTION: main
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163): java.lang.RuntimeException: Unable to instantiate service syrligt.cashtrack.widgets.StatisticsWidgetUpdateService: java.lang.InstantiationException: syrligt.cashtrack.widgets.StatisticsWidgetUpdateService
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at android.app.ActivityThread.handleCreateService(ActivityThread.java:1904)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at android.app.ActivityThread.access$2500(ActivityThread.java:117)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at android.app.ActivityThread$H.handleMessage(ActivityThread.java:982)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at android.os.Handler.dispatchMessage(Handler.java:99)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at android.os.Looper.loop(Looper.java:123)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at android.app.ActivityThread.main(ActivityThread.java:3647)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at java.lang.reflect.Method.invokeNative(Native Method)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at java.lang.reflect.Method.invoke(Method.java:507)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:839)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:597)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at dalvik.system.NativeStart.main(Native Method)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163): Caused by: java.lang.InstantiationException: syrligt.cashtrack.widgets.StatisticsWidgetUpdateService
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at java.lang.Class.newInstanceImpl(Native Method)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at java.lang.Class.newInstance(Class.java:1409)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     at android.app.ActivityThread.handleCreateService(ActivityThread.java:1901)
+05-30 13:58:47.150: ERROR/AndroidRuntime(1163):     ... 10 more
+
+
+WIDGET CODE
+
+ public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
+     for(int i = 0; i<appWidgetIds.length ; i++){
+         Intent intent = new Intent(context,StatisticsWidgetUpdateService.class);
+         intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetIds[i]);
+         context.startService(intent);
+     }
+ }
+
+
+SERVICE CODE
+
+public class StatisticsWidgetUpdateService extends IntentService {
+
+public StatisticsWidgetUpdateService(String name) {
+    super(name);
+}
+
+@Override
+protected void onHandleIntent(Intent intent) {
+    AppWidgetManager appWidgetManager=AppWidgetManager.getInstance(this);
+    int appWidgetId = intent.getExtras().getInt(AppWidgetManager.EXTRA_APPWIDGET_ID);
+    CashDB cdb = new CashDB(this);
+    cdb.open();
+
+    RemoteViews updatedViews = new RemoteViews(getPackageName(), R.layout.statistics_widget);
+    updatedViews.removeAllViews(R.id.list);
+    PendingIntent pendingIntent = null;
+    Cursor c = null;
+    Intent i = null;
+    SharedPreferences sp = getSharedPreferences(Preferences.PREFERENCES, 0);
+
+    double incomeAmount = cdb.sumTransactions(null, new TimeFrame(sp.getInt(Preferences.DEFAULT_TIME_FRAME, TimeFrame.ALL_TIME)), 1);
+    double expenseAmount = Math.abs(cdb.sumTransactions(null, new TimeFrame(sp.getInt(Preferences.DEFAULT_TIME_FRAME, TimeFrame.ALL_TIME)), -1));
+
+    int value = StatisticsWidgetConfig.getConfig(this, appWidgetId);
+    c = cdb.fetchCategoriesWithSums(new TimeFrame(sp.getInt(Preferences.DEFAULT_TIME_FRAME, TimeFrame.ALL_TIME)), value, 3);
+
+    updatedViews.setTextViewText(R.id.balance, StringConversion.formatAmount(incomeAmount - expenseAmount));//balance text
+    updatedViews.setViewVisibility(R.id.value_bar, incomeAmount - expenseAmount < 0 ? R.drawable.list_item_value_red_medium : R.drawable.list_item_value_green_medium);//value bar
+    updatedViews.setTextViewText(R.id.income, StringConversion.formatAmount(incomeAmount));//income text
+    updatedViews.setTextViewText(R.id.expense, StringConversion.formatAmount(expenseAmount));//expense text
+    updatedViews.setTextViewText(R.id.popularity, Integer.toString(cdb.fetchAllTransactions(new TimeFrame(sp.getInt(Preferences.DEFAULT_TIME_FRAME, TimeFrame.ALL_TIME)), null, null,null).getCount()));//popularity text
+
+    for(int j = 0; j<c.getCount();j++){
+
+        c.moveToPosition(j);
+        RemoteViews statisticsView = new RemoteViews(getPackageName(), R.layout.statistics_widget_list);
+
+        statisticsView.setTextViewText(R.id.name, c.getString(c.getColumnIndexOrThrow(CashDB.CATEGORY_NAME)));//category name
+        statisticsView.setImageViewResource(R.id.icon, c.getInt(c.getColumnIndexOrThrow(CashDB.CATEGORY_IMAGE)));//category icon
+        statisticsView.setViewVisibility(R.id.starred, c.getInt(c.getColumnIndexOrThrow(CashDB.CATEGORY_STARRED)) == 1 ? View.VISIBLE : View.GONE);//starred icon
+
+        double procent = c.getLong(c.getColumnIndexOrThrow(CashDB.TRANSACTION_SUM));
+        procent = procent/(value == -1 ? expenseAmount : incomeAmount);
+        procent = Math.abs(procent * 100);
+
+        if((procent%1) < 0.1){
+             statisticsView.setTextViewText( R.id.procent, String.format("%.0f%s",procent," %"));//procentage
+        }else{
+             statisticsView.setTextViewText( R.id.procent, String.format("%.1f%s",procent," %"));//procentage
+        }
+
+        Bitmap bmp;
+        if(value == -1){
+            bmp=BitmapFactory.decodeResource(getResources(), R.drawable.progress_bar_red);
+        }else{
+            bmp=BitmapFactory.decodeResource(getResources(), R.drawable.progress_bar_green);
+        }
+        int width=(int) (procent*4.056);  // kankse fuckar upp p\xc3\xa5 andra display storlekar
+        if(width<2){
+            width=2;
+        }
+        width = (int) getResources().getDisplayMetrics().density * width;
+        int height=10;
+        Bitmap resizedbitmap=Bitmap.createScaledBitmap(bmp, width, height, true);
+        statisticsView.setImageViewBitmap(R.id.progress_bar, resizedbitmap);//procent bar
+
+        i = new Intent(this, ViewCategory.class);
+        i.putExtra(CashDB.CATEGORY_ID, c.getLong(c.getColumnIndexOrThrow(CashDB.CATEGORY_ID)));
+        i.setAction("cashtrackViewCategory"+c.getLong(c.getColumnIndexOrThrow(CashDB.CATEGORY_ID)));
+        pendingIntent = PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_UPDATE_CURRENT);
+        statisticsView.setOnClickPendingIntent(R.id.statistics_widget_list_layout, pendingIntent);
+        updatedViews.addView(R.id.list, statisticsView);
+
+    }
+
+    c.close();
+    cdb.close();
+    appWidgetManager.updateAppWidget(appWidgetId, updatedViews);
+}
+
+
+}
+    
+===============================================================================================
+105
+A:You service needs to have a public no-args constructor. Otherwize, Android will not be able to instantiate it.
+
+So replace 
+
+public StatisticsWidgetUpdateService(String name) {
+    super(name);
+}
+
+
+with
+
+public StatisticsWidgetUpdateService() {
+    super("SOME NAME");
+}
+
+    

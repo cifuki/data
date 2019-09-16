@@ -1,0 +1,58 @@
+34
+Q:I'm have a feature on my Android app where the user authorizes the app and shares a link.
+
+I also need to give an option for the user to logout of facebook and I need to conditionally disable this button if the user is not logged int (or not authorized the app).
+
+I can't seem to find the API call on the Android SDK that would let me ask FB if the user is logged in or not.
+
+What I have found is getAccessExpires():
+
+
+  Retrieve the current session's expiration time (in milliseconds since
+  Unix epoch), or 0 if the session doesn't expire or doesn't exist.
+
+
+Will checking if the session equals 0 be the way to go? Or is there something I'm missing?
+    
+===============================================================================================
+48
+A:I struggled to find a simple answer to this in the FB docs. Using the Facebook SDK version 3.0 I think there are two ways to check if a user is logged in.
+
+1) Use Session.isOpened()
+
+To use this method you need to retrieve the active session with getActiveSession() and then (here's the confusing part) decipher if the session is in a state where the user is logged in or not. I think the only thing that matters for a logged in user is if the session isOpened(). So if the session is not null and it is open then the user is logged in. In all other cases the user is logged out (keep in mind Session can have states other than opened and closed).
+
+public boolean isLoggedIn() {
+    Session session = Session.getActiveSession();
+    return (session != null && session.isOpened());
+}
+
+
+There's another way to write this function, detailed in this answer, but I'm not sure which approach is more clear or "best practice".
+
+2) Constantly monitor status changes with Session.StatusCallback and UiLifecycleHelper
+
+If you follow this tutorial you'll setup the UiLifecycleHelper and register a Session.StatusCallback object with it upon instantiation. There's a callback method, call(), which you override in Session.StatusCallback which will supposedly be called anytime the user logs in/out. Within that method maybe you can keep track of whether the user is logged in or not. Maybe something like this:
+
+private boolean isLoggedIn = false; // by default assume not logged in
+
+private Session.StatusCallback callback = new Session.StatusCallback() {
+    @Override
+    public void call(Session session, SessionState state, Exception exception) {
+        if (state.isOpened()) { //note: I think session.isOpened() is the same
+            isLoggedIn = true;
+        } else if (state.isClosed()) {
+            isLoggedIn = false;
+        }
+    }
+};
+
+public boolean isLoggedIn() {
+    return isLoggedIn;
+}
+
+
+I think method 1 is simpler and probably the better choice.
+
+As a side note can anyone shed light on why the tutorial likes to call state.isOpened() instead of session.isOpened() since both seem to be interchangeable (session.isOpened() seems to just call through to the state version anyway).
+    

@@ -1,0 +1,118 @@
+54
+Q:I am currently in the process of converting one of our projects to Gradle from maven. The folder structure is as follows:
+
+gitRoot
+    settings.gradle
+    build.gradle
+    ProjectA
+        build.gradle
+        src/main/java
+    Libraries
+        SomeLib (git submodule)
+        ProjectBRoot (git submodule)
+            settings.gradle
+            build.gradle
+            ProjectB
+                build.gradle
+                src/main/java
+            Libraries
+                FacebookSDK/facebook
+                    build.gradle
+                    src
+
+
+So already it looks complicated. But the idea is that ProjectB is a library project and it should be able to be built and packaged separately, which is why it has its own settings.gradle and as far as i can tell it seems to be working ok, i have it building and its finding facebook just fine.
+
+The ProjectB/build.gradle contains this line
+
+compile project(':libraries:facebook-android-sdk:facebook')
+
+
+The ProjectBRoot/settings.gradle contains this line
+
+include ':ProjectB', ':libraries:facebook-android-sdk:facebook'
+
+
+The gitRoot/settings.gradle contains this line
+
+include ':ProjectA', ':Libraries:ProjectBRoot:ProjectB'
+
+
+The ProjectA/build.gradle contains this line
+
+compile project(':Libraries:ProjectBRoot:ProjectB')
+
+
+When I run the build i get this error
+
+The TaskContainer.add() method has been deprecated and is scheduled to be removed in Gradle 2.0. Please use the create() method instead.
+
+FAILURE: Build failed with an exception.
+
+* Where:
+Build file '/gitRoot/Libraries/ProjectBRoot/ProjectB/build.gradle' line: 17
+
+* What went wrong:
+A problem occurred evaluating project ':Libraries:ProjectBRoot:ProjectB'.
+> Project with path ':libraries:facebook-android-sdk:facebook' could not be found in project ':Libraries:ProjectBRoot:ProjectB'.
+
+* Try:
+Run with --stacktrace option to get the stack trace. Run with --info or --debug option to get more log output.
+
+BUILD FAILED
+
+Total time: 4.652 secs
+
+
+So my guess as to whats wrong is that facebook is not in a direct subfolder from ProjectB...but that doesn't matter when building within ProjectBRoot. This is probably due to the face that I am referencing ProjectB directly and not through the ProjectBRoot/gradle.build but I tried that and it also did not work. Can someone please help me out, I have looked through the documentation and it doesn't talk about multiple projects that have their own settings.gradle files and I think thats the thing that is messing me up.
+
+Update:
+
+So I followed Xav's answer and I am now able to build with the command line however i can't import/build with android studio. I know the problem is still with the facebook project. The error i get is that it could not configure ProjectB.
+
+ Gradle: A problem occurred configuring project ':ProjectA'.
+   > Failed to notify project evaluation listener.
+     > A problem occurred configuring project ':Libraries:ProjectBRoot:ProjectB'.
+       > Failed to notify project evaluation listener.
+         > Configuration with name 'default' not found.
+
+
+The error is caused by the line
+
+ compile project(':facebook-sdk')
+
+
+inside the ProjectB/build.gradle
+    
+===============================================================================================
+94
+A:settings.gradle must define all the modules. It won't load other settings.gradle found in the tree to load more module.
+
+You'll have to either
+
+
+define a module for the facebook SDK in the top level settings.gradle. Yes it's redundant with the other settings.gradle.
+publish Project B somehow (as well as its dependencies so in this case the facebook SDK library), somewhere (a corporate artifact repository for instance) and access it from Project A.
+
+
+While #1 is better, it makes the ProjectB -> Facebook dependency tricky as the path will be different depending on the settings.gradle used. One way to fix this is to split the module name/path from its actual location on disk. this is done inside the settings.gradle file.
+
+In your top level settings.gradle file, do
+
+include 'facebook-sdk'
+project(':facebook-sdk').projectDir = new File('Libraries/ProjectBRoot/Libraries/FacebookSDK/facebook')
+
+
+In the setting.gradle file inside your Project B, do the same with the different relative path:
+
+include 'facebook-sdk'
+project(':facebook-sdk').projectDir = new File('Libraries/FacebookSDK/facebook')
+
+
+This makes both project setup define the same 'facebook-sdk' module located at the same absolute location on disk.
+
+All projects depending on this module should just declare the dependency as 
+
+compile project(':facebook-sdk') 
+
+    

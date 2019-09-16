@@ -1,0 +1,114 @@
+44
+Q:I have a TextView with multiple ClickableSpans in it. When a ClickableSpan is pressed, I want it to change the color of its text.
+
+I have tried setting a color state list as the textColorLink attribute of the TextView. This does not yield the desired result because this causes all the spans to change color when the user clicks anywhere on the TextView.
+
+Interestingly, using textColorHighlight to change the background color works as expected: Clicking on a span changes only the background color of that span and clicking anywhere else in the TextView does nothing.
+
+I have also tried setting ForegroundColorSpans with the same boundaries as the ClickableSpans where I pass the same color state list as above as the color resource. This doesn't work either. The spans always keep the color of the default state in the color state list and never enter the pressed state.
+
+Does anyone know how to do this?
+
+This is the color state list I used:
+
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+  <item android:state_pressed="true" android:color="@color/pressed_color"/>
+  <item android:color="@color/normal_color"/>
+</selector>
+
+    
+===============================================================================================
+62
+A:I finally found a solution that does everything I wanted. It is based on this answer.
+
+This is my modified LinkMovementMethod that marks a span as pressed on the start of a touch event (MotionEvent.ACTION_DOWN) and unmarks it when the touch ends or when the touch location moves out of the span.
+
+public class LinkTouchMovementMethod extends LinkMovementMethod {
+    private TouchableSpan mPressedSpan;
+
+    @Override
+    public boolean onTouchEvent(TextView textView, Spannable spannable, MotionEvent event) {
+        if (event.getAction() == MotionEvent.ACTION_DOWN) {
+            mPressedSpan = getPressedSpan(textView, spannable, event);
+            if (mPressedSpan != null) {
+                mPressedSpan.setPressed(true);
+                Selection.setSelection(spannable, spannable.getSpanStart(mPressedSpan),
+                        spannable.getSpanEnd(mPressedSpan));
+            }
+        } else if (event.getAction() == MotionEvent.ACTION_MOVE) {
+            TouchableSpan touchedSpan = getPressedSpan(textView, spannable, event);
+            if (mPressedSpan != null && touchedSpan != mPressedSpan) {
+                mPressedSpan.setPressed(false);
+                mPressedSpan = null;
+                Selection.removeSelection(spannable);
+            }
+        } else {
+            if (mPressedSpan != null) {
+                mPressedSpan.setPressed(false);
+                super.onTouchEvent(textView, spannable, event);
+            }
+            mPressedSpan = null;
+            Selection.removeSelection(spannable);
+        }
+        return true;
+    }
+
+    private TouchableSpan getPressedSpan(
+            TextView textView,
+            Spannable spannable,
+            MotionEvent event) {
+
+            int x = (int) event.getX() - textView.getTotalPaddingLeft() + textView.getScrollX();
+            int y = (int) event.getY() - textView.getTotalPaddingTop() + textView.getScrollY();
+
+            Layout layout = textView.getLayout();
+            int position = layout.getOffsetForHorizontal(layout.getLineForVertical(y), x);
+
+            TouchableSpan[] link = spannable.getSpans(position, position, TouchableSpan.class);
+            TouchableSpan touchedSpan = null;
+            if (link.length > 0 && positionWithinTag(position, spannable, link[0])) {
+                touchedSpan = link[0];
+            }
+
+            return touchedSpan;
+        }
+
+        private boolean positionWithinTag(int position, Spannable spannable, Object tag) {
+            return position >= spannable.getSpanStart(tag) && position <= spannable.getSpanEnd(tag);
+        }
+    }
+
+
+This needs to be applied to the TextView like so:
+
+    yourTextView.setMovementMethod(new LinkTouchMovementMethod());
+
+
+And this is the modified ClickableSpan that edits the draw state based on the pressed state set by the LinkTouchMovementMethod: (it also removes the underline from the links)
+
+public abstract class TouchableSpan extends ClickableSpan {
+    private boolean mIsPressed;
+    private int mPressedBackgroundColor;
+    private int mNormalTextColor;
+    private int mPressedTextColor;
+
+    public TouchableSpan(int normalTextColor, int pressedTextColor, int pressedBackgroundColor) {
+        mNormalTextColor = normalTextColor;
+        mPressedTextColor = pressedTextColor;
+        mPressedBackgroundColor = pressedBackgroundColor;
+    }
+
+    public void setPressed(boolean isSelected) {
+        mIsPressed = isSelected;
+    }
+
+    @Override
+    public void updateDrawState(TextPaint ds) {
+        super.updateDrawState(ds);
+        ds.setColor(mIsPressed ? mPressedTextColor : mNormalTextColor);
+        ds.bgColor = mIsPressed ? mPressedBackgroundColor : 0xffeeeeee;
+        ds.setUnderlineText(false);
+    }
+}
+
+    

@@ -1,0 +1,62 @@
+186
+Q:I am currently developing an application that will use Bluetooth Low Energy (testing on the Nexus 4). After getting started with the official BLE APIs in Android 4.3, I have noticed that after I connect a device for the first time I am rarely able to successfully connect to / communicate with that device or any other device again.
+
+Following the guide here, I can successfully connect to a device, scan services and characteristics, and read/write/receive notifications without any issues. However, after disconnecting and re-connecting, I am often unable to either scan services/characteristics or unable to complete a read/write. I can't find anything in the logs to indicate why this is happening.
+
+Once this happens I have to uninstall the application, disable Bluetooth, and restart the phone before it will start working again.
+
+Whenever a device is disconnected I make sure to call close() on the BluetoothGatt object and set it to null. Any insights?
+
+
+
+EDIT:
+Log dumps: For these logs I rooted my phone and upped the trace levels of related items in /etc/bluetooth/bt_stack.conf
+
+Successful connection - First attempt after rebooting the phone and installing the app. I am able to connect, discover all services/characteristics, and read/write.
+
+Failed Attempt 1 - This is the next attempt after disconnecting from the successful connection above. It seems I was able to discover characteristics, but the first attempt to read returned a null value and disconnected soon thereafter.
+
+Failed Attempt 2 - An example where I am not even able to discover services/characteristics.
+
+
+
+EDIT 2:
+The device to which I am trying to connect is based on TI's CC2541 chip. I obtained a TI SensorTag (also based on the CC2541) to play around with and discovered that TI released an android app for the SensorTag yesterday. However, this app has the same problem. I tested this on two other Nexus 4s with the same result: Connection to the SensorTag is successful the first or second time, but (according to the logs) fails to discover services thereafter, causing all sorts of crashes. I'm starting to wonder if it's an issue with this specific chip?
+    
+===============================================================================================
+176
+A:Important implementation hints
+
+(Perhaps some of those hints aren't necessary anymore due to Android OS updates.)
+
+
+Some devices like Nexus 4 with Android 4.3 take 45+ seconds to connect using an existing gatt instance. Work around: Always close gatt instances on disconnect and create a fresh instance of gatt on each connect. 
+Don't forget to call android.bluetooth.BluetoothGatt#close() 
+Start a new thread inside onLeScan(..) and then connect. Reason: BluetoothDevice#connectGatt(Context context, boolean autoConnect, BluetoothGattCallback callback) always fails, if called inside LeScanCallback() {...}.onLeScan(BluetoothDevice device, int rssi, byte[] scanRecord) in the same thread on Samsung Galaxy S3 with Android 4.3 (at least for build  JSS15J.I9300XXUGMK6)
+Most devices filter advertising
+Better not use android.bluetooth.BluetoothAdapter#startLeScan(UUID[] serviceUuids, LeScanCallback callback) with the parameter to filter for certain service UUIDs because this is broken completely in Samsung Galaxy S3 with Android 4.3 and doesn't work for 128bit UUIDs in general.
+Gatt always can process one command at a time. If several commands get called short after another, the first one gets cancelled due to the synchronous nature of the gatt implementation.
+I often see even on modern devices with Android 5, that Wifi interferes withs bluetooth and vice versa. As a last resort, turn off wifi to stabilize bluetooth.
+
+
+Tutorial for beginners
+
+A pretty OK entry point for newcomers could be this video tutorial: Developing Bluetooth Smart Applications for Android http://youtu.be/x1y4tEHDwk0
+
+The issue and work around described below is probably fixed now by OS updates
+
+Work around: I could "stabilize" my app doing that...
+
+
+I provide the user a setting "Restart Bluetooth". If that setting is enabled,  I restart Bluetooth at some points that indicate the begin of BLE stack becoming unstable. E.g. if startScan returns false. A good point may also be if serviceDiscovery failes. I just turn Bluetooth off and on.
+I provide another setting "Turn off WiFi". If that setting is enabled, my app turns off Wifi when the app is running (and turns it back on afterwards)
+
+
+This work around is based on follwoing experiences...
+
+
+Restarting Bluetooth helps to fix problems with BLE in most cases
+If you turn off Wifi, the BLE stack gets much more stable. However, it also works fine on most devices with wifi turned on. 
+If you turn off Wifi, restarting Bluetooth fully recovers the BLE stack without the need to reboot the device in most cases.
+
+    

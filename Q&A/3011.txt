@@ -1,0 +1,120 @@
+73
+Q:I have a worker thread that sits in the background, processing messages. Something like this:
+
+class Worker extends Thread {
+
+    public volatile Handler handler; // actually private, of course
+
+    public void run() {
+        Looper.prepare();
+        mHandler = new Handler() { // the Handler hooks up to the current Thread
+            public boolean handleMessage(Message msg) {
+                // ...
+            }
+        };
+        Looper.loop();
+    }
+}
+
+
+From the main thread (UI thread, not that it matters) I would like to do something like this:
+
+Worker worker = new Worker();
+worker.start();
+worker.handler.sendMessage(...);
+
+
+The trouble is that this sets me up for a beautiful race condition: at the time worker.handler is read, there is no way to be sure that the worker thread has already assigned to this field!
+
+I cannot simply create the Handler from the Worker's constructor, because the constructor runs on the main thread, so the Handler will associate itself with the wrong thread.
+
+This hardly seems like an uncommon scenario. I can come up with several workarounds, all of them ugly:
+
+
+Something like this:
+
+class Worker extends Thread {
+
+    public volatile Handler handler; // actually private, of course
+
+    public void run() {
+        Looper.prepare();
+        mHandler = new Handler() { // the Handler hooks up to the current Thread
+            public boolean handleMessage(Message msg) {
+                // ...
+            }
+        };
+        notifyAll(); // <- ADDED
+        Looper.loop();
+    }
+}
+
+
+And from the main thread:
+
+Worker worker = new Worker();
+worker.start();
+worker.wait(); // <- ADDED
+worker.handler.sendMessage(...);
+
+
+But this is not reliable either: if the notifyAll() happens before the wait(), then we'll never be woken up!
+Passing an initial Message to the Worker's constructor, having the run() method post it. An ad-hoc solution, won't work for multiple messages, or if we don't want to send it right away but soon after.
+Busy-waiting until the handler field is no longer null. Yep, a last resort...
+
+
+I would like to create a Handler and MessageQueue on behalf of the Worker thread, but this does not seem to be possible. What is the most elegant way out of this?
+    
+===============================================================================================
+60
+A:Eventual solution (minus error checking), thanks to CommonsWare:
+
+class Worker extends HandlerThread {
+
+    // ...
+
+    public synchronized void waitUntilReady() {
+        d_handler = new Handler(getLooper(), d_messageHandler);
+    }
+
+}
+
+
+And from the main thread:
+
+Worker worker = new Worker();
+worker.start();
+worker.waitUntilReady(); // <- ADDED
+worker.handler.sendMessage(...);
+
+
+This works thanks to the semantics of HandlerThread.getLooper() which blocks until the looper has been initialized.
+
+
+
+Incidentally, this is similar to my solution #1 above, since the HandlerThread is implemented roughly as follows (gotta love open source):
+
+public void run() {
+    Looper.prepare();
+    synchronized (this) {
+        mLooper = Looper.myLooper();
+        notifyAll();
+    }
+    Looper.loop();
+}
+
+public Looper getLooper() {
+    synchronized (this) {
+        while (mLooper == null) {
+            try {
+                wait();
+            } catch (InterruptedException e) {
+            }
+        }
+    }
+    return mLooper;
+}
+
+
+The key difference is that it doesn't check whether the worker thread is running, but that it has actually created a looper; and the way to do so is to store the looper in a private field. Nice!
+    

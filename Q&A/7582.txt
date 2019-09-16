@@ -1,0 +1,152 @@
+35
+Q:I recently started integrating android-gradle-plugin 1.1.0 in one of my projects. The project uses robolectric 2.4 to run unit tests.
+
+It's a multi module project with very complex dependencies (Some modules depend on other modules). Something like that:
+
+--> application-module (dependsOn: module1, module2, module-core)
+    --> module1 (dependsOn: module-core)
+    --> module2 (dependsOn: module-core)
+    --> module-core (dependsOn: module3, module4)
+        --> module3 (library dependencies)
+        --> module4 (library dependencies)
+
+
+For a more cleared picture please see jacoco-example project.
+
+I tried to integrate JaCoCo to generate reports for the unit tests, but it seems to me that it runs only androidTests which are basically instrumentation tests.
+
+After some google'ing I've come across a few projects on GitHub and other articles, but they mainly are focused on previous versions of the android-gradle-plugin or are using other third party plugins like android-unit-test for example here.
+
+May be I've lost my ability to google. But can somebody point me in a direction where I can find some documentations regarding the new stuff in android gradle plugin and how to run the jacoco task only for unit tests?
+
+UPDATE
+
+Adopted the script from nenick's example:
+
+apply plugin: "jacoco"
+
+configurations {
+    jacocoReport
+}
+
+task jacocoReport(dependsOn: 'testDebug') << {
+    ant {
+        taskdef(name:'jacocoreport',
+                classname: 'org.jacoco.ant.ReportTask',
+                classpath: configurations.jacocoReport.asPath)
+
+        mkdir dir: "${buildDir}/test-coverage-report"
+        mkdir dir: "${buildDir}/reports/jacoco/test/"
+
+        jacocoreport {
+            executiondata = files("${buildDir}/jacoco/testDebug.exec")
+
+            structure(name: "${rootProject.name}") {
+                classfiles {
+                    fileset (dir: "${buildDir}/intermediates/classes/debug") {
+                        //exclude(name: '**/*_*.class')
+                        exclude(name: '**/R.class')
+                        exclude(name: '**/R$*.class')
+                        exclude(name: '**/BuildConfig.class')
+                    }
+                }
+
+                sourcefiles {
+                    fileset dir: "src/main/java"
+                    fileset dir: "${buildDir}/generated/source/buildConfig/debug"
+                    fileset dir: "${buildDir}/generated/source/r/debug"
+                }
+            }
+
+            xml destfile: "${buildDir}/reports/jacoco/test/jacocoTestReport.xml"
+            html destdir: "${buildDir}/test-coverage-report/"
+        }
+    }
+}
+
+dependencies {
+    jacocoReport 'org.jacoco:org.jacoco.ant:0.7.2.201409121644'
+}
+
+
+After that the ./gradlew jacocoReport executes and generates the report, but it shows 0 (zero) test coverage, which is impossible because at least half of all classes are tested.
+
+UPDATE_2
+
+Tried out this example. Adding the next task to one of my gradle build files:
+
+task jacocoTestReport(type:JacocoReport, dependsOn: "testDebug") {
+    group = "Reporting"
+    description = "Generate Jacoco coverage reports"
+
+    classDirectories = fileTree(
+            dir: "${buildDir}/intermediates/classes/debug",
+            excludes: ['**/R.class',
+                       '**/R$*.class',
+                       '**/*$ViewInjector*.*',
+                       '**/BuildConfig.*',
+                       '**/Manifest*.*']
+    )
+
+    sourceDirectories = files("${buildDir.parent}/src/main/java")
+    additionalSourceDirs = files([
+            "${buildDir}/generated/source/buildConfig/debug",
+            "${buildDir}/generated/source/r/debug"
+    ])
+    executionData = files("${buildDir}/jacoco/testDebug.exec")
+
+    reports {
+        xml.enabled = true
+        html.enabled = true
+    }
+}
+
+
+Same issue, the reports are generated, but the code coverage is still zero.
+
+UPDATE_3
+
+It seams that the task from UPDATE_2 worked but only for the module with apply plugin: 'com.android.application' (The reports a generated correctly). But for modules that are android libraries (apply plugin: 'com.android.library') the reports show zero coverage, although the modules contain more tests then the application module.
+
+UPDATE_4
+
+Created a simple example project that demonstrates my issue. Currently if you run ./gradlew jacocoReport the report is generated, but no test coverage is displayed for the module projects. See this link 
+
+Short note: When the tests were AndroidUnitTests (whiteout JUnit 4 and Robolectric) JaCoCo reports showed coverage for all the modules.
+
+Any ideas?
+    
+===============================================================================================
+14
+A:After the hassle I decided to create an open source Gradle plugin for that.
+
+Root build.gradle
+
+buildscript {
+    repositories {
+        mavenCentral() // optional if you have this one already
+    }
+    dependencies {
+        classpath 'com.vanniktech:gradle-android-junit-jacoco-plugin:0.8.0'
+    }
+}
+
+apply plugin: 'com.vanniktech.android.junit.jacoco'
+
+
+Then simply execute
+
+./gradlew jacocoTestReportDebug
+
+
+It'll run the JUnit tests in Debug Mode and then give you the Jacoco output in xml and html form in the corresponding build directory.
+
+It also supports flavors. Having 2 flavors red and blue those tasks would be created
+
+
+jacocoTestReportRedDebug
+jacocoTestReportBlueDebug
+jacocoTestReportRedRelease
+jacocoTestReportBlueRelease
+
+    

@@ -1,0 +1,185 @@
+57
+Q:I'm trying to controlling the Android camera to take pictures in a portrait app, but when I save the picture, it's in landscape. I've rotated the image 90 grades with  setCameraDisplayOrientation() method, but doesn't work.
+
+Then I've found this post but the TAG_ORIENTATION is 0 (undefined). If I catch this value and apply a rotation value, doesn't work either. 
+
+How I can take a photo in portrait and save it with a good orientation?
+
+    /** Initializes the back/front camera */
+private boolean initPhotoCamera() {
+    try {
+        camera = getCameraInstance(selected_camera);
+
+        Camera.Parameters parameters = camera.getParameters();
+   //           parameters.setPreviewSize(width_video, height_video);
+   //           parameters.set("orientation", "portrait");
+   //           parameters.set("rotation", 1);
+   //           camera.setParameters(parameters);
+
+
+        checkCameraFlash(parameters);
+
+   //            camera.setDisplayOrientation( 0);
+        setCameraDisplayOrientation(selected_camera, camera);
+
+
+        surface_view.getHolder().setFixedSize(width_video, height_video);
+
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(width_video, height_video);
+        surface_view.setLayoutParams(lp);
+
+        camera.lock();
+
+        surface_holder = surface_view.getHolder();
+        surface_holder.addCallback(this);
+        surface_holder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+
+        setPreviewCamera();
+
+    } catch (Exception e) {
+        Log.v("RecordVideo", "Could not initialize the Camera");
+        return false;
+    }
+    return true;
+}
+
+public void setCameraDisplayOrientation(int cameraId, Camera camera) {
+     Camera.CameraInfo info = new Camera.CameraInfo();
+     Camera.getCameraInfo(cameraId, info);
+     int rotation = getWindowManager().getDefaultDisplay().getRotation();
+     int degrees = 0;
+     switch (rotation) {
+         case Surface.ROTATION_0: degrees = 0; break;
+         case Surface.ROTATION_90: degrees = 90; break;
+         case Surface.ROTATION_180: degrees = 180; break;
+         case Surface.ROTATION_270: degrees = 270; break;
+     }
+
+     int result;
+     if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+         result = (info.orientation + degrees) % 360;
+         result = (360 - result) % 360;  // compensate the mirror
+     } else {  // back-facing
+         result = (info.orientation - degrees + 360) % 360;
+     }
+     camera.setDisplayOrientation(result);
+ }
+
+     public static Bitmap rotate(Bitmap bitmap, int degree) {
+    int w = bitmap.getWidth();
+    int h = bitmap.getHeight();
+
+    Matrix mtx = new Matrix();
+   //       mtx.postRotate(degree);
+    mtx.setRotate(degree);
+
+    return Bitmap.createBitmap(bitmap, 0, 0, w, h, mtx, true);
+}
+
+@Override
+public void onPictureTaken(byte[] data, Camera camera) {
+
+
+
+    String timeStamp = Calendar.getInstance().getTime().toString();
+    output_file_name = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM) + File.separator + timeStamp + ".jpeg";
+
+    File pictureFile = new File(output_file_name);
+    if (pictureFile.exists()) {
+        pictureFile.delete();
+    }
+
+    try {
+        FileOutputStream fos = new FileOutputStream(pictureFile);
+        fos.write(data);
+
+        Bitmap realImage = BitmapFactory.decodeFile(output_file_name);
+
+        ExifInterface exif=new ExifInterface(pictureFile.toString());
+
+        Log.d("EXIF value", exif.getAttribute(ExifInterface.TAG_ORIENTATION));
+        if(exif.getAttribute(ExifInterface.TAG_ORIENTATION).equalsIgnoreCase("6")){
+            realImage= rotate(realImage, 90);
+        } else if(exif.getAttribute(ExifInterface.TAG_ORIENTATION).equalsIgnoreCase("8")){
+            realImage= rotate(realImage, 270);
+        } else if(exif.getAttribute(ExifInterface.TAG_ORIENTATION).equalsIgnoreCase("3")){
+            realImage= rotate(realImage, 180);
+        } else if(exif.getAttribute(ExifInterface.TAG_ORIENTATION).equalsIgnoreCase("0")){
+            realImage= rotate(realImage, 45);
+        }
+
+        boolean bo = realImage.compress(Bitmap.CompressFormat.JPEG, 100, fos);
+
+        fos.close();
+
+        Log.d("Info", bo + "");
+
+    } catch (FileNotFoundException e) {
+        Log.d("Info", "File not found: " + e.getMessage());
+    } catch (IOException e) {
+        Log.d("TAG", "Error accessing file: " + e.getMessage());
+    }
+}
+
+    
+===============================================================================================
+55
+A:The problem is when I saved the image I didn't do well.
+
+@Override
+public void onPictureTaken(byte[] data, Camera camera) {
+
+    String timeStamp = new SimpleDateFormat( "yyyyMMdd_HHmmss").format( new Date( ));
+    output_file_name = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM) + File.separator + timeStamp + ".jpeg";
+
+    File pictureFile = new File(output_file_name);
+    if (pictureFile.exists()) {
+        pictureFile.delete();
+    }
+
+    try {
+        FileOutputStream fos = new FileOutputStream(pictureFile);
+
+        Bitmap realImage = BitmapFactory.decodeByteArray(data, 0, data.length);
+
+        ExifInterface exif=new ExifInterface(pictureFile.toString());
+
+        Log.d("EXIF value", exif.getAttribute(ExifInterface.TAG_ORIENTATION));
+        if(exif.getAttribute(ExifInterface.TAG_ORIENTATION).equalsIgnoreCase("6")){
+            realImage= rotate(realImage, 90);
+        } else if(exif.getAttribute(ExifInterface.TAG_ORIENTATION).equalsIgnoreCase("8")){
+            realImage= rotate(realImage, 270);
+        } else if(exif.getAttribute(ExifInterface.TAG_ORIENTATION).equalsIgnoreCase("3")){
+            realImage= rotate(realImage, 180);
+        } else if(exif.getAttribute(ExifInterface.TAG_ORIENTATION).equalsIgnoreCase("0")){
+            realImage= rotate(realImage, 90);
+        }
+
+        boolean bo = realImage.compress(Bitmap.CompressFormat.JPEG, 100, fos);
+
+        fos.close();
+
+        ((ImageView) findViewById(R.id.imageview)).setImageBitmap(realImage);
+
+        Log.d("Info", bo + "");
+
+    } catch (FileNotFoundException e) {
+        Log.d("Info", "File not found: " + e.getMessage());
+    } catch (IOException e) {
+        Log.d("TAG", "Error accessing file: " + e.getMessage());
+    }
+}
+
+public static Bitmap rotate(Bitmap bitmap, int degree) {
+    int w = bitmap.getWidth();
+    int h = bitmap.getHeight();
+
+    Matrix mtx = new Matrix();
+   //       mtx.postRotate(degree);
+    mtx.setRotate(degree);
+
+    return Bitmap.createBitmap(bitmap, 0, 0, w, h, mtx, true);
+}
+
+    

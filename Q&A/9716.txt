@@ -1,0 +1,100 @@
+28
+Q:I am new to android and was reading the demo applications on official android website. And I came across a method of Handler class named as postDelayed(Runnable r, long milliseconds).
+
+Can anybody please explain what this method does ?
+    
+===============================================================================================
+51
+A:You can see the documentation.
+
+But to understand the docs, you should first understand several concepts: Message, Message Queue, Handler and Looper, and their relationship. 
+
+The following illustrates how Looper works, it shows that the looper is a thread local object and its relationship with MessageQueue:
+
+class Looper{
+    public static final void prepare() {
+        if (sThreadLocal.get() != null) {
+            throw new RuntimeException("Only one Looper may be created per thread");
+        }
+        sThreadLocal.set(new Looper());
+    }
+
+    public static final void loop() {
+        Looper me = myLooper();
+        MessageQueue queue = me.mQueue;
+        while (true) {
+            Message msg = queue.next(); // might block
+            if (msg != null) {
+                if (msg.target == null) {
+                    // No target is a magic identifier for the quit message.
+                    return;
+                }
+                msg.target.dispatchMessage(msg);
+                msg.recycle();
+            }
+        }
+    }
+}
+
+
+Several remarks:
+
+Looper is a thread local object such that every thread has one looper. Every looper is associated with a message queue. The looper continously get messagese("tasks", "commands" or whatever you like to call them) from the queue, and dispatch the message to its target, which is a handler to handle that messag(e.g. by calling back a Runnable contained in the message). When there are no messages left in the queue, the thread blocks until there are new messages. To stop a Looper, you have to call quit() on it (which probably does not stop the loop immediately, but rather sets a private flag that is checked periodically from the loop, signaling the it to stop).
+
+Android framework provides the Handler class to simplify things. When you create a Handler instance, it is (by default) bound to the Looper already attached to the current thread. (The Handler knows what Looper to attach to because we called prepare() earlier, which stored a reference to the Looper in a ThreadLocal.)
+
+With a Handler, you can just call post() to "put a message into the thread's message queue" (so to speak). The Handler will take care of all the IdleHandler callback stuff and make sure your posted Runnable is executed. (It might also check if the time is right already, if you posted with a delay.)
+
+The following code shows the typical ways we use them.
+
+class LooperThread extends Thread {
+  public Handler mHandler;
+
+  public void run() {
+      Looper.prepare();
+
+      mHandler = new Handler() {
+          public void handleMessage(Message msg) {
+              // process incoming messages here
+          }
+      };
+
+      Looper.loop();
+  }
+
+
+}
+
+Handler is widely used in Android services. Android support inter application communication. Typically when we implement a service, which doesn't need to handle multithreading, we implements a Handler that receives a callback for each call from a client. Then create a Messenger object (reference to the Handler), which is a Binder object and return this object to clients when they bind this service. So the client can use this Messenger to send messages (into the thread-local queue, send to handler through Looper) to this service, and get them handled in the Handler. Code sample is attached:
+
+public class MessengerService extends Service {
+    /** Command to the service to display a message */
+    static final int MSG_SAY_HELLO = 1;
+
+    /**
+     * Handler of incoming messages from clients.
+     */
+    class IncomingHandler extends Handler {
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case MSG_SAY_HELLO:
+                    Toast.makeText(getApplicationContext(), "hello!", Toast.LENGTH_SHORT).show();
+                    break;
+                default:
+                    super.handleMessage(msg);
+            }
+        }
+    }
+
+
+    final Messenger mMessenger = new Messenger(new IncomingHandler());
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        Toast.makeText(getApplicationContext(), "binding", Toast.LENGTH_SHORT).show();
+        return mMessenger.getBinder();
+    }
+}
+
+    

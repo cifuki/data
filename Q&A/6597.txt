@@ -1,0 +1,108 @@
+39
+Q:I have started using the Xamarin plugin for Visual Studio to create an Android app.
+
+I have a local SQL database, and I want to call it to display data. I don't see how I can do this. Is it possible?
+    
+===============================================================================================
+63
+A:After thinking this was a trivial thing to do, I was proven wrong when I tried setup a quick test project. This post will contain a full tutorial on setting up a DB for an Android App in Xamarin that will come in handy as a reference for future Xamarin users.
+
+At a glance:
+
+
+Add Sqlite.cs to your project.
+Add your database file as an Asset.
+Set your database file to build as an AndroidAsset.
+Manually copy the database file out of your apk to another directory.
+Open a database connetion using Sqlite.SqliteConnection.
+Operate on the database using Sqlite.
+
+
+Setting up a local database for a Xamarin Android project
+
+1. Add Sqlite.cs to your project.
+
+Start by going to this repository and downloading Sqlite.cs; this provides the Sqlite API that you can use to run queries against your db. Add the file to your project as a source file. 
+
+2. Add DB as asset.
+
+Next, get your DB and copy it into the Assets directory of your Android project and then import it into your project so that it appears beneath the Assets folder within your solution:
+
+
+
+I'm using the Chinook_Sqlite.sqlite database sample renamed to db.sqlite from this site throughout this example.
+
+3. Set DB to build as AndroidAsset.
+
+Right click on the DB file and set it to build action AndroidAsset. This will ensure that it is included into the assets directory of the APK.
+
+
+
+4. Manually copy DB out of your APK.
+
+As the DB is included as an Asset (packaged within the APK) you will need to extract it out.
+
+You can do this with the following code:
+
+string dbName = "db.sqlite";
+string dbPath = Path.Combine (Android.OS.Environment.ExternalStorageDirectory.ToString (), dbName);
+// Check if your DB has already been extracted.
+if (!File.Exists(dbPath))
+{
+    using (BinaryReader br = new BinaryReader(Android.App.Application.Context.Assets.Open(dbName)))
+    {
+        using (BinaryWriter bw = new BinaryWriter(new FileStream(dbPath, FileMode.Create)))
+        {
+            byte[] buffer = new byte[2048];
+            int len = 0;
+            while ((len = br.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                bw.Write (buffer, 0, len);
+            }
+        }
+    }
+}
+
+
+This extracts the DB as a binary file from the APK and places it into the system external storage path. Realistically the DB can go wherever you want, I've just chosen to stick it here.
+
+I also read that Android has a databases folder that will store databases directly; I couldn't get it to work so I've just ran with this method of using an existing DB.
+
+5. Open DB Connection.
+
+Now open a connection to the DB through the Sqlite.SqliteConnection class:
+
+using (var conn = new SQLite.SQLiteConnection(dbPath))
+{
+        // Do stuff here...
+}
+
+
+6. Operate on DB.
+
+Lastly, as Sqlite.net is an ORM, you can operate on the database using your own data types:
+
+public class Album
+{
+    [PrimaryKey, AutoIncrement]
+    public int AlbumId { get; set; }
+    public string Title { get; set; }
+    public int ArtistId { get; set; }
+}
+
+// Other code...
+
+using (var conn = new SQLite.SQLiteConnection(dbPath))
+{
+    var cmd = new SQLite.SQLiteCommand (conn);
+    cmd.CommandText = "select * from Album";
+    var r = cmd.ExecuteQuery<Album> ();
+
+    Console.Write (r);
+}
+
+
+Summary
+
+And that's how to add an existing Sqlite database to your Xamarin solution for Android! For more information check out the examples included with the Sqlite.net library, its unit tests and the examples in the Xamarin documentation. 
+    

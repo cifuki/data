@@ -1,0 +1,109 @@
+27
+Q:i have a problem that i have been struggling with for the past 2 days. 
+
+I am building an app that uses ActionBar, ViewPager & FragmentPagerAdapter.
+The code for the Activity, Fragments & FragmentPagerAdapter are exactly as the ones stated in the android example on http://developer.android.com/reference/android/support/v4/view/ViewPager.html
+
+The problem i am facing is -- assuming i have only 2 fragments in the viewPager. when switching/swiping between the two, the fragments are not getting updated. onResume does not get called because the viewPager caches a minimum of 1 fragment to either side of the displayed fragment.
+
+I tried using the onTabSelected to detect when a fragment is selected and then start a method from that fragment with the help of an interface (code below).
+
+public void onTabSelected(Tab tab, FragmentTransaction ft) {
+    TabInfo tag = (TabInfo)tab.getTag();
+    for (int i=0; i<mTabs.size(); i++) {
+        if (mTabs.get(i) == tag) {
+            mViewPager.setCurrentItem(i);
+        }
+    }
+    ((IStartStop)getItem(tab.getPosition())).Start();
+}
+
+
+However, when the Start method is used a NullPointerException is fired when trying to update a textview. The start method's code is:
+
+public void Start() {
+    TextView tv = _view.findViewById(R.id.text);
+    tv.setText("test");
+}
+
+
+The exception is thrown at line:
+
+TextView tv = _view.findViewById(R.id.text);
+
+
+The IStartStop interface is quite simple:
+
+public interface IStartStop {
+    public void Start();
+    public void Stop();
+}
+
+
+I don't want to use notifyDataSetChanged(); with POSITION_NONE because every time I swipe to a new fragment, it takes a few seconds to load the fragments
+
+At this time, the fragments only include a textview, in the future they will have an animation and so it is important to:
+
+1- Only run an animation when the fragment is selected and not when the fragment next to it is selected (the way ViewPager caches and resumes fragments).
+
+2- Stop the animation when the fragment is no longer selected to avoid wasting device resources.
+
+Yes, i already checked everything available on the internet but nothing seems to work with me.
+
+Thank you very much for your help!
+    
+===============================================================================================
+55
+A:Surprisingly the ViewPager doesn't do this "natively" (among other things). But not all is lost.
+
+First you have to modify your fragments so they only run the animation when you tell them that it's ok and not when they are instantiated. This way you can play with the viewpager offset (default = 3) and have 2-3 fragments preloaded but not animated.
+
+Second step is to create an interface or similar that defines when the "fragment has become visible".
+
+Third step would be to attach a new OnPageScrollListener to your viewpager.
+
+Code follows (in semi-untested-code):
+
+1) Attach the Listener:
+
+mViewPager.setOnPageChangeListener(new ViewPager.OnPageChangeListener() {
+            @Override
+            public void onPageScrolled(final int i, final float v, final int i2) {
+            }
+            @Override
+            public void onPageSelected(final int i) {
+                YourFragmentInterface fragment = (YourFragmentInterface) mPagerAdapter.instantiateItem(mViewPager, i);
+                if (fragment != null) {
+                    fragment.fragmentBecameVisible();
+                } 
+            }
+            @Override
+            public void onPageScrollStateChanged(final int i) {
+            }
+        });
+
+
+2) This is your Interface:
+
+public interface YourFragmentInterface {
+    void fragmentBecameVisible();
+}
+
+
+3) Change your fragments so they implement this:
+
+public class YourLovelyFragment extends Fragment implements YourFragmentInterface {
+
+
+4) Implement the interface in the fragment
+
+@Override
+public void fragmentBecameVisible() {
+    // You can do your animation here because we are visible! (make sure onViewCreated has been called too and the Layout has been laid. Source for another question but you get the idea.
+}
+
+
+Where to go from here?
+
+You might want to implement a method/listener to notify the "other" fragments that they are no longer visible (i.e. when one is visible, the others are not). But that may not be needed.
+    

@@ -1,0 +1,94 @@
+88
+Q:I'm trying to get a simple Java method call from C++ while Java calls native method. Here's the Java code:
+
+public class MainActivity extends Activity {
+    private static String LIB_NAME = "name";
+
+    static {
+        System.loadLibrary(LIB_NAME);
+    }
+
+    /** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        TextView tv = (TextView) findViewById(R.id.textview);
+        tv.setText(this.getJniString());
+    }
+
+    public void messageMe(String text) {
+        System.out.println(text);
+    }
+
+    public native String getJniString();
+}
+
+
+I'm trying to call messageMe method from native code in the process of getJniString* method call from Java to native.
+
+native.cpp:
+
+#include <string.h>
+#include <stdio.h>
+#include <jni.h>
+
+jstring Java_the_package_MainActivity_getJniString( JNIEnv* env, jobject obj, jint depth ){
+
+//    JavaVM *vm;
+//    JNIEnv *env;
+//    JavaVMInitArgs vm_args;
+//    vm_args.version = JNI_VERSION_1_2;
+//    vm_args.nOptions = 0;
+//    vm_args.ignoreUnrecognized = 1;
+//
+//    // Construct a VM
+//    jint res = JNI_CreateJavaVM(&vm, (void **)&env, &vm_args);
+
+    // Construct a String
+    jstring jstr = env->NewStringUTF("This string comes from JNI");
+    // First get the class that contains the method you need to call
+    jclass clazz = env->FindClass("the/package/MainActivity");
+    // Get the method that you want to call
+    jmethodID messageMe = env->GetMethodID(clazz, "messageMe", "(Ljava/lang/String;)V");
+    // Call the method on the object
+    jobject result = env->CallObjectMethod(jstr, messageMe);
+    // Get a C-style string
+    const char* str = env->GetStringUTFChars((jstring) result, NULL);
+    printf("%s\
+", str);
+        // Clean up
+    env->ReleaseStringUTFChars(jstr, str);
+
+//    // Shutdown the VM.
+//    vm->DestroyJavaVM();
+
+    return env->NewStringUTF("Hello from JNI!");
+}
+
+
+After clean compilation app stops with next message:
+
+ERROR/AndroidRuntime(742): FATAL EXCEPTION: main
+        java.lang.NoSuchMethodError: messageMe
+        at *.android.t3d.MainActivity.getJniString(Native Method)
+        at *.android.t3d.MainActivity.onCreate(MainActivity.java:22)
+
+
+Apparently it means that method name is wrong, but it looks OK to me. 
+    
+===============================================================================================
+44
+A:If it's an object method, you need to pass the object to CallObjectMethod:
+
+jobject result = env->CallObjectMethod(obj, messageMe, jstr);
+
+
+What you were doing was the equivalent of jstr.messageMe().
+
+Since your is a void method, you should call:
+
+env->CallVoidMethod(obj, messageMe, jstr);
+
+If you want to return a result, you need to change your JNI signature (the ()V means a method of void return type) and also the return type in your Java code.
+    

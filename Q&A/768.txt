@@ -1,0 +1,405 @@
+185
+Q:I am trying to a make custom InfoWindow after a click on a marker with the new Google Maps API v2. I want it to look like in the original maps application by Google. Like this:
+
+
+
+When I have ImageButton inside, its not working - the entire InfoWindow is slected and not just the ImageButton. I read that it is because there isn't a View itself but it's snapshot, so individual items cannot be distinguished from each other. 
+
+EDIT: 
+In the documentation (thanks to Disco S2):
+
+
+  As mentioned in the previous section on info windows, an info window
+  is not a live View, rather the view is rendered as an image onto the
+  map. As a result, any listeners you set on the view are disregarded
+  and you cannot distinguish between click events on various parts of
+  the view. You are advised not to place interactive components \xe2\x80\x94 such
+  as buttons, checkboxes, or text inputs \xe2\x80\x94 within your custom info
+  window.
+
+
+But if Google use it, there must be some way to make it. Does anyone have any idea?
+    
+===============================================================================================
+325
+A:I was looking for a solution to this problem myself with no luck, so I had to roll my own which I would like to share here with you. (Please excuse my bad English) (It's a little crazy to answer another Czech guy in English :-) )
+
+The first thing I tried was to use a good old PopupWindow. It's quite easy - one only has to listen to the OnMarkerClickListener and then show a custom PopupWindow above the marker. Some other guys here on StackOverflow suggested this solution and it actually looks quite good at first glance. But the problem with this solution shows up when you start to move the map around. You have to move the PopupWindow somehow yourself which is possible (by listening to some onTouch events) but IMHO you can't make it look good enough, especially on some slow devices. If you do it the simple way it "jumps" around from one spot to another. You could also use some animations to polish those jumps but this way the PopupWindow will always be "a step behind" where it should be on the map which I just don't like.  
+
+At this point, I was thinking about some other solution. I realized that I actually don't really need that much freedom - to show my custom views with all the possibilities that come with it (like animated progress bars etc.). I think there is a good reason why even the google engineers don't do it this way in the Google Maps app. All I need is a button or two on the InfoWindow that will show a pressed state and trigger some actions when clicked. So I came up with another solution which splits up into two parts:  
+
+First part:
+The first part is to be able to catch the clicks on the buttons to trigger some action. My idea is as follows:
+
+
+Keep a reference to the custom infoWindow created in the InfoWindowAdapter.
+Wrap the MapFragment (or MapView) inside a custom ViewGroup (mine is called MapWrapperLayout)
+Override the MapWrapperLayout's dispatchTouchEvent and (if the InfoWindow is currently shown) first route the MotionEvents to the previously created InfoWindow. If it doesn't consume the MotionEvents (like because you didn't click on any clickable area inside InfoWindow etc.) then (and only then) let the events go down to the MapWrapperLayout's superclass so it will eventually be delivered to the map.
+
+
+Here is the MapWrapperLayout's source code:
+
+package com.circlegate.tt.cg.an.lib.map;
+
+import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.model.Marker;
+
+import android.content.Context;
+import android.graphics.Point;
+import android.util.AttributeSet;
+import android.view.MotionEvent;
+import android.view.View;
+import android.widget.RelativeLayout;
+
+public class MapWrapperLayout extends RelativeLayout {
+    /**
+     * Reference to a GoogleMap object 
+     */
+    private GoogleMap map;
+
+    /**
+     * Vertical offset in pixels between the bottom edge of our InfoWindow 
+     * and the marker position (by default it's bottom edge too).
+     * It's a good idea to use custom markers and also the InfoWindow frame, 
+     * because we probably can't rely on the sizes of the default marker and frame. 
+     */
+    private int bottomOffsetPixels;
+
+    /**
+     * A currently selected marker 
+     */
+    private Marker marker;
+
+    /**
+     * Our custom view which is returned from either the InfoWindowAdapter.getInfoContents 
+     * or InfoWindowAdapter.getInfoWindow
+     */
+    private View infoWindow;    
+
+    public MapWrapperLayout(Context context) {
+        super(context);
+    }
+
+    public MapWrapperLayout(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public MapWrapperLayout(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+    }
+
+    /**
+     * Must be called before we can route the touch events
+     */
+    public void init(GoogleMap map, int bottomOffsetPixels) {
+        this.map = map;
+        this.bottomOffsetPixels = bottomOffsetPixels;
+    }
+
+    /**
+     * Best to be called from either the InfoWindowAdapter.getInfoContents 
+     * or InfoWindowAdapter.getInfoWindow. 
+     */
+    public void setMarkerWithInfoWindow(Marker marker, View infoWindow) {
+        this.marker = marker;
+        this.infoWindow = infoWindow;
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        boolean ret = false;
+        // Make sure that the infoWindow is shown and we have all the needed references
+        if (marker != null && marker.isInfoWindowShown() && map != null && infoWindow != null) {
+            // Get a marker position on the screen
+            Point point = map.getProjection().toScreenLocation(marker.getPosition());
+
+            // Make a copy of the MotionEvent and adjust it's location
+            // so it is relative to the infoWindow left top corner
+            MotionEvent copyEv = MotionEvent.obtain(ev);
+            copyEv.offsetLocation(
+                -point.x + (infoWindow.getWidth() / 2), 
+                -point.y + infoWindow.getHeight() + bottomOffsetPixels);
+
+            // Dispatch the adjusted MotionEvent to the infoWindow
+            ret = infoWindow.dispatchTouchEvent(copyEv);
+        }
+        // If the infoWindow consumed the touch event, then just return true.
+        // Otherwise pass this event to the super class and return it's result
+        return ret || super.dispatchTouchEvent(ev);
+    }
+}
+
+
+All this will make the views inside the InfoView "live" again - the OnClickListeners will start triggering etc.
+
+Second part:
+The remaining problem is, that obviously, you can't see any UI changes of your InfoWindow on screen. To do that you have to manually call Marker.showInfoWindow. Now, if you perform some permanent change in your InfoWindow (like changing the label of your button to something else), this is good enough.  
+
+But showing a button pressed state or something of that nature is more complicated. The first problem is, that (at least) I wasn't able to make the InfoWindow show normal button's pressed state. Even if I pressed the button for a long time, it just remained unpressed on the screen. I believe this is something that is handled by the map framework itself which probably makes sure not to show any transient state in the info windows. But I could be wrong, I didn't try to find this out.
+
+What I did is another nasty hack - I attached an OnTouchListener to the button and manually switched it's background when the button was pressed or released to two custom drawables - one with a button in a normal state and the other one in a pressed state. This is not very nice, but it works :). Now I was able to see the button switching between normal to pressed states on the screen.  
+
+There is still one last glitch - if you click the button too fast, it doesn't show the pressed state - it just remains in its normal state (although the click itself is fired so the button "works"). At least this is how it shows up on my Galaxy Nexus. So the last thing I did is that I delayed the button in it's pressed state a little. This is also quite ugly and I'm not sure how would it work on some older, slow devices but I suspect that even the map framework itself does something like this. You can try it yourself - when you click the whole InfoWindow, it remains in a pressed state a little longer, then normal buttons do (again - at least on my phone). And this is actually how it works even on the original Google Maps app.
+
+Anyway, I wrote myself a custom class which handles the buttons state changes and all the other things I mentioned, so here is the code:
+
+package com.circlegate.tt.cg.an.lib.map;
+
+import android.graphics.drawable.Drawable;
+import android.os.Handler;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.View.OnTouchListener;
+
+import com.google.android.gms.maps.model.Marker;
+
+public abstract class OnInfoWindowElemTouchListener implements OnTouchListener {
+    private final View view;
+    private final Drawable bgDrawableNormal;
+    private final Drawable bgDrawablePressed;
+    private final Handler handler = new Handler();
+
+    private Marker marker;
+    private boolean pressed = false;
+
+    public OnInfoWindowElemTouchListener(View view, Drawable bgDrawableNormal, Drawable bgDrawablePressed) {
+        this.view = view;
+        this.bgDrawableNormal = bgDrawableNormal;
+        this.bgDrawablePressed = bgDrawablePressed;
+    }
+
+    public void setMarker(Marker marker) {
+        this.marker = marker;
+    }
+
+    @Override
+    public boolean onTouch(View vv, MotionEvent event) {
+        if (0 <= event.getX() && event.getX() <= view.getWidth() &&
+            0 <= event.getY() && event.getY() <= view.getHeight())
+        {
+            switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN: startPress(); break;
+
+            // We need to delay releasing of the view a little so it shows the pressed state on the screen
+            case MotionEvent.ACTION_UP: handler.postDelayed(confirmClickRunnable, 150); break;
+
+            case MotionEvent.ACTION_CANCEL: endPress(); break;
+            default: break;
+            }
+        }
+        else {
+            // If the touch goes outside of the view's area
+            // (like when moving finger out of the pressed button)
+            // just release the press
+            endPress();
+        }
+        return false;
+    }
+
+    private void startPress() {
+        if (!pressed) {
+            pressed = true;
+            handler.removeCallbacks(confirmClickRunnable);
+            view.setBackground(bgDrawablePressed);
+            if (marker != null) 
+                marker.showInfoWindow();
+        }
+    }
+
+    private boolean endPress() {
+        if (pressed) {
+            this.pressed = false;
+            handler.removeCallbacks(confirmClickRunnable);
+            view.setBackground(bgDrawableNormal);
+            if (marker != null) 
+                marker.showInfoWindow();
+            return true;
+        }
+        else
+            return false;
+    }
+
+    private final Runnable confirmClickRunnable = new Runnable() {
+        public void run() {
+            if (endPress()) {
+                onClickConfirmed(view, marker);
+            }
+        }
+    };
+
+    /**
+     * This is called after a successful click 
+     */
+    protected abstract void onClickConfirmed(View v, Marker marker);
+}
+
+
+Here is a custom InfoWindow layout file that I used:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical" >
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginRight="10dp" >
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="18sp"
+            android:text="Title" />
+
+        <TextView
+            android:id="@+id/snippet"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="snippet" />
+
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/button" 
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Button" />
+
+</LinearLayout>
+
+
+Test activity layout file (MapFragment being inside the MapWrapperLayout):
+
+<com.circlegate.tt.cg.an.lib.map.MapWrapperLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/map_relative_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity" >
+
+    <fragment
+        android:id="@+id/map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        class="com.google.android.gms.maps.MapFragment" />
+
+</com.circlegate.tt.cg.an.lib.map.MapWrapperLayout>
+
+
+And finally source code of a test activity, which glues all this together:
+
+package com.circlegate.testapp;
+
+import com.circlegate.tt.cg.an.lib.map.MapWrapperLayout;
+import com.circlegate.tt.cg.an.lib.map.OnInfoWindowElemTouchListener;
+import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.GoogleMap.InfoWindowAdapter;
+import com.google.android.gms.maps.MapFragment;
+import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
+import com.google.android.gms.maps.model.MarkerOptions;
+
+import android.os.Bundle;
+import android.app.Activity;
+import android.content.Context;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.TextView;
+import android.widget.Toast;
+
+public class MainActivity extends Activity {    
+    private ViewGroup infoWindow;
+    private TextView infoTitle;
+    private TextView infoSnippet;
+    private Button infoButton;
+    private OnInfoWindowElemTouchListener infoButtonListener;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        final MapFragment mapFragment = (MapFragment)getFragmentManager().findFragmentById(R.id.map);
+        final MapWrapperLayout mapWrapperLayout = (MapWrapperLayout)findViewById(R.id.map_relative_layout);
+        final GoogleMap map = mapFragment.getMap();
+
+        // MapWrapperLayout initialization
+        // 39 - default marker height
+        // 20 - offset between the default InfoWindow bottom edge and it's content bottom edge 
+        mapWrapperLayout.init(map, getPixelsFromDp(this, 39 + 20)); 
+
+        // We want to reuse the info window for all the markers, 
+        // so let's create only one class member instance
+        this.infoWindow = (ViewGroup)getLayoutInflater().inflate(R.layout.info_window, null);
+        this.infoTitle = (TextView)infoWindow.findViewById(R.id.title);
+        this.infoSnippet = (TextView)infoWindow.findViewById(R.id.snippet);
+        this.infoButton = (Button)infoWindow.findViewById(R.id.button);
+
+        // Setting custom OnTouchListener which deals with the pressed state
+        // so it shows up 
+        this.infoButtonListener = new OnInfoWindowElemTouchListener(infoButton,
+                getResources().getDrawable(R.drawable.btn_default_normal_holo_light),
+                getResources().getDrawable(R.drawable.btn_default_pressed_holo_light)) 
+        {
+            @Override
+            protected void onClickConfirmed(View v, Marker marker) {
+                // Here we can perform some action triggered after clicking the button
+                Toast.makeText(MainActivity.this, marker.getTitle() + "'s button clicked!", Toast.LENGTH_SHORT).show();
+            }
+        }; 
+        this.infoButton.setOnTouchListener(infoButtonListener);
+
+
+        map.setInfoWindowAdapter(new InfoWindowAdapter() {
+            @Override
+            public View getInfoWindow(Marker marker) {
+                return null;
+            }
+
+            @Override
+            public View getInfoContents(Marker marker) {
+                // Setting up the infoWindow with current's marker info
+                infoTitle.setText(marker.getTitle());
+                infoSnippet.setText(marker.getSnippet());
+                infoButtonListener.setMarker(marker);
+
+                // We must call this to set the current marker and infoWindow references
+                // to the MapWrapperLayout
+                mapWrapperLayout.setMarkerWithInfoWindow(marker, infoWindow);
+                return infoWindow;
+            }
+        });
+
+        // Let's add a couple of markers
+        map.addMarker(new MarkerOptions()
+            .title("Prague")
+            .snippet("Czech Republic")
+            .position(new LatLng(50.08, 14.43)));
+
+        map.addMarker(new MarkerOptions()
+            .title("Paris")
+            .snippet("France")
+            .position(new LatLng(48.86,2.33)));
+
+        map.addMarker(new MarkerOptions()
+            .title("London")
+            .snippet("United Kingdom")
+            .position(new LatLng(51.51,-0.1)));
+    }
+
+    public static int getPixelsFromDp(Context context, float dp) {
+        final float scale = context.getResources().getDisplayMetrics().density;
+        return (int)(dp * scale + 0.5f);
+    }
+}
+
+
+That's it. So far I only tested this on my Galaxy Nexus (4.2.1) and Nexus 7 (also 4.2.1), I will try it on some Gingerbread phone when I have a chance. A limitation I found so far is that you can't drag the map from where is your button on the screen and move the map around. It could probably be overcome somehow but for now, I can live with that.
+
+I know this is an ugly hack but I just didn't find anything better and I need this design pattern so badly that this would really be a reason to go back to the map v1 framework (which btw. I would really really like to avoid for a new app with fragments etc.). I just don't understand why Google doesn't offer developers some official way to have a button on InfoWindows. It's such a common design pattern, moreover this pattern is used even in the official Google Maps app :). I understand the reasons why they can't just make your views "live" in the InfoWindows - this would probably kill performance when moving and scrolling map around. But there should be some way how to achieve this effect without using views.
+    

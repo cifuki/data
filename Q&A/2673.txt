@@ -1,0 +1,77 @@
+79
+Q:I have an Activity, and in that I have a class.
+
+text=new Dynamictext(...);
+text.setText("txt");
+
+
+in my DynamicText java I have this code:
+
+public void setText(String text) {
+    this.text=text;
+    new asyncCreateText().execute();
+    //this.createText(text);
+}
+
+//private Handler handler = new Handler();
+
+private class asyncCreateText extends AsyncTask<Void, Void, Void> 
+{
+    @Override
+    protected Void doInBackground(Void... unused) {
+        return null;
+    }
+
+    @Override
+    protected void onPostExecute(Void unused) {
+
+    }
+}
+
+
+I get: 
+
+
+  ERROR/AndroidRuntime(5176): Caused by: java.lang.RuntimeException: Can't create handler inside thread that has not called Looper.prepare()
+
+
+How can I handle this error?
+
+ERROR/AndroidRuntime(5370): java.lang.ExceptionInInitializerError
+ERROR/AndroidRuntime(5370):     at com.l.start.DynamicText.setText(DynamicText.java:125)
+ERROR/AndroidRuntime(5370):     at com.l.start.OpenGLRenderer.initfonts(OpenGLRenderer.java:168)
+ERROR/AndroidRuntime(5370):     at com.l.start.OpenGLRenderer.init(OpenGLRenderer.java:119)
+ERROR/AndroidRuntime(5370):     at com.l.start.OpenGLRenderer.onSurfaceChanged(OpenGLRenderer.java:90)
+ERROR/AndroidRuntime(5370):     at android.opengl.GLSurfaceView$GLThread.guardedRun(GLSurfaceView.java:1120)
+ERROR/AndroidRuntime(5370):     at android.opengl.GLSurfaceView$GLThread.run(GLSurfaceView.java:975)
+
+ERROR/AndroidRuntime(5370): Caused by: java.lang.RuntimeException: 
+    Can't create handler inside thread that has not called Looper.prepare()
+ERROR/AndroidRuntime(5370):     at android.os.Handler.<init>(Handler.java:121)
+ERROR/AndroidRuntime(5370):     at android.os.AsyncTask$InternalHandler.<init>(AsyncTask.java:421)
+ERROR/AndroidRuntime(5370):     at android.os.AsyncTask$InternalHandler.<init>(AsyncTask.java:421)
+ERROR/AndroidRuntime(5370):     at android.os.AsyncTask.<clinit>(AsyncTask.java:152)
+ERROR/AndroidRuntime(5370):     ... 6 more
+
+    
+===============================================================================================
+145
+A:The error is self-explanatory... doInBackground() runs on a background thread which, since it is not intended to loop, is not connected to a Looper.
+
+You most likely don't want to directly instantiate a Handler at all... whatever data your doInBackground() implementation returns will be passed to onPostExecute() which runs on the UI thread.
+
+   mActivity = ThisActivity.this; 
+
+    mActivity.runOnUiThread(new Runnable() {
+     public void run() {
+     new asyncCreateText().execute();
+     }
+   });
+
+
+ADDED FOLLOWING THE STACKTRACE APPEARING IN QUESTION:
+
+Looks like you're trying to start an AsyncTask from a GL rendering thread... don't do that cos they won't ever Looper.loop() either. AsyncTasks are really designed to be run from the UI thread only.
+
+The least disruptive fix would probably be to call Activity.runOnUiThread() with a Runnable that kicks off your AsyncTask.
+    

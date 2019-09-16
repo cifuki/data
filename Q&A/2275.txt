@@ -1,0 +1,108 @@
+89
+Q:I used to define a set of related constants like Bundle keys together in an interface like below:
+
+public interface From{
+    String LOGIN_SCREEN = "LoginSCreen";
+    String NOTIFICATION = "Notification";
+    String WIDGET = "widget";
+}
+
+
+This provides me a nicer way to group related constants together and used them by making a static import (not implements). I know Android framework also uses the constants in same way like Toast.LENTH_LONG, View.GONE.
+
+However, I often feel that the Java Enums provide much better and powerful way to represent the constant.
+
+But is there a performence issue in using enums on Android?
+
+With a bit of research I ended up in confusion. From this question 
+"Avoid Enums Where You Only Need Ints\xe2\x80\x9d removed from Android's performance tips? it's clear that Google has removed "Avoid enums" from its performance tips, but from it's official training docs Be aware of memory overhead section it clearly says: "Enums often require more than twice as much memory as static constants. You should strictly avoid using enums on Android." Is this still holds good? (say in Java versions after 1.6)
+
+One more issue that I observed is to send enums across intents using Bundle I should send them by serializing (i.e putSerializable(), that I think an expensive operation compared to primitive putString() method, eventhough enums provides it for free).
+
+Can someone please clarify which one is the best way to represent the same in Android? Should I strictly avoid using enums on Android?
+    
+===============================================================================================
+105
+A:Use enum when you need its features. Don't avoid it strictly.
+
+Java enum is more powerful, but if you don't need its features, use constants, they occupy less space and they can be primitive itself.
+
+When to use enum:
+
+
+type checking - you can accept only listed values, and they are not continuous (see below what I call continuous here)
+method overloading - every enum constant has its own implementation of a method
+
+public enum UnitConverter{
+    METERS{
+        @Override
+        public double toMiles(final double meters){
+            return meters * 0.00062137D;
+        }
+
+        @Override
+        public double toMeters(final double meters){
+            return meters;
+        }
+    },
+    MILES{
+        @Override
+        public double toMiles(final double miles){
+            return miles;
+        }
+
+        @Override
+        public double toMeters(final double miles){
+            return miles / 0.00062137D;
+        }
+    };
+
+    public abstract double toMiles(double unit);
+    public abstract double toMeters(double unit);
+}
+
+more data - your one constant contains more than one information that cannot be put in one variable
+complicated data - your constant need methods to operate on the data
+
+
+When not to use enum:
+
+
+you can accept all values of one type, and your constants contain only these most used
+you can accept continuous data
+
+public class Month{
+    public static final int JANUARY = 1;
+    public static final int FEBRUARY = 2;
+    public static final int MARCH = 3;
+    ...
+
+    public static String getName(final int month){
+        if(month <= 0 || month > 12){
+            throw new IllegalArgumentException("Invalid month number: " + month);
+        }
+
+        ...
+    }
+}
+
+for names (like in your example)
+for everything else that really doesn't need an enum
+
+
+Enums occupy more space
+
+
+a single reference to an enum constant occupies 4 bytes
+every enum constant occupies space that is a sum of its fields' sizes aligned to 8 bytes + overhead of the object
+the enum class itself occupies some space
+
+
+Constants occupy less space
+
+
+a constant doesn't have a reference so it's a pure data (even if it's a reference, then enum instance would be a reference to another reference)
+constants may be added to an existing class - it's not necessary to add another class
+constants may be inlined; it brings extended compile-time features (such as null checking, finding dead code etc.)
+
+    

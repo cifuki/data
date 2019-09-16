@@ -1,0 +1,133 @@
+29
+Q:I have to place WebView into ScrollView. But I have to put some views into the same scrollview before webview. So it looks like this:
+
+<ScrollView
+  android:layout_width="fill_parent"
+  android:layout_height="fill_parent"
+  >
+<LinearLayout
+    android:id="@+id/articleDetailPageContentLayout"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:orientation="vertical">
+  <LinearLayout
+      android:id="@+id/articleDetailRubricLine"
+      android:layout_width="fill_parent"
+      android:layout_height="3dip"
+      android:background="@color/fashion"/>
+
+  <ImageView
+      android:id="@+id/articleDetailImageView"
+      android:layout_width="fill_parent"
+      android:layout_height="wrap_content"
+      android:adjustViewBounds="true"
+      android:scaleType="fitStart"
+      android:src="@drawable/article_detail_image_test"/>
+
+  <TextView
+      android:layout_width="fill_parent"
+      android:layout_height="wrap_content"
+      android:padding="5dip"
+      android:text="PUBLISH DATE"/>
+
+  <WebView
+      android:id="@+id/articleDetailContentView"
+      android:layout_width="fill_parent"
+      android:layout_height="wrap_content"
+      android:background="@color/fashion"
+      android:isScrollContainer="false"/>
+</LinearLayout>
+
+
+
+
+I'm getting some HTML info from backend. It has no any body or head tags, just data surrounded by <p> or <h4> or some other tags. Also it has <img> tags in there. Sometimes pictures are too wide for current screen width. So I added some css in the begining of HTML. So I loads data to webview like this:
+
+private final static String WEBVIEW_MIME_TYPE = "text/html";
+    private final static String WEBVIEW_ENCODING = "utf-8";
+String viewport = "<head><meta name=\\"viewport\\" content=\\"target-densitydpi=device-dpi\\" /></head>";
+        String css = "<style type=\\"text/css\\">" +
+            "img {width: 100%;}" +
+            "</style>";
+        articleContent.loadDataWithBaseURL("http://", viewport + css + articleDetail.getContent(), WEBVIEW_MIME_TYPE,
+            WEBVIEW_ENCODING, "about:blank");
+
+
+Sometimes when page loaded, scrollview scrolls to place where webview begins. And I don't know how to fix that.
+
+Also, sometimes there is huge white empty space appears after webview content. I also don't know what to do with that.
+
+Sometimes scrollview's scrollbars starts twitch randomly while I scrolling...
+
+I know that it's not right to place webview into scrollview, but it seems like I have no other choise. Could anyone suggest rigth way to place all views and all HTML content to webview?
+    
+===============================================================================================
+16
+A:Update 2014-11-13: Since Android KitKat neither of the solutions described below are working -- you will need to look for different approaches like e.g. Manuel Peinado's FadingActionBar which provides a scrolling header for WebViews.
+
+Update 2012-07-08: "Nobu games" kindly created a TitleBarWebView class bringing the expected behavior back to Android Jelly Bean. When used on older platforms it will use the hidden setEmbeddedTitleBar() method and when used on Jelly Bean or above it will mimic the same behavior. The source code is available under the Apache 2 license at google code
+
+Update 2012-06-30: It seems as if the setEmbeddedTitleBar() method has been removed in Android 4.1 aka Jelly Bean :-(
+
+Original answer:
+
+It is possible to place a WebView into a ScrollView and it does work. I am using this in GoodNews on Android 1.6 devices. The main drawback is that the user cannot scroll "diagonal" meaning: If the web content exceeds the width of the screen the ScrollView is responsible for vertical scrolling at the WebView for horizontal scrolling. As only one of them handles the touch events you can either scroll horizontally or vertically but not diagonal. 
+
+Further on there are some annoying problems as described by you (e.g. empty vertical space when loading a content smaller than the previous one). I've found workarounds for all of them in GoodNews, but cannot remember them now, because I've found a much better solution:
+
+If you only put the WebView into the ScrollView to place Controls above the web content and you are OK to support only Android 2 and above, then you can use the hidden internal setEmbeddedTitleBar() method of the WebView. It has been introduced in API level 5 and (accidentally?) became public for exactly one release (I think it was 3.0). 
+
+This method allows you to embed a layout into the WebView which will be placed above the web content. This layout will scroll out the screen when scrolling vertically but will be kept at the same horizontal position when the web content is scrolled horizontally.
+
+As this method isn't exported by the API you need to use Java reflections to call it. I suggest to derive a new class as followed:
+
+public final class WebViewWithTitle extends ExtendedWebView {
+    private static final String LOG_TAG = "WebViewWithTitle";
+    private Method setEmbeddedTitleBarMethod = null;
+
+    public WebViewWithTitle(Context context) {
+        super(context);
+        init();
+    }
+
+    public WebViewWithTitle(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        init();
+    }
+
+    private void init() {
+        try {
+            setEmbeddedTitleBarMethod = WebView.class.getMethod("setEmbeddedTitleBar", View.class);
+        } catch (Exception ex) {
+            Log.e(LOG_TAG, "could not find setEmbeddedTitleBar", ex);
+        }
+    }
+
+    public void setTitle(View view) {
+        if (setEmbeddedTitleBarMethod != null) {
+            try {
+                setEmbeddedTitleBarMethod.invoke(this, view);
+            } catch (Exception ex) {
+                Log.e(LOG_TAG, "failed to call setEmbeddedTitleBar", ex);
+            }
+        }
+    }
+
+    public void setTitle(int resId) {
+        setTitle(inflate(getContext(), resId, null));
+    }
+}
+
+
+Then in your layout file you can include this using
+
+<com.mycompany.widget.WebViewWithTitle
+        xmlns:android="http://schemas.android.com/apk/res/android"
+        android:id="@+id/content"
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent"
+        />
+
+
+and somewhere else in your code you can call the setTitle() method with the ID of the layout to be embedded into the WebView.
+    

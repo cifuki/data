@@ -1,0 +1,81 @@
+29
+Q:I have an AppWidget and I'd like to use VectorDrawables in it also on pre-Lollipop devices.
+VectorDrawableCompat won't work with the RemoteViews I create.
+
+To keep my app APK size down, I don't want to add alternative PNG versions of my drawables for older API platforms.
+
+How can I do that?
+    
+===============================================================================================
+51
+A:UPDATE 22/10/2017
+
+As noted by @user924 now AppCompatDrawableManager access is restricted to its own library.
+ContextCompat.getDrawable(...) should do the trick.
+
+UPDATE 05/09/2016
+
+As noted by @kirill-kulakov in its answer, the latest updates of the Support Library restricted the TintContextWrapper visibility to its own package.
+I'm updating my answer to remove the incorrect code, but please thank Kirill for the correction!
+
+
+
+VectorDrawable and RemoteViews pre-Lollipop
+
+You can avoid adding alternative rasterized versions of your vector drawable resources with an easy hack: use AppCompat TintResources through TintContextWrapper using AppCompatDrawableManager using ContextCompat.
+
+TintResources AppCompatDrawableManager ContextCompat is the class that among other things, on pre-Lollipop devices, parses the VectorDrawables XML files and convert them into VectorDrawableCompat instances that can be used all the way down to API 7.
+
+Then, once you have a VectorDrawableCompat instance, rasterize it onto a Bitmap. You'll later use this bitmap in a remote ImageView.
+
+
+
+Before we begin: AppCompat Library
+
+Ensure you are using Android Studio 2.0+ and have configured your app build.gradle file as follows:
+
+android {
+  defaultConfig {
+    vectorDrawables.useSupportLibrary = true
+  }
+}
+
+dependencies {
+  compile 'com.android.support:appcompat-v7:23.3.0'
+}
+
+
+
+
+Update your AppWidgetProvider
+
+First of all: don't set your vector drawable resources inside your RemoteViews layout file (neither android:src nor app:srcCompat will work). You'll have to set them programmatically.
+
+Inside your AppWidgetProvider class set the vector resource or a rasterized version depending on the API level:
+
+RemoteViews remoteViews = new RemoteViews(context.getPackageName(), R.layout.appwidget_layout);
+
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+  remoteViews.setImageViewResource(R.id.imageView, R.drawable.vector);
+
+} else {
+  Drawable d = ContextCompat.getDrawable(context, R.drawable.vector);
+  Bitmap b = Bitmap.createBitmap(d.getIntrinsicWidth(),
+                                 d.getIntrinsicHeight(),
+                                 Bitmap.Config.ARGB_8888);
+  Canvas c = new Canvas(b);
+  d.setBounds(0, 0, c.getWidth(), c.getHeight());
+  d.draw(c);
+  remoteViews.setImageViewBitmap(R.id.imageView, b);
+}
+
+
+
+
+References
+
+
+ContextCompat source code
+Chris Banes' AppCompat v23.2 - Age of the vectors blog post introduces VectorDrawableCompat and explains the hack that AppCompat uses to make them work on pre-Lollipop devices.
+
+    

@@ -1,0 +1,50 @@
+138
+Q:We are using Retrofit in our Android app, to communicate with an OAuth2 secured server. Everything works great, we use the RequestInterceptor to include the access token with each call.
+However there will be times, when the access token will expire, and the token needs to be refreshed. When the token expires, the next call will return with an Unauthorized HTTP code, so that's easy to monitor.
+We could modify each Retrofit call the following way:
+In the failure callback, check for the error code, if it equals Unauthorized, refresh the OAuth token, then repeat the Retrofit call.
+However, for this, all calls should be modified, which is not an easily maintainable, and good solution.
+Is there a way to do this without modifying all Retrofit calls?
+    
+===============================================================================================
+191
+A:Please do not use Interceptors to deal with authentication. 
+
+Currently, the best approach to handle authentication is to use the new Authenticator API, designed specifically for this purpose.
+
+OkHttp will automatically ask the Authenticator for credentials when a response is 401 Not Authorised retrying last failed request with them.
+
+public class TokenAuthenticator implements Authenticator {
+    @Override
+    public Request authenticate(Proxy proxy, Response response) throws IOException {
+        // Refresh your access_token using a synchronous api request
+        newAccessToken = service.refreshToken();
+
+        // Add new header to rejected request and retry it
+        return response.request().newBuilder()
+                .header(AUTHORIZATION, newAccessToken)
+                .build();
+    }
+
+    @Override
+    public Request authenticateProxy(Proxy proxy, Response response) throws IOException {
+        // Null indicates no attempt to authenticate.
+        return null;
+    }
+
+
+Attach an Authenticator to an OkHttpClient the same way you do with Interceptors
+
+OkHttpClient okHttpClient = new OkHttpClient();
+okHttpClient.setAuthenticator(authAuthenticator);
+
+
+Use this client when creating your Retrofit RestAdapter
+
+RestAdapter restAdapter = new RestAdapter.Builder()
+                .setEndpoint(ENDPOINT)
+                .setClient(new OkClient(okHttpClient))
+                .build();
+return restAdapter.create(API.class);
+
+    

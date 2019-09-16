@@ -1,0 +1,110 @@
+107
+Q:Android SDK documentation says that startManagingCursor() method is depracated:
+
+
+  This method is deprecated. Use the new CursorLoader class with LoaderManager instead; this is also available on older platforms through the Android compatibility package. This method allows the activity to take care of managing the given Cursor's lifecycle for you based on the activity's lifecycle. That is, when the activity is stopped it will automatically call deactivate() on the given Cursor, and when it is later restarted it will call requery() for you. When the activity is destroyed, all managed Cursors will be closed automatically. If you are targeting HONEYCOMB or later, consider instead using LoaderManager instead, available via getLoaderManager()
+
+
+So I would like to use CursorLoader. But how can I use it with custom CursorAdapter and without ContentProvider, when I needs URI in constructor of CursorLoader?
+    
+===============================================================================================
+154
+A:I wrote a simple CursorLoader that does not need a content provider:
+
+import android.content.Context;
+import android.database.Cursor;
+import android.support.v4.content.AsyncTaskLoader;
+
+/**
+ * Used to write apps that run on platforms prior to Android 3.0. When running
+ * on Android 3.0 or above, this implementation is still used; it does not try
+ * to switch to the framework's implementation. See the framework SDK
+ * documentation for a class overview.
+ *
+ * This was based on the CursorLoader class
+ */
+public abstract class SimpleCursorLoader extends AsyncTaskLoader<Cursor> {
+    private Cursor mCursor;
+
+    public SimpleCursorLoader(Context context) {
+        super(context);
+    }
+
+    /* Runs on a worker thread */
+    @Override
+    public abstract Cursor loadInBackground();
+
+    /* Runs on the UI thread */
+    @Override
+    public void deliverResult(Cursor cursor) {
+        if (isReset()) {
+            // An async query came in while the loader is stopped
+            if (cursor != null) {
+                cursor.close();
+            }
+            return;
+        }
+        Cursor oldCursor = mCursor;
+        mCursor = cursor;
+
+        if (isStarted()) {
+            super.deliverResult(cursor);
+        }
+
+        if (oldCursor != null && oldCursor != cursor && !oldCursor.isClosed()) {
+            oldCursor.close();
+        }
+    }
+
+    /**
+     * Starts an asynchronous load of the contacts list data. When the result is ready the callbacks
+     * will be called on the UI thread. If a previous load has been completed and is still valid
+     * the result may be passed to the callbacks immediately.
+     * <p/>
+     * Must be called from the UI thread
+     */
+    @Override
+    protected void onStartLoading() {
+        if (mCursor != null) {
+            deliverResult(mCursor);
+        }
+        if (takeContentChanged() || mCursor == null) {
+            forceLoad();
+        }
+    }
+
+    /**
+     * Must be called from the UI thread
+     */
+    @Override
+    protected void onStopLoading() {
+        // Attempt to cancel the current load task if possible.
+        cancelLoad();
+    }
+
+    @Override
+    public void onCanceled(Cursor cursor) {
+        if (cursor != null && !cursor.isClosed()) {
+            cursor.close();
+        }
+    }
+
+    @Override
+    protected void onReset() {
+        super.onReset();
+
+        // Ensure the loader is stopped
+        onStopLoading();
+
+        if (mCursor != null && !mCursor.isClosed()) {
+            mCursor.close();
+        }
+        mCursor = null;
+    }
+}
+
+
+It only needs the AsyncTaskLoader class. Either the one in Android 3.0 or higher, or the one that comes with the compatibility package.
+
+I also wrote a ListLoader which is compatible with the LoadManager and is used to retrieve a generic java.util.List collection.
+    

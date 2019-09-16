@@ -1,0 +1,172 @@
+36
+Q:There are several tutorials out there which explain how to get a simple camera preview up and running on an android device. But i couldn't find any example which explains how to manipulate the image before it's being rendered.
+What I want to do is implementing custom color filters to simulate e.g. red and/or green deficiency.
+    
+===============================================================================================
+53
+A:I did some research on this and put together a working(ish) example. Here's what I found. It's pretty easy to get the raw data coming off of the camera. It's returned as a YUV byte array. You'd need to draw it manually onto a surface in order to be able to modify it. To do that you'd need to have a SurfaceView that you can manually run draw calls with. There are a couple of flags you can set that accomplish that.
+
+In order to do the draw call manually you'd need to convert the byte array into a bitmap of some sort. Bitmaps and the BitmapDecoder don't seem to handle the YUV byte array very well at this point. There's been a bug filed for this but don't don't what the status is on that. So people have been trying to decode the byte array into an RGB format themselves.
+
+Seems like doing the decoding manually has been kinda slow and people have had various degrees of success with it. Something like this should probably really be done with native code at the NDK level.
+
+Still, it is possible to get it working. Also, my little demo is just me spending a couple of hours hacking stuff together (I guess doing this caught my imagination a little too much ;)). So chances are with some tweaking you could much improve what I've managed to get working.
+
+This little code snip contains a couple of other gems I found as well. If all you want is to be able to draw over the surface you can override the surface's onDraw function - you could potentially analyze the returned camera image and draw an overlay - it'd be much faster than trying to process every frame. Also, I changed the SurfaceHolder.SURFACE_TYPE_NORMAL from what would be needed if you wanted a camera preview to show up. So a couple of changes to the code - the commented out code:
+
+//try { mCamera.setPreviewDisplay(holder); } catch (IOException e)
+//  { Log.e("Camera", "mCamera.setPreviewDisplay(holder);"); }
+
+
+And the:
+
+SurfaceHolder.SURFACE_TYPE_NORMAL //SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS - for preview to work
+
+
+Should allow you to overlay frames based on the camera preview on top of the real preview.
+
+Anyway, here's a working piece of code - Should give you something to start with.
+
+Just put a line of code in one of your views like this:
+
+<pathtocustomview.MySurfaceView android:id="@+id/surface_camera"
+    android:layout_width="fill_parent" android:layout_height="10dip"
+    android:layout_weight="1">
+</pathtocustomview.MySurfaceView>
+
+
+And include this class in your source somewhere:
+
+package pathtocustomview;
+
+import java.io.IOException;
+import java.nio.Buffer;
+
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.hardware.Camera;
+import android.util.AttributeSet;
+import android.util.Log;
+import android.view.SurfaceHolder;
+import android.view.SurfaceHolder.Callback;
+import android.view.SurfaceView;
+
+public class MySurfaceView extends SurfaceView implements Callback,
+    Camera.PreviewCallback {
+
+    private SurfaceHolder mHolder;
+
+    private Camera mCamera;
+    private boolean isPreviewRunning = false;
+    private byte [] rgbbuffer = new byte[256 * 256];
+    private int [] rgbints = new int[256 * 256];
+
+    protected final Paint rectanglePaint = new Paint();
+
+    public MySurfaceView(Context context, AttributeSet attrs) {
+    super(context, attrs);
+        rectanglePaint.setARGB(100, 200, 0, 0);
+        rectanglePaint.setStyle(Paint.Style.FILL);
+        rectanglePaint.setStrokeWidth(2);
+
+        mHolder = getHolder();
+        mHolder.addCallback(this);
+        mHolder.setType(SurfaceHolder.SURFACE_TYPE_NORMAL);
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        canvas.drawRect(new Rect((int) Math.random() * 100,
+            (int) Math.random() * 100, 200, 200), rectanglePaint);
+        Log.w(this.getClass().getName(), "On Draw Called");
+    }
+
+    public void surfaceChanged(SurfaceHolder holder, int format, int width,
+            int height) {
+    }
+
+    public void surfaceCreated(SurfaceHolder holder) {
+        synchronized (this) {
+            this.setWillNotDraw(false); // This allows us to make our own draw
+                                    // calls to this canvas
+
+            mCamera = Camera.open();
+
+            Camera.Parameters p = mCamera.getParameters();
+            p.setPreviewSize(240, 160);
+            mCamera.setParameters(p);
+
+
+            //try { mCamera.setPreviewDisplay(holder); } catch (IOException e)
+            //  { Log.e("Camera", "mCamera.setPreviewDisplay(holder);"); }
+
+            mCamera.startPreview();
+            mCamera.setPreviewCallback(this);
+
+        }
+    }
+
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        synchronized (this) {
+            try {
+                if (mCamera != null) {
+                    mCamera.stopPreview();
+                    isPreviewRunning = false;
+                    mCamera.release();
+                }
+            } catch (Exception e) {
+                Log.e("Camera", e.getMessage());
+            }
+        }
+    }
+
+    public void onPreviewFrame(byte[] data, Camera camera) {
+        Log.d("Camera", "Got a camera frame");
+
+        Canvas c = null;
+
+        if(mHolder == null){
+            return;
+        }
+
+        try {
+            synchronized (mHolder) {
+                c = mHolder.lockCanvas(null);
+
+                // Do your drawing here
+                // So this data value you're getting back is formatted in YUV format and you can't do much
+                // with it until you convert it to rgb
+                int bwCounter=0;
+                int yuvsCounter=0;
+                for (int y=0;y<160;y++) {
+                    System.arraycopy(data, yuvsCounter, rgbbuffer, bwCounter, 240);
+                    yuvsCounter=yuvsCounter+240;
+                    bwCounter=bwCounter+256;
+                }
+
+                for(int i = 0; i < rgbints.length; i++){
+                    rgbints[i] = (int)rgbbuffer[i];
+                }
+
+                //decodeYUV(rgbbuffer, data, 100, 100);
+                c.drawBitmap(rgbints, 0, 256, 0, 0, 256, 256, false, new Paint());
+
+                Log.d("SOMETHING", "Got Bitmap");
+
+            }
+        } finally {
+            // do this in a finally so that if an exception is thrown
+            // during the above, we don't leave the Surface in an
+            // inconsistent state
+            if (c != null) {
+                mHolder.unlockCanvasAndPost(c);
+            }
+        }
+    }
+}
+
+    

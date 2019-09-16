@@ -1,0 +1,135 @@
+59
+Q:I'm trying to animate a simple ImageView in my application and I want it to slide in from the bottom of the screen and come to a resting position where the top 50px of the view is off the top of the screen (e.g. the final position of the ImageView should be -50px in X). I've tried to use the AbsoluteLayout to do this, but this actually cuts off the top 50px of the ImageView such that the top 50px is never rendered. I need to have the top 50px of the ImageView visible/rendered while it's animating and then simply have it come to a rest slightly off-screen. I hope I've explained that well enough. 
+
+Here is what I'm currently using as a layout and the slide-in animation (this currently doesn't render the top 50px of the ImageView):
+
+Layout:
+
+<?xml version="1.0" encoding="utf-8"?>
+   <AbsoluteLayout xmlns:android="http://schemas.android.com/apk/res/android"
+      android:layout_height="fill_parent" 
+      android:layout_width="fill_parent" 
+      android:id="@+id/QuickPlayClipLayout">
+      <ImageView android:id="@+id/Clip"
+         android:background="@drawable/clip" 
+         android:layout_width="fill_parent" 
+         android:layout_height="wrap_content" 
+         android:layout_y="-50dp">
+      </ImageView>
+   </AbsoluteLayout>
+
+
+Animation:
+
+<?xml version="1.0" encoding="utf-8"?>
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+   <translate android:fromYDelta="100%p" 
+       android:toYDelta="0"
+       android:duration="1000"/>
+   <alpha android:fromAlpha="0.0" 
+       android:toAlpha="1.0"
+       android:duration="1000" />
+</set>
+
+
+Thanks in advance.
+    
+===============================================================================================
+33
+A:I figured out a solution to this that should be easy to implement. It involves modifying the layout and the Activity inflating the layout... see below: 
+
+Activity (QuickPlay.java):
+
+public class QuickPlay extends Activity implements AnimationListener
+{
+    private ImageView myImageView;
+    private LinearLayout LL;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+        this.setContentView(R.layout.quick_play_screen);
+
+        myImageView = (ImageView) this.findViewById(R.id.Clip);
+        LL = (LinearLayout) this.findViewById(R.id.QuickPlayClipLayout);
+
+        //finally
+        Animation anim = AnimationUtils.loadAnimation(this, R.anim.slide_in_quickplay);
+        anim.setAnimationListener(this);
+        LL.startAnimation(anim);
+    }
+    @Override
+    public void onAnimationEnd(Animation animation){}
+
+    @Override
+    public void onAnimationRepeat(Animation animation){}
+
+    @Override
+    public void onAnimationStart(Animation animation)
+    {
+        // This is the key...
+        //set the coordinates for the bounds (left, top, right, bottom) based on the offset value (50px) in a resource XML
+        LL.layout(0, -(int)this.getResources().getDimension(R.dimen.quickplay_offset), 
+                LL.getWidth(), LL.getHeight() + (int)this.getResources().getDimension(R.dimen.quickplay_offset));
+    }
+}
+
+
+New LinearLayout (CustomLinearLayout.java):
+
+public class CustomLinearLayout extends LinearLayout
+{
+    private Context myContext;
+
+    public CustomLinearLayout(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        myContext = context;
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec)
+    {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec+((int)myContext.getResources().getDimension(R.dimen.quickplay_offset)));
+    }
+}
+
+
+Layout (/res/layout/quick_play_screen.xml):
+
+<?xml version="1.0" encoding="utf-8"?>
+   <com.games.mygame.CustomLinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+      android:layout_height="fill_parent" 
+      android:layout_width="fill_parent" 
+      android:id="@+id/QuickPlayClipLayout">
+      <ImageView android:id="@+id/Clip"
+         android:background="@drawable/clip" 
+         android:layout_width="fill_parent" 
+         android:layout_height="wrap_content">
+      </ImageView>
+   </com.games.mygame.CustomLinearLayout>
+
+
+Resource (/res/values/constants.xml):
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="quickplay_offset">50dp</dimen>
+</resources>
+
+
+Animation (/res/anim/slide_in_quickplay.xml):
+
+<?xml version="1.0" encoding="utf-8"?>
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+   <translate android:fromYDelta="100%p" 
+       android:toYDelta="0"
+       android:duration="1000"/>
+   <alpha android:fromAlpha="0.0" 
+       android:toAlpha="1.0"
+       android:duration="1000" />
+</set>
+
+
+The program now does exactly what I need it to do. The entire layout starts off screen at the bottom, slides in in 1 sec and comes to a rest where the top of the layout is actually 50px off the top of the screen (i.e. LL.getTop() = -50) and the bottom of the layout is resting at the bottom of the screen (i.e. LL.getBottom() = 530 = 480 + 50).
+    

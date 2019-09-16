@@ -1,0 +1,165 @@
+40
+Q:I'm developing a program in which, from an Android Phone, I have to connect as a client to a Bluetooth medical sensor. I'm using the official Bluetooth API and no problem during connection (SPP profile), but when I end the socket, the sensor is still connected to my phone (although I have close the connection).
+
+Are there any way to make a Bluetooth disconnection? I think there is an intent called ACTION_ACL_CONNECTED, which does that. Can anyone explain me how to use this?
+
+Thanks in advance.
+
+EDITED: Here is the code, if anyone needs additional info, it's a Nonin 4100 medical sensor.
+
+Set<BluetoothDevice> pairedDevices = Activa.myBluetoothAdapter.getBondedDevices();
+        // If there are paired devices
+        if (pairedDevices.size() > 0) {
+            // Loop through paired devices
+            for (BluetoothDevice device : pairedDevices) {
+                // Add the name and address to an array adapter to show in a ListView
+                String name = device.getName();
+                if (name.contains("Nonin")) {
+                    try {
+                        found = true;
+//                      socket = device.createRfcommSocketToServiceRecord(UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"));
+//                      handler.sendEmptyMessage(5);
+//                      Activa.myBluetoothAdapter.cancelDiscovery();
+//                      socket.connect();
+                        BluetoothDevice hxm = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(device.getAddress());
+                        Method m;
+                        try {
+                            m = hxm.getClass().getMethod("createRfcommSocket", new Class[]{int.class});
+                            socket = (BluetoothSocket)m.invoke(hxm, Integer.valueOf(1));
+                            handler.sendEmptyMessage(5);
+                            socket.connect();
+                        } catch (Exception e) {
+                            handler.sendEmptyMessage(7);
+                            e.printStackTrace();
+                            break;
+                        }
+                        handler.sendEmptyMessage(6);
+                        InputStream in = socket.getInputStream();
+                        OutputStream out = socket.getOutputStream();
+                        byte[] retrieve = { 0x44, 0x31};
+                        out.write(retrieve);
+                        byte [] ack = new byte [1];
+                        in.read(ack);
+                        if (ack[0] == 0x15) {
+                            cancelMeasurement();
+                            return;
+                        }
+                        byte [] data = new byte [3];
+                        long timeStart = System.currentTimeMillis();
+                        this.timePassed = System.currentTimeMillis() - timeStart;
+                        while ((this.timePassed < (this.time))&&(this.finished)) {
+                            try {
+                                in.read(data);
+                                processData(data);
+                                Thread.sleep(1000);
+                                this.timePassed = System.currentTimeMillis() - timeStart;
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        in.close();
+                        out.close();
+                        socket.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
+}
+
+    
+===============================================================================================
+63
+A:Please remember to close your Input/output streams first, then close the socket. 
+
+By closing the streams, you kick off the disconnect process. After you close the socket, the connection should be fully broken down. 
+
+If you close the socket before the streams, you may be bypassing certain shutdown steps, such as the (proper) closing of the physical layer connection. 
+
+Here's the method I use when its time to breakdown the connection. 
+
+/**
+ * Reset input and output streams and make sure socket is closed. 
+ * This method will be used during shutdown() to ensure that the connection is properly closed during a shutdown.  
+ * @return
+ */
+private void resetConnection() {
+        if (mBTInputStream != null) {
+                try {mBTInputStream.close();} catch (Exception e) {}
+                mBTInputStream = null;
+        }
+
+        if (mBTOutputStream != null) {
+                try {mBTOutputStream.close();} catch (Exception e) {}
+                mBTOutputStream = null;
+        }
+
+        if (mBTSocket != null) {
+                try {mBTSocket.close();} catch (Exception e) {}
+                mBTSocket = null;
+        }
+
+}
+
+
+EDIT: Adding code for connect():
+
+// bluetooth adapter which provides access to bluetooth functionality. 
+BluetoothAdapter        mBTAdapter      = null;
+// socket represents the open connection.
+BluetoothSocket         mBTSocket   = null;
+// device represents the peer
+BluetoothDevice         mBTDevice       = null; 
+
+// streams
+InputStream           mBTInputStream  = null;
+OutputStream          mBTOutputStream = null;
+
+static final UUID UUID_RFCOMM_GENERIC = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+
+/**
+ * Try to establish a connection with the peer. 
+ * This method runs synchronously and blocks for one or more seconds while it does its thing 
+ * SO CALL IT FROM A NON-UI THREAD!
+ * @return - returns true if the connection has been established and is ready for use. False otherwise. 
+ */
+private  boolean connect() {
+
+        // Reset all streams and socket.
+        resetConnection();
+
+        // make sure peer is defined as a valid device based on their MAC. If not then do it. 
+        if (mBTDevice == null) 
+                mBTDevice = mBTAdapter.getRemoteDevice(mPeerMAC);
+
+        // Make an RFCOMM binding. 
+        try {mBTSocket = mBTDevice.createRfcommSocketToServiceRecord(UUID_RFCOMM_GENERIC);
+        } catch (Exception e1) {
+                msg ("connect(): Failed to bind to RFCOMM by UUID. msg=" + e1.getMessage());
+                return false;
+        }
+
+        msg ("connect(): Trying to connect.");
+
+        try {
+                mBTSocket.connect();
+        } catch (Exception e) {
+                msg ("connect(): Exception thrown during connect: " + e.getMessage());
+                return false;
+        }
+
+        msg ("connect(): CONNECTED!");
+
+        try {
+                mBTOutputStream = mBTSocket.getOutputStream();
+                mBTInputStream  = mBTSocket.getInputStream();
+        } catch (Exception e) {
+                msg ("connect(): Error attaching i/o streams to socket. msg=" + e.getMessage());
+                return false;
+        }
+
+        return true;
+}
+
+    

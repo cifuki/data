@@ -1,0 +1,23 @@
+61
+Q:The documentation on Android content providers describes using a ContentResolver, obtained from getContentResolver(), to access the content.
+
+However there is also a ContentProviderClient, which can be obtained from getContentResolver().acquireContentProviderClient(authority).  It seems to provide more or less the same methods available in the ContentResolver for accessing content from the provider.
+
+When should I use a ContentProviderClient instead of just using the ContentResolver directly?  What are the benefits?
+    
+===============================================================================================
+90
+A:Your android device has many databases, each of which is identified by a unique Content Authority.  This is the "domain name" equivalent part in the content:// uri -- everything before the first slash.
+
+ContentResolver stores data providing a mapping from String contentAuthority to ContentProvider.  When you call ContentResolver.query() or update() or what have you, the URI is parsed apart into its components, the contentAuthority string is identified, and contentResolver has to search that map for a matching string, and direct the query to the right provider.  This expensive search occurs during every single call, because the URI might be different from call to call, with a different contentAuthority as well.  Additionally, there may be some costs involved in setting up and tearing down a connection to that specific provider -- It can't be reused across calls.  I'm not sure of the overhead involved there, that's some pretty deep OS level code.
+
+By contrast, when you call acquireContentProviderClient(authority), that "what-provider do I need?" lookup is done once, and you are given a ContentProviderClient which is essentially a direct link to the ContentProvider. (There's a bit of glue between you and the provider that involves cross-thread communication and concurrency locking).  However, when you use ContentProviderClient, you will talk directly to the Provider for the authority you requested.  This removes the waste of constantly re-computing "which provider do I want?"  
+
+NOTE: Per acquireContentProviderClient() documentation:  If you obtain a ContentProviderClient, "The caller must indicate that they are done with the provider by calling ContentProviderClient.release() which will allow the system to release the provider it it determines that there is no other reason for keeping it active."  So essentially, leaving a stale Client open will force the Provider to keep running as a service in the background.  So, remember to clean up!
+
+Summary:  
+
+Many calls to varying contentAuthorities:  Use ContentResolver.
+
+Repeated calls to the same Authority:  Obtain and use ContentProviderClient.  Remember to release() it when you're done.
+    

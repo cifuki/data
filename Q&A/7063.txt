@@ -1,0 +1,242 @@
+37
+Q:I am developing a widget for turning on/off camera led of phone.
+
+I have made a widget that can work like toggle button (on/off).
+
+Behavior is like follows : Sometimes the led light remains on when i enable the widget.
+But it doesnot turn on/off the camera led but it changes the icon.
+
+I am not able to figure out whats the actual problem.
+
+The same thing works fine in Activity (Torch Light Application).
+
+Can anyone please explain me how can i solve my problem ? 
+
+Where i am going wrong ?
+
+You can look at the code below that i have done so far 
+
+onUpdate method
+
+@Override
+    public void onUpdate(Context context, AppWidgetManager appWidgetManager,
+            int[] appWidgetIds) {
+
+         //super.onUpdate(context, appWidgetManager, appWidgetIds);
+
+        remoteViews = new RemoteViews( context.getPackageName(), R.layout.widgetlayout);
+        watchWidget = new ComponentName( context, FlashLightWidget.class );
+
+        Intent intentClick = new Intent(context,FlashLightWidget.class);
+        intentClick.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, ""+appWidgetIds[0]);
+
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(context, appWidgetIds[0],intentClick, 0);
+        remoteViews.setOnClickPendingIntent(R.id.myToggleWidget, pendingIntent);
+        appWidgetManager.updateAppWidget( watchWidget, remoteViews );
+        ctx=context;      
+    }
+
+
+onReceive method is as follows :
+
+@Override
+
+    public void onReceive(Context context, Intent intent) {
+        // TODO Auto-generated method stub
+
+        remoteViews = new RemoteViews( context.getPackageName(), R.layout.widgetlayout);
+        if (intent.getAction()==null) {
+            Bundle extras = intent.getExtras();
+            if(extras!=null) {
+                 if(status)
+                    {
+                        status=false;
+                        remoteViews.setImageViewResource(R.id.myToggleWidget, R.drawable.shutdown1);
+                        processOnClick();
+                        Toast.makeText(context,"Status==false-onclick",Toast.LENGTH_SHORT).show();
+                    }
+                    else
+                    {
+                        status = true;
+                        remoteViews.setImageViewResource(R.id.myToggleWidget, R.drawable.shutdown2);
+                        processOffClick();
+                        Toast.makeText(context,"Status==true--Ofclick",Toast.LENGTH_SHORT).show();
+                    }
+                }
+
+                watchWidget = new ComponentName( context, FlashLightWidget.class );
+
+                (AppWidgetManager.getInstance(context)).updateAppWidget( watchWidget, remoteViews );
+           }
+        }
+  }
+
+
+processOffClick method
+
+private void processOffClick() {
+
+        if (mCamera != null) {
+            mCamera.stopPreview();
+            mCamera.setPreviewCallback(null);
+            mCamera.release();      
+            mCamera = null;
+        }
+    }
+
+
+processOnClick method
+
+private void processOnClick() {
+
+    if(mCamera==null)
+    {
+        try {
+            mCamera = Camera.open();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    if (mCamera != null) {
+
+        Parameters params = mCamera.getParameters();
+        List<String> flashModes = params.getSupportedFlashModes();
+
+        if (flashModes == null) {
+            return;
+        } else {
+
+                params.setFlashMode(Parameters.FLASH_MODE_OFF);
+                mCamera.setParameters(params);
+                mCamera.startPreview();
+
+            String flashMode = params.getFlashMode();
+
+            if (!Parameters.FLASH_MODE_TORCH.equals(flashMode)) {
+
+                if (flashModes.contains(Parameters.FLASH_MODE_TORCH)) {
+                    params.setFlashMode(Parameters.FLASH_MODE_TORCH);
+                    mCamera.setParameters(params);
+
+                } 
+
+            }
+        }
+    } else if (mCamera == null) {
+        //Toast.makeText(ctx, "Camera not found", Toast.LENGTH_LONG).show();
+        return;
+    }
+}
+
+    
+===============================================================================================
+40
+A:After a long time, I got free to solve this problem.
+
+Here is what I did.
+
+FlashlightWidgetProvider class :
+
+public class FlashlightWidgetProvider extends AppWidgetProvider {
+
+        @Override
+        public void onUpdate(Context context, AppWidgetManager appWidgetManager,
+                        int[] appWidgetIds) {
+
+                Intent receiver = new Intent(context, FlashlightWidgetReceiver.class);
+                receiver.setAction("COM_FLASHLIGHT");
+                receiver.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, appWidgetIds);
+                PendingIntent pendingIntent = PendingIntent.getBroadcast(context, 0, receiver, 0);
+
+                RemoteViews views = new RemoteViews(context.getPackageName(),
+                                R.layout.widget_layout);
+                views.setOnClickPendingIntent(R.id.button, pendingIntent);
+
+                appWidgetManager.updateAppWidget(appWidgetIds, views);
+
+        }
+}
+
+
+and BroadcastReceiver for FlashlightWidgetReceiver :
+
+public class FlashlightWidgetReceiver extends BroadcastReceiver {
+            private static boolean isLightOn = false;
+            private static Camera camera;
+
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                    RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_layout);
+
+                    if(isLightOn) {
+                            views.setImageViewResource(R.id.button, R.drawable.off);
+                    } else {
+                            views.setImageViewResource(R.id.button, R.drawable.on);
+                    }
+
+                    AppWidgetManager appWidgetManager = AppWidgetManager.getInstance(context);
+                    appWidgetManager.updateAppWidget(new ComponentName(context,     FlashlightWidgetProvider.class),
+                                                                                     views);
+
+                    if (isLightOn) {
+                            if (camera != null) {
+                                    camera.stopPreview();
+                                    camera.release();
+                                    camera = null;
+                                    isLightOn = false;
+                            }
+
+                    } else {
+                            // Open the default i.e. the first rear facing camera.
+                            camera = Camera.open();
+
+                            if(camera == null) {
+                                    Toast.makeText(context, R.string.no_camera, Toast.LENGTH_SHORT).show();
+                            } else {
+                                    // Set the torch flash mode
+                                    Parameters param = camera.getParameters();
+                                    param.setFlashMode(Camera.Parameters.FLASH_MODE_TORCH);
+                                    try {
+                                            camera.setParameters(param);
+                                            camera.startPreview();
+                                            isLightOn = true;
+                                    } catch (Exception e) {
+                                            Toast.makeText(context, R.string.no_flash, Toast.LENGTH_SHORT).show();
+                                    }
+                            }
+                    }
+            }
+    }
+
+
+Permission required in Manifest.xml file :
+
+<uses-permission android:name="android.permission.CAMERA"></uses-permission>
+
+
+Also register receivers in Manifest.xml file :
+
+<receiver android:name=".FlashlightWidgetProvider" android:icon="@drawable/on" android:label="@string/app_name">
+         <intent-filter>
+            <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+         </intent-filter>
+
+         <meta-data android:name="android.appwidget.provider"
+                        android:resource="@xml/flashlight_appwidget_info" />
+</receiver>
+
+<receiver android:name="FlashlightWidgetReceiver">
+        <intent-filter>
+               <action android:name="COM_FLASHLIGHT"></action>
+        </intent-filter>
+ </receiver>
+
+
+Important Note : This code works perfect if your phone has FLASH_MODE_TORCH supported. 
+
+I have tested in Samsung Galaxy Ace 2.2.1 & 2.3.3. The code is not working because that device has no FLASH_MODE_TORCH.
+
+Works fine in HTC Salsa, Wildfire..
+
+If anyone can test and post results here, it would be best. 
+    

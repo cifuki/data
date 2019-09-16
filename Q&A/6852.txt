@@ -1,0 +1,222 @@
+38
+Q:We're experiencing a java.lang.UnsatisfiedLinkError on some of the Android phones that are using our app in the market.
+
+Problem description:
+
+static
+{
+    System.loadLibrary("stlport_shared"); // C++ STL        
+    System.loadLibrary("lib2"); 
+    System.loadLibrary("lib3"); 
+}
+
+
+Crashes the app in on of the System.loadLibrary() lines with a java.lang.UnsatisfiedLinkError. 
+java.lang.UnsatisfiedLinkError: Couldn't load stlport_shared from loader dalvik.system.PathClassLoader[dexPath=/data/app/app_id-2.apk,libraryPath=/data/app-lib/app_id-2]: findLibrary returned null
+
+Solution approach
+
+We started running some custom diagnostics on all our installs to check if every lib is unpacked in the /data/data/app_id/lib folder.
+
+PackageManager m = context.getPackageManager();
+String s = context.getPackageName();
+PackageInfo p;
+p = m.getPackageInfo(s, 0);
+s = p.applicationInfo.dataDir;
+
+File appDir = new File(s);
+long freeSpace = appDir.getFreeSpace();
+
+File[] appDirList = appDir.listFiles();
+int numberOfLibFiles = 0;
+boolean subFilesLarger0 = true;
+for (int i = 0; i < appDirList.length; i++) {
+
+    if(appDirList[i].getName().startsWith("lib")) {
+        File[] subFile = appDirList[i].listFiles(FileFilters.FilterDirs);   
+        numberOfLibFiles = subFile.length;
+        for (int j = 0; j < subFile.length; j++) {
+            if(subFile[j].length() <= 0) {
+                subFilesLarger0 = false;
+                break;
+            }
+        }
+    }
+}
+
+
+On every test phone that we have numberOfLibFiles == 3 and subFilesLarger0 == true. We wanted to test if all libs are unpacked properly and are larger then 0 byte. In addition we're looking at freeSpace to see how much disk space is available. freeSpace matches the amount of memory that you can find in Settings --> Applications at the bottom of the screen. The thinking behind this approach was that when there is not enough space on the disk available that the installer might have problems unpacking the APK.
+
+Real world scenario
+
+Looking at the diagnostics, some of the devices out there do NOT have all 3 libs in the /data/data/app_id/lib folder but have plenty of free space. I'm wondering why the error message is looking for /data/app-lib/app_id-2. All our phones store their libs in /data/data/app_id/lib. Also the System.loadLibrary() should use a consistent path across installation and loading the libs? How can I know where the OS is looking for the libs?
+
+Question
+
+Anyone experiencing problems with installing native libs? What work arounds have been successful? Any experience with just downloading native libs over the internet when they are not existent and storing them manually? What could cause the problem in the first place? 
+
+EDIT
+
+I now also have a user who runs into this problem after an application update. The previous version worked fine on his phone, an after an update the native libs seem missing. Copying the libs manually seem to cause trouble as well. He is on android 4.x with a non rooted phone without custom ROM.
+
+EDIT 2 - Solution
+
+After 2 years of spending time on this problem. We came up with a solution that works well for us now. We open sourced it: https://github.com/KeepSafe/ReLinker
+    
+===============================================================================================
+13
+A:I have the same trouble, and the UnsatisfiedLinkErrors comes on all versions of Android - over the past 6 months, for an app that currently has over 90000 active installs, I had:
+
+Android 4.2     36  57.1%
+Android 4.1     11  17.5%
+Android 4.3     8   12.7%
+Android 2.3.x   6   9.5%
+Android 4.4     1   1.6%
+Android 4.0.x   1   1.6%
+
+
+and the users report that it usually happens just after the app update. This is for an app that gets around 200 - 500 new users per day. 
+
+I think I came up with a simpler work-around. I can find out where is the original apk of my app with this simple call:
+
+    String apkFileName = context.getApplicationInfo().sourceDir;
+
+
+this returns something like "/data/app/com.example.pkgname-3.apk", the exact file name of my app's APK file. This file is a regular ZIP file and it is readable without root. Therefore, if I catch the java.lang.UnsatisfiedLinkError, I can extract and copy my native library, from the inside of .apk (zip) lib/armeabi-v7a folder (or whatever architecture I'm on), to any directory where I can read/write/execute, and load it with System.load(full_path).
+
+Edit: It seems to work
+
+Update July 1, 2014 since releasing a version of my product with the code similar to the listed below, on June 23, 2014, did not have any Unsatisfied Link Errors from my native library.
+
+Here is the code I used:
+
+public static void initNativeLib(Context context) {
+    try {
+        // Try loading our native lib, see if it works...
+        System.loadLibrary("MyNativeLibName");
+    } catch (UnsatisfiedLinkError er) {
+        ApplicationInfo appInfo = context.getApplicationInfo();
+        String libName = "libMyNativeLibName.so";
+        String destPath = context.getFilesDir().toString();
+        try {
+            String soName = destPath + File.separator + libName;
+            new File(soName).delete();
+            UnzipUtil.extractFile(appInfo.sourceDir, "lib/" + Build.CPU_ABI + "/" + libName, destPath);
+            System.load(soName);
+        } catch (IOException e) {
+            // extractFile to app files dir did not work. Not enough space? Try elsewhere...
+            destPath = context.getExternalCacheDir().toString();
+            // Note: location on external memory is not secure, everyone can read/write it...
+            // However we extract from a "secure" place (our apk) and instantly load it,
+            // on each start of the app, this should make it safer.
+            String soName = destPath + File.separator + libName;
+            new File(soName).delete(); // this copy could be old, or altered by an attack
+            try {
+                UnzipUtil.extractFile(appInfo.sourceDir, "lib/" + Build.CPU_ABI + "/" + libName, destPath);
+                System.load(soName);
+            } catch (IOException e2) {
+                Log.e(TAG "Exception in InstallInfo.init(): " + e);
+                e.printStackTrace();
+            }
+        }
+    }
+}
+
+
+Unfortunately, if a bad app update leaves an old version of the native library, or a copy somehow
+damaged, which we loaded with System.loadLibrary("MyNativeLibName"), there is no way to unload it.
+Upon finding out about such remnant defunct library lingering in the standard app native lib folder,
+e.g. by calling one of our native methods and finding out it's not there (UnsatisfiedLinkError again), we could store a preference to avoid calling the standard System.loadLibrary() altogether and relying on our own extraction and loading code upon next app startups.
+
+For completeness, here is UnzipUtil class, that I copied and modified from this CodeJava UnzipUtility article:
+
+import java.io.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
+public class UnzipUtil {
+    /**
+     * Size of the buffer to read/write data
+     */
+
+    private static final int BUFFER_SIZE = 4096;
+    /**
+     * Extracts a zip file specified by the zipFilePath to a directory specified by
+     * destDirectory (will be created if does not exists)
+     * @param zipFilePath
+     * @param destDirectory
+     * @throws java.io.IOException
+     */
+    public static void unzip(String zipFilePath, String destDirectory) throws IOException {
+        File destDir = new File(destDirectory);
+        if (!destDir.exists()) {
+            destDir.mkdir();
+        }
+        ZipInputStream zipIn = new ZipInputStream(new FileInputStream(zipFilePath));
+        ZipEntry entry = zipIn.getNextEntry();
+        // iterates over entries in the zip file
+        while (entry != null) {
+            String filePath = destDirectory + File.separator + entry.getName();
+            if (!entry.isDirectory()) {
+                // if the entry is a file, extracts it
+                extractFile(zipIn, filePath);
+            } else {
+                // if the entry is a directory, make the directory
+                File dir = new File(filePath);
+                dir.mkdir();
+            }
+            zipIn.closeEntry();
+            entry = zipIn.getNextEntry();
+        }
+        zipIn.close();
+    }
+
+    /**
+     * Extracts a file from a zip to specified destination directory.
+     * The path of the file inside the zip is discarded, the file is
+     * copied directly to the destDirectory.
+     * @param zipFilePath - path and file name of a zip file
+     * @param inZipFilePath - path and file name inside the zip
+     * @param destDirectory - directory to which the file from zip should be extracted, the path part is discarded.
+     * @throws java.io.IOException
+     */
+    public static void extractFile(String zipFilePath, String inZipFilePath, String destDirectory) throws IOException  {
+        ZipInputStream zipIn = new ZipInputStream(new FileInputStream(zipFilePath));
+        ZipEntry entry = zipIn.getNextEntry();
+        // iterates over entries in the zip file
+        while (entry != null) {
+            if (!entry.isDirectory() && inZipFilePath.equals(entry.getName())) {
+                String filePath = entry.getName();
+                int separatorIndex = filePath.lastIndexOf(File.separator);
+                if (separatorIndex > -1)
+                    filePath = filePath.substring(separatorIndex + 1, filePath.length());
+                filePath = destDirectory + File.separator + filePath;
+                extractFile(zipIn, filePath);
+                break;
+            }
+            zipIn.closeEntry();
+            entry = zipIn.getNextEntry();
+        }
+        zipIn.close();
+    }
+
+    /**
+     * Extracts a zip entry (file entry)
+     * @param zipIn
+     * @param filePath
+     * @throws java.io.IOException
+     */
+    private static void extractFile(ZipInputStream zipIn, String filePath) throws IOException {
+        BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(filePath));
+        byte[] bytesIn = new byte[BUFFER_SIZE];
+        int read = 0;
+        while ((read = zipIn.read(bytesIn)) != -1) {
+            bos.write(bytesIn, 0, read);
+        }
+        bos.close();
+    }
+}
+
+
+Greg
+    

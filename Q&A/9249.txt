@@ -1,0 +1,293 @@
+29
+Q:Ok so I have a class that extends SurfaceView and overrides  
+
+surfaceChanged - just calls startPreview
+surfaceCreated - opens camera, edits params *, sets surfaceHolder
+surfaceDestroyed - calls stopPreview, release camera  
+
+this all work great because when the orientation is Portrait:  
+
+from surfaceCreated *
+
+m_camera = Camera.open();
+Camera.Parameters p = m_camera.getParameters();
+
+if (getResources().getConfiguration().orientation != 
+    Configuration.ORIENTATION_LANDSCAPE)
+{
+    p.set("orientation", "portrait");
+
+    // CameraApi is a wrapper to check for backwards compatibility  
+    if (CameraApi.isSetRotationSupported())
+    {
+         CameraApi.setRotation(p, 90);
+    }
+}
+
+
+However, everytime the orientation changes it calls Camera.open()... which as you may know is quite an expensive operation, causing the transitions to be not so smooth.
+
+When i force the orientation to landscape, the preview is great. Create only gets called once which works because the preview is in landscape the camera is always what the user sees. However, I need a way to set the orientation of the actual picture taken when in portrait. When I force landscape though, the surface never gets recreated and the parameters are never set when the camera is held in portrait.
+
+So how can I do one of the following (exclusively)?  
+
+
+Hold onto m_camera between onDestroy and onCreate when orientation changes so that the transition is smooth
+Force landscape and detect orientation changes another way... rotating the final snaped picture if held in portrait.
+
+
+Also, if I am off base can someone point me in a better direction? Thank you.
+    
+===============================================================================================
+58
+A:The way I implemented it:
+
+private Camera mCamera;
+private OrientationEventListener mOrientationEventListener;
+private int mOrientation =  -1;
+
+private static final int ORIENTATION_PORTRAIT_NORMAL =  1;
+private static final int ORIENTATION_PORTRAIT_INVERTED =  2;
+private static final int ORIENTATION_LANDSCAPE_NORMAL =  3;
+private static final int ORIENTATION_LANDSCAPE_INVERTED =  4;
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    // force Landscape layout
+    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_NOSENSOR | ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+   /*
+   Your other initialization code here
+   */
+}
+
+@Override 
+protected void onResume() {
+    super.onResume();
+
+    if (mOrientationEventListener == null) {            
+        mOrientationEventListener = new OrientationEventListener(this, SensorManager.SENSOR_DELAY_NORMAL) {
+
+            @Override
+            public void onOrientationChanged(int orientation) {
+
+                // determine our orientation based on sensor response
+                int lastOrientation = mOrientation;
+
+                if (orientation >= 315 || orientation < 45) {
+                    if (mOrientation != ORIENTATION_PORTRAIT_NORMAL) {                          
+                        mOrientation = ORIENTATION_PORTRAIT_NORMAL;
+                    }
+                }
+                else if (orientation < 315 && orientation >= 225) {
+                    if (mOrientation != ORIENTATION_LANDSCAPE_NORMAL) {
+                        mOrientation = ORIENTATION_LANDSCAPE_NORMAL;
+                    }                       
+                }
+                else if (orientation < 225 && orientation >= 135) {
+                    if (mOrientation != ORIENTATION_PORTRAIT_INVERTED) {
+                        mOrientation = ORIENTATION_PORTRAIT_INVERTED;
+                    }                       
+                }
+                else { // orientation <135 && orientation > 45
+                    if (mOrientation != ORIENTATION_LANDSCAPE_INVERTED) {
+                        mOrientation = ORIENTATION_LANDSCAPE_INVERTED;
+                    }                       
+                }   
+
+                if (lastOrientation != mOrientation) {
+                    changeRotation(mOrientation, lastOrientation);
+                }
+            }
+        };
+    }
+    if (mOrientationEventListener.canDetectOrientation()) {
+        mOrientationEventListener.enable();
+    }
+}
+
+@Override protected void onPause() {
+    super.onPause();
+    mOrientationEventListener.disable();
+}
+
+/**
+ * Performs required action to accommodate new orientation
+ * @param orientation
+ * @param lastOrientation
+ */
+private void changeRotation(int orientation, int lastOrientation) {
+    switch (orientation) {
+        case ORIENTATION_PORTRAIT_NORMAL:
+            mSnapButton.setImageDrawable(getRotatedImage(android.R.drawable.ic_menu_camera, 270));
+            mBackButton.setImageDrawable(getRotatedImage(android.R.drawable.ic_menu_revert, 270));
+            Log.v("CameraActivity", "Orientation = 90");
+            break;
+        case ORIENTATION_LANDSCAPE_NORMAL:
+            mSnapButton.setImageResource(android.R.drawable.ic_menu_camera);
+            mBackButton.setImageResource(android.R.drawable.ic_menu_revert);
+            Log.v("CameraActivity", "Orientation = 0");
+            break;
+        case ORIENTATION_PORTRAIT_INVERTED:
+            mSnapButton.setImageDrawable(getRotatedImage(android.R.drawable.ic_menu_camera, 90));
+            mBackButton.setImageDrawable(getRotatedImage(android.R.drawable.ic_menu_revert, 90));
+            Log.v("CameraActivity", "Orientation = 270");
+            break;
+        case ORIENTATION_LANDSCAPE_INVERTED:
+            mSnapButton.setImageDrawable(getRotatedImage(android.R.drawable.ic_menu_camera, 180));
+            mBackButton.setImageDrawable(getRotatedImage(android.R.drawable.ic_menu_revert, 180));      
+            Log.v("CameraActivity", "Orientation = 180");
+            break;
+    }
+}
+
+    /**
+ * Rotates given Drawable
+ * @param drawableId    Drawable Id to rotate
+ * @param degrees       Rotate drawable by Degrees
+ * @return              Rotated Drawable
+ */
+private Drawable getRotatedImage(int drawableId, int degrees) {
+    Bitmap original = BitmapFactory.decodeResource(getResources(), drawableId);
+    Matrix matrix = new Matrix();
+    matrix.postRotate(degrees);
+
+    Bitmap rotated = Bitmap.createBitmap(original, 0, 0, original.getWidth(), original.getHeight(), matrix, true);
+    return new BitmapDrawable(rotated);
+}
+
+
+And then in your PictureCallback set metadata to indicate rotation level:
+
+    private Camera.PictureCallback mJpegCallback = new Camera.PictureCallback() {
+
+    @Override
+    public void onPictureTaken(byte[] data, Camera camera) {
+        try {
+            // Populate image metadata
+
+            ContentValues image = new ContentValues();
+            // additional picture metadata
+            image.put(Media.DISPLAY_NAME, [picture name]);
+            image.put(Media.MIME_TYPE, "image/jpg");
+            image.put(Media.TITLE, [picture title]);
+            image.put(Media.DESCRIPTION, [picture description]);
+            image.put(Media.DATE_ADDED, [some time]);
+            image.put(Media.DATE_TAKEN, [some time]);
+            image.put(Media.DATE_MODIFIED, [some time]);
+
+            // do not rotate image, just put rotation info in
+            switch (mOrientation) {
+                case ORIENTATION_PORTRAIT_NORMAL:
+                    image.put(Media.ORIENTATION, 90);
+                    break;
+                case ORIENTATION_LANDSCAPE_NORMAL:
+                    image.put(Media.ORIENTATION, 0);
+                    break;
+                case ORIENTATION_PORTRAIT_INVERTED:
+                    image.put(Media.ORIENTATION, 270);
+                    break;
+                case ORIENTATION_LANDSCAPE_INVERTED:
+                    image.put(Media.ORIENTATION, 180);
+                    break;
+            }
+
+            // store the picture
+            Uri uri = getContentResolver().insert(
+                    Media.EXTERNAL_CONTENT_URI, image);
+
+            try {
+                Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0,
+                        data.length);
+                OutputStream out = getContentResolver().openOutputStream(
+                        uri);
+                boolean success = bitmap.compress(
+                        Bitmap.CompressFormat.JPEG, 75, out);
+                out.close();
+                if (!success) {
+                    finish(); // image output failed without any error,
+                                // silently finish
+                }
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                // handle exceptions
+            }
+
+            mResultIntent = new Intent();
+            mResultIntent.setData(uri);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        finish();
+    }
+};
+
+
+I hope it helps.
+
+UPDATE Now when landscape based devices are appearing an additional check for it is required in OrientationEventListener.
+
+Display display = ((WindowManager)getSystemService(WINDOW_SERVICE)).getDefaultDisplay();                                        
+if (display.getOrientation() == Surface.ROTATION_0) { 
+    // landscape oriented devices
+} else { 
+    // portrait oriented device
+}
+
+
+Full code (a bit wasteful by LC, but easily demonstrates the approach)
+
+@Override
+public void onOrientationChanged(int orientation) {
+
+    // determine our orientation based on sensor response
+    int lastOrientation = mOrientation;
+
+    Display display = ((WindowManager)getSystemService(WINDOW_SERVICE)).getDefaultDisplay();                                        
+
+    if (display.getOrientation() == Surface.ROTATION_0) {   // landscape oriented devices
+        if (orientation >= 315 || orientation < 45) {
+            if (mOrientation != ORIENTATION_LANDSCAPE_NORMAL) {                         
+                mOrientation = ORIENTATION_LANDSCAPE_NORMAL;
+            }
+        } else if (orientation < 315 && orientation >= 225) {
+            if (mOrientation != ORIENTATION_PORTRAIT_INVERTED) {
+                mOrientation = ORIENTATION_PORTRAIT_INVERTED;
+            }                       
+        } else if (orientation < 225 && orientation >= 135) {
+            if (mOrientation != ORIENTATION_LANDSCAPE_INVERTED) {
+                mOrientation = ORIENTATION_LANDSCAPE_INVERTED;
+            }                       
+        } else if (orientation <135 && orientation > 45) { 
+            if (mOrientation != ORIENTATION_PORTRAIT_NORMAL) {
+                mOrientation = ORIENTATION_PORTRAIT_NORMAL;
+            }                       
+        }                       
+    } else {  // portrait oriented devices
+        if (orientation >= 315 || orientation < 45) {
+            if (mOrientation != ORIENTATION_PORTRAIT_NORMAL) {                          
+                mOrientation = ORIENTATION_PORTRAIT_NORMAL;
+            }
+        } else if (orientation < 315 && orientation >= 225) {
+            if (mOrientation != ORIENTATION_LANDSCAPE_NORMAL) {
+                mOrientation = ORIENTATION_LANDSCAPE_NORMAL;
+            }                       
+        } else if (orientation < 225 && orientation >= 135) {
+            if (mOrientation != ORIENTATION_PORTRAIT_INVERTED) {
+                mOrientation = ORIENTATION_PORTRAIT_INVERTED;
+            }                       
+        } else if (orientation <135 && orientation > 45) { 
+            if (mOrientation != ORIENTATION_LANDSCAPE_INVERTED) {
+                mOrientation = ORIENTATION_LANDSCAPE_INVERTED;
+            }                       
+        }
+    }
+
+    if (lastOrientation != mOrientation) {
+        changeRotation(mOrientation, lastOrientation);
+    }
+}
+
+    

@@ -1,0 +1,115 @@
+28
+Q:UPDATE: I fixed the problems in the code below so this makes a nice basic working example of how to use GCM
+
+
+
+So, I'm trying to implement Android GCM into my app. Here are the relevant parts I've added to the manifest:
+
+<uses-sdk android:minSdkVersion="8" android:targetSdkVersion="20" />
+
+<permission
+    android:name=".permission.C2D_MESSAGE"
+    android:protectionLevel="signature" />
+<uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
+<uses-permission android:name=".permission.C2D_MESSAGE" />
+<uses-permission android:name="android.permission.WAKE_LOCK"/>
+<uses-permission android:name="android.permission.GET_ACCOUNTS"/>
+
+
+...
+
+<receiver
+    android:name="com.google.android.gcm.GCMBroadcastReceiver"
+    android:permission="com.google.android.c2dm.permission.SEND" >
+    <intent-filter>
+        <action android:name="com.google.android.c2dm.intent.RECEIVE" />
+        <action android:name="com.google.android.c2dm.intent.REGISTRATION" />
+        <category android:name="com.badbob.app.gmctestapp" />
+    </intent-filter>
+</receiver>
+
+<service android:name=".GCMIntentService" />
+
+
+I've added the following code to the onCreate of my main activity:
+
+    GCMRegistrar.checkDevice( this );
+    GCMRegistrar.checkManifest( this );
+    final String regId = GCMRegistrar.getRegistrationId( this );
+    if( regId.equals( "" ) ) {
+        GCMRegistrar.register( this, GCM_SENDER_ID );
+    }
+    else {
+        Log.v( LOG_TAG, "Already registered" );
+    }
+
+
+I've also created the GCMIntenetService class like so:
+
+public class GCMIntentService extends GCMBaseIntentService {
+
+    private static final String LOG_TAG = "GetAClue::GCMIntentService";
+
+    public GCMIntentService() {
+        super( GCM_SENDER_ID );
+        // TODO Auto-generated constructor stub
+        Log.i( LOG_TAG, "GCMIntentService constructor called" );
+    }
+
+    @Override
+    protected void onError( Context arg0, String errorId ) {
+        // TODO Auto-generated method stub
+        Log.i( LOG_TAG, "GCMIntentService onError called: " + errorId );
+    }
+
+    @Override
+    protected void onMessage( Context arg0, Intent intent ) {
+        // TODO Auto-generated method stub
+        Log.i( LOG_TAG, "GCMIntentService onMessage called" );
+        Log.i( LOG_TAG, "Message is: " + intent.getStringExtra( "message" ) );
+    }
+
+    @Override
+    protected void onRegistered( Context arg0, String registrationId ) {
+        // TODO Auto-generated method stub
+        Log.i( LOG_TAG, "GCMIntentService onRegistered called" );
+        Log.i( LOG_TAG, "Registration id is: " + registrationId );
+    }
+
+    @Override
+    protected void onUnregistered( Context arg0, String registrationId ) {
+        // TODO Auto-generated method stub
+        Log.i( LOG_TAG, "GCMIntentService onUnregistered called" );
+        Log.i( LOG_TAG, "Registration id is: " + registrationId );
+    }
+}
+
+
+When I run this I get this in LogCat:
+
+07-11 11:28:46.340: V/GCMRegistrar(27435): Registering receiver
+07-11 11:28:46.370: D/GCMRegistrar(27435): resetting backoff for com.badbob.app.getacluebeta
+07-11 11:28:46.380: V/GCMRegistrar(27435): Registering app com.badbob.app.getacluebeta of senders 128205395388
+
+
+From what I've gleaned from other posts I should get a registration ID in LogCat but I"m not. Also onRegistered() in GCMIntentService never gets called. So what am I doing wrong?
+    
+===============================================================================================
+18
+A:this is incorrect
+
+protected GCMIntentService( String senderId ) {         
+super(senderId);}
+
+
+As it states in the documentation. you must declare a PUBLIC, NO ARGUMENT constructor for GCMIntentService. Otherwise the GCMIntentService can't be instantiated properly by background intent services.
+
+public GCMIntentService(){
+super(senderID);}
+
+
+the senderID can be a hard coded constant string because it will no longer change with the new GCM.
+It's also very important you use the correct senderID. 24 hours is long enough for yours to be active so if my above solution doesn't work you are using the incorrect senderID. Everything else looks great.
+
+The senderID is in the URL of your web browser when you are browsing the Google API access page. Click on GCM and a 12 digit number will be present in the browser URL. That is the correct key to use. NOT your API key. That is used on the App server side.
+    

@@ -1,0 +1,161 @@
+37
+Q:First of all I read SOLVED: GATT callback fails to register and took the steps suggested in that post to solve this issue with no success. The recommended fix in there if you haven't read it is to make all BLE calls from the main thread directly or with a handler.
+
+I am working on a BLE app want to run a service (called from activity once every 10 seconds) that performs these tasks:
+
+1)Gets list of our products available to connect to (done, works)
+
+2)For each available device:
+
+          2a)connect to device
+          2b)discover services
+          2c)read 5 characteristics in this fashion:
+             2c1)read characteristic
+             2c2)onCharacteristicRead parse data
+             2c3)when finished with data read next characteristic
+             2c4)repeat until all are read (this is done using a state var and switch statement)
+         2d)disconnect from device
+         2e)connect to next device
+         2f)repeat until all devices are read from
+         2g)stopSelf()
+
+
+So the issue... Everything works great for a little bit. I can perform the entire service start {startService(...); in mainActivity} to finish {stopSelf(); in Service} 6 times.
+
+On the 7th time I get BluetoothGatt Failed to register callback. I'm not sure why I can run it 6 times successfully and then fail on the 7th time.
+
+Keep in mind I am making all BLE calls from the main thread, and that has been confirmed in the log cat from multiple locations.
+
+Here is an outline of my code:
+
+SERVICE.JAVA
+
+private Handler handler = new Handler();
+private BluetoothGatt cGatt = null;
+private int unitIndex = 0; // keep track of currently connected unit
+private int state = 0; //used to keep track of which characteristic to read next
+
+public int onStartCommand(Intent intent, int flags, int startId) 
+{
+    Log.i(TAG, "Service Started...");
+    //get ArrayList of units
+
+    if(units.size > 0)
+        handler.post(connectNextRunnable); //calls connectNextDevice()
+    else
+        stopSelf();   
+}
+
+private Runnable discoverServices = new Runnable()
+{
+    public void run()
+    {
+        cGatt.discoverServices();
+    }
+}
+
+private Runnable readNextValue = new Runnable()
+{
+    public void run()
+    {
+        BluetoothGattCharacteristic c = null;
+        switch(state)
+        {
+            //set c to appropriate characteristic
+        default: // all characteristics read
+            unitIndex++;
+            handler.post(connectNextRunnable)
+            return
+        }
+
+        cGatt.readCharacteristic(c);
+    }
+}
+
+private void connectNextDevice()
+{
+    if(unitIndex == 0)
+        store System.nanoTime in variable
+
+    if(unitIndex >= units.size) //finished will all units
+        stopSelf();
+
+    if(unitIndex < units.size)
+        cGatt.disconnect //if null
+        cGatt.connectGatt(this, false, gattCallback)
+}
+
+private BluetoothGattCallback gattCallback = new BluetoothGattCallback() 
+{
+    public void onConnectionStateChange() 
+    {
+        handler.post(discoverServices);
+    }
+
+    public void onServicesDeiscovered() 
+    {
+        handler.post(readNextValue);
+    }
+
+    public void onCharacteristicRead() 
+    {
+        ParseData();
+    }
+
+    private void ParseData()
+    {
+        //do stuff with data
+        handler.post(readNextValue);
+    }
+}
+
+
+So, like I have said, all BLE stuff is called from the main thread through a handler. The service successfully runs 6 times from start to finish. On the 7th time I get that dumb failed to register callback.
+
+I can provide more logcat information if you think it is relevant. I did not in the original post because I am output a lot of information to it to verify data received etc..
+
+The information below is the logcat information for the 7th run of my service from start to finish.
+
+08-15 12:00:10.746: I/PMIQ BTS(32027): Service Started...
+08-15 12:00:10.746: I/PMIQ BTS(32027): Units: 1
+08-15 12:00:10.746: D/AbsListView(32027): unregisterIRListener() is called 
+08-15 12:00:10.766: I/PMIQ BTS(32027): Connecting to next device...
+08-15 12:00:10.766: I/PMIQ BTS(32027): Unit index = 0
+08-15 12:00:10.766: I/PMIQ BTS(32027): Connecting to pmIQ-IQ130_D93A
+08-15 12:00:10.766: I/System.out(32027): main
+08-15 12:00:10.766: D/BluetoothGatt(32027): connect() - device: 00:1E:C0:19:D9:3A, auto: false
+08-15 12:00:10.766: D/BluetoothGatt(32027): registerApp()
+08-15 12:00:10.766: D/BluetoothGatt(32027): registerApp() - UUID=e9d10870-4b09-451c-a9fa-c6b5f3594a77
+08-15 12:00:10.766: I/BluetoothGatt(32027): Client registered, waiting for callback
+08-15 12:00:10.766: D/BluetoothGatt(32027): onClientRegistered() - status=133 clientIf=0
+08-15 12:00:10.766: I/PMIQ BTS(32027): CONECTION STATE CHANGED...Binder_2
+**08-15 12:00:10.766: E/BluetoothGatt(32027): Failed to register callback**
+08-15 12:00:10.766: I/PMIQ BTS(32027): Could not connect to null ... 257
+08-15 12:00:10.766: I/PMIQ BTS(32027): Connecting to next device...
+08-15 12:00:10.766: I/PMIQ BTS(32027): Unit index = 1
+08-15 12:00:10.766: I/PMIQ BTS(32027): ******************************
+08-15 12:00:10.766: I/PMIQ BTS(32027): Start Time: 4360642409647
+08-15 12:00:10.766: I/PMIQ BTS(32027): End Time: 4360648970925
+08-15 12:00:10.766: I/PMIQ BTS(32027): Difference: 6561278
+08-15 12:00:10.766: I/PMIQ BTS(32027): Time to complete: 6
+08-15 12:00:10.766: I/PMIQ BTS(32027): ******************************
+08-15 12:00:10.876: I/PMIQ BTS(32027): ...Service Destroyed
+
+
+If you have made it here, thanks! I could not find ANY information on what status=133 means?! It only happens when the callback fails. Every other time it is status=0.
+
+08-15 12:00:10.766: D/BluetoothGatt(32027): onClientRegistered() - status=133 clientIf=0
+
+
+If anyone could even answer this.. it may help me greatly. Or if anyone can tell me why it only runs 6 times. Any insight or hunch could be helpful! 
+
+Thanks everyone!
+    
+===============================================================================================
+55
+A:Alright I have figured it out. The issue was mainly an oversight of when I was reading through the BluetoothGatt documentation. I was calling .disconnect(), but not .close(). Since the Galaxy s4 can only handle 6 connections at a time, my service was only running 6 times. Adding the .close() to my code allowed it to properly shut down the connection and freed up those used connections.
+
+Source that made me re-read the docs more carefully!
+
+So remember to use .close() on your BluetoothGatt object if you have a recurring connection to the same device(s)!!
+    

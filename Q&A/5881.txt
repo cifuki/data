@@ -1,0 +1,67 @@
+43
+Q:In my app I expand or contract the AppBarLayout on a specific event using setExpanded(boolean, true). 
+
+I've got a good result, with a snappy and fluid animation using com.android.support:design:23.1.0, then I updated to 23.1.1 and the animation got very slow and not snappy at all.
+
+In the source code of android.support.design.widget.AppBarLayout, I located the problem in animateOffsetTo (under public static class Behavior extends HeaderBehavior<AppBarLayout>), that in the version 23.1.0 was like this: 
+
+private void animateOffsetTo(final CoordinatorLayout coordinatorLayout,
+    final AppBarLayout child, int offset) {
+   if (mAnimator == null) {
+       mAnimator = ViewUtils.createAnimator();
+       mAnimator.setInterpolator(AnimationUtils.DECELERATE_INTERPOLATOR);
+       mAnimator.setUpdateListener(new ValueAnimatorCompat.AnimatorUpdateListener() {
+
+           @Override
+           public void onAnimationUpdate(ValueAnimatorCompat animator) {
+               setHeaderTopBottomOffset(coordinatorLayout, child,
+                    animator.getAnimatedIntValue());
+           }
+       });
+   } else {
+       mAnimator.cancel();
+   }
+   mAnimator.setIntValues(getTopBottomOffsetForScrollingSibling(), offset);
+   mAnimator.start();
+}
+
+
+And in the version 23.1.1 is like this: 
+
+private void animateOffsetTo(final CoordinatorLayout coordinatorLayout,
+    final AppBarLayout child, final int offset) {
+   final int currentOffset = getTopBottomOffsetForScrollingSibling();
+   if (currentOffset == offset) {
+       if (mAnimator != null && mAnimator.isRunning()) {
+           mAnimator.cancel();
+       }
+       return;
+   }
+   if (mAnimator == null) {
+       mAnimator = ViewUtils.createAnimator();
+       mAnimator.setInterpolator(AnimationUtils.DECELERATE_INTERPOLATOR);
+       mAnimator.setUpdateListener(new ValueAnimatorCompat.AnimatorUpdateListener() {
+           @Override
+           public void onAnimationUpdate(ValueAnimatorCompat animator) {
+            setHeaderTopBottomOffset(coordinatorLayout, child,
+                    animator.getAnimatedIntValue());
+           }
+       });
+   } else {
+       mAnimator.cancel();
+   }
+   // Set the duration based on the amount of dips we're travelling in
+   final float distanceDp = Math.abs(currentOffset - offset) /
+        coordinatorLayout.getResources().getDisplayMetrics().density;
+   mAnimator.setDuration(Math.round(distanceDp * 1000 / ANIMATE_OFFSET_DIPS_PER_SECOND));
+   mAnimator.setIntValues(currentOffset, offset);
+   mAnimator.start();
+}
+
+
+How can I change the expand/contract animation and make is faster? 
+    
+===============================================================================================
+2
+A:The issue was reported and fixed
+    

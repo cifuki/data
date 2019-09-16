@@ -1,0 +1,190 @@
+27
+Q:I've created an image upload AsyncTask based on a function. And after uploading, I get this error on onPostExecute(). I read up some StackOverflow answers on Runnable yet I kept getting the error over and over again despite implementing a different solution.
+
+My code :
+
+class uploadFile extends AsyncTask<String, String, String> {
+    private ProgressDialog pDialog;
+
+    /**
+     * --------------------------------------------------------------------
+     * --------------------------------- Before starting background thread
+     * Show Progress Dialog
+     */
+    @Override
+    protected void onPreExecute() {
+        super.onPreExecute();
+        pDialog = new ProgressDialog(MainActivity.this);
+        pDialog.setMessage("Uploading file");
+        pDialog.setIndeterminate(false);
+        pDialog.setCancelable(false);
+        pDialog.show();
+    }
+
+    /**
+     * --------------------------------------------------------------------
+     * --------------------------------- getting all recent articles and
+     * showing them in listview
+     */
+    @Override
+    protected String doInBackground(String... args) {
+        HttpURLConnection conn = null;
+        DataOutputStream dos = null;
+        DataInputStream inStream = null;
+        String existingFileName = Environment.getExternalStorageDirectory()
+                .getAbsolutePath() + "/mypic.png";
+        String lineEnd = "\\r\
+";
+        String twoHyphens = "--";
+        String boundary = "*****";
+        int bytesRead, bytesAvailable, bufferSize;
+        byte[] buffer;
+        int maxBufferSize = 1 * 1024 * 1024;
+        String serverResponseMessage = "";
+        String urlString = "http://google.info/imgupl/index.php";
+        try {
+            // ------------------ CLIENT REQUEST
+            FileInputStream fileInputStream = new FileInputStream(new File(
+                    existingFileName));
+            // open a URL connection to the Servlet
+            URL url = new URL(urlString);
+            // Open a HTTP connection to the URL
+            conn = (HttpURLConnection) url.openConnection();
+            // Allow Inputs
+            conn.setDoInput(true);
+            // Allow Outputs
+            conn.setDoOutput(true);
+            // Don't use a cached copy.
+            conn.setUseCaches(false);
+            // Use a post method.
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Connection", "Keep-Alive");
+            conn.setRequestProperty("Content-Type",
+                    "multipart/form-data;boundary=" + boundary);
+            dos = new DataOutputStream(conn.getOutputStream());
+            dos.writeBytes(twoHyphens + boundary + lineEnd);
+            dos.writeBytes("Content-Disposition: form-data; name=\\"uploadedfile\\";filename=\\""
+                    + existingFileName + "\\"" + lineEnd);
+            dos.writeBytes(lineEnd);
+            // create a buffer of maximum size
+            bytesAvailable = fileInputStream.available();
+            bufferSize = Math.min(bytesAvailable, maxBufferSize);
+            buffer = new byte[bufferSize];
+            // read file and write it into form...
+            bytesRead = fileInputStream.read(buffer, 0, bufferSize);
+            while (bytesRead > 0) {
+                dos.write(buffer, 0, bufferSize);
+                bytesAvailable = fileInputStream.available();
+                bufferSize = Math.min(bytesAvailable, maxBufferSize);
+                bytesRead = fileInputStream.read(buffer, 0, bufferSize);
+            }
+            // send multipart form data necesssary after file data...
+            dos.writeBytes(lineEnd);
+            dos.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd);
+            // close streams
+            Integer serverResponseCode = conn.getResponseCode();
+            serverResponseMessage = conn.getResponseMessage();
+            Toast.makeText(getApplicationContext(), serverResponseMessage,
+                    Toast.LENGTH_SHORT).show();
+            Toast.makeText(getApplicationContext(),
+                    serverResponseCode.toString(), Toast.LENGTH_SHORT)
+                    .show();
+            Log.e("Debug", "File is written");
+            fileInputStream.close();
+            dos.flush();
+            dos.close();
+        } catch (MalformedURLException ex) {
+            Log.e("Debug", "error: " + ex.getMessage(), ex);
+        } catch (IOException ioe) {
+            Log.e("Debug", "error: " + ioe.getMessage(), ioe);
+        }
+        // ------------------ read the SERVER RESPONSE
+        try {
+            inStream = new DataInputStream(conn.getInputStream());
+
+            while ((str = inStream.readLine()) != null) {
+                Log.e("Debug", "Server Response " + str);
+            }
+            inStream.close();
+
+        } catch (IOException ioex) {
+            Log.e("Debug", "error: " + ioex.getMessage(), ioex);
+        }
+        return null;
+    }
+
+    /**
+     * --------------------------------------------------------------------
+     * --------------------------------- After completing background task
+     * Dismiss the progress dialog
+     **/
+    protected void onPostExecute(String args) {
+        // dismiss the dialog after getting all products
+        pDialog.dismiss();
+        MainActivity.this.runOnUiThread(new Runnable() {
+            public void run() {
+                Toast.makeText(MainActivity.this, "Hello", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+    }
+}
+
+
+My logcat :
+
+08-13 22:13:32.627: E/AndroidRuntime(9554): FATAL EXCEPTION: AsyncTask #1
+08-13 22:13:32.627: E/AndroidRuntime(9554): java.lang.RuntimeException: An error occured while executing doInBackground()
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at android.os.AsyncTask$3.done(AsyncTask.java:200)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at java.util.concurrent.FutureTask$Sync.innerSetException(FutureTask.java:274)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at java.util.concurrent.FutureTask.setException(FutureTask.java:125)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:308)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at java.util.concurrent.FutureTask.run(FutureTask.java:138)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1088)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:581)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at java.lang.Thread.run(Thread.java:1019)
+08-13 22:13:32.627: E/AndroidRuntime(9554): Caused by: java.lang.RuntimeException: Can't create handler inside thread that has not called Looper.prepare()
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at android.os.Handler.<init>(Handler.java:121)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at android.widget.Toast.<init>(Toast.java:68)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at android.widget.Toast.makeText(Toast.java:231)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at dev.google.imageupload.MainActivity$uploadFile.doInBackground(MainActivity.java:128)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at dev.google.imageupload.MainActivity$uploadFile.doInBackground(MainActivity.java:1)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at android.os.AsyncTask$2.call(AsyncTask.java:185)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:306)
+08-13 22:13:32.627: E/AndroidRuntime(9554):     ... 4 more
+
+
+EDITED after zapl's suggestion :
+
+08-13 22:38:06.297: E/AndroidRuntime(11511): FATAL EXCEPTION: AsyncTask #1
+08-13 22:38:06.297: E/AndroidRuntime(11511): java.lang.RuntimeException: An error occured while executing doInBackground()
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at android.os.AsyncTask$3.done(AsyncTask.java:200)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at java.util.concurrent.FutureTask$Sync.innerSetException(FutureTask.java:274)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at java.util.concurrent.FutureTask.setException(FutureTask.java:125)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:308)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at java.util.concurrent.FutureTask.run(FutureTask.java:138)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1088)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:581)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at java.lang.Thread.run(Thread.java:1019)
+08-13 22:38:06.297: E/AndroidRuntime(11511): Caused by: java.lang.RuntimeException: Can't create handler inside thread that has not called Looper.prepare()
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at android.os.Handler.<init>(Handler.java:121)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at android.widget.Toast.<init>(Toast.java:68)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at android.widget.Toast.makeText(Toast.java:231)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at dev.google.imageupload.MainActivity$uploadFile.doInBackground(MainActivity.java:128)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at dev.google.imageupload.MainActivity$uploadFile.doInBackground(MainActivity.java:1)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at android.os.AsyncTask$2.call(AsyncTask.java:185)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:306)
+08-13 22:38:06.297: E/AndroidRuntime(11511):    ... 4 more
+
+    
+===============================================================================================
+51
+A:You are attempting to update the UI from a background thread. Either move the toast to onPostExecute, which executes on the UI thread (recommended), or call runOnUiThread.
+
+runOnUiThread(new Runnable() {
+    public void run() {
+        // runs on UI thread
+    }
+});
+
+    

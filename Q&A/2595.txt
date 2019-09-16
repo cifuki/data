@@ -1,0 +1,118 @@
+81
+Q:I want to build a REST Client on an android phone.
+
+The REST server exposes several resources, e.g. (GET)
+
+http://foo.bar/customer      List of all customer
+http://foo.bar/customer/4711    The customer with id 4711
+http://foo.bar/customer/vip     List of all VIP customer
+
+http://foo.bar/company           List of all companys
+http://foo.bar/company/4711     The company with the ID 4711
+http://foo.bar/company/vip      List of all VIP companys
+
+
+I (think) I know how to talk to the REST server and get the information I need. I would implement a REST Client class with an API like this
+
+public List<Customer> getCustomers();
+public Customer getCustomer(final String id);
+public List<Customer> getVipCustomer();
+
+public List<Company> getCompanies();
+public Customer getCompany(final String id);
+public List<Customer> getVipCompanies();
+
+
+Referred to the presentation "Developing Android REST client applications" from Virgil Dobjanschi I learned that it is no good idea to handle the REST request in an Worker Thread of the Activity. Instead I should use the Service API.
+
+I like the idea of having a Singleton ServiceHelper which binds to a (Local) Service but I am afraid that I did not understand the Service concept correct.
+
+For now I do not understand how to report a REST call result (done asynchrounous in a Service) back to the caller Activity. I also wonder if I need ONE Service which handles all REST requests (with different return types) or if I need a dedicated service for each REST request.
+
+Probably I have many other understanding problems so the best thing for me would be a sample application which meets my needs. My use case is not unusual and I hope there is in example application out there.
+
+Would you please let me know!
+
+Any other suggestions which points me in the correct implementation direction are also helpful (Android API-Demo does not match my use case).
+
+Thanks in advance.
+
+Klaus
+
+EDIT: Similar Topics found on SO (after posting this) which lead me in the direction I need (minimizing the complex "Dobjanschi pattern"):
+
+
+Android: restful API service
+
+    
+===============================================================================================
+50
+A:OverView
+
+Edit:
+
+Anyone interest also consider taking a look at RESTful android this might give you a better look about it.
+
+What i learned from the experience on trying to implement the Dobjanschi Model, is that not everything is written in stone and he only give you the overview of what to do this might changed from app to app but the formula is:
+
+Follow this ideas + Add your own = Happy Android application
+
+The model on some apps may vary from requirement some might not need the Account for the SyncAdapter other might use C2DM, this one that i worked recently might help someone:
+
+
+
+Create an application that have Account and AccountManager
+
+It will allow you to use the SyncAdapter to synchronized your data. This have been discussed on Create your own SyncAdapter
+
+Create a ContentProvider (if it suits your needs)
+
+This abstraction allows you to not only access the database but goes to the ServiceHelper to execute REST calls as it has one-per-one Mapping method with the REST Arch.
+
+Content Provider    | REST Method
+
+query ---------------->  GET
+
+insert ---------------->  PUT
+
+update ----------------> POST
+
+delete  ----------------> DELETE
+
+ServiceHelper Layering
+
+This guy will basicly start (a) service(s) that execute a Http(not necessarily the protocol but it's the most common) REST method with the parameters that you passed from the ContentProvider. I passed the match integer that is gotten from the UriMatcher on the content Provider so i know what REST resource to access, i.e.
+
+class ServiceHelper{
+
+    public static void execute(Context context,int match,String parameters){
+//find the service resource (/path/to/remote/service with the match
+//start service with parameters 
+    }
+
+}
+
+
+The service
+
+Gets executed (I use IntentService most of the time) and it goes to the RESTMethod with the params passed from the helper, what is it good for? well remember Service are good to run things in background.
+
+Also implement a BroadCastReceiver so when the service is done with its work notify my Activity that registered this Broadcast and requery again. I believe this last step is not on Virgill Conference but I'm pretty sure is a good way to go.
+
+RESTMethod class
+
+Takes the parameters, the WS resource(http://myservice.com/service/path) adds the parameters,prepared everything, execute the call, and save the response. 
+
+If the authtoken is needed you can requested from the AccountManager 
+If the calling of the service failed because authentication, you can invalidate the authtoken and reauth to get a new token. 
+
+Finally the RESTMethod gives me either a XML or JSON no matter i create a processor based on the matcher and pass the response.
+
+The processor
+
+It's in charged of parsing the response and insert it locally.
+
+A Sample Application? Of course!
+
+Also if you are interesting on a test application you look at Eli-G, it might not be the best example but it follow the Service REST approach, it is built with ServiceHelper, Processor, ContentProvider, Loader, and Broadcast. 
+    

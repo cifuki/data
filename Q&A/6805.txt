@@ -1,0 +1,119 @@
+38
+Q:I've been battling with this feature for couple of days now...
+
+It seems, that camera is ignoring(?) focus areas that I've defined. Here is snippets of the code:
+
+Focusing:
+
+protected void focusOnTouch(MotionEvent event) {
+    if (camera != null) {
+        Rect rect = calculateFocusArea(event.getX(), event.getY());
+
+        Parameters parameters = camera.getParameters();
+        parameters.setFocusMode(Parameters.FOCUS_MODE_AUTO);
+        parameters.setFocusAreas(Lists.newArrayList(new Camera.Area(rect, 500)));
+
+        camera.setParameters(parameters);
+        camera.autoFocus(this);
+    }
+}
+
+
+Focus area calculation: 
+
+private Rect calculateFocusArea(float x, float y) {
+    int left = clamp(Float.valueOf((x / getSurfaceView().getWidth()) * 2000 - 1000).intValue(), focusAreaSize);
+    int top = clamp(Float.valueOf((y / getSurfaceView().getHeight()) * 2000 - 1000).intValue(), focusAreaSize);
+
+    return new Rect(left, top, left + focusAreaSize, top + focusAreaSize);
+}
+
+
+Couple of log events from Camera.AutoFocusCallback#onAutoFocus
+
+Log.d(TAG, String.format("Auto focus success=%s. Focus mode: '%s'. Focused on: %s",
+            focused,
+            camera.getParameters().getFocusMode(),
+            camera.getParameters().getFocusAreas().get(0).rect.toString()));
+
+08-27 11:19:42.240: DEBUG/MyCameraActivity(26268): Auto focus success=true. Focus mode: 'auto'. Focused on: Rect(-109, 643 - -13, 739)
+08-27 11:19:55.514: DEBUG/MyCameraActivity(26268): Auto focus success=true. Focus mode: 'auto'. Focused on: Rect(20, 457 - 116, 553)
+08-27 11:19:58.037: DEBUG/MyCameraActivity(26268): Auto focus success=true. Focus mode: 'auto'. Focused on: Rect(-159, 536 - -63, 632)
+08-27 11:20:00.129: DEBUG/MyCameraActivity(26268): Auto focus success=true. Focus mode: 'auto'. Focused on: Rect(-28, 577 - 68, 673)
+
+
+Visually it looks like focus succeeds on logged area, but the suddenly it loses focus and focus on center (0, 0), or what takes bigger part of SurfaceView is obtained.
+
+focusAreaSize used in calculation is about 210px (96dp).
+Testing on HTC One where Camera.getParameters().getMaxNumFocusAreas() is 1.
+
+Initial focus mode (before first tap) is set to FOCUS_MODE_CONTINUOUS_PICTURE.
+
+Am I doing something wrong here?
+Tinkering with Camera.Area rectangle size or weight doesn't show any noticeable effect.
+    
+===============================================================================================
+53
+A:My problem was much simpler :)
+
+All I had to do is cancel previously called autofocus. Basically the correct order of actions is this:
+
+protected void focusOnTouch(MotionEvent event) {
+    if (camera != null) {
+
+        camera.cancelAutoFocus();
+        Rect focusRect = calculateTapArea(event.getX(), event.getY(), 1f);
+        Rect meteringRect = calculateTapArea(event.getX(), event.getY(), 1.5f);
+
+        Parameters parameters = camera.getParameters();
+        parameters.setFocusMode(Parameters.FOCUS_MODE_AUTO);
+        parameters.setFocusAreas(Lists.newArrayList(new Camera.Area(focusRect, 1000)));
+
+        if (meteringAreaSupported) {
+            parameters.setMeteringAreas(Lists.newArrayList(new Camera.Area(meteringRect, 1000)));
+        }
+
+        camera.setParameters(parameters);
+        camera.autoFocus(this);
+    }
+}
+
+
+Update
+
+@Override
+public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+    ...
+    Parameters p = camera.getParameters();
+    if (p.getMaxNumMeteringAreas() > 0) {
+       this.meteringAreaSupported = true;
+    }
+    ...
+}
+
+/**
+ * Convert touch position x:y to {@link Camera.Area} position -1000:-1000 to 1000:1000.
+ */
+private Rect calculateTapArea(float x, float y, float coefficient) {
+    int areaSize = Float.valueOf(focusAreaSize * coefficient).intValue();
+
+    int left = clamp((int) x - areaSize / 2, 0, getSurfaceView().getWidth() - areaSize);
+    int top = clamp((int) y - areaSize / 2, 0, getSurfaceView().getHeight() - areaSize);
+
+    RectF rectF = new RectF(left, top, left + areaSize, top + areaSize);
+    matrix.mapRect(rectF);
+
+    return new Rect(Math.round(rectF.left), Math.round(rectF.top), Math.round(rectF.right), Math.round(rectF.bottom));
+}
+
+private int clamp(int x, int min, int max) {
+    if (x > max) {
+        return max;
+    }
+    if (x < min) {
+        return min;
+    }
+    return x;
+}
+
+    

@@ -1,0 +1,69 @@
+34
+Q:I am trying to click on a text in a list view using Espresso. I know they have this guide, but I can't see how to make this work by looking for text.  This is what I have tried
+
+
+Espresso.onData(Matchers.allOf(Matchers.is(Matchers.instanceOf(ListView.class)), Matchers.hasToString(Matchers.startsWith("ASDF")))).perform(ViewActions.click());
+
+
+
+As expected, this didn't work. The error said no view in hierarchy. Does anyone know how to select a String? ("ASDF" in this case) Thanks in advance.
+
+Update due to @haffax
+
+I received error:
+
+
+  com.google.android.apps.common.testing.ui.espresso.AmbiguousViewMatcherException: 'is assignable from class: class android.widget.AdapterView' matches multiple views in the hierarchy.
+
+
+Second error
+
+With this code
+
+
+onData(hasToString(startsWith("ASDF"))).inAdapterView(withContentDescription("MapList")).perform(click());
+
+
+
+I get this error
+
+
+  com.google.android.apps.common.testing.ui.espresso.PerformException: Error performing 'load adapter data' on view 'with content description: is "MapList"'.
+  
+  Caused by: java.lang.RuntimeException: No data found matching: asString(a string starting with "ASDF") 
+
+
+
+
+Solution
+
+
+  onData(anything()).inAdapterView(withContentDescription("desc")).atPosition(x).perform(click())
+
+    
+===============================================================================================
+41
+A:The problem is, that you try to match the list view itself with the instanceOf(ListView.class) as argument for onData(). onData() requires a data matcher that matches the adapted data of the ListView, not the ListView itself, and also not the View that Adapter.getView() returns, but the actual data.
+
+If you have something like this in your production code:
+
+ListView listView = (ListView)findViewById(R.id.myListView);
+ArrayAdapter<MyDataClass> adapter = getAdapterFromSomewhere();
+listView.setAdapter(adapter);
+
+
+Then the Matcher argument of Espresso.onData() should match the desired instance of MyDataClass.
+So, something like this should work:
+
+onData(hasToString(startsWith("ASDF"))).perform(click());
+
+
+(You can use another Matcher using a method of org.hamcrest.Matchers)
+
+In case you have multiple adapter views in your activity, you can call ViewMatchers.inAdapterView() with a view matcher that specifies the AdapterView like this:
+
+onData(hasToString(startsWith("ASDF")))
+    .inAdapterView(withId(R.id.myListView))
+    .perform(click());
+
+    

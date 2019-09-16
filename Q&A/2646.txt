@@ -1,0 +1,78 @@
+80
+Q:Since I updated to Android SDK Tools 25.1.6 and Android Support Repository 32.0.0 (this morning), I got the following error, I didn't change anything in my code and it is still working on my colleague computer (Android SDK Tools 25.1.1 + Android Support Repository 30.0.0). 
+
+java.lang.IncompatibleClassChangeError: The method 
+     'java.io.File android.support.v4.content.ContextCompat.getNoBackupFilesDir(android.content.Context)' 
+     was expected to be of type virtual but instead was found to be of type direct 
+     (declaration of 'java.lang.reflect.ArtMethod' appears in /system/framework/core-libart.jar)
+
+     at com.google.android.gms.iid.zzd.zzeb(Unknown Source)
+     at com.google.android.gms.iid.zzd.<init>(Unknown Source)
+     at com.google.android.gms.iid.zzd.<init>(Unknown Source)
+     at com.google.android.gms.iid.InstanceID.zza(Unknown Source)
+     at com.google.android.gms.iid.InstanceID.getInstance(Unknown Source)
+     at com.xxxxxxx.utils.RegistrationIntentService.onHandleIntent(RegistrationIntentService.java:55)
+     at android.app.IntentService$ServiceHandler.handleMessage(IntentService.java:65)
+     at android.os.Handler.dispatchMessage(Handler.java:102)
+     at android.os.Looper.loop(Looper.java:145)
+     at android.os.HandlerThread.run(HandlerThread.java:61)
+
+
+Here is a the piece of code that crash:
+
+InstanceID instanceID = InstanceID.getInstance(this); // <-- crash here
+String instanceIDToken = instanceID.getToken(getString(R.string.google_app_id),
+GoogleCloudMessaging.INSTANCE_ID_SCOPE, null);
+
+
+It is when I try to get a token from Google Cloud Messaging.
+
+I'm importing GCM in Gradle with splited play-services :
+
+ compile 'com.google.android.gms:play-services-analytics:9.0.0' 
+ compile 'com.google.android.gms:play-services-maps:9.0.0'
+ compile 'com.google.android.gms:play-services-location:9.0.0' 
+ compile 'com.google.android.gms:play-services-gcm:9.0.0' 
+ compile 'com.google.android.gms:play-services-base:9.0.0'
+
+
+EDIT
+disabling GCM fixed the problem, so my guess is I should migrate to Firebase Cloud Message 
+
+EDIT2
+My device receive Google Play Services 9.0 (yesterday was 8.4.x). Now it doesn't crash anymore, but complain about module descriptor 
+
+ Failed to load module descriptor class: Didn't find class "com.google.android.gms.dynamite.descriptors.com.google.firebase.auth.ModuleDescriptor"
+ Firebase API initialization failure.
+
+
+Does anyone has a similar error, and how to fix it ?
+
+FIXED
+special thanks to @stegranet.
+./gradlew -q app:dependencies --configuration compile helps you to identify what dependencies include SDK 24.x
+
+Main issue is some library import the latest support library using + sign instead of a version. This cause the issue, by including the latest available version.
+
+So avoid + sign in dependencies ;)
+    
+===============================================================================================
+37
+A:I used the gradle dependency tree to solve this error for me.
+
+Just run gradle -q app:dependencies --configuration compile
+and check the output for entries like this:
+
++--- com.mcxiaoke.viewpagerindicator:library:2.4.1
+|    \\--- com.android.support:support-v4:+ -> 24.0.0-beta1 (*)
+
+
+As Diego Giorgini said this version is too high (>=24).
+So update the dependencies in build.gradle like 
+
+compile('com.mcxiaoke.viewpagerindicator:library:2.4.1') {
+    exclude module: 'support-v4';
+}
+compile 'com.android.support:support-v4:23.4.0'
+
+    

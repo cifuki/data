@@ -1,0 +1,39 @@
+53
+Q:I have some C code for Android that does lots of low-level number crunching. I'd like to know what settings I should use (e.g. for my Android.mk and Application.mk) files so that the code produced will run on all current Android devices but also takes advantage of optimisations for specific chipsets. I'm looking for good default Android.mk and Application.mk settings to use and I want to avoid having to litter my C code with #ifdef branches.
+
+For example, I'm aware that ARMv7 has floating point instructions and some ARMv7 chips support NEON instructions and that the default ARM supports neither of these. Is it possible to set flags so that I can build ARMv7 with NEON, ARMv7 without NEON and the default ARM build? I'm know how to do the latter two but not all 3. I'm cautious about what settings I use as I assume the current defaults are the safest settings and what risks other options have.
+
+For GCC specific optimisation, I'm using the following flags:
+
+LOCAL_CFLAGS=-ffast-math -O3 -funroll-loops
+
+
+I've checked all 3 of these speed up my code. Are there any other common ones I could add?
+
+Another tip I have is to add "LOCAL_ARM_MODE := arm" to Android.mk to enable a speed up on newer arm chips (although I'm confused at exactly what this does and what happens on older chips).
+    
+===============================================================================================
+112
+A:ARM processors have 2 general instruction sets that they support: "ARM" and "Thumb". Though there are different flavors of both, ARM instructions are 32 bits each and Thumb instructions are 16 bits. The main difference between the two is that ARM instructions have the possibility to do more in a single instruction than Thumb can. For example a single ARM instruction can add one register to another register, while performing a left shift on the second register. In Thumb one instruction would have to do the shift, then a second instruction would do the addition.
+
+ARM instructions are not twice as good, but in certain cases they can be faster. This is especially true in hand-rolled ARM assembly, which can be tuned in novel ways to make the best use of "shifts for free". Thumb instructions have their own advantage as well as size: they drain the battery less.
+
+Anyway, this is what LOCAL_ARM_MODE does - it means you compile your code as ARM instructions instead of Thumb instructions. Compiling to Thumb is the default in the NDK as it tends to create a smaller binary and the speed difference is not that noticeable for most code. The compiler can't always take advantage of the extra "oomph" that ARM can provide, so you end up needing more or less the same number of instructions anyway.
+
+The result of what you see from C/C++ code compiled to ARM or Thumb will be identical (barring compiler bugs).
+
+This by itself is compatible between new and old ARM processors for all Android phones available today. This is because by default the NDK compiles to an "Application Binary Interface" for ARM-based CPUs that support the ARMv5TE instruction set. This ABI is known as "armeabi" and can be explicitly set in the Application.mk by putting APP_ABI := armeabi.
+
+Newer processors also support the Android-specific ABI known as armeabi-v7a, which extends armeabi to add the Thumb-2 instruction set and a hardware floating point instruction set called VFPv3-D16. armeabi-v7a compatible CPUs can also optionally support the NEON instruction set, which you have to check for at run time and provide code paths for when it is available and when it is not. There's an example in the NDK/samples directory that does this (hello-neon). Under the hood, Thumb-2 is more "ARM-like" in that its instructions can do more in a single instruction, while having the advantage of still taking up less space.
+
+In order to compile a "fat binary" that contains both armeabi and armeabi-v7a libraries you would add the following to Application.mk:
+
+APP_ABI := armeabi armeabi-v7a
+
+
+When the .apk file is installed, the Android package manager installs the best library for the device. So on older platforms it would install the armeabi library, and on newer devices the armeabi-v7a one.
+
+If you want to test for CPU features at run time then you can use the NDK function uint64_t android_getCpuFeatures() to get the features supported by the processor. This returns a bit-flag of ANDROID_CPU_ARM_FEATURE_ARMv7 on v7a processors, ANDROID_CPU_ARM_FEATURE_VFPv3 if hardware floating points are supported and ANDROID_CPU_ARM_FEATURE_NEON if advanced SIMD instructions are supported. ARM can't have NEON without VFPv3.
+
+In summary: by default, your programs are the most compatible. Using LOCAL_ARM_MODE may make things slightly faster at the expense of battery life due to the use of ARM instructions - and it is as compatible as the default set-up. By adding the APP_ABI := armeabi armeabi-v7a line you will have improved performance on newer devices, remain compatible with older ones, but your .apk file will be larger (due to having 2 libraries). In order to use NEON instructions, you will need to write special code that detects the capabilities of the CPU at run time, and this only applies to newer devices that can run armeabi-v7a.
+    

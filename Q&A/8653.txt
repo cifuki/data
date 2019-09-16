@@ -1,0 +1,138 @@
+31
+Q:I am migrating my app to androidx, I can't seem to get my unit tests working. I took example from Google's AndroidJunitRunnerSample, which has been updated to use the new androidx api. I get the following error when trying to run my tests:
+
+java.lang.Exception: Delegate runner 'androidx.test.internal.runner.junit4.AndroidJUnit4ClassRunner' for AndroidJUnit4 could not be loaded. Check your build configuration.
+
+
+Here is my module build.gradle:
+
+android {
+    defaultConfig {
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+}
+dependencies {
+    // Test dependencies
+    androidTestImplementation 'androidx.test:core:1.0.0-beta02'
+    androidTestImplementation 'androidx.test.ext:junit:1.0.0-beta02'
+    androidTestImplementation 'androidx.test:runner:1.1.0-beta02'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.1.0-beta02'
+    androidTestImplementation "androidx.arch.core:core-testing:2.0.0"
+    androidTestImplementation 'androidx.room:room-testing:2.1.0-alpha01'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.1.0-beta02'
+    androidTestImplementation 'org.hamcrest:hamcrest-library:1.3'
+}
+
+
+And here is how my tests are structured:
+
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+
+@RunWith(AndroidJUnit4.class)
+public class EntityParcelTest {
+
+    @BeforeClass
+    public void createEntities() {
+        // Setup...
+    }
+
+    @Test
+    void someTest() {
+        // Testing here
+    }
+
+
+What am I doing wrong?
+    
+===============================================================================================
+30
+A:Removing @RunWith(AndroidJUnit4.class) annotations from the test classes fixed the issue, although I can't really say why or how it fixed it.
+
+Edit: Allright I did some more testing. I migrated my app to Kotlin, and suddenly I noticed the tests began to work with the @RunWith annotation, too. Here's what I found out:
+
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+
+@RunWith(AndroidJUnit4.class) // <-- @RunWith + @BeforeClass = Error
+public class AndroidXJunitTestJava {
+
+    @BeforeClass
+    public static void setup() {
+        // Setting up once before all tests
+    }
+
+    @Test
+    public void testing() {
+        // Testing....
+    }
+}
+
+
+This java test fails with the Delegate runner for AndroidJunit4 could not be loaded error. But If I remove the @RunWith annotation, it works. Also, if I replace the @BeforeClass setup with just a @Before, like this:
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+
+@RunWith(AndroidJUnit4.class) // <-- @RunWith + @Before = works?
+public class AndroidXJunitTestJava {
+
+    @Before
+    public void setup() {
+        // Setting up before every test
+    }
+
+    @Test
+    public void testing() {
+        // Testing....
+    }
+}
+
+
+The tests will run without errors. I needed to use the @BeforeClass annotation, so I just removed @RunWith.
+
+But now that I am using Kotlin, the following (which should be equal to the first java example) works:
+
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.BeforeClass
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class AndroidXJunitTest {
+
+    companion object {
+        @BeforeClass fun setup() {
+            // Setting up
+        }
+    }
+
+    @Test
+    fun testing() {
+        // Testing...
+    }
+
+}
+
+
+Also, as Alessandro Biessek said in an answer and @Ioane Sharvadze in the comments, the same error can happen with the @Rule annotation. If I add a line
+
+ @Rule val instantTaskExecutorRule = InstantTaskExecutorRule()
+
+
+To the Kotlin example, the same delegate runner error happens. This must be replaced with
+
+@get:Rule val instantTaskExecutorRule = InstantTaskExecutorRule()
+
+
+Explanation here.
+    

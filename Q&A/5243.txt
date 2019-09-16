@@ -1,0 +1,353 @@
+47
+Q:I have already checked all the related questions and have not found any solution for this problem. So this is an absolutely new problem for me.
+
+What I Have
+
+I have an Android app which registers a few broadcast receivers in its manifest. This is what my manifest looks like.
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.app.myapp">
+
+    <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.WRITE_CALL_LOG" />
+    <uses-permission android:name="com.android.vending.BILLING" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
+
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+
+    <uses-feature
+        android:name="android.hardware.screen.portrait"
+        android:required="false" />
+
+    <application
+        android:name=".base.MyApp"
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/label_app_name"
+        android:largeHeap="true"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        tools:replace="label, allowBackup">
+
+        <receiver android:name=".mics.BootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".PhoneCallReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".mics.DeviceAdminReceiver"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+        </receiver>
+
+        <receiver
+            android:name="com.clevertap.android.sdk.InstallReferrerBroadcastReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.vending.INSTALL_REFERRER" />
+            </intent-filter>
+        </receiver>
+
+        <meta-data
+            android:name="com.app.myapp.utils.ImageLoaderModule"
+            android:value="GlideModule" />
+
+        <meta-data
+            android:name="com.app.myapp.utils.AudioCoverLoaderModule"
+            android:value="GlideModule" />
+
+        <provider
+            android:name="android.support.v4.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths" />
+        </provider>
+
+        <activity
+            android:name=".core.activities.SplashActivity"
+            android:excludeFromRecents="true"
+            android:label="@string/label_app_name"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name=".core.activities.SplashActivity-Alias"
+            android:icon="@drawable/ic_launcher"
+            android:label="@string/label_app_name"
+            android:noHistory="true"
+            android:targetActivity="com.app.myapp.core.activities.SplashActivity">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.MONKEY" />
+            </intent-filter>
+
+        </activity-alias>
+
+        <activity
+            android:name=".core.flow.authFlow.activities.AuthFlowActivity"
+            android:excludeFromRecents="true"
+            android:label="@string/label_app_name"
+            android:screenOrientation="portrait" />
+
+        <service android:name=".features.fileCloudSync.KillNotificationService" />
+
+    </application>
+
+</manifest>
+
+
+There are 10-15 other activities as well but have been removed for simplicity. And this is the basic boot receiver class. I start a service from here.
+
+public class BootReceiver extends BroadcastReceiver {
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        if (intent.getAction().equals(Intent.ACTION_BOOT_COMPLETED)) {
+            AlertUtils.showToast(context, "BOOT COMPLETED", Toast.LENGTH_LONG);
+        }
+    }
+}
+
+
+and the phone call receiver class looks something like this (it has been simplified as well),
+
+public class PhoneCallReceiver extends BroadcastReceiver {
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        if (intent.getAction().equals(Intent.ACTION_NEW_OUTGOING_CALL)) {
+            AlertUtils.showToast(context, "PHONE CALL RECEIVED", Toast.LENGTH_LONG);
+            // Simplified for brevity
+        }
+    }
+}
+
+
+The Problem
+
+All these receivers work fine when I install the app and start it once. But after I reboot my device these receivers don't work at all. Neither the BootCompleteReceiver nor the PhoneCallReceiver gets their onReceive() method called.
+
+My assumption was that these receivers would get registered automatically after reboot, but it just doesn't work. I need the BootCompleteReceiver to work so that I can start an important service in my app.
+
+My Observations
+
+I have tested this thoroughly. After rebooting the device, the receivers work fine in my Nexus 5X (Nougat), Nexus 6P (Nougat), YU Yuphoria (Lollipop) but not in my OnePlus 3 (Nougat) and Mi 4i (Lollipop).
+
+How can the same code work perfectly on a few devices and not work at all on the other devices? I haven't changed anything at all.
+
+What am I doing wrong here? My app is heavily dependent on these broadcasts and starts services based on these. Any help will be highly appreciated.
+
+EDIT 1
+
+To understand the problem better, I just created a very small test project with just a single activity and the exact same BootCompleteReceiver and PhoneCallReceiver.
+
+But weirdly, this project works perfectly on my OnePlus 3 where my actual app's receivers don't work after a reboot. I was initially assuming that the problem is in the OS or the device somehow, but it is not.
+
+So where is the actual problem? Is it in my app (but it works perfectly on other devices) or in the OS and device (the small test project works fine on the same OS and same device)?
+
+It is really confusing to me. I would need some expert help on this.
+
+EDIT 2
+
+I have tried the suggestion given by @shadygoneinsane. Here are my observations.
+
+1) I tried to send the BOOT_COMPLETED broadcast via ADB.
+
+./adb shell am broadcast -a android.intent.action.BOOT_COMPLETED -p com.app.myapp
+
+
+And I got this stack trace,
+
+Broadcasting: Intent { act=android.intent.action.BOOT_COMPLETED pkg=com.app.myapp }
+java.lang.SecurityException: Permission Denial: not allowed to send broadcast android.intent.action.BOOT_COMPLETED from pid=25378, uid=2000
+    at android.os.Parcel.readException(Parcel.java:1683)
+    at android.os.Parcel.readException(Parcel.java:1636)
+    at android.app.ActivityManagerProxy.broadcastIntent(ActivityManagerNative.java:3696)
+    at com.android.commands.am.Am.sendBroadcast(Am.java:778)
+    at com.android.commands.am.Am.onRun(Am.java:404)
+    at com.android.internal.os.BaseCommand.run(BaseCommand.java:51)
+    at com.android.commands.am.Am.main(Am.java:121)
+    at com.android.internal.os.RuntimeInit.nativeFinishInit(Native Method)
+    at com.android.internal.os.RuntimeInit.main(RuntimeInit.java:276)
+
+
+Maybe because my device is not rooted. I am unable to send this broadcast in any way.
+
+2) I tried with the PROCESS_OUTGOING_CALLS broadcast after that.
+
+./adb shell am broadcast -a android.intent.action.PROCESS_OUTGOING_CALLS -p com.app.myapp
+
+
+I got this,
+
+Broadcasting: Intent { act=android.intent.action.PROCESS_OUTGOING_CALLS pkg=com.app.myapp }
+Broadcast completed: result=0
+
+
+It seems that the broadcast was successful, but I do not see any Toast or any log. I then opened my dialer to dial a number and I can then see the Toast and the log both.
+
+So it seems that sending the broadcast via ADB didn't work, but actually opening the dialer and dialing a number did. 
+
+EDIT 3
+
+As per the suggestion from @ChaitanyaAtkuri, I have also tried adding priority to the intent-filters but that didn't work as well.
+
+I have used priorities like 500, 999 and even the highest integer value, but nothing works. This problem is also occurring in some of my friends apps as well. They work in some devices and doesn't work in others.
+
+EDIT 4
+
+I have finally found out the root cause of the problem happening in my OnePlus 3. My OnePlus 3 recently got updated to Nougat and they introduced a feature similar to Mi devices which prevent certain apps from auto-starting after reboot.
+
+Upon disabling this feature my app started receiving broadcasts after reboot perfectly. But this still doesn't explain two things.
+
+1) My small test project is whitelisted automatically in the list of AutoLaunch apps and that is why it works as expected. But how is this possible? Why the OS considers this small app worthy to be auto-started?
+
+2) There are some apps like LockDown Pro, 500 Firepaper which is blacklisted in the AutoLaunch apps screen but still, it receives broadcasts after reboot in my OnePlus 3 and Mi 4i. How is that possible now? Is it somehow possible to programmatically allow my app to auto launch in these devices (OnePlus and Mi)?
+
+EDIT 5
+
+I have tried the solution proposed by @Rahul Chowdhury and it really seems to work very well. After adding the accessibility service the problem is re-solved.
+
+But if the user revokes the accessibility permission after granting it then is there a way for me to programmatically check if the accessibility permission is available to my app?
+    
+===============================================================================================
+33
+A:Here's a tested and working solution on both the devices that you mentioned, OnePlus and Mi.
+
+As you said the auto-start prevention feature on OnePlus and Mi devices prevent apps from starting up their services automatically on boot complete so as to improve the overall device boot speed and battery performance. However, there's a workaround to get your app working even when this feature is turned on.
+
+I have noticed that if you have an AccessibilityService in your app and it is turned on by the user, then your app passes the filter that these manufacturers apply and the app receives it's boot complete event and any other BroadcastReceiver works as expected.
+
+The possible explanation of this trick can be that since AccessibilityService is a system level service, so by registering your own service you are passing the certain filter applied by these manufacturers and as soon as your custom AccessibilityService gets triggered by the OS, your app becomes active in receiving the eligible BroadcastReceiver that you had registered.
+
+So, here's how to do it,
+
+Start by adding this permission to your AndroidManifest.xml,
+
+<uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"/>
+
+
+This will allow you to register your app's AccessibilityService with the system.
+
+Now, add a very basic configuration for your AccessibilityService by creating a file for example my_accessibility_service.xml inside XML folder under your res folder in your project.
+
+<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityFeedbackType="feedbackSpoken"
+    android:description="@string/service_desc"
+    android:notificationTimeout="100"/>
+
+
+There's just one more step left to do, define your custom AccessibilityService in your project,
+
+public class MyAccessibilityService extends AccessibilityService {
+
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) { }
+
+    @Override
+    public void onInterrupt() {
+
+    }
+}
+
+
+Note, since you're not needing the AccessibilityService for any purpose rather than this workaround, you can leave the overridden methods empty.
+
+Finally, just declare your AccessibilityService in your AndroidManifest.xml,
+
+<service
+    android:name=".MyAccessibilityService"
+    android:label="@string/app_name"
+    android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+    <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService"/>
+    </intent-filter>
+
+    <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/my_accessibility_service"/>
+</service>
+
+
+That's all. Now within your app, just ask your users to turn on the accessibility service for your app from the settings and leave it on and voila! Your app works fine on all devices even where the OS puts a filter on which apps should auto-start on boot.
+
+EDIT 1
+
+Here's how you can check if accessibility service is turned ON or not for your app,
+
+private static final int ACCESSIBILITY_ENABLED = 1;
+
+public static boolean isAccessibilitySettingsOn(Context context) {
+    int accessibilityEnabled = 0;
+    final String service = context.getPackageName() + "/" + MyAccessibilityService.class.getCanonicalName();
+    try {
+        accessibilityEnabled = Settings.Secure.getInt(
+                context.getApplicationContext().getContentResolver(),
+                android.provider.Settings.Secure.ACCESSIBILITY_ENABLED);
+    } catch (Settings.SettingNotFoundException e) {
+        Log.e("AU", "Error finding setting, default accessibility to not found: "
+                + e.getMessage());
+    }
+    TextUtils.SimpleStringSplitter mStringColonSplitter = new TextUtils.SimpleStringSplitter(':');
+
+    if (accessibilityEnabled == ACCESSIBILITY_ENABLED) {
+        String settingValue = Settings.Secure.getString(
+                context.getApplicationContext().getContentResolver(),
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        if (settingValue != null) {
+            mStringColonSplitter.setString(settingValue);
+            while (mStringColonSplitter.hasNext()) {
+                String accessibilityService = mStringColonSplitter.next();
+
+                if (accessibilityService.equalsIgnoreCase(service)) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+
+Hope this helps.
+    

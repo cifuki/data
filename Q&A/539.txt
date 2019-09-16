@@ -1,0 +1,40 @@
+236
+Q:I'm writing my first Android application and trying to get my head around communication between services and activities. I have a Service that will run in the background and do some gps and time based logging. I will have an Activity that will be used to start and stop the Service. 
+
+So first, I need to be able to figure out if the Service is running when the Activity is started. There are some other questions here about that, so I think I can figure that out (but feel free to offer advice).
+
+My real problem: if the Activity is running and the Service is started, I need a way for the Service to send messages to the Activity. Simple Strings and integers at this point - status messages mostly. The messages will not happen regularly, so I don't think polling the service is a good way to go if there is another way. I only want this communication when the Activity has been started by the user - I don't want to start the Activity from the Service. In other words, if you start the Activity and the Service is running, you will see some status messages in the Activity UI when something interesting happens. If you don't start the Activity, you will not see these messages (they're not that interesting).
+
+It seems like I should be able to determine if the Service is running, and if so, add the Activity as a listener. Then remove the Activity as a listener when the Activity pauses or stops. Is that actually possible? The only way I can figure out to do it is to have the Activity implement Parcelable and build an AIDL file so I can pass it through the Service's remote interface. That seems like overkill though, and I have no idea how the Activity should implement writeToParcel() / readFromParcel().
+
+Is there an easier or better way? Thanks for any help.
+
+EDIT: 
+
+For anyone who's interested in this later on, there is sample code from Google for handling this via AIDL in the samples directory: /apis/app/RemoteService.java
+    
+===============================================================================================
+85
+A:There are three obvious ways to communicate with services:
+
+
+Using Intents
+Using AIDL
+Using the service object itself (as singleton)
+
+
+In your case, I'd go with option 3. Make a static reference to the service it self and populate it in onCreate(): 
+
+void onCreate(Intent i) {
+  sInstance = this;
+}
+
+
+Make a static function MyService getInstance(), which returns the static sInstance. 
+
+Then in Activity.onCreate() you start the service, asynchronously wait until the service is actually started (you could have your service notify your app it's ready by sending an intent to the activity.) and get its instance. When you have the instance, register your service listener object to you service and you are set. NOTE: when editing Views inside the Activity you should modify them in the UI thread, the service will probably run its own Thread, so you need to call Activity.runOnUiThread().
+
+The last thing you need to do is to remove the reference to you listener object in Activity.onPause(), otherwise an instance of your activity context will leak, not good.
+
+NOTE: This method is only useful when your application/Activity/task is the only process that will access your service. If this is not the case you have to use option 1. or 2.
+    

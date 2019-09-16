@@ -1,0 +1,198 @@
+34
+Q:I am using android.support.v7.widget.RecyclerView to show simple items containing text and in some cases also images. Basically I followed the tutorial from here https://developer.android.com/training/material/lists-cards.html and just changed the type of mDataset from String[] to JSONArray and the xml of the ViewHolder. My RecyclerView is located in a simple Fragment:
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingBottom="@dimen/activity_vertical_margin"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="@dimen/activity_vertical_margin">
+
+<!-- A RecyclerView with some commonly used attributes -->
+<android.support.v7.widget.RecyclerView
+    android:id="@+id/my_hopps_recycler_view"
+    android:scrollbars="vertical"
+    android:layout_centerInParent="true"
+    android:layout_width="200dp"
+    android:layout_height="wrap_content"/>
+
+</RelativeLayout>
+
+
+In this fragment I am loading all information from a webserver. After receiving the information I initialize the items in the RecyclerView. I use a LinearLayoutManager which is set in the onCreate method of my Fragment. After adding the Adapter, I call the setHasFixedSize(true) method on my RecyclerView. My Adapter class looks like this:
+
+import android.graphics.BitmapFactory;
+import android.support.v7.widget.RecyclerView;
+import android.util.Base64;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+import org.apache.commons.lang3.StringEscapeUtils;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import saruul.julian.MyFragment;
+import saruul.julian.R;
+
+public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
+
+/**
+* Fragment holding the RecyclerView.
+*/
+private MyFragment myFragment;
+/**
+* The data to display.
+*/
+private JSONArray mDataset;
+
+public static class ViewHolder extends RecyclerView.ViewHolder {
+
+    public TextView text;
+    ImageView image;
+
+    public ViewHolder(View v) {
+        super(v);
+        text = (TextView) v.findViewById(R.id.my_view_text);
+        image = (ImageView) v.findViewById(R.id.my_view_image);
+    }
+}
+
+public MyAdapter(MyFragment callingFragment, JSONArray myDataset) {
+    myFragment = callingFragment;
+    mDataset = myDataset;
+}
+
+@Override
+public MyAdapter.ViewHolder onCreateViewHolder(ViewGroup parent,
+                                               int viewType) {
+    View v = LayoutInflater.from(parent.getContext())
+            .inflate(R.layout.my_view, parent, false);
+    ViewHolder vh = new ViewHolder(v);
+    return vh;
+}
+
+// Replace the contents of a view (invoked by the layout manager)
+@Override
+public void onBindViewHolder(ViewHolder holder, int position) {
+    try {
+        JSONObject object = mDataset.getJSONObject(position);
+        if ( object.has("image") ){
+            if ( !hopp.getString("image").equals("") ){
+                try {
+                    byte[] decodedString = Base64.decode(StringEscapeUtils.unescapeJson(object.getString("image")), Base64.DEFAULT);
+                    holder.image.setImageBitmap(BitmapFactory.decodeByteArray(decodedString, 0, decodedString.length));
+                    holder.image.setVisibility(View.VISIBLE);
+                } catch ( Exception e ){
+                    e.printStackTrace();
+                }
+            } 
+        }
+        if ( object.has("text") ){
+            holder.text.setText(object.getString("text"));
+        }
+    } catch ( Exception e ){
+        e.printStackTrace();
+    }
+}
+
+// Return the size of your dataset (invoked by the layout manager)
+@Override
+public int getItemCount() {
+    return mDataset.length();
+}
+}
+
+
+And my xml for a view inside my RecyclerView:
+
+<android.support.v7.widget.CardView
+xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:card_view="http://schemas.android.com/apk/res-auto"
+android:id="@+id/card_view"
+android:layout_gravity="center"
+android:layout_width="match_parent"
+android:layout_height="wrap_content"
+card_view:cardCornerRadius="4dp">
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="@dimen/activity_horizontal_margin">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:id="@+id/my_hopp_people_reached"/>
+
+    <ImageView
+        android:id="@+id/my_hopp_image"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:adjustViewBounds="true"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:id="@+id/my_hopp_text"/>
+
+    <ImageButton
+        android:id="@+id/my_hopp_delete"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@null"
+        android:src="@drawable/ic_action_discard"
+        />
+
+</LinearLayout>
+
+</android.support.v7.widget.CardView>
+
+
+So now here is my problem: Everything works fine. Text and picture are shown correctly in my RecyclerView. However if I reach the end of the list by scrolling down and scroll up again, pictures are shown in items which should not contain pictures. 
+At the moment I have got nine items. The last two of them contain a picture. So I scroll down and just see text in the first seven items. Reaching the end of the list shows me two pictures as expected. But if I scroll up again those pictures appear in other items. 
+
+Scrolling up and down changes the pictures always in the same order:
+
+
+The first scrolling up (after being down once) creates a picture in the second item.
+Scrolling down creates a picture in the 7th item.
+Scrolling up creates a picture in the first item.
+Scrolling down creates nothing.
+Scrolling up creates a picture in the third item and the picture in the second item was overwritten with the other picture.
+Scrolling down creates a picture in the 6th item and lets the picture in  the 7th item disappear.
+And so on ...
+
+
+I already discovered that the onBindViewHolder(ViewHolder holder, int position) method is called everytime an item appears again on the screen. I checked for the position and the given information in my mDataset. Everything works fine here: The position is right and the given information too. The text in all items does not change and is always shown correctly.
+Does anyone have any kind of this problem and knows some solution?
+    
+===============================================================================================
+47
+A:I think you need to add an else clause to your if ( object.has("image") ) statement in the onBindViewHolder(ViewHolder holder, int position) method, setting the image to null:
+
+holder.image.setImageDrawable(null);
+
+
+I think the documentation for onBindViewHolder describe it best why this is necessary:
+
+
+  Called by RecyclerView to display the data at the specified position. This method should update the contents of the itemView to reflect the item at the given position.
+
+
+You should always assume that the ViewHolder passed in needed to be completely updated :)
+    

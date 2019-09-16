@@ -1,0 +1,148 @@
+32
+Q:I'm working with the v7 support library and trying to have a navigation drawer on the left.
+As read elsewhere I set up:
+
+
+DrawerTest.java: A main activity that holds the drawer, into which I load my Toolbar
+with setSupportActionBar(), from a custom XML layout that holds
+just the Toolbar;
+toolbar.xml: A XML layout holding the toolbar;
+activity_drawer_listview.xml: A DrawerLayout XML resource, that holds containers for my fragment
+(a FrameLayout <including> the layout mentioned in 2.) and for the
+navigation drawer (a ListView);
+FragmentTest.java: Some really simple fragment code, extending Fragment;
+fragment_test_layout.xml: Some really simple fragment layout, with just a TextView inside.
+
+
+I'll paste some code here, anyway my problem is that the fragment layout seems to start from the top of the screen, and not from the bottom of the Toolbar. Any text put in 5. will overlap the app title on the action bar. Where am I wrong?
+
+(1.) DrawerTest.java
+
+    public class DrawerTest extends ActionBarCompat {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_drawer_listview);
+
+        DrawerLayout drawerLayout = (DrawerLayout) findViewById(R.id.drawer_layout);
+        Toolbar tb = (Toolbar) findViewById(R.id.toolbar_main2);
+        ActionBarDrawerToggle abDrawerToggle = new ActionBarDrawerToggle(
+                        this, drawerLayout, tb,
+                        R.string.navigation_drawer_open,
+                        R.string.navigation_drawer_close )
+        {
+            // onDrawerClosed() { ... }
+            // onDrawerOpened() { ... }
+        };
+        drawerLayout.setDrawerListener(abDrawerToggle);
+        setSupportActionBar(tb);
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        abDrawerToggle.syncState();
+
+        //code to load my fragment
+        if (savedInstanceState == null) {
+            getSupportFragmentManager().beginTransaction()
+                    .add(R.id.frame_layout_test, new FragmentTest()).commit();
+
+        }
+    }
+
+
+(3.) activity_drawer_listview.xml
+
+    <android.support.v4.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools" android:id="@+id/drawer_layout"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    tools:context="miav.ciotole.DrawerTest">
+
+    <FrameLayout android:id="@+id/frame_layout_test" android:layout_width="match_parent"
+        android:layout_height="match_parent" >
+    <include layout="@layout/toolbar"/> <!-- What is this line about? -->
+    </FrameLayout>
+
+<ListView
+        android:id="@+id/left_drawer"
+        android:layout_width="240dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:choiceMode="singleChoice"
+        android:divider="@android:color/transparent"
+        android:dividerHeight="0dp" />
+</android.support.v4.widget.DrawerLayout>
+
+
+(4.) FragmentTest.java
+
+public class FragmentTest extends Fragment {
+
+public FragmentTest() { }
+
+@Override
+public View onCreateView(LayoutInflater infl, ViewGroup container, Bundle SavedInstanceState) {
+    View rootView = infl.inflate(R.layout.fragment_test_layout, container, false);
+    return rootView;
+}
+
+
+}
+
+(5.) fragment_test_layout.xml
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:tools="http://schemas.android.com/tools" android:layout_width="match_parent"
+android:layout_height="match_parent"
+// padding ...
+>
+
+<TextView android:id="@+id/section_label" android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="@string/hello_world"/>
+
+
+
+
+Note: I found some questions (and answers), but in most cases the issue was related to AppCompat versions < 19, which is not my case.
+
+Note2: I am inheriting from Theme.AppCompat.NoActionBar, as I'm setting the toolbar on runtime. Probably I could solve inheriting from Theme.AppCompat and avoid using setSupportActionBar(), but if possible I would stay with the actual configuration, as it makes easier to control the ActionBar.
+    
+===============================================================================================
+60
+A:The reason is because you place it in a frame layout and then you add the fragment ontop of the toolbar. you need to do something like this
+
+<android.support.v4.widget.DrawerLayout
+    android:id="@+id/drawer_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" >
+
+       <LinearLayout
+       android:layout_width="match_parent"
+       android:layout_height="match_parent"
+       android:orientation="vertical">
+
+       <android.support.v7.widget.Toolbar
+           android:id="@+id/toolbar"
+           android:layout_width="match_parent"
+           android:layout_height="wrap_content"
+           android:minHeight="?attr/actionBarSize"
+           android:background="?attr/colorPrimary"
+           app:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+           app:popupTheme="@style/ThemeOverlay.AppCompat.Light"/>
+
+       <FrameLayout
+           android:id="@+id/content_frame"
+           android:layout_width="match_parent"
+           android:layout_height="match_parent" />
+
+       </LinearLayout>
+
+       <FrameLayout
+       android:id="@+id/left_drawer"
+       android:layout_width="325dp"
+       android:layout_height="match_parent"
+       android:layout_gravity="start"
+       android:background="#FFFFFF"/>
+
+</android.support.v4.widget.DrawerLayout>
+
+    

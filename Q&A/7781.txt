@@ -1,0 +1,120 @@
+34
+Q:I have an app where I want to be able to show a TextView (or EditText) that allows the user to select some text, then press a button to have something done with that text. Implementing this on Android versions prior to Honeycomb is no problem but on Honeycomb and above the default long-press action is to show an action bar with Copy/Cut/Paste options. I can intercept long-press to show my own action bar, but then I do not get the text selection handles displayed. 
+
+Once I have started my own ActionMode how do I get the text selection handles displayed?
+
+Here is the code I'm using to start the ActionMode, which works except there are no text selection handles displayed:
+
+public boolean onLongClick(View v) {
+    if(actionMode == null)
+        actionMode = startActionMode(new QuoteCallback());
+    return true;
+}
+
+class QuoteCallback implements ActionMode.Callback {
+
+    public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+        MenuInflater inflater = mode.getMenuInflater();
+        inflater.inflate(R.menu.quote, menu);
+        return true;
+    }
+
+    public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+        return false;
+    }
+
+    public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+        switch(item.getItemId()) {
+
+        case R.id.quote:
+            Log.d(TAG, "Selected menu");
+            mode.finish();
+            // here is where I would grab the selected text
+            return true;
+        }
+        return false;
+    }
+
+    public void onDestroyActionMode(ActionMode mode) {
+        actionMode = null;
+    }
+}
+
+    
+===============================================================================================
+51
+A:I figured out the answer to my own question; TextView (and therefore EditText) has a method setCustomSelectionActionModeCallback() which should be used instead of startActionMode(). Using this enables customisation of the menu used by TextView for text selection. Sample code:
+
+bodyView.setCustomSelectionActionModeCallback(new StyleCallback());
+
+
+where StyleCallback customises the text selection menu by removing Select All and adding some styling actions:
+
+class StyleCallback implements ActionMode.Callback {
+
+    public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+        Log.d(TAG, "onCreateActionMode");
+        MenuInflater inflater = mode.getMenuInflater();
+        inflater.inflate(R.menu.style, menu);
+        menu.removeItem(android.R.id.selectAll);
+        return true;
+    }
+
+    public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+        return false;
+    }
+
+    public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+        Log.d(TAG, String.format("onActionItemClicked item=%s/%d", item.toString(), item.getItemId()));
+        CharacterStyle cs;
+        int start = bodyView.getSelectionStart();
+        int end = bodyView.getSelectionEnd();
+        SpannableStringBuilder ssb = new SpannableStringBuilder(bodyView.getText());
+
+        switch(item.getItemId()) {
+
+        case R.id.bold:
+            cs = new StyleSpan(Typeface.BOLD);
+            ssb.setSpan(cs, start, end, 1);
+            bodyView.setText(ssb);
+            return true;
+
+        case R.id.italic:
+            cs = new StyleSpan(Typeface.ITALIC);
+            ssb.setSpan(cs, start, end, 1);
+            bodyView.setText(ssb);
+            return true;
+
+        case R.id.underline:
+            cs = new UnderlineSpan();
+            ssb.setSpan(cs, start, end, 1);
+            bodyView.setText(ssb);
+            return true;
+        }
+        return false;
+    }
+
+    public void onDestroyActionMode(ActionMode mode) {
+    }
+}
+
+
+The XML for the menu additions is:
+
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/italic"
+          android:showAsAction="always"
+          android:icon="@drawable/italic"
+          android:title="Italic"/>
+    <item android:id="@+id/bold"
+          android:showAsAction="always"
+          android:icon="@drawable/bold"
+          android:title="Bold"/>
+    <item android:id="@+id/underline"
+          android:showAsAction="always"
+          android:icon="@drawable/underline"
+          android:title="Underline"/>
+</menu>
+
+    

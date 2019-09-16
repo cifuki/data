@@ -1,0 +1,52 @@
+30
+Q:I've read that setting .setOnRetainInstance(true) on fragments presenting UI may lead to memory leaks. 
+
+Could somebody please explain why and how this would happen? I didn't find a detailed explanation anywhere.
+    
+===============================================================================================
+87
+A:In a Fragment with UI you often save some Views as instance state to speed up access. For example a link to your EditText so you don't have to findViewById it all the time.
+
+The problem is that a View keeps a reference to the Activity context. Now if you retain a View you also retain a reference to that context.
+
+That is no problem if the context is still valid but the typical retain case is restarting the Activity. Very often for a screen rotation for example. Activity recreation will create a new context and old contexts are intended to be garbage collected. But it can't be garbage collected now since your Fragment still has a reference to the old one.
+
+Following example shows how not to do it
+
+public class LeakyFragment extends Fragment {
+
+    private View mLeak; // retained
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setRetainInstance(true);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        mLeak = inflater.inflate(R.layout.whatever, container, false);
+        return mLeak;
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        // not cleaning up.
+    }
+}
+
+
+To get rid of that problem, you need to clear all references to your UI in onDestroyView. Once the Fragment instance is re-used you will be asked to create a new UI on onCreateView. There is also no point in keeping the UI after onDestroyView. The Ui is not going to be used.
+
+The fix in this example is just changing onDestroyView to
+
+@Override
+public void onDestroyView() {
+    super.onDestroyView();
+    mLeak = null; // now cleaning up!
+}
+
+
+And besides keeping references to Views you should obviously not keep references to the Activity (e.g. from onAttach - clean on onDetach) or any Context (unless it's the Application context).
+    

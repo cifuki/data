@@ -1,0 +1,218 @@
+41
+Q:I have map view in my fragment. I need to refresh map and add different markers based on condition. So, I should remove last markers from map before add new markers.
+
+Actually, some weeks ago app was working fine and suddenly it happened. My code is like this:
+
+private void displayData(final List<Venue> venueList) {
+
+        // Removes all markers, overlays, and polylines from the map.
+        googleMap.clear();
+.
+.
+.
+}
+
+
+Last time it was working fine (before new Google Map API announce by Android team in I/O 2013). However, after that I adapted my code to use this new API. Now, I don't know why this  method googleMap.clear(); doesn't work! 
+
+Any suggestion would be appreciated. Thanks
+
+=======
+
+Update
+
+=======
+
+Complete code:
+
+private void displayData(final List<Venue> venueList) {
+
+        // Removes all markers, overlays, and polylines from the map.
+        googleMap.clear();
+
+        // Zoom in, animating the camera.
+        googleMap.animateCamera(CameraUpdateFactory.zoomTo(ZOOM_LEVEL), 2000, null);
+
+        // Add marker of user's position
+        MarkerOptions userIndicator = new MarkerOptions()
+                .position(new LatLng(lat, lng))
+                .title("You are here")
+                .snippet("lat:" + lat + ", lng:" + lng);
+        googleMap.addMarker(userIndicator);
+
+        // Add marker of venue if there is any
+        if(venueList != null) {
+            for(int i=0; i < venueList.size(); i++) {
+                Venue venue = venueList.get(i);
+                String guys = venue.getMaleCount();
+                String girls= venue.getFemaleCount();
+                String checkinStatus = venue.getCan_checkin();
+                if(checkinStatus.equalsIgnoreCase("true"))
+                    checkinStatus = "Checked In - ";
+                else
+                    checkinStatus = "";
+
+                MarkerOptions markerOptions = new MarkerOptions()
+                        .position(new LatLng(Double.parseDouble(venue.getLatitude()), Double.parseDouble(venue.getLongitude())))
+                        .title(venue.getName())
+                        .snippet(checkinStatus + "Guys:" + guys + " and Girls:" + girls)
+                        .icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_orange_pin));
+
+                googleMap.addMarker(markerOptions);
+            }
+        }
+
+        // Move the camera instantly to where lat and lng shows.
+        if(lat != 0  && lng != 0)
+            googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat, lng), ZOOM_LEVEL));
+
+        googleMap.setInfoWindowAdapter(new GoogleMap.InfoWindowAdapter() {
+            @Override
+            public View getInfoWindow(Marker marker) {
+                return null;
+            }
+
+            @Override
+            public View getInfoContents(Marker marker) {
+                return null;
+            }
+        });
+
+        googleMap.setOnInfoWindowClickListener(new GoogleMap.OnInfoWindowClickListener() {
+            @Override
+            public void onInfoWindowClick(Marker marker) {
+                String str = marker.getId();
+                Log.i(TAG, "Marker id: " + str);
+                str = str.substring(1);
+                int markerId = Integer.parseInt(str);
+                markerId -= 1; // Because first item id of marker is 1 while list starts at 0
+                Log.i(TAG, "Marker id " + markerId + " clicked.");
+
+                // Ignore if User's marker clicked
+                if(markerId < 0)
+                    return;
+
+                try {
+                    Venue venue = venueList.get(markerId);
+                    if(venue.getCan_checkin().equalsIgnoreCase("true")) {
+                        Fragment fragment = VenueFragment.newInstance(venue);
+                        if(fragment != null)
+                            changeFragmentLister.OnReplaceFragment(fragment);
+                        else
+                            Log.e(TAG, "Error! venue shouldn't be null");
+                    }
+                } catch(NumberFormatException e) {
+                    e.printStackTrace();
+                } catch(IndexOutOfBoundsException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+
+    
+===============================================================================================
+42
+A:Okay finally I found a replacement way to solve my problem. The interesting problem is when you assign a marker to map, it's id is 'm0'. When you remove it from map and assign new marker you expect the id should be 'm0' but it's 'm1'. Therefore, it showed me the id is not trustable. So I defined List<Marker> markerList = new ArrayList<Marker>(); somewhere in onActivityCreated() of my fragment.
+
+Then changed above code with following one. hope it helps others if they have similar issue with markers.
+
+private void displayData(final List<Venue> venueList) {
+        Marker marker;
+
+        // Removes all markers, overlays, and polylines from the map.
+        googleMap.clear();
+        markerList.clear();
+
+        // Zoom in, animating the camera.
+        googleMap.animateCamera(CameraUpdateFactory.zoomTo(ZOOM_LEVEL), 2000, null);
+
+        // Add marker of user's position
+        MarkerOptions userIndicator = new MarkerOptions()
+                .position(new LatLng(lat, lng))
+                .title("You are here")
+                .snippet("lat:" + lat + ", lng:" + lng);
+        marker = googleMap.addMarker(userIndicator);
+//        Log.e(TAG, "Marker id '" + marker.getId() + "' added to list.");
+        markerList.add(marker);
+
+        // Add marker of venue if there is any
+        if(venueList != null) {
+            for (Venue venue : venueList) {
+                String guys = venue.getMaleCount();
+                String girls = venue.getFemaleCount();
+                String checkinStatus = venue.getCan_checkin();
+                if (checkinStatus.equalsIgnoreCase("true"))
+                    checkinStatus = "Checked In - ";
+                else
+                    checkinStatus = "";
+
+                MarkerOptions markerOptions = new MarkerOptions()
+                        .position(new LatLng(Double.parseDouble(venue.getLatitude()), Double.parseDouble(venue.getLongitude())))
+                        .title(venue.getName())
+                        .snippet(checkinStatus + "Guys:" + guys + " and Girls:" + girls)
+                        .icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_orange_pin));
+
+                marker = googleMap.addMarker(markerOptions);
+//                Log.e(TAG, "Marker id '" + marker.getId() + "' added to list.");
+                markerList.add(marker);
+            }
+        }
+
+        // Move the camera instantly to where lat and lng shows.
+        if(lat != 0  && lng != 0)
+            googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat, lng), ZOOM_LEVEL));
+
+        googleMap.setInfoWindowAdapter(new GoogleMap.InfoWindowAdapter() {
+            @Override
+            public View getInfoWindow(Marker marker) {
+                return null;
+            }
+
+            @Override
+            public View getInfoContents(Marker marker) {
+                return null;
+            }
+        });
+
+        googleMap.setOnInfoWindowClickListener(new GoogleMap.OnInfoWindowClickListener() {
+            @Override
+            public void onInfoWindowClick(Marker marker) {
+                int markerId = -1;
+
+                String str = marker.getId();
+                Log.i(TAG, "Marker id: " + str);
+                for(int i=0; i<markerList.size(); i++) {
+                    markerId = i;
+                    Marker m = markerList.get(i);
+                    if(m.getId().equals(marker.getId()))
+                        break;
+                }
+
+                markerId -= 1; // Because first item of markerList is user's marker
+                Log.i(TAG, "Marker id " + markerId + " clicked.");
+
+                // Ignore if User's marker clicked
+                if(markerId < 0)
+                    return;
+
+                try {
+                    Venue venue = venueList.get(markerId);
+                    if(venue.getCan_checkin().equalsIgnoreCase("true")) {
+                        Fragment fragment = VenueFragment.newInstance(venue);
+                        if(fragment != null)
+                            changeFragmentLister.OnReplaceFragment(fragment);
+                        else
+                            Log.e(TAG, "Error! venue shouldn't be null");
+                    }
+                } catch(NumberFormatException e) {
+                    e.printStackTrace();
+                } catch(IndexOutOfBoundsException e) {
+                    e.printStackTrace();
+                } catch (NullPointerException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+    }
+
+    

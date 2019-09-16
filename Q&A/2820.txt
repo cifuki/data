@@ -1,0 +1,58 @@
+76
+Q:I have a simple app (needs user login with account). I provide some premium features for paid users, like more news content.
+
+I need to record if the user has bought this item in my server database. When I provide data content to user's device, I can then check the user's status, and provide different content for paid user.
+
+I checked the official Trivialdrive sample provided by Google, it does not provide any sample code for server-side verification, here are my questions.
+
+
+I found the sample use my app's public key inside to verify purchase, it looks not good, I think I can just move the verification process to my server combined with user login credentials to see whether the user purchase completed, and then update the database.
+Also there is purchase API I can use to query, what I need is to pass the user's purchaseToken into server.
+
+
+I am not sure what method I should take to verify the user's purchase, and mark the user's status in my database, maybe both?
+
+And I am afraid there is a situation, if a user bought this item from google play, but for some reason, just in that time, when my app launched verification to my server, the network connection is down or my own server is down, user just paid the money in google play but I did not record the purchase in my server? What should I do, How can I deal with this situation.
+    
+===============================================================================================
+126
+A:It sounds what you're looking for is a way to check if the user has premium features enabled on their account, so this is where I would start;
+
+Ensure there is a flag of some sort on your database indicating if the user has premium features and include that in the API response payload when requesting account info. This flag will be your primary authority for "premium features".
+
+When a user makes an in-app purchase, cache the details (token, order id, and product id) locally on the client (i.e the app) then send it to your API.
+
+Your API should then send the purchaseToken to the Google Play Developer API for validation.
+
+A few things might happen from here:
+
+
+The receipt is valid, your API responds to the client with a 200 Ok status code
+The receipt is invalid, your API responds to the client with a 400 Bad Request status code
+Google Play API is down, your API responds with a 502 Bad Gateway status code
+
+
+In the case of 1. or 2. (2xx or 4xx status codes) your client clears the cache of purchase details because it doesn't need it anymore because the API has indicated that it has been received. 
+
+Upon a successful validation (case 1.), you should set the premium flag to true for the user.
+
+In the case of 3. (5xx status code) or a network timeout the client should keep trying until it receives a 2xx or 4xx status code from your API.
+
+Depending on your requirements, you could make it wait a few seconds before sending again or just send the details to your API when ever the app is launched again or comes out of background if the purchase details are present on the app cache.
+
+This approach should take care of network timeouts, servers being unavailable, etc.
+
+There are now a few questions you need to consider:
+
+What should happen immediately after a purchase? Should the app wait until validation is successful before providing premium content or should it tentatively grant access and take it away if the validation fails?
+
+Granting tentative access to premium features smooths the process for a majority of your users, but you will be granting access to a number of fraudulent users too while your API validates the purchaseToken.
+
+To put this in another way: Purchase is valid until proven fraudulent or; fraudulent until proven valid?
+
+In order to identify if the user still has a valid subscription when their subscription period comes up for renewal, you will need to schedule a re-validation on the purchaseToken to run at the expiryTimeMillis that was returned in the result.
+
+If the expiryTimeMillis is in the past, you can set the premium flag to false. If it's in the future, re-schedule it again for the new expiryTimeMillis.
+
+Lastly, to ensure the user has premium access (or not), your app should query your API for the users details on app launch or when it comes out of background.
+    

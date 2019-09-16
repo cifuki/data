@@ -1,0 +1,89 @@
+177
+Q:When using the Navigation Drawer the Android devs are recommending that in the ActionBar "only those screens that are represented in the Navigation Drawer should actually have the Navigation Drawer image" and that "all other screens have the traditional up carat." 
+
+See here for details: http://youtu.be/F5COhlbpIbY
+
+I'm using one activity to control multiple levels of fragments and can get the Navigation Drawer image to display and function at all levels.
+
+When creating lower level fragments I can call the ActionBarDrawerToggle setDrawerIndicatorEnabled(false) to hide the Navigation Drawer image and have the Up caret displayed 
+
+LowerLevelFragment lowFrag = new LowerLevelFragment();
+
+//disable the toggle menu and show up carat
+theDrawerToggle.setDrawerIndicatorEnabled(false);
+getSupportFragmentManager().beginTransaction().replace(R.id.frag_layout, 
+lowFrag, "lowerFrag").addToBackStack(null).commit();
+
+
+The problem I'm having is when I navigate back to the top level fragments the Up carat still shows instead of the original Navigation Drawer image. Any suggestions on how to "refresh" the ActionBar on the top level fragments to re-display the Navigation Drawer image? 
+
+
+
+Solution
+
+Tom's suggestion worked for me.  Here\xe2\x80\x99s what I did:
+
+MainActivity
+
+This activity controls all fragments in the app.
+
+When preparing new fragments to replace others, I set the DrawerToggle setDrawerIndicatorEnabled(false) like this:
+
+LowerLevelFragment lowFrag = new LowerLevelFragment();
+
+//disable the toggle menu and show up carat
+theDrawerToggle.setDrawerIndicatorEnabled(false);
+getSupportFragmentManager().beginTransaction().replace(R.id.frag_layout,   
+lowFrag).addToBackStack(null).commit();
+
+
+Next, in an override of onBackPressed, I reverted the above by setting the DrawerToggle to setDrawerIndicatorEnabled(true) like this:
+
+@Override
+public void onBackPressed() {
+    super.onBackPressed();
+    // turn on the Navigation Drawer image; 
+    // this is called in the LowerLevelFragments
+    setDrawerIndicatorEnabled(true)
+}
+
+
+
+
+In the LowerLevelFragments 
+
+In the fragments I modified onCreate and onOptionsItemSelected like this:
+
+In onCreate added setHasOptionsMenu(true) to enable configuring the options menu. Also set setDisplayHomeAsUpEnabled(true) to enable the < in the actionbar:
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    // needed to indicate that the fragment would 
+    // like to add items to the Options Menu        
+    setHasOptionsMenu(true);    
+    // update the actionbar to show the up carat/affordance 
+    getActivity().getActionBar().setDisplayHomeAsUpEnabled(true);
+}
+
+
+Then in onOptionsItemSelected whenever the < is pressed it calls the onBackPressed() from the activity to move up one level in the hierarchy and display the Navigation Drawer Image:
+
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {   
+    // Get item selected and deal with it
+    switch (item.getItemId()) {
+        case android.R.id.home:
+            //called when the up affordance/carat in actionbar is pressed
+            getActivity().onBackPressed();
+            return true;
+        \xe2\x80\xa6 
+    }
+
+    
+===============================================================================================
+28
+A:You have written that, to implement lower-level fragments, you are replacing the existing fragment, as opposed to implementing the lower-level fragment in a new activity.
+
+I would think that you would then have to implement the back functionality manually: when the user pressed back you have code that pops the stack (e.g. in Activity::onBackPressed override).  So, wherever you  do that, you can reverse the setDrawerIndicatorEnabled.
+    

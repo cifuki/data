@@ -1,0 +1,108 @@
+29
+Q:I apologize if I'm not super clear with my explanation but I'll add to and edit this question for clarity if requested.
+
+I am developing an Android app which receives data through an external API and stores data locally using ORMLite. Prior to storing data locally and using ORMLite I had models which retrieved JSON from the server and parsed it via:
+
+Gson gson = new Gson();
+
+String result = ApiClient.httpPost("/user_route");
+
+User user = gson.fromJson(result, User.class);
+
+
+The User class was defined 
+
+public class User {
+  int id;
+  String name;
+  ArrayList<Image> media;
+}
+
+
+And the Image class:
+
+public class Image {
+  int id;
+  int creator_id;
+  String url;
+}
+
+
+This is a simplified representation of the models and methods but I believe I've kept all the relevant information. BTW, media is a JSON object which contains the Images. 
+
+Now I'm trying to also store the data locally. In order to have the relationship between Users and Images using ORMLite it seems you have to employ ForeignCollection class and @ForeignCollectionField annotation. I don't believe Gson can directly parse the Json for the media field in the User class as a ForeignCollection object, so I thought I needed to create two fields mediaCollection and media. 
+
+Using ORMLite the User class now looks like this:
+
+@DatabaseTable(tableName = "Users")
+public class User {
+  @DatabaseField(generatedId = true)
+  int id;
+
+  @DatabaseField
+  String name;
+
+  @ForeignCollectionField
+  ForeignCollection<Image> mediaCollection;
+
+  ArrayList<Image> media;
+}
+
+
+The Image class with ORMLite looks like this:
+
+@DatabaseTable(tableName = "Images")
+public class Image {
+
+  @DatabaseField(generatedId = true)
+  int id;
+
+  @DatabaseField(foreign=true, foreignAutoCreate=true, foreignAutoRefresh=true)
+  private User user;
+
+  @DatabaseField
+  int creator_id;
+
+  @DatabaseField
+  String url;
+
+}
+
+
+How the flow of the app works is first I hit the local database for a User. I perform some logic which then determines if I need to actually hit the server to 'update' or 'refresh' the User data.
+
+Whether the data comes locally or from the remote server, I need to display the Image in the same view. As it stands now, the URL for the Image is stored in different types of objects depending on whether the data is local or remote. What I would like to do is if the Image is stored in a ForeginCollection object, convert that object into an ArrayList and then proceed with the rest of my code which extracts the Image URL and displays it.
+
+I guess there are two questions.
+
+
+Is this a good plan or should I write two completely separate ways of extracting the Image URL from the data, NOT converting the object from ForeignCollection to ArrayList?
+If it is a good plan, how do I convert a ForeginCollection to an ArrayList?
+
+    
+===============================================================================================
+21
+A:Is this a good plan or should I write two completely separate ways of extracting the Image URL from the data, NOT converting the object from ForeignCollection to ArrayList?
+
+
+It should work.  I don't see an easy way to do it otherwise.
+
+Some points:
+
+
+Is there some way to mark the ForeignCollection as transient so it is ignored when transferring over JSON?  Then you can use the same User object for both JSON and ORMLite.
+Some sort of hydrate() method would be good so it would convert from media -> mediaCollection and vice versa.
+If you need to load JSON transferred images into the foreign collection then you should use the Dao.getEmptyForeignCollect(...) method.  Once you have the collection, you can add images into it and they will be added to the tables.
+
+
+
+  If it is a good plan, how do I convert a ForeignCollection to an ArrayList?
+
+
+This is easier. A ForeignCollection is a Collection. You can just do a:
+
+media = new ArrayList<Image>(mediaCollection);
+
+
+So your User.getMedia() method should check for null and if so, convert from the mediaCollection field.
+    

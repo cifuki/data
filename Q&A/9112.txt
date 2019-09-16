@@ -1,0 +1,122 @@
+30
+Q:I am trying to set up Travis for Android. Running the build seems to work so far, but when it comes to the tests, it complains about "No connected devices!"
+
+:app:connectedAndroidTestDebug FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:connectedAndroidTestDebug'.
+> com.android.builder.testing.api.DeviceException: java.lang.RuntimeException: 
+    No connected devices!
+
+
+Here is my .travis.yml, and from what I understand, I am creating and starting an emulator for the tests, just the way as the documentation says.
+
+language: android
+android:
+  components:
+    # Uncomment the lines below if you want to
+    # use the latest revision of Android SDK Tools
+    # - platform-tools
+    # - tools
+
+    # The BuildTools version used by your project
+    - build-tools-22.0.1
+
+    # The SDK version used to compile your project
+    - android-22
+
+    # Additional components
+    - extra-google-google_play_services
+    - extra-google-m2repository
+    - extra-android-m2repository
+    # - addon-google_apis-google-19
+    # - add-on
+    # - extra
+
+    # Specify at least one system image,
+    # if you need to run emulator(s) during your tests
+    - sys-img-armeabi-v7a-android-22
+    # - sys-img-x86-android-17
+
+  licenses:
+    - 'android-sdk-license-.+'
+
+  # Emulator Management: Create, Start and Wait
+  before_script:
+    - echo no | android create avd --force -n test -t android-22 --abi armeabi-v7a
+    - emulator -avd test -no-skin -no-audio -no-window &
+    - android-wait-for-emulator
+    - adb shell input keyevent 82 &
+
+
+Can you tell me what I'm doing wrong and how to fix it?
+    
+===============================================================================================
+13
+A:Unfortunately i am not allowed to comment, as i just want to complete DominicJodoin's answer. Correct indentation and a longer ADB_INSTALL_TIMEOUT is necessary as DominicJodoin already stated.
+
+In my opinion your Emulator is running but not ready to install an apk. With - adb wait-for-device you wait until the device connected. According to the Documentation this means: 
+
+
+  Note that this command does not cause adb to wait until the entire system is fully booted. For that reason, you should not prepend it to other commands that require a fully booted system. 
+
+
+Try replacing this line with - android-wait-for-emulator in your travis.yml instead.
+
+Travis.yml
+
+language: android
+jdk: oraclejdk7
+cache:
+  directories:
+   - node_modules
+sudo: false
+
+android:
+  components:
+   # Uncomment the lines below if you want to
+    # use the latest revision of Android SDK Tools
+    # - platform-tools
+    # - tools
+
+    # The BuildTools version used by your project
+    - build-tools-22.0.1
+
+    # The SDK version used to compile your project
+    - android-22
+
+    # Additional components
+    - extra-google-google_play_services
+    - extra-google-m2repository
+    - extra-android-m2repository
+    # - addon-google_apis-google-19
+    # - add-on
+    # - extra
+
+    # Specify at least one system image,
+    # if you need to run emulator(s) during your tests
+    - sys-img-armeabi-v7a-android-21
+    # - sys-img-x86-android-17
+
+  licenses:
+   - 'android-sdk-license-.+'
+
+env:
+  global:
+   # install timeout in minutes (2 minutes by default)
+    - ADB_INSTALL_TIMEOUT=8
+
+# Emulator Management: Create, Start and Wait
+before_script:
+  - echo no | android create avd --force -n test -t android-21 --abi armeabi-v7a
+  - emulator -avd test -no-skin -no-audio -no-window &
+  - android-wait-for-emulator
+  - adb shell input keyevent 82 &
+
+script:
+  - android list target
+  - ./gradlew connectedAndroidTest
+
+    

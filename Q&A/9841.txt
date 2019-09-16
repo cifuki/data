@@ -1,0 +1,137 @@
+28
+Q:how to set notification with play/pause, next and previous button in android.!
+
+I am new with Android & also at stack overflow. So please bear with me.
+
+
+
+I set notification when song is start to play like below : 
+
+`
+
+@SuppressLint("NewApi")
+public void setNotification(String songName){
+    String ns = Context.NOTIFICATION_SERVICE;
+    NotificationManager notificationManager = (NotificationManager) getSystemService(ns);
+
+
+    @SuppressWarnings("deprecation")
+    Notification notification = new Notification(R.drawable.god_img, null, System.currentTimeMillis());
+
+    RemoteViews notificationView = new RemoteViews(getPackageName(), R.layout.notification_mediacontroller);
+
+    //the intent that is started when the notification is clicked (works)
+    Intent notificationIntent = new Intent(this, AudioBookListActivity.class);
+    PendingIntent pendingNotificationIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0);
+
+    notification.contentView = notificationView;
+    notification.contentIntent = pendingNotificationIntent;
+    notification.flags |= Notification.FLAG_NO_CLEAR;
+
+    //this is the intent that is supposed to be called when the button is clicked
+    Intent switchIntent = new Intent(this, AudioPlayerBroadcastReceiver.class);
+    PendingIntent pendingSwitchIntent = PendingIntent.getBroadcast(this, 0, switchIntent, 0);
+
+    notificationView.setOnClickPendingIntent(R.id.btn_play_pause_in_notification, pendingSwitchIntent);
+    notificationManager.notify(1, notification);        
+}
+
+
+`
+
+I have create BroadcastReceiver like below :
+ `      
+
+   private class AudioPlayerBroadcastReceiver extends BroadcastReceiver {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        String action = intent.getAction();
+        System.out.println("intent action = " + action);
+        long id = intent.getLongExtra("id", -1);
+
+        if(Constant.PLAY_ALBUM.equals(action)) {
+            //playAlbum(id);
+        } else if(Constant.QUEUE_ALBUM.equals(action)) {
+            //queueAlbum(id);
+        } else if(Constant.PLAY_TRACK.equals(action)) {
+            //playTrack(id);
+        } else if(Constant.QUEUE_TRACK.equals(action)) {
+            //queueTrack(id);
+        } else if(Constant.PLAY_PAUSE_TRACK.equals(action)) {
+ //                playPauseTrack();
+            System.out.println("press play");
+        } else if(Constant.HIDE_PLAYER.equals(action)) {
+ //                hideNotification();
+            System.out.println("press next");
+        }
+        else {
+        }
+    }
+
+}`
+
+
+Now, I set custom notification successfully but how can i handle notification buttons and its events like play/pause, previous and next... etc. I also try using broadcast receiver but could not get any response. 
+
+Seeking solution and guidance from experts, please help me out.
+
+Thanks in advance.
+    
+===============================================================================================
+34
+A:You need to set a custom intent action, not the AudioPlayerBroadcastReceiver component class.
+
+Create a Intent with custom action name like this
+
+  Intent switchIntent = new Intent("com.example.app.ACTION_PLAY");
+
+
+Then, register the PendingIntent Broadcast receiver
+
+  PendingIntent pendingSwitchIntent = PendingIntent.getBroadcast(this, 100, switchIntent, 0);
+
+
+Then, set a onClick for the play control , do similar custom action for other controls if required.
+
+  notificationView.setOnClickPendingIntent(R.id.btn_play_pause_in_notification, pendingSwitchIntent);
+
+
+Next,Register the custom action in AudioPlayerBroadcastReceiver like this
+
+   <receiver android:name="com.example.app.AudioPlayerBroadcastReceiver" >
+        <intent-filter>
+            <action android:name="com.example.app.ACTION_PLAY" />
+        </intent-filter>
+    </receiver>
+
+
+Finally, when play is clicked on Notification RemoteViews layout, you will receive the play action by the BroadcastReceiver
+
+public class AudioPlayerBroadcastReceiver extends BroadcastReceiver{
+@Override
+public void onReceive(Context context, Intent intent) {
+
+    String action = intent.getAction();
+
+    if(action.equalsIgnoreCase("com.example.app.ACTION_PLAY")){
+        // do your stuff to play action;
+    }
+   }
+}
+
+
+EDIT: how to set the intent filter for Broadcast receiver registered in code
+
+You can also set the Custom  Action through Intent filter  from code for the registered Broadcast receiver  like this
+
+    // instance of custom broadcast receiver
+    CustomReceiver broadcastReceiver = new CustomReceiver();
+
+    IntentFilter intentFilter = new IntentFilter();
+    intentFilter.addCategory(Intent.CATEGORY_DEFAULT);
+    // set the custom action
+    intentFilter.addAction("com.example.app.ACTION_PLAY");
+    // register the receiver
+    registerReceiver(broadcastReceiver, intentFilter); 
+
+    

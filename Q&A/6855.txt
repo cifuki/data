@@ -1,0 +1,123 @@
+38
+Q:I am trying to understand how to use Fragments to create apps that adapt well to multiple screens and layouts. I have studied a few examples:
+
+
+The Fragments document on Android Developer guide.
+Google IO app
+Fragments sample from ActionBar Sherlock.
+
+
+All of these advocate a multiple Activity approach: 
+
+
+On a large screen, display a single Activity with multiple Fragments
+On a smaller screen, split up the Fragments among multiple Activitys.
+
+
+I thought of another approach - a single Activity one:
+
+
+Have a single Activity with all the Fragments in it.
+Depending on the screen size and orientation, show/hide the appropriate Fragment(s) (using FragmentTransaction.show() / FragmentTransaction.hide()) .
+
+
+To illustrate with the same "News article list/article contents" example that Android developer guide uses:
+
+
+Have the News activity containing both an ArticleListFragment and ArticleReaderFragment.
+On a tab, both fragments are always displayed.
+On a phone, the ArticleReaderFragment is initially hidden. When an article is selected from the list, the ArticleListFragment is hidden and the ArticleReaderFragment is shown.
+
+
+Has anybody used a similar approach? Are there any practical downsides this method might have? Does it seem better/worse compared to the multiple-activity way? For example, fragments cannot be shown/hidden in XML - one must use FragmentTransaction for this.
+
+
+
+EDIT 1: Description of a Hypothetical Scenario
+
+Imagine an app which can display up to three "panes" at a time on the screen. Further, these are the factors to consider:
+
+
+A phone can display only one pane at a time (regardless of portrait/landscape orientation)
+A 7-inch tablet can display 2 panes, split vertically in Portrait, and split horizontally in landscape mode.
+A 10+ inch tablet can display 2 panes, split vertically in Portrait; 3 panes split horizontally in landscape.
+
+
+For simplicity, lets keep TV screens out of the discussion.
+
+Now, translating this to design:
+
+
+We have three fragments: Frag1, Frag2 and Frag3.
+In the simplest case, All three fragments are in a single Activity (lets call it ActivityA). This is the 10-inch, landscape case.
+The other "simple" case is when each Fragment is in its own Activity - ActivityA contains Frag1; ActivityB contains Frag2 and ActivityC contains Frag3.
+
+
+So far, we have not considered anything which is significantly different from the News Reader example presented in the Android developer guide. The only major difference is having three fragments instead of two.
+
+Now, the case of 7-inch tabs which can accommodate only 2 fragments. How would this work? Note that there are two combinations possible here: 
+
+
+Frag1 and Frag2 are being displayed.
+Frag2 and Frag3 are being displayed.
+
+
+I'm just unable to wrap my head around this. Do I do all of this within ActivityA? Do I just create an altogether new ActivityD? How many layouts would I need to create (I counted around 8)? Isn't it too many permuations?
+
+I do realize that the single-activity approach I proposed above might also not be a good fit for this scenario - since showing/hiding fragments in itself is non-trivial.
+
+Any suggestions on how to handle this without getting overwhelmed with layouts and combinations?
+    
+===============================================================================================
+16
+A:This answer by @Taylor Clark was pretty informative. However, it wasn't an actual sharing of experience with using the single-activity approach as I asked in my original question. I set out to modify the News Reader example from the Android developer guide to use the single-activity approach and came up with a workable solution. 
+
+What remains to be seen is what are the use cases where this approach is preferable over the multiple-activity method (or whether there are any such cases at all). Also, I haven't looked in detail about the 3-pane scenario described in Edit 1 of my question.
+
+I hope to post my entire project shortly, but here is a quick overview of how I went about it:
+
+
+Single Activity: NewsActivity
+Two Fragments: TitlesListFragment and DetailsFragment
+Both fragments are always present in NewsActivity. Depending on the current dual-pane-ness, I show/hide the appropriate fragment.
+
+
+Some problems I came across:
+
+Designating a Layout as Dual-pane or not:  
+
+In the original News Reader example, dual-pane layouts have a FrameLayout for holding the news Details. We figure out whether we are currently in a dual-pane layout by testing for the existence of this Frame Layout.
+
+However, in my solution, both fragments are always present in all layouts. I hacked this by including a View with id dualPane and android:visibility="gone" in those layouts that I want to be dual-pane and omitting this view in the single-pane layout. Then, it was a matter of 
+
+mDualPane = findViewById(R.id.dualPane)!=null;
+
+EDIT:
+
+There are better ways to designate dual pane-ness than having a dummy view. The one I prefer is to create a boolean resource. For example, I have a config.xml as follows:
+
+<resources>
+    <bool name="dual_pane">false</bool>
+</resources>
+
+
+I can then place additional config.xml files in folders like values-xlarge-land, values-port or values-sw600dp etc and adjust the boolean value to true or false as I desire.
+
+Then, in the code it is a matter of getResources().getBoolean(R.bool.dual_pane);
+
+Closing the Details Fragment  
+
+This was a problem of differentiating between the Activity close and the Fragment close. In the end, I had to override onBackPressed() as follows:
+
+
+In dual-pane mode, just call super.onBackPressed();
+In single-pane mode, if we are in TitlesListFragment, call super.onBackPressed();
+In single-pane mode, if we are in DetailsFragment, then treat it as closing the fragment. This means hiding it and showing the TitlesListFragment.
+
+
+This is not ideal, but it is the best I could come up with.
+
+EDIT:
+
+Based on the suggestion by @SherifelKhatib in the comments, there is a much cleaner way to handle back-button presses: Simply add to the Fragment backstack, the transaction of showing/hiding the details fragment. That way, when you press the back button, the fragment transaction is reversed. You can also pop the backstack manually if you wish to do so on other button clicks.
+    

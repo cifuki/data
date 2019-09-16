@@ -1,0 +1,111 @@
+101
+Q:I would like to enable ScrollView and disable it by a Button Click.
+Disable means like if the ScrollView wasn't there.. and enable it returns the ScrollView.  
+
+I want that because I have a gallery with text images, and on a button click the screen orientation changes, so in Landscape the text becomes bigger. And I want the ScrollView so the image does not stretch itself and the text becomes unreadable.
+
+scrollview.Enabled=false / setVisibility(false) doesnt make anything. 
+
+xml:
+
+<ScrollView 
+android:id="@+id/QuranGalleryScrollView" 
+android:layout_height="fill_parent" 
+android:layout_width="fill_parent">
+<Gallery android:id="@+id/Gallery" 
+android:layout_width="fill_parent" 
+android:layout_height="fill_parent"
+android:scrollbars="horizontal"></Gallery>
+</ScrollView>
+
+
+Thanks
+
+Edit1: I can't use Visibility (gone) since that would also hide the Gallery, what I want is to hide the effect of the ScrollView. When there is ScrollView the images in Gallery become scrollabale and do not fit in the screen so u have to scroll to see the whole image, I don't want to disable/enable that on a button click. 
+
+I tried this:
+
+((ScrollView)findViewById(R.id.QuranGalleryScrollView)).setOnTouchListener(null);
+                        ((ScrollView)findViewById(R.id.QuranGalleryScrollView)).setHorizontalScrollBarEnabled(false);
+                        ((ScrollView)findViewById(R.id.QuranGalleryScrollView)).setVerticalScrollBarEnabled(false);
+                        ((ScrollView)findViewById(R.id.QuranGalleryScrollView)).setEnabled(false);
+
+
+But still the images in the Gallery are scrollable and not fit the screen.. whats the solution to this?
+    
+===============================================================================================
+176
+A:Several points to begin with:
+
+
+You cannot disable the scrolling of a ScrollView. You would need to extend to ScrollView and override the onTouchEvent method to return false when some condition is matched.
+The Gallery component scrolls horizontally regardless of whether it is in a ScrollView or not - a ScrollView provides only vertical scrolling (you need a HorizontalScrollView for horizontal scrolling)
+You seem to say you have a problem with the image stretching itself -- this has nothing to do with the ScrollView, you can change how an ImageView scales with the android:scaleType property (XML) or the setScaleType method - for instance ScaleType.CENTER will not stretch your image and will center it at it's original size 
+
+
+You could modify ScrollView as follows to disable scrolling
+
+class LockableScrollView extends ScrollView {
+
+    ...
+
+    // true if we can scroll (not locked)
+    // false if we cannot scroll (locked)
+    private boolean mScrollable = true;
+
+    public void setScrollingEnabled(boolean enabled) {
+        mScrollable = enabled;
+    }
+
+    public boolean isScrollable() {
+        return mScrollable;
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent ev) {
+        switch (ev.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                // if we can scroll pass the event to the superclass
+                return mScrollable && super.onTouchEvent(ev);
+            default:
+                return super.onTouchEvent(ev);
+        }
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        // Don't do anything with intercepted touch events if
+        // we are not scrollable
+        return mScrollable && super.onInterceptTouchEvent(ev);
+    }
+
+}
+
+
+You would then use 
+
+<com.mypackagename.LockableScrollView 
+    android:id="@+id/QuranGalleryScrollView" 
+    android:layout_height="fill_parent" 
+    android:layout_width="fill_parent">
+
+    <Gallery android:id="@+id/Gallery" 
+        android:layout_width="fill_parent" 
+        android:layout_height="fill_parent"
+        android:scrollbars="horizontal">
+    </Gallery>
+
+</com.mypackagename.LockableScrollView>
+
+
+in your XML file (just changed the ScrollView to your special LockableScrollView).
+
+Then call
+
+((LockableScrollView)findViewById(R.id.QuranGalleryScrollView)).setScrollingEnabled(false);
+
+
+to disable scrolling of the view.
+
+I think that you have more than just the issue of disabling scrolling though to achieve your desired result (the gallery will remain scrollable with the above code for instance) - I'd recommend doing some more research on each of the three components (Gallery, ScrollView, ImageView) to see what properties each one has and how it behaves.
+    

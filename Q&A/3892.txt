@@ -1,0 +1,191 @@
+59
+Q:I have list item with EditText in it, I don't know how many items there will be.
+I have a problem when I enter some text in EditText, and then scroll down a RecyclerView, after I've scroll up again there is no text in my first EditText.
+
+I am wondering what, and where should I write code so that while the user is typing or finished typing (I was thinking to do that with a TextWatcher) in the EditText the text gets saved into into a file (I'll save it in a .txt file in the external storage) 
+
+Am I supposed to do so in the onCreate method of the activity or in the adapter class or elsewhere? 
+
+Here is some code
+
+Main Activity code
+
+ public class MainActivity extends Activity {
+
+    RecyclerView mRecyclerView;
+    MyAdapter mAdapter;
+    String[] mDataSet= new String[20];
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        // generating text for editText Views
+        for (int i = 0; i<=19; i++){
+        mDataSet[i]= "EditText n: "+i;
+
+    }
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        mRecyclerView = (RecyclerView) findViewById(R.id.recycler_view);
+        mAdapter = new MyAdapter(mDataSet);
+        mRecyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+        mRecyclerView.setItemAnimator(new DefaultItemAnimator());
+        mRecyclerView.setAdapter(mAdapter);
+        mRecyclerView.setHasFixedSize(true);
+    }
+
+
+My adapter code
+
+public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
+
+private String[] mDataset;
+
+
+public static class ViewHolder extends RecyclerView.ViewHolder {
+    // each data item is just a string in this case
+    public EditText mEditText;
+
+    public ViewHolder(View v) {
+        super(v);
+
+        mEditText = (EditText) v.findViewById(R.id.list_item_edittext);
+    }
+}
+
+public MyAdapter(String[] myDataset) {
+    mDataset = myDataset;
+}
+
+@Override
+public MyAdapter.ViewHolder onCreateViewHolder(ViewGroup parent,
+                                                 int viewType) {
+
+    View v = LayoutInflater.from(parent.getContext())
+            .inflate(R.layout.list_item, parent, false);
+
+    ViewHolder vh = new ViewHolder(v);
+    return vh;
+}
+
+@Override
+public void onBindViewHolder(ViewHolder holder,  final int position) {
+    holder.mEditText.setText(mDataset[position]);
+
+    //without this addtextChangedListener my code works fine ovbiusly
+    // not saving the content of the edit Text when scrolled
+    // If i add this code then when i scroll all textView that go of screen
+    // and than come back in have messed up content
+    holder.mEditText.addTextChangedListener(new TextWatcher() {
+
+        @Override
+        public void onTextChanged(CharSequence s, int start,
+                                  int before, int count) {
+           //setting data to array, when changed
+           // this is a semplified example in the actual app i save the text
+           // in  a .txt in the external storage
+           mDataset[position] = s.toString();
+        }
+
+        @Override
+        public void beforeTextChanged(CharSequence s, int start,
+                                      int count, int after) {
+
+        }
+
+        @Override
+        public void afterTextChanged(Editable s) {
+
+        }
+    });
+
+}
+
+@Override
+public int getItemCount() {
+    return mDataset.length;
+}
+
+
+without this "addtextChangedListener" my code works fine obviusly not saving the content of the edit Text when scrolled. If i add this code,  when i scroll all editText views that go off screen and than come back in have messed up content.
+    
+===============================================================================================
+137
+A:The major problem with your solution is allocating and assigning TextWatcher in onBindViewHolder which is an expensive operation that will introduce lags during fast scrolls and it also seems to interfere with determining what position to update in mAdapter.
+
+Making all operations in onCreateViewHolder is a more preferable option. Here is the complete tested working solution:
+
+public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
+
+    private String[] mDataset;
+
+    public MyAdapter(String[] myDataset) {
+        mDataset = myDataset;
+    }
+
+    @Override
+    public MyAdapter.ViewHolder onCreateViewHolder(ViewGroup parent,
+                                                   int viewType) {
+        View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.list_item_edittext, parent, false);
+        // pass MyCustomEditTextListener to viewholder in onCreateViewHolder
+        // so that we don't have to do this expensive allocation in onBindViewHolder
+        ViewHolder vh = new ViewHolder(v, new MyCustomEditTextListener());
+
+        return vh;
+    }
+
+    @Override
+    public void onBindViewHolder(ViewHolder holder, final int position) {
+        // update MyCustomEditTextListener every time we bind a new item
+        // so that it knows what item in mDataset to update
+        holder.myCustomEditTextListener.updatePosition(holder.getAdapterPosition());
+        holder.mEditText.setText(mDataset[holder.getAdapterPosition()]);
+    }
+
+    @Override
+    public int getItemCount() {
+        return mDataset.length;
+    }
+
+
+    public static class ViewHolder extends RecyclerView.ViewHolder {
+        // each data item is just a string in this case
+        public EditText mEditText;
+        public MyCustomEditTextListener myCustomEditTextListener;
+
+        public ViewHolder(View v, MyCustomEditTextListener myCustomEditTextListener) {
+            super(v);
+
+            this.mEditText = (EditText) v.findViewById(R.id.editText);
+            this.myCustomEditTextListener = myCustomEditTextListener;
+            this.mEditText.addTextChangedListener(myCustomEditTextListener);
+        }
+    }
+
+    // we make TextWatcher to be aware of the position it currently works with
+    // this way, once a new item is attached in onBindViewHolder, it will
+    // update current position MyCustomEditTextListener, reference to which is kept by ViewHolder
+    private class MyCustomEditTextListener implements TextWatcher {
+        private int position;
+
+        public void updatePosition(int position) {
+            this.position = position;
+        }
+
+        @Override
+        public void beforeTextChanged(CharSequence charSequence, int i, int i2, int i3) {
+            // no op
+        }
+
+        @Override
+        public void onTextChanged(CharSequence charSequence, int i, int i2, int i3) {
+            mDataset[position] = charSequence.toString();
+        }
+
+        @Override
+        public void afterTextChanged(Editable editable) {
+            // no op
+        }
+    }
+}
+
+    

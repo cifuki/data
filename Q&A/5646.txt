@@ -1,0 +1,110 @@
+44
+Q:I'm trying to use the new evaluateJavascript method in Android 4.4, but all I ever get back is a null result:
+
+webView1.evaluateJavascript("return \\"test\\";", new ValueCallback<String>() {
+    @Override
+    public void onReceiveValue(String s) {
+        Log.d("LogName", s); // Log is written, but s is always null
+    }
+});
+
+
+How do I return a result to this method?
+
+Update: Little bit more info:
+
+
+I have the INTERNET permission set
+I have setJavascriptEnabled(true);
+Tried apostrophe string: return 'test';,
+Tried JS object: return { test: 'this' }
+console.log('test'); is being executed fine.
+Set targetSdkVersion to 19 as per: If your app uses WebView
+
+
+Devices: Both Nexus 7 and Nexus 5 (Stock)
+    
+===============================================================================================
+62
+A:There is an example of the evaluateJavascript method being used in this sample:
+
+https://github.com/GoogleChrome/chromium-webview-samples/tree/master/jsinterface-example
+
+Essentially if the javascript you execute in the WebView returns a value it'll be passed in the callback.
+
+The main thing to note is that the String returned in OnReceiveValue is either a JSON Value, JSON Object or JSON Array depending on what you return.
+
+Things to note about this is if you return a single value, you need to use setLenient(true) on a JSON reader for it to work.
+
+     if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+        // In KitKat+ you should use the evaluateJavascript method
+        mWebView.evaluateJavascript(javascript, new ValueCallback<String>() {
+            @TargetApi(Build.VERSION_CODES.HONEYCOMB)
+            @Override
+            public void onReceiveValue(String s) {
+                JsonReader reader = new JsonReader(new StringReader(s));
+
+                // Must set lenient to parse single values
+                reader.setLenient(true);
+
+                try {
+                    if(reader.peek() != JsonToken.NULL) {
+                        if(reader.peek() == JsonToken.STRING) {
+                            String msg = reader.nextString();
+                            if(msg != null) {
+                                Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_LONG).show();
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    Log.e("TAG", "MainActivity: IOException", e);
+                } finally {
+                    try {
+                        reader.close();
+                    } catch (IOException e) {
+                        // NOOP
+                    }
+                }
+            }
+        });
+    }
+
+
+The reason you may still want to use a parser for a string response is it is converted to a JSON value which means it will be wrapped in quotes.
+
+For example if you went:
+
+mWebView.evaluateJavascript("(function() { return 'this'; })();", new ValueCallback<String>() {
+    @Override
+    public void onReceiveValue(String s) {
+        Log.d("LogName", s); // Prints: "this"
+    }
+});
+
+
+It would print the string this, wrapped in double quotes: "this".
+
+Other examples worth noting:
+
+mWebView.evaluateJavascript("(function() { return null; })();", new ValueCallback<String>() {
+    @Override
+    public void onReceiveValue(String s) {
+        Log.d("LogName", s); // Prints the string 'null' NOT Java null
+    }
+});
+
+mWebView.evaluateJavascript("(function() { })();", new ValueCallback<String>() {
+    @Override
+    public void onReceiveValue(String s) {
+        Log.d("LogName", s); //s is Java null
+    }
+});
+
+mWebView.evaluateJavascript("(function() { return ''; })();", new ValueCallback<String>() {
+    @Override
+    public void onReceiveValue(String s) {
+        Log.d("LogName", s); // Prints "" (Two double quotes)
+    }
+});
+
+    

@@ -1,0 +1,99 @@
+40
+Q:I am trying to connect to a URL from a my Android app in Andorid Version 4.1.1, and I get the error indicated in the Title of my question, but when I tried to connect the same URL from Andorid Version 4.0.4 or 3.1, all works fine.
+
+The Code fragment : 
+
+    try {
+        .
+        .
+        .
+        URL url = new URL(urlStr);
+        Log.i(TAG,"[ URL ] " + urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        int size = conn.getContentLength();
+        int responsecode = conn.getResponseCode();
+        Log.d(TAG, "Responsecode: " + responsecode);
+        .
+        .
+        .
+        } catch (Exception e) {
+        e.printStackTrace();
+        }
+
+
+private static void trustAllHosts() {
+
+        TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
+            public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                    return new java.security.cert.X509Certificate[] {};
+            }
+
+            public void checkClientTrusted(X509Certificate[] chain,
+                            String authType) throws CertificateException {
+            }
+
+            public void checkServerTrusted(X509Certificate[] chain,
+                            String authType) throws CertificateException {
+            }
+        } };
+
+        try {
+                SSLContext sc = SSLContext.getInstance("TLS");
+                sc.init(null, trustAllCerts, new java.security.SecureRandom());
+                HttpsURLConnection
+                                .setDefaultSSLSocketFactory(sc.getSocketFactory());
+        } catch (Exception e) {
+                System.out.println("IOException : HTTPSRequest::trustAllHosts");
+                e.printStackTrace();
+        }
+    }
+
+
+But here i clear one thing is that "Maybe certificate is that self-signed certificates and is not including them in a KeyStore. 
+
+I do not understand why this excepton occure only in Android Verison 4.1.1 OS
+Thanks.
+
+FULL STACK TRACE
+
+01-31 10:26:08.348: W/System.err(3158): java.io.IOException: Hostname <URL> was not verified
+01-31 10:26:08.348: W/System.err(3158):     at libcore.net.http.HttpConnection.verifySecureSocketHostname(HttpConnection.java:223)
+01-31 10:26:08.348: W/System.err(3158):     at libcore.net.http.HttpsURLConnectionImpl$HttpsEngine.connect(HttpsURLConnectionImpl.java:446)
+01-31 10:26:08.348: W/System.err(3158):     at libcore.net.http.HttpEngine.sendSocketRequest(HttpEngine.java:289)
+01-31 10:26:08.348: W/System.err(3158):     at libcore.net.http.HttpEngine.sendRequest(HttpEngine.java:239)
+01-31 10:26:08.348: W/System.err(3158):     at libcore.net.http.HttpURLConnectionImpl.getResponse(HttpURLConnectionImpl.java:273)
+01-31 10:26:08.348: W/System.err(3158):     at libcore.net.http.HttpURLConnectionImpl.getHeaderField(HttpURLConnectionImpl.java:130)
+01-31 10:26:08.348: W/System.err(3158):     at java.net.URLConnection.getHeaderFieldInt(URLConnection.java:544)
+01-31 10:26:08.348: W/System.err(3158):     at java.net.URLConnection.getContentLength(URLConnection.java:316)
+01-31 10:26:08.348: W/System.err(3158):     at libcore.net.http.HttpsURLConnectionImpl.getContentLength(HttpsURLConnectionImpl.java:191)
+01-31 10:26:08.348: W/System.err(3158):     at com.ih.util.HelpVideoServices$downloadTask.run(HelpVideoServices.java:172)                                
+
+    
+===============================================================================================
+59
+A:In case you are running with certificates that doesn't mean anything and you want to bypass them you also need to add a null host name verifier to make this code work
+
+HttpsURLConnection.setDefaultHostnameVerifier(new NullHostNameVerifier());
+SSLContext context = SSLContext.getInstance("TLS");
+context.init(null, new X509TrustManager[]{new NullX509TrustManager()}, new SecureRandom());
+HttpsURLConnection.setDefaultSSLSocketFactory(context.getSocketFactory());
+
+
+And the code for the host:
+
+import javax.net.ssl.HostnameVerifier ;
+import javax.net.ssl.SSLSession;
+
+public class NullHostNameVerifier implements HostnameVerifier {
+
+    @Override   
+    public boolean verify(String hostname, SSLSession session) {
+        Log.i("RestUtilImpl", "Approving certificate for " + hostname);
+        return true;
+    }
+
+}
+
+
+This needs to run once, but if you are making changes to your connection object you might need to run it again.
+    

@@ -1,0 +1,229 @@
+147
+Q:--- Note to moderators: Today (July 15), I've noticed that someone already faced this problem here. But I'm not sure if it's appropriate to close this as a duplicate, since i think I provided a much better explanation of the issue. I'm not sure if I should edit the other question and paste this content there, but I'm not comfortable changing someone else's question too much. ---
+
+I have something weird here.
+
+I don't think the problem depends on which SDK you build against. The device OS version is what matters.
+
+Problem #1: inconsistency by default
+
+DatePickerDialog was changed (?) in Jelly Bean and now only provides a Done button. Previous versions included a Cancel button, and this may affect user experience (inconsistency, muscle memory from previous Android versions).
+
+Replicate: Create a basic project. Put this in onCreate:
+
+DatePickerDialog picker = new DatePickerDialog(
+        this,
+        new OnDateSetListener() {
+            @Override
+            public void onDateSet(DatePicker v, int y, int m, int d) {
+                Log.d("Picker", "Set!");
+            }
+        },
+        2012, 6, 15);
+picker.show();
+
+
+Expected: A Cancel button to appear in the dialog.
+
+Current: A Cancel button does not appear.
+
+Screenshots: 4.0.3 (OK) and 4.1.1 (possibly wrong?).
+
+Problem #2: wrong dismiss behavior
+
+Dialog calls whichever listener it should call indeed, and then always calls OnDateSetListener listener. Canceling still calls the set method, and setting it calls the method twice.
+
+Replicate: Use #1 code, but add code below (you'll see this solves #1, but only visually/UI):
+
+picker.setButton(DialogInterface.BUTTON_NEGATIVE, "Cancel", 
+        new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                Log.d("Picker", "Cancel!");
+            }
+        });
+
+
+Expected:
+
+
+Pressing the BACK key or clicking outside the dialog should do nothing.
+Pressing "Cancel" should print Picker Cancel!.
+Pressing "Set" should print Picker Set!.
+
+
+Current:
+
+
+Pressing the BACK key or clicking outside the dialog prints Picker Set!.
+Pressing "Cancel" prints Picker Cancel! and then Picker Set!.
+Pressing "Set" prints Picker Set! and then Picker Set!.
+
+
+Log lines showing the behavior:
+
+07-15 12:00:13.415: D/Picker(21000): Set!
+
+07-15 12:00:24.860: D/Picker(21000): Cancel!
+07-15 12:00:24.876: D/Picker(21000): Set!
+
+07-15 12:00:33.696: D/Picker(21000): Set!
+07-15 12:00:33.719: D/Picker(21000): Set!
+
+
+Other notes and comments
+
+
+Wrapping it around a DatePickerFragment doesn't matter. I simplified the problem for you, but I've tested it.
+
+    
+===============================================================================================
+115
+A:Note: Fixed as of Lollipop, source here. Automated class for use in clients (compatible with all Android versions) updated as well.
+
+TL;DR: 1-2-3 dead easy steps for a global solution:
+
+
+Download this class.
+Implement OnDateSetListener in your activity (or change the class to suit your needs).
+Trigger the dialog with this code (in this sample, I use it inside a Fragment):
+
+Bundle b = new Bundle();
+b.putInt(DatePickerDialogFragment.YEAR, 2012);
+b.putInt(DatePickerDialogFragment.MONTH, 6);
+b.putInt(DatePickerDialogFragment.DATE, 17);
+DialogFragment picker = new DatePickerDialogFragment();
+picker.setArguments(b);
+picker.show(getActivity().getSupportFragmentManager(), "frag_date_picker");
+
+
+
+And that's all it takes! The reason I still keep my answer as "accepted" is because I still prefer my solution since it has a very small footprint in client code, it addresses the fundamental issue (the listener being called in the framework class), works fine across config changes and it routes the code logic to the default implementation in previous Android versions not plagued by this bug (see class source).
+
+Original answer (kept for historical and didactic reasons):
+
+Bug source
+
+OK, looks like it's indeed a bug and someone else already filled it. Issue 34833.
+
+I've found that the problem is possibly in DatePickerDialog.java. Where it reads:
+
+private void tryNotifyDateSet() {
+    if (mCallBack != null) {
+        mDatePicker.clearFocus();
+        mCallBack.onDateSet(mDatePicker, mDatePicker.getYear(),
+                mDatePicker.getMonth(), mDatePicker.getDayOfMonth());
+    }
+}
+
+@Override
+protected void onStop() {
+    tryNotifyDateSet();
+    super.onStop();
+}
+
+
+I'd guess it could have been:
+
+@Override
+protected void onStop() {
+    // instead of the full tryNotifyDateSet() call:
+    if (mCallBack != null) mDatePicker.clearFocus();
+    super.onStop();
+}
+
+
+Now if someone can tell me how I can propose a patch/bug report to Android, I'd be glad to. Meanwhile, I suggested a possible fix (simple) as an attached version of DatePickerDialog.java in the Issue there.
+
+Concept to avoid the bug
+
+Set the listener to null in the constructor and create your own BUTTON_POSITIVE button later on. That's it, details below.
+
+The problem happens because DatePickerDialog.java, as you can see in the source, calls a global variable (mCallBack) that stores the listener that was passed in the constructor:
+
+    /**
+ * @param context The context the dialog is to run in.
+ * @param callBack How the parent is notified that the date is set.
+ * @param year The initial year of the dialog.
+ * @param monthOfYear The initial month of the dialog.
+ * @param dayOfMonth The initial day of the dialog.
+ */
+public DatePickerDialog(Context context,
+        OnDateSetListener callBack,
+        int year,
+        int monthOfYear,
+        int dayOfMonth) {
+    this(context, 0, callBack, year, monthOfYear, dayOfMonth);
+}
+
+    /**
+ * @param context The context the dialog is to run in.
+ * @param theme the theme to apply to this dialog
+ * @param callBack How the parent is notified that the date is set.
+ * @param year The initial year of the dialog.
+ * @param monthOfYear The initial month of the dialog.
+ * @param dayOfMonth The initial day of the dialog.
+ */
+public DatePickerDialog(Context context,
+        int theme,
+        OnDateSetListener callBack,
+        int year,
+        int monthOfYear,
+        int dayOfMonth) {
+    super(context, theme);
+
+    mCallBack = callBack;
+    // ... rest of the constructor.
+}
+
+
+So, the trick is to provide a null listener to be stored as the listener, and then roll your own set of buttons (below is the original code from #1, updated):
+
+    DatePickerDialog picker = new DatePickerDialog(
+        this,
+        null, // instead of a listener
+        2012, 6, 15);
+    picker.setCancelable(true);
+    picker.setCanceledOnTouchOutside(true);
+    picker.setButton(DialogInterface.BUTTON_POSITIVE, "OK",
+        new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                Log.d("Picker", "Correct behavior!");
+            }
+        });
+    picker.setButton(DialogInterface.BUTTON_NEGATIVE, "Cancel", 
+        new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                Log.d("Picker", "Cancel!");
+            }
+        });
+picker.show();
+
+
+Now it will work because of the possible correction that I posted above. 
+
+And since DatePickerDialog.java checks for a null whenever it reads mCallback (since the days of API 3/1.5 it seems --- can't check Honeycomb of course), it won't trigger the exception. Considering Lollipop fixed the issue, I'm not going to look into it: just use the default implementation (covered in the class I provided).
+
+At first I was afraid of not calling the clearFocus(), but I've tested here and the Log lines were clean. So that line I proposed may not even be necessary after all, but I don't know.
+
+Compatibility with previous API levels (edited)
+
+As I pointed in the comment below, that was a concept, and you can download the class I'm using from my Google Drive account. The way I used, the default system implementation is used on versions not affected by the bug.
+
+I took a few assumptions (button names etc.) that are suitable for my needs because I wanted to reduce boilerplate code in client classes to a minimum. Full usage example:
+
+class YourActivity extends SherlockFragmentActivity implements OnDateSetListener
+
+// ...
+
+Bundle b = new Bundle();
+b.putInt(DatePickerDialogFragment.YEAR, 2012);
+b.putInt(DatePickerDialogFragment.MONTH, 6);
+b.putInt(DatePickerDialogFragment.DATE, 17);
+DialogFragment picker = new DatePickerDialogFragment();
+picker.setArguments(b);
+picker.show(getActivity().getSupportFragmentManager(), "fragment_date_picker");
+
+    

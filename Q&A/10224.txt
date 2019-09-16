@@ -1,0 +1,119 @@
+27
+Q:I've been playing with the sample code from the new Google Barcode API.  It overlays a box and the barcode value over the live camera feed of a barcode.  (Also faces)
+
+I can't tell how to return a barcode value to my app.  A) How to tell when a detection event has occurred and B) how to access the ravValue for use in other parts of my app.  Can anyone help with this?
+
+https://developers.google.com/vision/multi-tracker-tutorial
+
+https://github.com/googlesamples/android-vision
+
+UPDATE:
+Building on @pm0733464's answer, I added a callback interface (called onFound) to the Tracker class that I could access in the Activity. Adapting the Google multi-tracker sample:
+
+GraphicTracker:
+
+class GraphicTracker<T> extends Tracker<T> {
+    private GraphicOverlay mOverlay;
+    private TrackedGraphic<T> mGraphic;
+    private Callback mCallback;
+
+    GraphicTracker(GraphicOverlay overlay, TrackedGraphic<T> graphic, Callback callback) {
+        mOverlay = overlay;
+        mGraphic = graphic;
+        mCallback = callback;
+    }
+
+    public interface Callback {
+        void onFound(String barcodeValue);
+    }
+
+    @Override
+    public void onUpdate(Detector.Detections<T> detectionResults, T item) {
+        mCallback.onFound(((Barcode) item).rawValue);
+        mOverlay.add(mGraphic);
+        mGraphic.updateItem(item);
+    }
+
+
+BarcodeTrackerFactory :
+
+class BarcodeTrackerFactory implements MultiProcessor.Factory<Barcode> {
+    private GraphicOverlay mGraphicOverlay;
+    private GraphicTracker.Callback mCallback;
+
+    BarcodeTrackerFactory(GraphicOverlay graphicOverlay, GraphicTracker.Callback callback) {
+        mGraphicOverlay = graphicOverlay;
+        mCallback = callback;
+    }
+
+    @Override
+    public Tracker<Barcode> create(Barcode barcode) {
+        BarcodeGraphic graphic = new BarcodeGraphic(mGraphicOverlay);
+        return new GraphicTracker<>(mGraphicOverlay, graphic, mCallback);
+    }
+}
+
+
+Main Activity:
+
+BarcodeDetector barcodeDetector = new BarcodeDetector.Builder(context).build();
+BarcodeTrackerFactory barcodeFactory = new BarcodeTrackerFactory(mGraphicOverlay, new GraphicTracker.Callback() {
+    @Override
+    public void onFound(String barcodeValue) {
+        Log.d(TAG, "Barcode in Multitracker = " + barcodeValue);
+    }
+});
+MultiProcessor<Barcode> barcodeMultiProcessor = new MultiProcessor.Builder<>(barcodeFactory).build();
+barcodeDetector.setProcessor(barcodeMultiProcessor);
+
+    
+===============================================================================================
+38
+A:Directly using the barcode detector
+
+One approach is to use the barcode detector directly on a bitmap, like this:
+
+BarcodeDetector barcodeDetector = new BarcodeDetector.Builder(context).build();
+Frame frame = new Frame.Builder().setBitmap(bitmap).build();
+SparseArray<Barcode> barcodes = barcodeDetector.detect(frame);
+if (barcodes.size() > 0) {
+    // Access detected barcode values
+}
+
+
+Receiving notifications
+
+Another approach is to set up a pipeline structure for receiving detected barcodes from camera preview video (see the MultiTracker example on GitHub).  You'd define your own Tracker to receive detected barcodes, like this:
+
+class BarcodeTrackerFactory implements MultiProcessor.Factory<Barcode> {
+    @Override
+    public Tracker<Barcode> create(Barcode barcode) {
+        return new MyBarcodeTracker();
+    }
+} 
+
+class MyBarcodeTracker extends Tracker<Barcode> {
+    @Override
+    public void onUpdate(Detector.Detections<Barcode> detectionResults, Barcode barcode) {
+        // Access detected barcode values
+    }
+ }
+
+
+A new instance of this tracker is created for each barcode, with the onUpdate method receiving the detected barcode value.
+
+You then set up the camera source to continuously stream images into the detector, receiving the results in your tracker:
+
+BarcodeDetector barcodeDetector = new BarcodeDetector.Builder(context).build();
+BarcodeTrackerFactory barcodeFactory = new BarcodeTrackerFactory();
+barcodeDetector.setProcessor(
+    new MultiProcessor.Builder<>(barcodeFactory).build());
+
+mCameraSource = new CameraSource.Builder(context, barcodeDetector)
+    .setFacing(CameraSource.CAMERA_FACING_BACK)
+    .setRequestedPreviewSize(1600, 1024)
+    .build();
+
+
+Later, you'd either start the camera source directly or use it in conjunction with a view that shows the camera preview (see the MultiTracker example for more details).
+    

@@ -1,0 +1,71 @@
+147
+Q:I've written up a dummy activity that switches between two fragments.  When you go from FragmentA to FragmentB, FragmentA gets added to the back stack.  However, when I return to FragmentA (by pressing back), a totally new FragmentA is created and the state it was in is lost.  I get the feeling I'm after the same thing as this question, but I've included a complete code sample to help root out the issue: 
+
+public class FooActivity extends Activity {
+  @Override public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    final FragmentTransaction transaction = getFragmentManager().beginTransaction();
+    transaction.replace(android.R.id.content, new FragmentA());
+    transaction.commit();
+  }
+
+  public void nextFragment() {
+    final FragmentTransaction transaction = getFragmentManager().beginTransaction();
+    transaction.replace(android.R.id.content, new FragmentB());
+    transaction.addToBackStack(null);
+    transaction.commit();
+  }
+
+  public static class FragmentA extends Fragment {
+    @Override public View onCreateView(LayoutInflater inflater, ViewGroup container,
+        Bundle savedInstanceState) {
+      final View main = inflater.inflate(R.layout.main, container, false);
+      main.findViewById(R.id.next_fragment_button).setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+          ((FooActivity) getActivity()).nextFragment();
+        }
+      });
+      return main;
+    }
+
+    @Override public void onSaveInstanceState(Bundle outState) {
+      super.onSaveInstanceState(outState);
+      // Save some state!
+    }
+  }
+
+  public static class FragmentB extends Fragment {
+    @Override public View onCreateView(LayoutInflater inflater, ViewGroup container,
+        Bundle savedInstanceState) {
+      return inflater.inflate(R.layout.b, container, false);
+    }
+  }
+}
+
+
+With some log messages added:
+
+07-05 14:28:59.722 D/OMG     ( 1260): FooActivity.onCreate
+07-05 14:28:59.742 D/OMG     ( 1260): FragmentA.onCreateView
+07-05 14:28:59.742 D/OMG     ( 1260): FooActivity.onResume
+<Tap Button on FragmentA>
+07-05 14:29:12.842 D/OMG     ( 1260): FooActivity.nextFragment
+07-05 14:29:12.852 D/OMG     ( 1260): FragmentB.onCreateView
+<Tap 'Back'>
+07-05 14:29:16.792 D/OMG     ( 1260): FragmentA.onCreateView
+
+
+It's never calling FragmentA.onSaveInstanceState and it creates a new FragmentA when you hit back.  However, if I'm on FragmentA and I lock the screen, FragmentA.onSaveInstanceState does get called.  So weird...am I wrong in expecting a fragment added to the back stack to not need re-creation?  Here's what the docs say:
+
+
+  Whereas, if you do call addToBackStack() when removing a fragment,
+  then the fragment is stopped and will be resumed if the user navigates
+  back.
+
+    
+===============================================================================================
+114
+A:If you return to a fragment from the back stack it does not re-create the fragment but re-uses the same instance and starts with onCreateView() in the fragment lifecycle, see Fragment lifecycle. 
+
+So if you want to store state you should use instance variables and not rely on onSaveInstanceState().
+    

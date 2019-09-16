@@ -1,0 +1,25 @@
+233
+Q:I download some data from internet in background thread (I use AsyncTask) and display a progress dialog while downloading. Orientation changes, Activity is restarted and then my AsyncTask is completed - I want to dismiss the progess dialog and start a new Activity. But calling dismissDialog sometimes throws an exception (probably because the Activity was destroyed and new Activity hasn't been started yet).
+
+What is the best way to handle this kind of problem (updating UI from background thread that works even if user changes orientation)? Did someone from Google provide some "official solution"?
+    
+===============================================================================================
+335
+A:Step #1: Make your AsyncTask a static nested class, or an entirely separate class, just not an inner (non-static nested) class.
+
+Step #2: Have the AsyncTask hold onto the Activity via a data member, set via the constructor and a setter.
+
+Step #3: When creating the AsyncTask, supply the current Activity to the constructor.
+
+Step #4: In onRetainNonConfigurationInstance(), return the AsyncTask, after detaching it from the original, now-going-away activity.
+
+Step #5: In onCreate(), if getLastNonConfigurationInstance() is not null, cast it to your AsyncTask class and call your setter to associate your new activity with the task.
+
+Step #6: Do not refer to the activity data member from doInBackground().
+
+If you follow the above recipe, it will all work. onProgressUpdate() and onPostExecute() are suspended between the start of onRetainNonConfigurationInstance() and the end of the subsequent onCreate().
+
+Here is a sample project demonstrating the technique.
+
+Another approach is to ditch the AsyncTask and move your work into an IntentService. This is particularly useful if the work to be done may be long and should go on regardless of what the user does in terms of activities (e.g., downloading a large file). You can use an ordered broadcast Intent to either have the activity respond to the work being done (if it is still in the foreground) or raise a Notification to let the user know if the work has been done. Here is a blog post with more on this pattern.
+    

@@ -1,0 +1,17 @@
+43
+Q:I am working on a library to allow apps to self-update, for those that are being distributed outside of the Android Market.
+
+My original plan was to include code that would download the APK file to internal storage, and then install it from there via a ContentProvider and a content:// Uri. However, when I tried that, the installer system dumped a "Skipping dir: " warning to LogCat and failed to actually install it. Once I switched to downloading the APK to external storage and using a file:// Uri with the ACTION_VIEW installer Intent, it worked.
+
+The "Skipping dir:" message seems to be logged by parsePackage() in PackageParser, which seems to assume that it is working with a File. That would suggest that we cannot use content:// Uri values.
+
+Has anyone successfully used ACTION_VIEW on a application/vnd.android.package-archive Intent with a content:// Uri? If so, was there some specific trick in setting up the ContentProvider that made it work?
+
+Thanks!
+    
+===============================================================================================
+14
+A:I would assume this is not possible, as the Java API doesn't seem to allow it.  ContentProvider's openFile() returns a ParcelFileDescriptor, from which you can obtain a java.io.FileDescriptor.  You can then use this FileDescriptor to open either a FileInputStream or a FileOutputStream.  Unfortunately, you can't use it to open a RandomAccessFile (despite the fact that RandomAccessFile works on descriptors just the same as the others, the constructor you'd need is just missing from the API).  
+
+As APK files are ZIP files, which must be read out of order (you have to seek to the end to find the file directory), I assume the implementation of installation will require a RandomAccessFile, so it would not have been possible to support the case you're trying to implement.
+    

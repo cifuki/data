@@ -1,0 +1,59 @@
+28
+Q:What I'm doing seems like it should be simple, but I'm still lost after I've read every possible Stackoverflow answer I can find and Googled every article I can find.
+
+I'm using a preview SurfaceView and capturing an image from an activity that is set for screenOrientation="landscape" in my AndroidManifest.xml.
+
+I followed the sample Camera app code and thought things were working until I tried my app on a few Motorola devices running 1.5.
+
+I have the OrientationEventListener running OK and I use reflection to see if set the rotation as such:
+
+final int latchedOrientation = roundOrientation(mLastOrientation + 90);
+
+Parameters parameters = preview.camera.getParameters();
+
+JPLog.d("Setting camera rotation = %d", latchedOrientation);
+try {
+    // if >= 2.0
+    Method method = Camera.Parameters.class.getMethod("setRotation",
+        int.class);
+
+    if(method != null) {
+        method.invoke(parameters, latchedOrientation);
+    }
+
+} catch(Throwable t) {
+    // if < 2.0
+    parameters.set("rotation", latchedOrientation);
+}
+
+preview.camera.setParameters(parameters);
+
+
+NexusOne (OS 2.2) - Works great.  latchedOrientation = 0, picture OK without any rotation in the EXIF header.
+
+T-Mobile G1 (OS 1.6) - Also works great.  latchedOrientation = 0, picture OK.
+
+Motorola Backflip (OS 1.5) - Image rotated.  latchedOrientation = 0, picture has no EXIF rotation in it.
+
+Motorola CLIQ (OS 1.5) - Image rotated.  latchedOrientation = 0, picture has no EXIF rotation in it.
+
+What's going on with these Motorola devices?  I thought my problem was the Motorola camera driver wasn't rotating the images, so found the Sanselan EXIF reading classes for Android and was preparing to rotate them myself.  Funny thing is, there is EXIF headers but no rotation element.
+
+If I set the rotation manually to 90 degrees, the images come out perfect the Motorola devices, but now the G1 and the NexusOne have images that are rotated 90 degrees (not what I want).  There has to be something I'm not getting here.
+
+I'm doubting this is a 1.5 issue, or else someone would've posted info on it?
+    
+===============================================================================================
+10
+A:This is actually a device-specific issue that mostly affects Motorola devices.  The google devs included a setDisplayOrientation call in API 8 to work around the issue.  The main bug is filed here.
+
+For those that can't go to API 8, the two common solutions are:
+
+Override onDraw
+Override onDraw in a top-level ViewGroup and rotate the canvas by 90 degrees to compensate for the rotation.  Note there is a caveat here as your touch events will also need to be rotated.
+
+Use Landscape Mode
+Lock the activity to landscape mode but draw assets as if they are in portrait.  This means you do your layout and rotate your image assets to look like you are in portrait mode so that the view looks normal.  This unfortunately makes it difficult to use the menu since the menu will open horizontally.
+
+I have also seen people use an animation controller to rotate the view.  The drawback here that I wasn't able to overcome is that the rotated view doesn't stretch to fill the screen.  See the answer by Georg for a sample implementation.
+    

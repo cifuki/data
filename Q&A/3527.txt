@@ -1,0 +1,264 @@
+64
+Q:Altough I have very small size image in drawable folder, I am getting this error from users. And I am not using any bitmap function in code. At least intentionally :)
+
+java.lang.OutOfMemoryError
+    at android.graphics.BitmapFactory.nativeDecodeAsset(Native Method)
+    at android.graphics.BitmapFactory.decodeStream(BitmapFactory.java:683)
+    at android.graphics.BitmapFactory.decodeResourceStream(BitmapFactory.java:513)
+    at android.graphics.drawable.Drawable.createFromResourceStream(Drawable.java:889)
+    at android.content.res.Resources.loadDrawable(Resources.java:3436)
+    at android.content.res.Resources.getDrawable(Resources.java:1909)
+    at android.view.View.setBackgroundResource(View.java:16251)
+    at com.autkusoytas.bilbakalim.SoruEkrani.cevapSecimi(SoruEkrani.java:666)
+    at com.autkusoytas.bilbakalim.SoruEkrani$9$1.run(SoruEkrani.java:862)
+    at android.os.Handler.handleCallback(Handler.java:733)
+    at android.os.Handler.dispatchMessage(Handler.java:95)
+    at android.os.Looper.loop(Looper.java:146)
+    at android.app.ActivityThread.main(ActivityThread.java:5602)
+    at java.lang.reflect.Method.invokeNative(Native Method)
+    at java.lang.reflect.Method.invoke(Method.java:515)
+    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1283)
+    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1099)
+    at dalvik.system.NativeStart.main(Native Method)
+
+
+According to this stackTrace I'm gettin this error at this line ('tv' is a textView):
+
+tv.setBackgroundResource(R.drawable.yanlis);
+
+
+What is the problem? If you need some other information about code, I can add it.
+Thanks!
+    
+===============================================================================================
+130
+A:You can't increase the heap size dynamically but you can request to use more by using.
+
+
+  android:largeHeap="true"
+
+
+in the manifest.xml,you can add in your manifest these lines it is working for some situations.
+
+<application
+    android:allowBackup="true"
+    android:icon="@mipmap/ic_launcher"
+    android:label="@string/app_name"
+    android:largeHeap="true"
+    android:supportsRtl="true"
+    android:theme="@style/AppTheme">
+
+
+
+  Whether your application's processes should be created with a large Dalvik heap. This applies to all processes created for the application. It only applies to the first application loaded into a process; if you're using a shared user ID to allow multiple applications to use a process, they all must use this option consistently or they will have unpredictable results.
+  Most apps should not need this and should instead focus on reducing their overall memory usage for improved performance. Enabling this also does not guarantee a fixed increase in available memory, because some devices are constrained by their total available memory.
+
+
+
+
+To query the available memory size at runtime, use the methods getMemoryClass() or getLargeMemoryClass().
+
+If still facing problem then this should also work
+
+ BitmapFactory.Options options = new BitmapFactory.Options();
+ options.inSampleSize = 8;
+ mBitmapInsurance = BitmapFactory.decodeFile(mCurrentPhotoPath,options);
+
+
+If set to a value > 1, requests the decoder to subsample the original image, returning a smaller image to save memory.
+
+This is the optimal use of BitmapFactory.Options.inSampleSize with regards to speed of displaying the image.
+The documentation mentions using values that are a power of 2, so I am working with 2, 4, 8, 16 etc.
+
+Lets get more deeper to Image Sampling:
+
+For example, it\xe2\x80\x99s not worth loading a 1024x768 pixel image into memory if it will eventually be displayed in a 128x128 pixel thumbnail in an ImageView.
+
+To tell the decoder to subsample the image, loading a smaller version into memory, set inSampleSize to true in your BitmapFactory.Options object. For example, an image with resolution 2100 x 1500 pixels that is decoded with an inSampleSize of 4 produces a bitmap of approximately 512x384. Loading this into memory uses 0.75MB rather than 12MB for the full image (assuming a bitmap configuration of ARGB_8888). Here\xe2\x80\x99s a method to calculate a sample size value that is a power of two based on a target width and height:
+
+public static int calculateInSampleSize(
+        BitmapFactory.Options options, int reqWidth, int reqHeight) {
+    // Raw height and width of image
+    final int height = options.outHeight;
+    final int width = options.outWidth;
+    int inSampleSize = 1;
+
+    if (height > reqHeight || width > reqWidth) {
+
+        final int halfHeight = height / 2;
+        final int halfWidth = width / 2;
+
+        // Calculate the largest inSampleSize value that is a power of 2 and keeps both
+        // height and width larger than the requested height and width.
+        while ((halfHeight / inSampleSize) > reqHeight
+                && (halfWidth / inSampleSize) > reqWidth) {
+            inSampleSize *= 2;
+        }
+    }
+
+    return inSampleSize;
+}
+
+
+
+  Note: A power of two value is calculated because the decoder uses a
+  final value by rounding down to the nearest power of two, as per the
+  inSampleSize documentation.
+
+
+To use this method, first decode with inJustDecodeBounds set to true, pass the options through and then decode again using the new inSampleSize value and inJustDecodeBounds set to false:
+
+public static Bitmap decodeSampledBitmapFromResource(Resources res, int resId,
+    int reqWidth, int reqHeight) {
+
+    // First decode with inJustDecodeBounds=true to check dimensions
+    final BitmapFactory.Options options = new BitmapFactory.Options();
+    options.inJustDecodeBounds = true;
+    BitmapFactory.decodeResource(res, resId, options);
+
+    // Calculate inSampleSize
+    options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight);
+
+    // Decode bitmap with inSampleSize set
+    options.inJustDecodeBounds = false;
+    return BitmapFactory.decodeResource(res, resId, options);
+}
+
+
+This method makes it easy to load a bitmap of arbitrarily large size into an ImageView that displays a 100x100 pixel thumbnail, as shown in the following example code:
+
+mImageView.setImageBitmap(decodeSampledBitmapFromResource(getResources(), R.id.myimage, 100, 100));
+
+
+You can follow a similar process to decode bitmaps from other sources, by substituting the appropriate BitmapFactory.decode* method as needed.
+
+
+
+I found this code also interesting:
+
+private Bitmap getBitmap(String path) {
+
+Uri uri = getImageUri(path);
+InputStream in = null;
+try {
+    final int IMAGE_MAX_SIZE = 1200000; // 1.2MP
+    in = mContentResolver.openInputStream(uri);
+
+    // Decode image size
+    BitmapFactory.Options o = new BitmapFactory.Options();
+    o.inJustDecodeBounds = true;
+    BitmapFactory.decodeStream(in, null, o);
+    in.close();
+
+    int scale = 1;
+    while ((o.outWidth * o.outHeight) * (1 / Math.pow(scale, 2)) > 
+          IMAGE_MAX_SIZE) {
+       scale++;
+    }
+    Log.d(TAG, "scale = " + scale + ", orig-width: " + o.outWidth + ", 
+       orig-height: " + o.outHeight);
+
+    Bitmap bitmap = null;
+    in = mContentResolver.openInputStream(uri);
+    if (scale > 1) {
+        scale--;
+        // scale to max possible inSampleSize that still yields an image
+        // larger than target
+        o = new BitmapFactory.Options();
+        o.inSampleSize = scale;
+        bitmap = BitmapFactory.decodeStream(in, null, o);
+
+        // resize to desired dimensions
+        int height = bitmap.getHeight();
+        int width = bitmap.getWidth();
+        Log.d(TAG, "1th scale operation dimenions - width: " + width + ",
+           height: " + height);
+
+        double y = Math.sqrt(IMAGE_MAX_SIZE
+                / (((double) width) / height));
+        double x = (y / height) * width;
+
+        Bitmap scaledBitmap = Bitmap.createScaledBitmap(bitmap, (int) x, 
+           (int) y, true);
+        bitmap.recycle();
+        bitmap = scaledBitmap;
+
+        System.gc();
+    } else {
+        bitmap = BitmapFactory.decodeStream(in);
+    }
+    in.close();
+
+    Log.d(TAG, "bitmap size - width: " +bitmap.getWidth() + ", height: " + 
+       bitmap.getHeight());
+    return bitmap;
+} catch (IOException e) {
+    Log.e(TAG, e.getMessage(),e);
+    return null;
+}
+
+
+
+
+How to Manage Your App's Memory: link
+
+
+
+It's not a good idea to use android:largeHeap="true" here's the extract from google that explains it,  
+
+
+  However, the ability to request a large heap is intended only for a
+  small set of apps that can justify the need to consume more RAM (such
+  as a large photo editing app). Never request a large heap simply
+  because you've run out of memory and you need a quick fix\xe2\x80\x94you should
+  use it only when you know exactly where all your memory is being
+  allocated and why it must be retained. Yet, even when you're confident
+  your app can justify the large heap, you should avoid requesting it to
+  whatever extent possible. Using the extra memory will increasingly be
+  to the detriment of the overall user experience because garbage
+  collection will take longer and system performance may be slower when
+  task switching or performing other common operations.
+
+
+After working excrutiatingly with out of memory errors i would say adding this to the manifest to avoid the oom issue is not a sin
+
+
+
+Verifying App Behavior on the Android Runtime (ART)
+
+The Android runtime (ART) is the default runtime for devices running Android 5.0 (API level 21) and higher. This runtime offers a number of features that improve performance and smoothness of the Android platform and apps. You can find more information about ART's new features in Introducing ART.
+
+However, some techniques that work on Dalvik do not work on ART. This document lets you know about things to watch for when migrating an existing app to be compatible with ART. Most apps should just work when running with ART.
+
+
+
+Addressing Garbage Collection (GC) Issues
+
+Under Dalvik, apps frequently find it useful to explicitly call System.gc() to prompt garbage collection (GC). This should be far less necessary with ART, particularly if you're invoking garbage collection to prevent GC_FOR_ALLOC-type occurrences or to reduce fragmentation. You can verify which runtime is in use by calling System.getProperty("java.vm.version"). If ART is in use, the property's value is "2.0.0" or higher.
+
+Furthermore, a compacting garbage collector is under development in the Android Open-Source Project (AOSP) to improve memory management. Because of this, you should avoid using techniques that are incompatible with compacting GC (such as saving pointers to object instance data). This is particularly important for apps that make use of the Java Native Interface (JNI). For more information, see Preventing JNI Issues.
+
+
+
+Preventing JNI Issues
+
+ART's JNI is somewhat stricter than Dalvik's. It is an especially good idea to use CheckJNI mode to catch common problems. If your app makes use of C/C++ code, you should review the following article:
+
+
+
+Also, you can use native memory (NDK & JNI), so you actually bypass the heap size limitation. 
+
+Here are some posts made about it:
+
+
+How to cache bitmaps into native memory
+https://stackoverflow.com/a/9428660/1761003
+JNI bitmap operations , for helping to avoid OOM when using large images
+
+
+and here's a library made for it:
+
+
+https://github.com/AndroidDeveloperLB/AndroidJniBitmapOperations
+
+    

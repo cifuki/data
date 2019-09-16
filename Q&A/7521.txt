@@ -1,0 +1,29 @@
+35
+Q:I'm just curious about whether there are times in which I should choose an Executor over a HandlerThread. Are there times that one is superior over the other, or should I really just stick with the HandlerThread? In my case, I'm currently listening to a ServerSocket for connections, and handling each request on a separate thread created by an Executor. Even though I gave a specific example, I'm really just looking for cases in which one is more appropriate than the other. However, I welcome comments about my design.
+    
+===============================================================================================
+49
+A:The Executor class is more powerful and can use a pool of threads, whereas each Handler references a single thread. The Executor allows you to get all the scheduled tasks and cancel them if you'd like. The Handler on the other hand will not answer simple questions such as, how many tasks are waiting or give me a reference to all waiting tasks. I believe one reason that the Handler is more limited is because Android gives you access to the main Handler it uses for the UI and you could really screw up the OS if you started canceling OS tasks.
+
+In general if you need a pool of threads or lots of power use the Executor. If you just need a nice background thread to run one task at a time use a Handler. As an example when I want to query my database I only really want one query to occur at a time and I don't want to generate an ANR so I use a Handler running on a background thread to run my queries.
+
+I believe your choice of executor sounds appropriate since you want to handle multiple incoming requests simultaneously and a Handler can only do one at a time.
+
+UPDATE: How to create a Handler that runs on a background thread:
+
+In your constructor or onCreate write the following, obviously you can set the priority to whatever you like:
+
+public class MyClass {
+
+    private Handler mBgHandler;
+
+    public MyClass() {
+        HandlerThread bgThread = new HandlerThread("My-Background-Handler");
+        bgThread.start();
+        mBgHandler = new Handler(bgThread.getLooper());
+    }
+}
+
+
+UPDATE: Don't forget to quit() or quitSafely() your HandlerThread when you are done with it otherwise it will remain waiting forever
+    

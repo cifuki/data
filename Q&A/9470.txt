@@ -1,0 +1,109 @@
+29
+Q:I have an AutoCompleteTextView in my app. The app makes use of the Facebook SDK. I followed the code from this question on SO: https://stackoverflow.com/a/12363961/450534 to the dot and have a functioning search (filtering) activity.
+
+Now, how do I get an inline Autocomplete like the Facebook App after the @ symbol is typed and still hold the other text typed by the user? The activity in question is for a Status Update and can contain the user's Friends along with other text. The AutoCompleteTextView or the EditText will naturally be a multi-line one. For a status update you see.
+
+I know for the lack of any code in this post, I risk getting downvoted or perhaps even having the question closed. But it's really a standard boiler plate list filtering code.
+
+EDIT: The FriendCaster app for Android also does the same.
+    
+===============================================================================================
+35
+A:First make your EditText into a MultiAutoCompleteTextView. A MultiAutoCompleteTextView allows you to replace certain parts of the text, for example text after '@'.
+
+The you can do something like this:
+
+final MultiAutoCompleteTextView inputEditText = (MultiAutoCompleteTextView) dialog.findViewById(R.id.MyEditText);
+
+String[] COUNTRIES = new String[] { "Belgium", "France", "Italy", "Germany", "Spain" };
+ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_dropdown_item_1line, COUNTRIES);
+inputEditText.setAdapter(adapter);
+inputEditText.setThreshold(1); //Set number of characters before the dropdown should be shown
+
+//Create a new Tokenizer which will get text after '@' and terminate on ' '
+inputEditText.setTokenizer(new Tokenizer() {
+
+  @Override
+  public CharSequence terminateToken(CharSequence text) {
+    int i = text.length();
+
+    while (i > 0 && text.charAt(i - 1) == ' ') {
+      i--;
+    }
+
+    if (i > 0 && text.charAt(i - 1) == ' ') {
+      return text;
+    } else {
+      if (text instanceof Spanned) {
+        SpannableString sp = new SpannableString(text + " ");
+        TextUtils.copySpansFrom((Spanned) text, 0, text.length(), Object.class, sp, 0);
+        return sp;
+      } else {
+        return text + " ";
+      }
+    }
+  }
+
+  @Override
+  public int findTokenStart(CharSequence text, int cursor) {
+    int i = cursor;
+
+    while (i > 0 && text.charAt(i - 1) != '@') {
+      i--;
+    }
+
+    //Check if token really started with @, else we don't have a valid token
+    if (i < 1 || text.charAt(i - 1) != '@') {
+      return cursor;
+    }
+
+    return i;
+  }
+
+  @Override
+  public int findTokenEnd(CharSequence text, int cursor) {
+    int i = cursor;
+    int len = text.length();
+
+    while (i < len) {
+      if (text.charAt(i) == ' ') {
+        return i;
+      } else {
+        i++;
+      }
+    }
+
+    return len;
+  }
+});
+
+
+One "problem" with this is that the popup will appear under the EditText view. To move it up and place it under the text that is currently written you can do something like this:
+
+inputEditText.addTextChangedListener(new TextWatcher() {
+
+  @Override
+  public void onTextChanged(CharSequence s, int start, int before, int count) {
+    Layout layout = inputEditText.getLayout();
+    int pos = inputEditText.getSelectionStart();
+    int line = layout.getLineForOffset(pos);
+    int baseline = layout.getLineBaseline(line);
+
+    int bottom = inputEditText.getHeight();
+
+    inputEditText.setDropDownVerticalOffset(baseline - bottom);
+
+  }
+
+  @Override
+  public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+  }
+
+  @Override
+  public void afterTextChanged(Editable s) {
+  }
+});
+
+
+Note: This does not currently take care of the dropdown position in the case that there are more lines in the edittext than the edittext can show.
+    

@@ -1,0 +1,32 @@
+129
+Q:When using the OAuth protocol, you need a secret string obtained from the service you want to delegate to. If you are doing this in a web app, you can simply store the secret in your data base or on the file system, but what is the best way to handle it in a mobile app (or a desktop app for that matter)?
+
+Storing the string in the app is obviously not good, as someone could easily find it and abuse it.
+
+Another approach would be to store it on your server, and have the app fetch it on every run, never storing it on the phone. This is almost as bad, because you have to include the URL in the app.
+
+The only workable solution I can come up with is to first obtain the Access Token as normal (preferably using a web view inside the app), and then route all further communication through our server, which would append the secret to the request data and communicate with the provider. Then again, I'm a security noob, so I'd really like to hear some knowledgeable peoples' opinions on this. It doesn't seem to me that most apps are going to these lengths to guarantee security (for example, Facebook Connect seems to assume that you put the secret into a string right in your app).
+
+Another thing: I don't believe the secret is involved in initially requesting the Access Token, so that could be done without involving our own server. Am I correct?
+    
+===============================================================================================
+34
+A:Yes, this is an issue with the OAuth design that we are facing ourselves. We opted to proxy all calls through our own server. OAuth wasn't entirely flushed out in respect of desktop apps. There is no prefect solution to the issue that I've found without changing OAuth. 
+
+If you think about it and ask the question why we have secrets, is mostly for provision and disabling apps. If our secret is compromised, then the provider can only really revoke the entire app. Since we have to embed our secret in the desktop app, we are sorta screwed. 
+
+The solution is to have a different secret for each desktop app. OAuth doesn't make this concept easy. One way is have the user go and create an secret on their own and enter the key on their own into your desktop app (some facebook apps did something similar for a long time, having the user go and create facebook to setup their custom quizes and crap). It's not a great experience for the user. 
+
+I'm working on proposal for a delegation system for OAuth. The concept is that using our own secret key we get from our provider, we could issue our own delegated secret to our own desktop clients (one for each desktop app basically) and then during the auth process we send that key over to the top level provider that calls back to us and re-validates with us. That way we can revoke on own secrets we issue to each desktop client. (Borrowing a lot of how this works from SSL). This entire system would be prefect for value-add webservices as well that pass on calls to a third party webservice.  
+
+The process could also be done without delegation verification callbacks if the top level provider provides an API to generate and revoke new delegated secrets. Facebook is doing something similar by allowing facebook apps to allow users to create sub-apps. 
+
+There are some talks about the issue online:
+
+http://blog.atebits.com/2009/02/fixing-oauth/
+http://groups.google.com/group/twitter-development-talk/browse_thread/thread/629b03475a3d78a1/de1071bf4b820c14#de1071bf4b820c14
+
+Twitter and Yammer's solution is a authentication pin solution:
+https://dev.twitter.com/oauth/pin-based
+https://www.yammer.com/api_oauth_security_addendum.html
+    

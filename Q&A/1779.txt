@@ -1,0 +1,36 @@
+107
+Q:With the release of Gingerbread, I have been experimenting with some of the new API's, one of them being StrictMode.
+
+I noticed that one of the warnings is for getSharedPreferences().
+
+This is the warning:
+
+StrictMode policy violation; ~duration=1949 ms: android.os.StrictMode$StrictModeDiskReadViolation: policy=23 violation=2
+
+
+and it's being given for a getSharedPreferences() call being made on the UI thread.
+
+Should SharedPreferences access and changes really be made off the UI thread?
+    
+===============================================================================================
+178
+A:I'm glad you're already playing with it!
+
+Some things to note:  (in lazy bullet form)
+
+
+if this is the worst of your problems, your app's probably in a good spot.  :)  Writes are generally slower than reads, though, so be sure you're using SharedPreferenced$Editor.apply() instead of commit().  apply() is new in GB and async (but always safe, careful of lifecycle transitions).  You can use reflection to conditionally call apply() on GB+ and commit() on Froyo or below.  I'll be doing a blogpost with sample code of how to do this.
+
+
+Regarding loading, though...
+
+
+once loaded, SharedPreferences are singletons and cached process-wide.  so you want to get it loaded as early as possible so you have it in memory before you need it.  (assuming it's small, as it should be if you're using SharedPreferences, a simple XML file...)  You don't want to fault it in the future time some user clicks a button.
+but whenever you call context.getSharedPreferences(...), the backing XML file is stat'd to see if it's changed, so you'll want to avoid those stats during UI events anyway.  A stat should normally be fast (and often cached), but yaffs doesn't have much in the way of concurrency (and a lot of Android devices run on yaffs... Droid, Nexus One, etc.) so if you avoid disk, you avoid getting stuck behind other in-flight or pending disk operations.
+so you'll probably want to load the SharedPreferences during your onCreate() and re-use the same instance, avoiding the stat.
+but if you don't need your preferences anyway during onCreate(), that loading time is stalling your app's start-up unnecessarily, so it's generally better to have something like a FutureTask<SharedPreferences> subclass that kicks off a new thread to .set() the FutureTask subclasses's value.  Then just lookup your FutureTask<SharedPreferences>'s member whenever you need it and .get() it.  I plan to make this free behind the scenes in Honeycomb, transparently.  I'll try to release some sample code which 
+shows best practices in this area.
+
+
+Check the Android Developers blog for upcoming posts on StrictMode-related subjects in the coming week(s).
+    

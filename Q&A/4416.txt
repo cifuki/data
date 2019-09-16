@@ -1,0 +1,93 @@
+53
+Q:I have this code:
+
+//choosed a picture
+public void onActivityResult(int requestCode, int resultCode, Intent data) {
+
+    if (resultCode == RESULT_OK) {
+        if (requestCode == ImageHelper.SELECT_PICTURE) {
+
+            String picture           = "";
+
+            Uri selectedImageUri     = data.getData();
+            //OI FILE Manager
+            String filemanagerstring = selectedImageUri.getPath();
+            //MEDIA GALLERY
+            String selectedImagePath = ImageHelper.getPath(mycontext, selectedImageUri);
+
+            picture=(selectedImagePath!=null)?selectedImagePath:filemanagerstring;
+
+
+...
+
+this is only a picture chooser, from gallery. this is nice, but when i opening this picture on an imageview, the images when took on "PORTRAIT MODE" with the camera look nice, but the images that took "LANDSCAPE MODE" with the camera, opening in -90 degrees. 
+
+How can i rotate those pictures back? 
+
+    Bitmap output       = Bitmap.createBitmap(newwidth, newheight, Config.ARGB_8888);
+    Canvas canvas       = new Canvas(output);
+
+
+i tried this:
+
+Log.e("w h", bitmap.getWidth()+" "+bitmap.getHeight());
+if (bitmap.getWidth()<bitmap.getHeight()) canvas.rotate(-90);
+
+
+but this is not working, all image size is: *2560 1920 pixel (PORTRAIT, and LANDSCAPE mode all)
+
+What can I do to rotate back the LANDSCAPE pictures?
+
+thanks Leslie
+    
+===============================================================================================
+216
+A:If a photo is taken with a digital camera or smartphone, rotation is often stored in the photo's Exif data, as part of the image file. You can read an image's Exif meta-data using the Android ExifInterface. 
+
+First, create the ExifInterface:
+
+ExifInterface exif = new ExifInterface(uri.getPath());
+
+
+Next, find the current rotation:
+
+int rotation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);  
+
+
+Convert exif rotation to degrees:
+
+int rotationInDegrees = exifToDegrees(rotation);
+
+
+where 
+
+private static int exifToDegrees(int exifOrientation) {        
+    if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_90) { return 90; } 
+    else if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_180) {  return 180; } 
+    else if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_270) {  return 270; }            
+    return 0;    
+ }
+
+
+Then use the image's actual rotation as a reference point to rotate the image using a Matrix. 
+
+Matrix matrix = new Matrix();
+if (rotation != 0) {matrix.preRotate(rotationInDegrees);}
+
+
+You create the new rotated image with the Bitmap.createBitmap method that take a Matrix as a parameter:
+
+Bitmap.createBitmap(Bitmap source, int x, int y, int width, int height, Matrix m, boolean filter)
+
+
+where Matrix m holds the new rotation:
+
+Bitmap adjustedBitmap = Bitmap.createBitmap(sourceBitmap, 0, 0, width, height, matrix, true);
+
+
+See this tutorial for a useful source code example:
+
+
+Read Exif information in a JPEG file.
+
+    

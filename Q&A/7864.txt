@@ -1,0 +1,80 @@
+34
+Q:I'm unable to find a straight answer as to how I verify an in-app billing purchase on the server before making downloadable content available to the user.
+
+I use in app-billing version 3. I purchase managed products using code based on the IabHelper class from the TrivialDrive sample code. Everything is fine and dandy and the purchase is successfully completed, I get a full Purchase object back and the following original JSON data:
+
+{
+    "orderId":"12999763169054705758.1364365967744519",
+    "packageName":"my package name",
+    "productId":"77",
+    "purchaseTime":1366217534000,
+    "purchaseState":0,
+    "purchaseToken":"utfwimslnrrwvglktizikdcd.AO-J1OwZ4l5oXz_3d2SAWAAUgFE3QErKoyIX8WuSEnBW26ntsyDmlLgoUd5lshqIY2p2LnlV4tpH4NITB4mJMX98sCtZizH7wGf6Izw3tfW_GflJDKFyb-g"
+}
+
+
+As I understand it I need to pass the purchaseToken and something I see referred to as a signature to the server. The server then use a private key to verify the purchase. Is this correct? If so, where do I get the signature from and is there really no decent documentation concerning server-side verification of a purchase?
+    
+===============================================================================================
+16
+A:where do I get the signature from ?
+
+
+Have a look at official docs,
+
+It says that inside your onActivityResult() method you can get following data as shown in example,
+
+    @Override
+protected void onActivityResult(int requestCode, int resultCode, Intent data) { 
+   if (requestCode == 1001) {           
+      int responseCode = data.getIntExtra("RESPONSE_CODE", 0);
+      String purchaseData = data.getStringExtra("INAPP_PURCHASE_DATA");
+      String dataSignature = data.getStringExtra("INAPP_DATA_SIGNATURE");//this is the signature which you want
+
+      if (resultCode == RESULT_OK) {
+         try {
+            JSONObject jo = new JSONObject(purchaseData);//this is the JSONObject which you have included in Your Question right now
+            String sku = jo.getString("productId");
+            String purchaseToken = jo.getString("purchaseToken");
+           //you need to send sku and purchaseToken to server for verification
+          }
+          catch (JSONException e) {
+             alert("Failed to parse purchase data.");
+             e.printStackTrace();
+          }
+      }
+   }
+}
+
+
+For verification on server end,
+Have a look at official docs
+
+As mentioned earlier, client app will send sku and purchaseToken to server API. Server will have to receive those values and will have to perform check with android publish api to verify purchase:
+
+Server may call following GET request by adding necessary parameters:
+
+https://www.googleapis.com/androidpublisher/v2/applications/packageName/purchases/products/productId/tokens/token
+
+here,
+packageName = packageName of the client app
+productId = sku received from client app
+token = purchaseToken received from client app
+
+It will result into a JSONObject response as mentioned format:
+
+{
+  "kind": "androidpublisher#productPurchase",
+  "purchaseTimeMillis": long,
+  "purchaseState": integer,
+  "consumptionState": integer,
+  "developerPayload": string,
+  "orderId": string,
+  "purchaseType": integer
+}
+
+
+here, purchaseState = 0 means valid purchase
+
+I hope it will be helpful !!
+    

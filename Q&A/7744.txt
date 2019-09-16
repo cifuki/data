@@ -1,0 +1,100 @@
+34
+Q:How can I intercept this kind of events ?  
+
+I need to add some logic when the user trying to paste some text into my EditText i know i can use TextWatcher but this entrypoint not good for me becuase i only need to intercept in case of paste and not every time the user press my EditText,
+    
+===============================================================================================
+72
+A:Seems there isn't much you can do by using the API: android paste event
+
+Source reading to the rescue!
+
+I dug into the Android Source of the TextView (EditText is a TextView with some different configuration) and found out that the menu used to offer the cut/copy/paste options is just a modified ContextMenu (source).
+
+As for a normal context-menu, the View must create the menu (source) and then handle the interaction in a callback-method (source).
+
+Because the handling method is public, we can simply hook into it by extending EditText and overwriting the method to react on the different actions. Here is an example-implementation:
+
+import android.content.Context;
+import android.util.AttributeSet;
+import android.widget.EditText;
+import android.widget.Toast;
+
+/**
+ * An EditText, which notifies when something was cut/copied/pasted inside it.
+ * @author Lukas Knuth
+ * @version 1.0
+ */
+public class MonitoringEditText extends EditText {
+
+    private final Context context;
+
+    /*
+        Just the constructors to create a new EditText...
+     */
+    public MonitoringEditText(Context context) {
+        super(context);
+        this.context = context;
+    }
+
+    public MonitoringEditText(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        this.context = context;
+    }
+
+    public MonitoringEditText(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+        this.context = context;
+    }
+
+    /**
+     * <p>This is where the "magic" happens.</p>
+     * <p>The menu used to cut/copy/paste is a normal ContextMenu, which allows us to
+     *  overwrite the consuming method and react on the different events.</p>
+     * @see <a href="http://grepcode.com/file/repository.grepcode.com/java/ext/com.google.android/android/2.3_r1/android/widget/TextView.java#TextView.onTextContextMenuItem%28int%29">Original Implementation</a>
+     */
+    @Override
+    public boolean onTextContextMenuItem(int id) {
+        // Do your thing:
+        boolean consumed = super.onTextContextMenuItem(id);
+        // React:
+        switch (id){
+            case android.R.id.cut:
+                onTextCut();
+                break;
+            case android.R.id.paste:
+                onTextPaste();
+                break;
+            case android.R.id.copy:
+                onTextCopy();
+        }
+        return consumed;
+    }
+
+    /**
+     * Text was cut from this EditText.
+     */
+    public void onTextCut(){
+        Toast.makeText(context, "Cut!", Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Text was copied from this EditText.
+     */
+    public void onTextCopy(){
+        Toast.makeText(context, "Copy!", Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Text was pasted into the EditText.
+     */
+    public void onTextPaste(){
+        Toast.makeText(context, "Paste!", Toast.LENGTH_SHORT).show();
+    }
+}
+
+
+Now, when the user uses cut/copy/paste, a Toast is shown (of course you could do other things, too).
+
+The neat thing is that this works down to Android 1.5 and you don't need to re-create the context-menu (like suggested in the above linked question), which will keep the constant look of the platform (for example with HTC Sense).
+    

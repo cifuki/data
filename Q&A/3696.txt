@@ -1,0 +1,63 @@
+62
+Q:I'm performance tuning interactive games in Java for the Android platform.  Once in a while there is a hiccup in drawing and interaction for garbage collection.  Usually it's less than one tenth of a second, but sometimes it can be as large as 200ms on very slow devices.
+
+I am using the ddms profiler (part of the Android SDK) to search out where my memory allocations come from and excise them from my inner drawing and logic loops.  
+
+The worst offender had been short loops done like,
+
+for(GameObject gob : interactiveObjects)
+    gob.onDraw(canvas);
+
+
+where every single time the loop was executed there was an iterator allocated.  I'm using arrays (ArrayList) for my objects now.  If I ever want trees or hashes in an inner loop I know that I need to be careful or even reimplement them instead of using the Java Collections framework since I can't afford the extra garbage collection.  That may come up when I'm looking at priority queues.
+
+I also have trouble where I want to display scores and progress using Canvas.drawText.  This is bad,
+
+canvas.drawText("Your score is: " + Score.points, x, y, paint);
+
+
+because Strings, char arrays and StringBuffers will be allocated all over to make it work.  If you have a few text display items and run the frame 60 times a second that begins to add up and will increase your garbage collection hiccups.  I think the best choice here is to keep char[] arrays and decode your int or double manually into it and concatenate strings onto the beginning and end.  I'd like to hear if there's something cleaner.
+
+I know there must be others out there dealing with this.  How do you handle it and what are the pitfalls and best practices you've discovered to run interactively on Java or Android?  These gc issues are enough to make me miss manual memory management, but not very much.
+    
+===============================================================================================
+56
+A:I've worked on Java mobile games...  The best way to avoid GC'ing objects (which in turn shall trigger the GC at one point or another and shall kill your game's perfs) is simply to avoid creating them in your main game loop in the first place.
+
+There's no "clean" way to deal with this and I'll first give an example...
+
+Typically you have, say, 4 balls on screen at (50,25), (70,32), (16,18), (98,73).  Well, here's your abstraction (simplified for the sake of this example):
+
+n = 4;
+int[] { 50, 25, 70, 32, 16, 18, 98, 73 }
+
+
+You "pop" the 2nd ball which disappears, your int[] becomes:
+
+n = 3
+int[] { 50, 25, 98, 73, 16, 18, 98, 73 }
+
+
+(notice how we don't even care about "cleaning" the 4th ball (98,73), we simply keep track of the number of balls we have left).
+
+Manual tracking of objects, sadly.  This how it's done on most current well-performing Java games that are out on mobile devices.
+
+Now for strings, here's what I'd do:
+
+
+at game initialization, predraw using drawText(...) only once the numbers 0 to 9 that you save in a BufferedImage[10] array.
+at game initialization, predraw once "Your score is: "
+if the "Your score is: " really needs to be redrawn (because, say, it's transparent), then redraw it from your pre-stored BufferedImage
+loop to compute the digits of the score and add, after the "Your score is: ", every digit manually one by one (by copying each the time the corresponding digit (0 to 9) from your BufferedImage[10] where you pre-stored them.
+
+
+This gives you best of both world: you get the reuse the drawtext(...) font and you created exactly zero objects during your main loop (because you also dodged the call to drawtext(...) which itself may very well be crappily generating, well, needless crap).
+
+Another "benefit" of this "zero object creation draw score" is that careful image caching and reuse for the fonts is not really "manual object allocation/deallocation", it's really just careful caching.
+
+It's not "clean", it's not "good practice" but that's how it's done in top-notch mobile games (like, say, Uniwar).
+
+And it's fast.  Darn fast.  Faster than anything involving the creation of object.
+
+P.S: Actually if you carefully look at a few mobile games, you'll notice that often fonts are actually not system/Java fonts but pixel-perfect fonts made specifically for each game (here I just gave you an example of how to cache system/Java font but obviously you could also cache/reuse a pixel-perfect/bitmapped font).
+    

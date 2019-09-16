@@ -1,0 +1,290 @@
+38
+Q:I have a camera app in portrait mode which takes pictures from both front and back end cameras.I am saving the image in my sd card and try to find the corresponding exif value which gives 0 always.But i am getting the the expected exif orientation value for the other images stored in the device(like downloaded pictures).
+
+How can i fix this ? Can anyone help me out ?
+
+Here is the code used to save the picture and the find the orientation
+
+PictureCallback myPictureCallback_JPG = new PictureCallback() {
+
+    @Override
+    public void onPictureTaken(byte[] arg0, Camera arg1) {
+        // TODO Auto-generated method stub
+
+
+                try {
+                    File APP_FILE_PATH = new File(Environment.getExternalStorageDirectory()
+                            .getPath() + "/Myapp/");
+                    if (!APP_FILE_PATH.exists()) {
+                        APP_FILE_PATH.mkdirs();
+                    }
+                    File file = new File(APP_FILE_PATH, "image.jpg");
+
+                    FileOutputStream fos = new FileOutputStream(file);
+                    fos.write(arg0);
+                    fos.close();
+imageFileUri=Uri.fromfile(file);                           getApplicationContext().getContentResolver().notifyChange(
+                          imageFileUri, null);
+                sendBroadcast(new Intent(Intent.ACTION_MEDIA_MOUNTED,
+                            Uri.parse("file://"
+                                    + Environment.getExternalStorageDirectory())));
+                    ExifInterface exif = new ExifInterface(file.getAbsolutePath());
+                    int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+
+
+
+                } catch (Exception e) {
+
+                }
+
+
+
+    }
+};
+
+
+Following is the code for surphace created and changed functions
+
+@Override
+public void surfaceChanged(SurfaceHolder holder, int format, int width,
+int height) {
+List<Size> sizes = parameters.getSupportedPreviewSizes();
+Size optimalSize = getOptimalPreviewSize(sizes, width, height);
+parameters.setPreviewSize(optimalSize.width, optimalSize.height);
+
+camera.setParameters(parameters);
+camera.startPreview();
+ startPreview();
+
+}
+ @Override
+ public void surfaceCreated(SurfaceHolder holder) {
+
+
+ try {
+
+     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.GINGERBREAD) {
+          Camera.CameraInfo info=new Camera.CameraInfo();
+
+          for (int i=0; i < Camera.getNumberOfCameras(); i++) {
+            Camera.getCameraInfo(i, info);
+
+            if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+              camera=Camera.open(i);
+              defaultCameraId = i;
+            }
+          }
+        }
+
+        if (camera == null) {
+          camera=Camera.open();
+        }
+
+
+
+
+        try {
+            camera.setPreviewDisplay(surfaceHolder);
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+
+        Camera.Parameters parameters = camera.getParameters();
+        android.hardware.Camera.CameraInfo info =
+                new android.hardware.Camera.CameraInfo();
+        android.hardware.Camera.getCameraInfo(defaultCameraId, info);
+        int rotation = this.getWindowManager().getDefaultDisplay()
+                .getRotation();
+        if (Integer.parseInt(Build.VERSION.SDK) >= 8)
+        {
+
+             int degrees = 0;
+             switch (rotation) {
+                 case Surface.ROTATION_0: 
+                     degrees = 0; break;
+                 case Surface.ROTATION_90: 
+                     degrees = 90; break;
+                 case Surface.ROTATION_180: 
+                     degrees = 180; break;
+                 case Surface.ROTATION_270: 
+                     degrees = 270; break;
+             }
+             int result;
+             if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                 result = (info.orientation + degrees) % 360;
+                 result = (360 - result) % 360;  
+             } else {  // back-facing
+                 result = (info.orientation - degrees + 360) % 360;
+             }
+             camera.setDisplayOrientation(result);
+
+        }
+        else
+        {
+            parameters.set("orientation", "portrait");
+        }
+
+
+        camera.setParameters(parameters);
+
+
+
+} catch (IllegalArgumentException e) {
+    // TODO Auto-generated catch block
+    e.printStackTrace();
+} catch (SecurityException e) {
+    // TODO Auto-generated catch block
+    e.printStackTrace();
+} 
+
+
+}
+ private Size getOptimalPreviewSize(List<Size> sizes, int w, int h) {
+            final double ASPECT_TOLERANCE = 0.1;
+            double targetRatio = (double) w / h;
+            if (sizes == null) return null;
+
+            Size optimalSize = null;
+            double minDiff = Double.MAX_VALUE;
+
+            int targetHeight = h;
+
+
+            for (Size size : sizes) {
+                double ratio = (double) size.width / size.height;
+                if (Math.abs(ratio - targetRatio) > ASPECT_TOLERANCE) continue;
+                if (Math.abs(size.height - targetHeight) < minDiff) {
+                    optimalSize = size;
+                    minDiff = Math.abs(size.height - targetHeight);
+                }
+            }
+
+
+            if (optimalSize == null) {
+                minDiff = Double.MAX_VALUE;
+                for (Size size : sizes) {
+                    if (Math.abs(size.height - targetHeight) < minDiff) {
+                        optimalSize = size;
+                        minDiff = Math.abs(size.height - targetHeight);
+                    }
+                }
+            }
+            return optimalSize;
+        }
+
+    
+===============================================================================================
+24
+A:I also faced same issue in Samsung devices, later I implemented ExifInterface and solved successfully.
+
+In any mode images will be shot it will always store in portrait mode only, and while fetching too returning in portrait mode. below of code I used to achieve my goal, I implemented  within back camera, not sure about from camera.
+
+Camera Intent@
+
+Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, outputFileUri);
+            startActivityForResult(intent, 1212);   
+
+
+onActivityResult@
+
+@Override
+protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == 1212) {
+        sendBroadcast(new Intent(Intent.ACTION_MEDIA_MOUNTED, Uri.parse("file://"+ Environment.getExternalStorageDirectory())));
+        Bitmap bitmap;
+        //bitmap=GlobalMethods.decodeSampledBitmapFromResource(_path, 80, 80);
+        bitmap=GlobalMethods.decodeFile(_path);
+        if (bitmap == null) {
+            imgMed.setImageBitmap(BitmapFactory.decodeResource(getResources(), R.drawable.add_photo));
+        } 
+        else {
+            imgMed.setImageBitmap(bitmap);
+            imgMed.setScaleType(ScaleType.FIT_XY);
+
+        }
+    }
+        }
+
+
+decodeFile@
+
+    public static Bitmap decodeFile(String path) {
+
+          int orientation;
+
+             try {
+
+                 if(path==null){
+
+                     return null;
+                 }
+                 // decode image size
+                 BitmapFactory.Options o = new BitmapFactory.Options();
+                 o.inJustDecodeBounds = true;
+
+                 // Find the correct scale value. It should be the power of 2.
+                 final int REQUIRED_SIZE = 70;
+                 int width_tmp = o.outWidth, height_tmp = o.outHeight;
+                 int scale = 4;
+                 while (true) {
+                     if (width_tmp / 2 < REQUIRED_SIZE || height_tmp / 2 < REQUIRED_SIZE)
+                         break;
+                     width_tmp /= 2;
+                     height_tmp /= 2;
+                     scale++;
+                 }
+                 // decode with inSampleSize
+                 BitmapFactory.Options o2 = new BitmapFactory.Options();
+                 o2.inSampleSize=scale;
+                 Bitmap bm = BitmapFactory.decodeFile(path,o2);
+
+
+                 Bitmap bitmap = bm;
+
+                 ExifInterface exif = new ExifInterface(path);
+                 orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, 1);
+                 Log.e("orientation",""+orientation);
+                 Matrix m=new Matrix();
+
+                 if((orientation==3)){
+
+                 m.postRotate(180);
+                 m.postScale((float)bm.getWidth(), (float)bm.getHeight());
+
+//               if(m.preRotate(90)){
+                 Log.e("in orientation",""+orientation);
+
+                 bitmap = Bitmap.createBitmap(bm, 0, 0,bm.getWidth(),bm.getHeight(), m, true);
+                 return  bitmap;
+                 }
+                 else if(orientation==6){
+
+                  m.postRotate(90);
+
+                  Log.e("in orientation",""+orientation);
+
+                  bitmap = Bitmap.createBitmap(bm, 0, 0,bm.getWidth(),bm.getHeight(), m, true);
+                     return  bitmap;
+                 }
+
+                 else if(orientation==8){
+
+                  m.postRotate(270);
+
+                  Log.e("in orientation",""+orientation);
+
+                  bitmap = Bitmap.createBitmap(bm, 0, 0,bm.getWidth(),bm.getHeight(), m, true);
+                     return  bitmap;
+                 }
+                 return bitmap;
+             }
+             catch (Exception e) {
+             }
+             return null;
+         }
+
+    

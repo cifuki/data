@@ -1,0 +1,62 @@
+49
+Q:I'm currently trying to add Dagger to my android projects. For the apps projects its easy and clear to me, how to build the ObjectGraph. But I dont quite know whats the best way to do this in my android library projects.
+
+Should I keep building the ObjectGraph in the Application class of the apps and pass the OG over to a LibraryModule - plussing the OG of library to the Apps OG? Or should i build the whole ObjectGraph in the library?
+
+What if I need to inject a class in the library by ObjectGraph.inject(this)? In my Apps projects I can get the OG from the Application class. But how to handle this in the library? Should I add a @Provides method for the ObjectGraph?
+
+Big thanks for your help.
+
+Edit: 
+In short: How can I call ObjectGraph.inject(this) in my library project where I don't have access to the OG because it is being builded in the Application Class? 
+    
+===============================================================================================
+31
+A:In case someone using Dagger 2 gets here, this is the way I've done in my App:
+
+In the library module I've created the following Module and Component:
+
+@Module
+public class ModuleUtil {
+
+    @Provides
+    public RestTemplate provideRestTemplate() {
+        return new RestTemplate();
+    }
+
+}
+
+@Singleton
+@Component(
+        modules = {
+                ModuleUtil.class
+        })
+public interface MainComponent {
+    void inject(Postman postman);
+}
+
+
+And then I've created the Singleton below in order to manage the injections:
+
+public class DaggerWrapper {
+
+    private static MainComponent mComponent;
+
+    public static MainComponent getComponent() {
+        if (mComponent == null) {
+            initComponent();
+        }
+        return mComponent;
+    }
+
+    private static void initComponent () {
+       mComponent = DaggerMainComponent
+                .builder()
+                .utilModule(new ModuleUtil())
+                .build();
+    }
+}
+
+
+When some class from the library module needs to inject its members, I simply call  DaggerWrapper.getComponent().inject(this); and that't it.
+    

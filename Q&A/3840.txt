@@ -1,0 +1,364 @@
+60
+Q:I was reading the Android SQLite NotePad tutorial that referenced creating a DB Adapter class to create and access a DB table.  When dealing with a multi-table SQLite Database, is it best practice to create a different Adapter Class for each table or create a single DB Adapter class for the entire Android Application?
+
+My application uses multiple tables and I was hoping not to have to have a single massive adapter class.  the problem, however, is that I have a nested subclass of SQLiteOpenHelper per the NotePad Example within each adapter.  When the first table is accessed, everything works fine.  When I then try to access the second tble(from a different activity) my app crashes.
+
+At first, I thought the crash was being caused by a versioning issue, but both adapters now have the same database version and it's still crashing.
+
+Here's an example of one of the DB Adapters for the table.  The other adapters all follow the same format with varying implementations.
+
+public class InfoDBAdapter {
+    public static final String ROW_ID = "_id";
+    public static final String NAME = "name";
+
+    private static final String TAG = "InfoDbAdapter";
+    private static final String DATABASE_NAME = "myappdb";
+    private static final String DATABASE_TABLE = "usersinfo";
+    private static final int DATABASE_VERSION = 1;
+
+
+    private static final String DATABASE_CREATE = "create table usersinfo (_id integer primary key autoincrement, "
+            + NAME
+            + " TEXT," + ");";
+
+    private DatabaseHelper mDbHelper;
+    private SQLiteDatabase mDb;
+
+    private final Context mCtx;
+
+    private static class DatabaseHelper extends SQLiteOpenHelper {
+
+        DatabaseHelper(Context context) {
+            super(context, DATABASE_NAME, null, DATABASE_VERSION);
+        }
+
+        @Override
+        public void onCreate(SQLiteDatabase db) {
+
+            db.execSQL(DATABASE_CREATE);
+        }
+
+        @Override
+        public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+            Log.w(TAG, "Upgrading database from version " + oldVersion + " to " //$NON-NLS-1$//$NON-NLS-2$
+                    + newVersion + ", which will destroy all old data"); //$NON-NLS-1$
+            //db.execSQL("DROP TABLE IF EXISTS usersinfo"); //$NON-NLS-1$
+            onCreate(db);
+        }
+    }
+
+
+    public InfoDBAdapter(Context ctx) {
+        this.mCtx = ctx;
+    }
+
+
+    public InfoDBAdapter open() throws SQLException {
+        this.mDbHelper = new DatabaseHelper(this.mCtx);
+        this.mDb = this.mDbHelper.getWritableDatabase();
+        return this;
+    }
+
+    /**
+     * close return type: void
+     */
+    public void close() {
+        this.mDbHelper.close();
+    }
+
+
+    public long createUser(String name) {
+        ContentValues initialValues = new ContentValues();
+        initialValues.put(NAME, name);
+        return this.mDb.insert(DATABASE_TABLE, null, initialValues);
+    }
+
+
+    public boolean deleteUser(long rowId) {
+
+        return this.mDb.delete(DATABASE_TABLE, ROW_ID + "=" + rowId, null) > 0; //$NON-NLS-1$
+    }
+
+
+    public Cursor fetchAllUsers() {
+
+        return this.mDb.query(DATABASE_TABLE, new String[] { ROW_ID,
+                NAME}, null, null, null, null, null);
+    }
+
+
+    public Cursor fetchUser(long rowId) throws SQLException {
+
+        Cursor mCursor =
+
+        this.mDb.query(true, DATABASE_TABLE, new String[] { ROW_ID, NAME}, ROW_ID + "=" + rowId, null, //$NON-NLS-1$
+                null, null, null, null);
+        if (mCursor != null) {
+            mCursor.moveToFirst();
+        }
+        return mCursor;
+
+    }
+
+
+    public boolean updateUser(long rowId, String name) {
+        ContentValues args = new ContentValues();
+        args.put(NAME, name);
+        return this.mDb
+                .update(DATABASE_TABLE, args, ROW_ID + "=" + rowId, null) > 0; //$NON-NLS-1$
+    }
+}
+
+
+When the first adapter, in this case usersinfo, is accessed, everything works as expected.  Let's say I have another adapter for friend info that follows the same structure as above, when it is accessed by a different activity, it would seem to me that the nested subclass of SQLiteOpenHelper would attempt to create the database again.  Obviously something is wrong because in that scenario, my app crashes.
+
+So is the standard practice within Android to create a single mammoth db adapter instead of individual adapters per table?
+    
+===============================================================================================
+80
+A:Here is the solution I eventually ended up implementing.  It's kind of a mash-up from info gained in the Commonsware books, and some stuff around the web that I wish I bookmarked cause I want to give credit:
+
+For each type of data that I need to pull from the db, I create an "adapter" class (not subclassed from anything).  These adapter classes hold all of the methods necessary for accessing the db for that piece of info.  For example, if I had three tables in my db:
+
+
+Cars
+Boats
+Motorcycles
+
+
+I would have three adapters that would look similar to the following(I'm only putting in one as a demo, but the idea is the same for each):
+
+public class CarsDBAdapter {
+    public static final String ROW_ID = "_id";
+    public static final String NAME = "name";
+    public static final String MODEL = "model";
+    public static final String YEAR = "year";
+
+    private static final String DATABASE_TABLE = "cars";
+
+    private DatabaseHelper mDbHelper;
+    private SQLiteDatabase mDb;
+
+    private final Context mCtx;
+
+    private static class DatabaseHelper extends SQLiteOpenHelper {
+
+        DatabaseHelper(Context context) {
+            super(context, DBAdapter.DATABASE_NAME, null, DBAdapter.DATABASE_VERSION);
+        }
+
+        @Override
+        public void onCreate(SQLiteDatabase db) {
+        }
+
+        @Override
+        public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        }
+    }
+
+    /**
+     * Constructor - takes the context to allow the database to be
+     * opened/created
+     * 
+     * @param ctx
+     *            the Context within which to work
+     */
+    public CarsDBAdapter(Context ctx) {
+        this.mCtx = ctx;
+    }
+
+    /**
+     * Open the cars database. If it cannot be opened, try to create a new
+     * instance of the database. If it cannot be created, throw an exception to
+     * signal the failure
+     * 
+     * @return this (self reference, allowing this to be chained in an
+     *         initialization call)
+     * @throws SQLException
+     *             if the database could be neither opened or created
+     */
+    public CarsDBAdapter open() throws SQLException {
+        this.mDbHelper = new DatabaseHelper(this.mCtx);
+        this.mDb = this.mDbHelper.getWritableDatabase();
+        return this;
+    }
+
+    /**
+     * close return type: void
+     */
+    public void close() {
+        this.mDbHelper.close();
+    }
+
+    /**
+     * Create a new car. If the car is successfully created return the new
+     * rowId for that car, otherwise return a -1 to indicate failure.
+     * 
+     * @param name
+     * @param model
+     * @param year
+     * @return rowId or -1 if failed
+     */
+    public long createCar(String name, String model, String year){
+        ContentValues initialValues = new ContentValues();
+        initialValues.put(NAME, name);
+        initialValues.put(MODEL, model);
+        initialValues.put(YEAR, year);
+        return this.mDb.insert(DATABASE_TABLE, null, initialValues);
+    }
+
+    /**
+     * Delete the car with the given rowId
+     * 
+     * @param rowId
+     * @return true if deleted, false otherwise
+     */
+    public boolean deleteCar(long rowId) {
+
+        return this.mDb.delete(DATABASE_TABLE, ROW_ID + "=" + rowId, null) > 0; //$NON-NLS-1$
+    }
+
+    /**
+     * Return a Cursor over the list of all cars in the database
+     * 
+     * @return Cursor over all cars
+     */
+    public Cursor getAllCars() {
+
+        return this.mDb.query(DATABASE_TABLE, new String[] { ROW_ID,
+                NAME, MODEL, YEAR }, null, null, null, null, null);
+    }
+
+    /**
+     * Return a Cursor positioned at the car that matches the given rowId
+     * @param rowId
+     * @return Cursor positioned to matching car, if found
+     * @throws SQLException if car could not be found/retrieved
+     */
+    public Cursor getCar(long rowId) throws SQLException {
+
+        Cursor mCursor =
+
+        this.mDb.query(true, DATABASE_TABLE, new String[] { ROW_ID, NAME,
+                MODEL, YEAR}, ROW_ID + "=" + rowId, null, null, null, null, null);
+        if (mCursor != null) {
+            mCursor.moveToFirst();
+        }
+        return mCursor;
+    }
+
+    /**
+     * Update the car.
+     * 
+     * @param rowId
+     * @param name
+     * @param model
+     * @param year
+     * @return true if the note was successfully updated, false otherwise
+     */
+    public boolean updateCar(long rowId, String name, String model,
+            String year){
+        ContentValues args = new ContentValues();
+        args.put(NAME, name);
+        args.put(MODEL, model);
+        args.put(YEAR, year);
+
+        return this.mDb.update(DATABASE_TABLE, args, ROW_ID + "=" + rowId, null) >0; 
+    }
+
+}
+
+
+So if you imagine I have one of these classes "adapters" for each table.
+
+When my app splash screen starts, I use the technique presented Android For Beginners: Creating multiple SQLite Tables for Android
+
+So my main DBAdapter (which is responsible for creating all of my tables in a single db) looks like this:
+
+public class DBAdapter {
+
+    public static final String DATABASE_NAME = "stuffIOwn"; //$NON-NLS-1$
+
+    public static final int DATABASE_VERSION = 1;
+
+    private static final String CREATE_TABLE_CARS =
+       "create table cars (_id integer primary key autoincrement, " //$NON-NLS-1$
+    + CarsDBAdapter.NAME+ " TEXT," //$NON-NLS-1$
+    + CarsDBAdapter.MODEL+ " TEXT," //$NON-NLS-1$
+    + CarsDBAdapter.YEAR+ " TEXT" + ");"; //$NON-NLS-1$ //$NON-NLS-2$
+
+    private static final String CREATE_TABLE_BOATS = "create table boats (_id integer primary key autoincrement, " //$NON-NLS-1$
+    +BoatsDBAdapter.NAME+" TEXT," //$NON-NLS-1$
+    +BoatsDBAdapter.MODEL+" TEXT," //$NON-NLS-1$
+    +BoatsDBAdapter.YEAR+" TEXT"+ ");"; //$NON-NLS-1$  //$NON-NLS-2$
+
+        private static final String CREATE_TABLE_CYCLES = "create table cycles (_id integer primary key autoincrement, " //$NON-NLS-1$
+    +CyclesDBAdapter.NAME+" TEXT," //$NON-NLS-1$
+    +CyclesDBAdapter.MODEL+" TEXT," //$NON-NLS-1$
+    +CyclesDBAdapter.YEAR+" TEXT"+ ");"; //$NON-NLS-1$  //$NON-NLS-2$
+
+
+    private final Context context; 
+    private DatabaseHelper DBHelper;
+    private SQLiteDatabase db;
+
+    /**
+     * Constructor
+     * @param ctx
+     */
+    public DBAdapter(Context ctx)
+    {
+        this.context = ctx;
+        this.DBHelper = new DatabaseHelper(this.context);
+    }
+
+    private static class DatabaseHelper extends SQLiteOpenHelper 
+    {
+        DatabaseHelper(Context context) 
+        {
+            super(context, DATABASE_NAME, null, DATABASE_VERSION);
+        }
+
+        @Override
+        public void onCreate(SQLiteDatabase db) 
+        {
+            db.execSQL(CREATE_TABLE_CARS);
+            db.execSQL(CREATE_TABLE_BOATS);
+            db.execSQL(CREATE_TABLE_CYCLES);           
+        }
+
+        @Override
+        public void onUpgrade(SQLiteDatabase db, int oldVersion, 
+        int newVersion) 
+        {               
+            // Adding any table mods to this guy here
+        }
+    } 
+
+   /**
+     * open the db
+     * @return this
+     * @throws SQLException
+     * return type: DBAdapter
+     */
+    public DBAdapter open() throws SQLException 
+    {
+        this.db = this.DBHelper.getWritableDatabase();
+        return this;
+    }
+
+    /**
+     * close the db 
+     * return type: void
+     */
+    public void close() 
+    {
+        this.DBHelper.close();
+    }
+}
+
+
+The DBAdapter class only gets called when the app first starts and its only responsibility is to create/upgrade the tables.  All other access to the data is done through the individual "adapter" class.  I've found that this works perfectly and does not create the versioning issues that I mentioned earlier.
+
+Hope this helps.
+    

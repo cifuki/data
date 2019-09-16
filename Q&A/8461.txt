@@ -1,0 +1,49 @@
+32
+Q:Since there was this awesome presentation on Volley I tried to include it in a project I am working on. I found myself correcting some bugs I found in the source code that was published.
+
+Does anybody know if there is gonna be some GitHub project where one could contribute to the project or is there another way to communicate bugs and feature requests to the developer?
+
+Regarding the problems I had with Volley:
+
+1. It seems that redirection does not work as it should:
+Volley returns an error code 302 instead of redirecting to the location given in the response header.
+
+2. Getting the cache directory does not work on my emulator running 4.2.2:
+
+
+
+cacheDir = new File(context.getCacheDir(), DEFAULT_CACHE_DIR);  
+final String cacheDir1 = "/Android/data/cache/";
+cacheDir = new File(Environment.getExternalStorageDirectory().getPath() + cacheDir1);
+
+
+This workaround is platform specific, though. Just wanted to add it for completions sake.
+
+Besides that I think Volley is really an awesome piece of code and exactly what I was looking for until I did it myself ;)
+
+Update 1
+
+Here another link to the contribution page AOSP. I thought its more a standalone library. I will check that out, although I still appreciate more infos and tutorials on Volley.
+The source code I suggested is just a quick and dirty fix, which did the trick in my demo project.
+
+Update 2
+
+I found another interesting blog post by Ognyan Bankov mentioned as a response to another question, which could be helpful.
+    
+===============================================================================================
+6
+A:Seems like a lot has been answered in the comments but I'll try to cover the rest, or rather, I'll try to cover your specific questions.
+
+1) Volley does not handle redirection on it's own. It's handled by the underlying HttpStack. For example, I currently use OkHttp (from Square) as my HTTP client for Volley. See https://plus.google.com/108284392618554783657/posts/eJJxhkTQ4yU
+https://gist.github.com/JakeWharton/5616899
+OkHttp is great, as it has excellent defaults for handling SPDY, redirects, and other HTTP conveniences. You could also use this to implement your own defaults for the platform HttpUrlConnection (calling followRedirects() on the connection before handing it to Volley for example --- https://developer.android.com/reference/java/net/HttpURLConnection.html#setFollowRedirects(boolean))
+
+2) I'm not even sure that I'd use getCacheDir() for a Volley cache. According to the docs (https://developer.android.com/reference/android/content/Context.html#getCacheDir()), that cache directory should never exceed 1 mb. Whereas, most clients tend to use 10 mb as a default for an http cache (1 mb is really small for an Http cache!!). Also, why are you using such a deep cache directory? Theres no reason that "cacheDir1" should be multiple directories deep. Just make it a file name. getCacheDir() would return your own folder anyways. I'd recommend doing this when initializing Volley (usually the recommended place is the Application class):
+
+File volleyCacheFile = new File(getExternalCacheDir(), "volleyCache.tmp");
+
+
+Of course, this lacks any error handling (what if the external storage is unavailable?). Also, don't forget that you need the appropriate permission to write the external storage.
+
+Hope that helps.
+    

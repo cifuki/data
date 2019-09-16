@@ -1,0 +1,66 @@
+27
+Q:I have a widget I created against Android 2.1 that's been fine and selling on the market.
+
+I had a user complain that he bought it and it never showed up on his Android 4.0 device.
+
+I loaded up the 4.0 emulator, ran it from Eclipse, it reported a successful installation and in fact I can see it listed in the "Widget Preview" app, and I can run it there and it seems fine, but it doesn't show up anywhere under "Widgets" -- I can't actually find it to drag it to the home screen! I assume this is the same thing the user is seeing.
+
+Any idea what's going on here?
+Why is it fine in 2.1 but doesn't show up in the list on 4.0, even after a successful install?
+
+This is my layout\\widget.xml file, if that's any help:
+
+<RelativeLayout android:id="@+id/relativeLayout1" android:layout_width="fill_parent" android:layout_height="fill_parent" xmlns:android="http://schemas.android.com/apk/res/android">
+    <TextView android:layout_width="wrap_content" android:id="@+id/blankspot" android:layout_height="5dp" android:gravity="center" android:shadowDy="1" android:shadowDx="1" android:layout_centerHorizontal="true"></TextView> 
+    <ImageButton android:layout_below="@+id/blankspot" android:layout_width="60dp" android:layout_height="60dp" android:id="@+id/widgetIconButton" android:layout_centerHorizontal="true" android:scaleType="centerCrop" android:src="@drawable/volumeprofilesplus" android:background="@null"></ImageButton>
+    <ImageView android:layout_width="60dp" android:layout_height="20dp" android:id="@+id/override" android:layout_centerHorizontal="true" android:layout_centerVertical="true" android:scaleType="fitXY" android:background="@null" android:src="@drawable/overredcaps" android:visibility="invisible"></ImageView>
+    <ImageButton android:layout_below="@+id/widgetIconButton" android:layout_width="70dp" android:layout_height="30dp" android:id="@+id/widgetSettingsButton" android:layout_centerHorizontal="true" android:scaleType="fitXY" android:src="@drawable/settings" android:background="@null"></ImageButton>
+</RelativeLayout>
+
+
+And the xml\\widget_provider.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="72dip"
+    android:minHeight="72dip"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/main" >    
+</appwidget-provider>
+
+    
+===============================================================================================
+17
+A:So here's the solution I came up with:
+
+You need an activity that will appear on the launcher.  So first we have ye olde widget receiver, like so:
+
+<receiver android:name=".VolumeProfilesWidget" android:label="@string/app_name">
+    <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />                
+        <!-- Broadcast Receiver that will also process our self created action -->
+        <action android:name="net.thepurge.volumeprofiles.plus.VolumeProfilesWidget.ACTION_WIDGET_RECEIVER"/>               
+    </intent-filter>
+    <meta-data android:name="android.appwidget.provider" android:resource="@xml/volumeprofiles_widget_provider" />
+</receiver>
+
+
+And then we need some activity, with the MAIN and LAUNCHER set:
+
+<activity android:name=".MainActivity"
+          android:label="@string/app_name">
+    <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />                
+        <action android:name="net.thepurge.volumeprofiles.plus.VolumeProfilesWidget.ACTION_WIDGET_CONFIGURE"/>
+    </intent-filter>
+</activity>
+
+
+As far as I can tell you MUST do this even if your widget is just supposed to be a pure widget with no associated activities.  At the very least, make one dummy activity that launches a screen that says "Your widget is now ready for use!  Look for it under widgets and drag it to your home screen!"
+
+In my case, my widget launched an activity when you pushed it, so I made that activity into LAUNCHER/MAIN and just added a one-time popup dialog that basically says "you can run this as an application but you may want to use the widget instead".
+
+Note that on the 4.0 emulator, I was never getting my widget to show up on a first time install prior to this change.  Simply having an activity set to MAIN and LAUNCHER seemed to be enough to make the widget show up.
+    

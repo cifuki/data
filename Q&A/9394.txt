@@ -1,0 +1,149 @@
+29
+Q:In a word game for Android I currently have a hardcoded menu inflated from left_drawer_menu.xml and consisting of 3 groups (my turn, opponent turn and finally other stuff):
+
+
+
+mLeftDrawer = (NavigationView) findViewById(R.id.left_drawer);
+mLeftDrawer.setNavigationItemSelectedListener(
+        new NavigationView.OnNavigationItemSelectedListener() {
+            @Override
+            public boolean onNavigationItemSelected(final MenuItem menuItem) {
+                Menu menu = mLeftDrawer.getMenu();
+
+                if (menuItem.getGroupId() == R.id.my_move) {
+                    menu.setGroupCheckable(R.id.my_move, true, true);
+                    menu.setGroupCheckable(R.id.his_move, false, false);
+                    menu.setGroupCheckable(R.id.extras, false, false);
+                } else if (menuItem.getGroupId() == R.id.his_move) {
+                    menu.setGroupCheckable(R.id.my_move, false, false);
+                    menu.setGroupCheckable(R.id.his_move, true, true);
+                    menu.setGroupCheckable(R.id.extras, false, false);
+                } else if (menuItem.getGroupId() == R.id.extras) {
+                    menu.setGroupCheckable(R.id.my_move, false, false);
+                    menu.setGroupCheckable(R.id.his_move, false, false);
+                    menu.setGroupCheckable(R.id.extras, true, true);
+                }
+
+                menuItem.setChecked(true);
+                mLeftItem = menuItem.getItemId();
+                mDrawerLayout.closeDrawer(mLeftDrawer);
+                mHandler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (mLeftItem == R.id.start) {
+                            startNewGame();
+                        } 
+                    }
+                },DRAWER_CLOSE_DELAY);
+
+                return true;
+            }
+        });
+
+
+Now I am trying to change that menu dynamically.
+
+I have SQLite instance containing all game data and use IntentService to read/write the database - that part works fine.
+
+My current difficulty is: with the following code, the new items are added outside the R.id.my_move group:
+
+if (mLeftItem == R.id.start) {
+    startNewGame();
+
+    Random r = new Random();
+    int i = r.nextInt(100);
+    menu.add(R.id.my_move, i, i, "Item " + i);   // why is my_move ignored?
+} 
+
+
+
+
+UPDATE:
+
+As a further test I have tried assigning even and not even items to 2 separate groups with this code:
+
+Random r = new Random();
+int i = r.nextInt(100);
+int group = 1 + (i % 2); // can be 1 or 2
+menu.add(group, i, i, "Item " + i);
+
+
+However the result looks chaotic:
+
+
+
+Also I have discovered the (probably already fixed?) Issue 176300 and wonder if maybe sub-menus should be better used instead of menu groups?
+    
+===============================================================================================
+35
+A:On checking MenuItemImpl source code
+
+     ...
+     *    @param group Item ordering grouping control. The item will be added after
+     *            all other items whose order is <= this number, and before any
+     *            that are larger than it. This can also be used to define
+     *            groups of items for batch state changes. Normally use 0.
+     ...
+
+    MenuItemImpl(MenuBuilder menu, int group, int id, int categoryOrder, int ordering,
+        CharSequence title, int showAsAction) {
+
+
+So you should define ordering in your xml (give same order to items in one group and increment in each following group)
+
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <group android:id="@+id/my_move" android:checkableBehavior="single">
+        <item
+            android:orderInCategory="0"
+            android:id="@+id/game1"
+            android:icon="@drawable/ic_stars_black_24dp"
+            android:title="Game #1" />
+        <item
+            android:orderInCategory="0"
+            android:id="@+id/game2"
+            android:icon="@drawable/ic_stars_black_24dp"
+            android:title="Game #2" />
+    </group>
+    <group android:id="@+id/his_move" android:checkableBehavior="single">
+        <item
+            android:orderInCategory="1"
+            android:id="@+id/game5"
+            android:icon="@drawable/ic_clock_black_24dp"
+            android:title="Game #5" />
+        <item
+            android:orderInCategory="1"
+            android:id="@+id/game6"
+            android:icon="@drawable/ic_clock_black_24dp"
+            android:title="Game #6" />
+        <item
+            android:orderInCategory="1"
+            android:id="@+id/game7"
+            android:icon="@drawable/ic_clock_black_24dp"
+            android:title="Game #7" />
+    </group>
+    .....
+
+</menu>
+
+
+and give an appropriate order value while adding the item in your code. So if you want to add the item at the end of first group, add it as:
+
+menu.add(R.id.my_move, Menu.NONE, 0, "Item1");
+
+
+and if you want to add to second group, add it as:
+
+menu.add(R.id.his_move, Menu.NONE, 1, "Item2");
+
+
+The problem with your code could be that all items in the xml have default orderInCategory 0 and so the new item gets added after
+all these items.
+
+UPDATE
+
+To add icon use setIcon method for MenuItem
+
+menu.add(R.id.my_move, Menu.NONE, 0, "Item1").setIcon(R.drawable.ic_stars_black_24dp);
+
+    

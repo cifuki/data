@@ -1,0 +1,59 @@
+27
+Q:We're designing an Android app that has a lot of data ("customers", "products", "orders"...), and we don't want to query SQLite every time we need some record. We want to avoid to query the database as most as we can, so we decided to keep certain data always in memory.
+
+Our initial idea is to create two simple classes:
+
+
+"MemoryRecord": a class that will contain basically an array of objects (string, int, double, datetime, etc...), that are the data from a table record, and all methods to get those data in/out from this array.
+"MemoryTable": a class that will contain basically a Map of [Key,MemoryRecord] and all methods to manipulate this Map and insert/update/delete record into/from database.
+
+
+Those classes will be derived to every kind of table we have in the database. Of course there are other useful methods not listed above, but they are not important at this point.
+
+So, when starting the app, we will load those tables from an SQLite database to memory using those classes, and every time we need to change some data, we will change in memory and post it into the database right after.
+
+But, we want some help/advice from you. Can you suggest something more simple or efficient to implement such a thing? Or maybe some existing classes that already do it for us?
+
+I understand what you guys are trying to show me, and I thank you for that.
+
+But, let's say we have a table with 2000 records, and I will need to list those records. For each one, I have to query other 30 tables (some of them with 1000 records, others with 10 records) to add additional information in the list, and this while it's "flying" (and as you know, we must be very fast at this moment).
+
+Now you'll be going to say: "just build your main query with all those 'joins', and bring all you need in one step. SQLite can be very fast, if your database is well designed, etc...".
+
+OK, but this query will become very complicated and sure, even though SQLite is very fast, it will be "too" slow (2 a 4 seconds, as I confirmed, and this isn't an acceptable time for us).
+
+Another complicator is that, depending on user interaction, we need to "re-query" all records, because the tables involved are not the same, and we have to "re-join" with another set of tables.
+
+So, an alternative is bring only the main records (this will never change, no matter what user does or wants) with no join (this is very fast!) and query the other tables every time we want some data. Note that on the table with 10 records only, we will fetch the same records many and many times. In this case, it is a waste of time, because no matter fast SQLite is, it will always be more expensive to query, cursor, fetch, etc... than just grabbing the record from a kind of "memory cache". I want to make clear that we don't plan to keep all data in memory always, just some tables we query very often.
+
+And we came to the original question: What is the best way to "cache" those records? I really like to focus the discussion on that and not "why do you need to cache data?"
+    
+===============================================================================================
+66
+A:The vast majority of the apps on the platform (contacts, Email, Gmail, calendar, etc.) do not do this.  Some of these have extremely complicated database schemas with potentially a large amount of data and do not need to do this.  What you are proposing to do is going to cause huge pain for you, with no clear gain.
+
+You should first focus on designing your database and schema to be able to do efficient queries.  There are two main reasons I can think of for database access to be slow:
+
+
+You have really complicated data schemas.
+You have a very large amount of data.
+
+
+If you are going to have a lot of data, you can't afford to keep it all in memory anyway, so this is a dead end.  If you have complicated structures, you would benefit in either case with optimizing them to improve performance.  In both cases, your database schema is going to be key to good performance.
+
+Actually optimizing the schema can be a bit a of a black art (and I am no expert on it), but some things to look out for are correctly creating indices on rows you will query, designing joins so they will take efficient paths, etc.  I am sure there are lots of people who can help you with this area.
+
+You could also try looking at the source of some of the platform's databases to get some ideas of how to design for good performance.  For example the Contacts database (especially starting with 2.0) is extremely complicated and has a lot of optimizations to provide good performance on relatively large data and extensible data sets with lots of different kinds of queries.
+
+Update:
+
+Here's a good illustration of how important database optimization is.  In Android's media provider database, a newer version of the platform changed the schema significantly to add some new features.  The upgrade code to modify an existing media database to the new schema could take 8 minutes or more to execute.
+
+An engineer made an optimization that reduced the upgrade time of a real test database from 8 minutes to 8 seconds.  A 60x performance improvement.
+
+What was this optimization?
+
+It was to create a temporary index, at the point of upgrade, on an important column used in the upgrade operations.  (And then delete it when done.)  So this 60x performance improvement comes even though it also includes the time needed to build an index on one of the columns used during upgrading.
+
+SQLite is one of those things where if you know what you are doing it can be remarkably efficient.  And if you don't take care in how you use it, you can end up with wretched performance.  It is a safe bet, though, if you are having performance issues with it that you can fix them by improving how you are using SQLite.
+    

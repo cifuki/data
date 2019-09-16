@@ -1,0 +1,64 @@
+29
+Q:I know Android cannot handle PDFs natively. However, the Nexus One (and possibly other phones) come pre-installed with QuickOffice Viewer.  How would I determine whether the user has a PDF viewer installed?
+
+Currently, the code to start the PDF download looks pretty simple:
+
+Intent intent = new Intent(Intent.ACTION_VIEW);
+intent.setData(Uri.parse(url));
+startActivity(intent);
+
+
+After the download, the user clicks on the downloaded file to invoke the viewer.
+However, if there is no PDF viewer, Android reports "Cannot download.  The content is not supported on the phone."
+I want to determine if the user will get this message, and if so, direct them to PDF apps in the Android Market.
+    
+===============================================================================================
+56
+A:I have been testing this and found that the following works. First you download the file independently and store it on the device and then you go do this:
+
+ File file = new File("/sdcard/download/somepdf.pdf");
+
+ PackageManager packageManager = getPackageManager();
+ Intent testIntent = new Intent(Intent.ACTION_VIEW);
+ testIntent.setType("application/pdf");
+ List list = packageManager.queryIntentActivities(testIntent, PackageManager.MATCH_DEFAULT_ONLY);
+ if (list.size() > 0 && file.isFile()) {
+     Intent intent = new Intent();
+     intent.setAction(Intent.ACTION_VIEW);
+     Uri uri = Uri.fromFile(file);
+     intent.setDataAndType(uri, "application/pdf");
+
+     startActivity(intent);
+
+
+I have tested this on various emulator and a rooted cyanogen phone as well as a HTC Magic. If no pdf renderer is available the list will return zero and nothing will happen. 
+
+It seems to be important to set the data type to the pdf mime type to get the correct behaviour.
+
+If you e.g. install droidreader it will react to the intent and display the pdf.
+
+Of course you could do the check before you download the pdf as well depending on your use case or do things like popping up alerts or redirecting do other intents for download or whatever.
+
+Edit: I have since refactored this out into a separate method ..
+
+    public static final String MIME_TYPE_PDF = "application/pdf";
+
+/**
+ * Check if the supplied context can render PDF files via some installed application that reacts to a intent
+ * with the pdf mime type and viewing action.
+ *
+ * @param context
+ * @return
+ */
+public static boolean canDisplayPdf(Context context) {
+    PackageManager packageManager = context.getPackageManager();
+    Intent testIntent = new Intent(Intent.ACTION_VIEW);
+    testIntent.setType(MIME_TYPE_PDF);
+    if (packageManager.queryIntentActivities(testIntent, PackageManager.MATCH_DEFAULT_ONLY).size() > 0) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+    

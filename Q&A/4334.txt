@@ -1,0 +1,189 @@
+54
+Q:Problem
+
+A Fragment is not reattached to its hosting ViewPager after returning from another fragment.
+
+Situation
+
+One Activity hosting a Fragment whose layout holds a ViewPager (PageListFragment in the example below). The ViewPager is populated by a FragmentStateViewPagerAdapter. The single Fragments hosted inside the pager (PageFragment in the example below) can open sub page lists, containing a new set of pages.
+
+Behaviour
+
+All works fine as long as the back button is not pressed. As soon as the user closes one of the sub PageLists the previous List is recreated, but without the Page that was displayed previously. Swiping through the other pages on the parent PageList still works.
+
+Code
+
+A sample application can be found on github: 
+
+Activity
+
+public class MainActivity extends FragmentActivity {
+
+private static final String CURRENT_FRAGMENT = MainActivity.class.getCanonicalName() + ".CURRENT_FRAGMENT";
+
+public static final String ARG_PARENTS = "Parents";
+
+public void goInto(String mHostingLevel, String mPosition) {
+    Fragment hostingFragment = newHostingFragment(mHostingLevel, mPosition);
+    addFragment(hostingFragment);
+}
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+    addBaseFragment();
+}
+
+private void addBaseFragment() {
+    Fragment hostingFragment = newHostingFragment("", "");
+    addFragment(hostingFragment);
+}
+
+private Fragment newHostingFragment(String mHostingLevel, String oldPosition) {
+    Fragment hostingFragment = new PageListFragment();
+    Bundle args = new Bundle();
+    args.putString(ARG_PARENTS, mHostingLevel + oldPosition +" > ");
+    hostingFragment.setArguments(args);
+    return hostingFragment;
+}
+
+private void addFragment(Fragment hostingFragment) {
+    FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
+    transaction.replace(R.id.fragmentSpace, hostingFragment, CURRENT_FRAGMENT);
+    transaction.addToBackStack(null);
+    transaction.commit();
+}
+
+}
+
+
+PageListFragment
+
+public class PageListFragment extends Fragment {
+
+private String mParentString;
+
+public PageListFragment() {
+    // Required empty public constructor
+}
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+}
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+    // Inflate the layout for this fragment
+    return inflater.inflate(R.layout.fragment_hosting, container, false);
+}
+
+@Override
+public void onResume() {
+    mParentString = getArguments().getString(MainActivity.ARG_PARENTS);
+    ViewPager viewPager = (ViewPager) getView().findViewById(R.id.viewPager);
+    viewPager.setAdapter(new SimpleFragmentStatePagerAdapter(getFragmentManager(),mParentString));
+    super.onResume();
+}
+
+private static class SimpleFragmentStatePagerAdapter extends FragmentStatePagerAdapter {
+
+    private String mHostingLevel;
+
+    public SimpleFragmentStatePagerAdapter(FragmentManager fm, String hostingLevel) {
+        super(fm);
+        this.mHostingLevel = hostingLevel;
+    }
+
+    @Override
+    public android.support.v4.app.Fragment getItem(int position) {
+        PageFragment pageFragment = new PageFragment();
+        Bundle args = new Bundle();
+        args.putString(MainActivity.ARG_PARENTS, mHostingLevel);
+        args.putInt(PageFragment.ARG_POSITION, position);
+        pageFragment.setArguments(args);
+        return pageFragment;
+    }
+
+    @Override
+    public int getCount() {
+        return 5;
+    }
+}
+}
+
+
+PageFragment
+
+public class PageFragment extends Fragment {
+
+public static final String ARG_POSITION = "Position";
+
+private String mHostingLevel;
+private int mPosition;
+
+public PageFragment() {
+    // Required empty public constructor
+}
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+    View contentView = inflater.inflate(R.layout.fragment_page, container, false);
+    setupTextView(contentView);
+    setupButton(contentView);
+    return contentView;
+}
+
+private void setupTextView(View contentView) {
+    mPosition = getArguments().getInt(ARG_POSITION);
+    mHostingLevel = getArguments().getString(MainActivity.ARG_PARENTS);
+    TextView text = (TextView) contentView.findViewById(R.id.textView);
+    text.setText("Parent Fragments " + mHostingLevel + " \
+\
+Current Fragment "+ mPosition);
+}
+
+private void setupButton(View contentView) {
+    Button button = (Button) contentView.findViewById(R.id.button);
+    button.setOnClickListener(new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            openNewLevel();
+        }
+    });
+}
+
+protected void openNewLevel() {
+    MainActivity activity = (MainActivity) getActivity();
+    activity.goInto(mHostingLevel, Integer.toString(mPosition));
+}
+
+}
+
+    
+===============================================================================================
+143
+A:After a lengthy investigation it turns out to be a problem with the fragment manager. 
+
+When using a construct like the one above the fragment transaction to reattach the fragment to the page list is silently discarded. It is basically the same problem that causes a 
+
+java.lang.IllegalStateException: Recursive entry to executePendingTransactions 
+
+
+when trying to alter the fragments inside the FragmentPager.
+
+The same solution, as for problems with this error, is also applicable here. When constructing the FragmentStatePagerAdapter supply the correct child fragment manager.
+
+Instead of
+
+    viewPager.setAdapter(new SimpleFragmentStatePagerAdapter(getFragmentManager(),mParentString));
+
+
+do
+
+    viewPager.setAdapter(new SimpleFragmentStatePagerAdapter(getChildFragmentManager(),mParentString));
+
+
+See also: github
+    

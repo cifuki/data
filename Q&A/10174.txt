@@ -1,0 +1,116 @@
+27
+Q:We are trying to preload images into cache memory to load them later (the images are located in the Asset folder of the application)
+
+What we tried:
+
+Glide.with(this)
+    .load(pictureUri)
+    .diskCacheStrategy(DiskCacheStrategy.ALL);
+
+Glide.with(this)
+    .load(picture_uri)
+    .diskCacheStrategy(DiskCacheStrategy.ALL)
+    .preload();
+
+
+The issue: Images are cached only when we are trying to load/display them:
+They have to be loaded in memory before so that they appear faster.
+
+Glide.with(this)
+    .load(picture_uri)
+    .into(imageView);
+
+
+We also tried to use a GlideModule to increase the CacheMemory size:
+
+public class GlideModule implements com.bumptech.glide.module.GlideModule {
+    @Override
+    public void applyOptions(Context context, GlideBuilder
+        builder.setMemoryCache(new LruResourceCache(100000));
+    }
+
+    @Override
+    public void registerComponents(Context context, Glide glide) {
+    }
+}
+
+
+In the manifest:
+
+ <meta-data android:name=".GlideModule" android:value="GlideModule"/>
+
+
+Nothing is working so far. Any idea?
+
+
+
+We trying to use an invisible 1 dp imageView, but the result is the same:
+
+for(Drawing drawing: getDrawingsForTab(tab)){
+
+    Glide.with(this)
+            .load(drawing.getImage().toUri())
+            .dontAnimate()
+            .diskCacheStrategy(DiskCacheStrategy.ALL)
+            .into(mPreloadCacheIv);
+
+    for(Picture picture : getPictures()){
+
+        Glide.with(this)
+                .load(picture.getPicture().toUri())
+                .dontAnimate()
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                .into(mPreloadCacheIv);
+    }
+}
+
+    
+===============================================================================================
+18
+A:The best option is to handle caching yourself, it gives you more control & should be easy as you already know what bitmaps are to be loaded.
+
+First: Setup a LruCache
+
+LruCache<String, Bitmap> memCache = new LruCache<>(size) {
+    @Override
+    protected int sizeOf(String key, Bitmap image) {
+        return image.getByteCount()/1024;
+    }
+};
+
+
+Second: Load the bitmaps to the LruCache
+
+Display display = getWindowManager().getDefaultDisplay();
+Point size = new Point();
+display.getSize(size);
+int width = size.x; //width of screen in pixels
+int height = size.y;//height of screen in pixels
+Glide.with(context)
+    .load(Uri.parse("file:///android_asset/imagefile"))
+    .asBitmap()
+    .fitCenter() //fits given dimensions maintaining ratio
+    .into(new SimpleTarget(width,height) {
+        // the constructor SimpleTarget() without (width, height) can also be used.
+        // as suggested by, An-droid in the comments
+        @Override
+        public void onResourceReady(Bitmap resource, GlideAnimation glideAnimation) {
+            memCache.put("imagefile", resource);
+        }
+    });
+
+
+Third: Use the cached bitmaps
+
+Bitmap image = memCache.get("imagefile");
+if (image != null) {
+    //Bitmap exists in cache.
+    imageView.setImageBitmap(image); 
+} else {
+    //Bitmap not found in cache reload it 
+    Glide.with(context)
+         .load(Uri.parse("file:///android_asset/imagefile"))
+         .into(imageView);
+}
+
+    

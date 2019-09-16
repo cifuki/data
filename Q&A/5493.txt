@@ -1,0 +1,55 @@
+45
+Q:Yesterday my Nexus 5 receive the update from Android MNC to version 6.0 - Marshmallow.
+Since then, the action to scan the networks available in the device stop receiving the list, in this case the result list have a size of 0, even with 10+ Wifi networks listed in the Wifi system settings.
+
+The code for this is the usual: Register the SCAN_RESULTS_AVAILABLE_ACTION and wait for the event in the Receiver, like this:
+
+// Register the Receiver in some part os fragment...
+getActivity().registerReceiver(wifiListener, new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION));
+WifiManager wifiManager = (WifiManager) getActivity().getSystemService(Context.WIFI_SERVICE);
+wifiManager.startScan();
+
+// Inside the receiver:
+WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+List<ScanResult> results = wifiManager.getScanResults();
+// the result.size() is 0 after update to Android v6.0, same code working in older devices.
+
+
+I searched in the changes of the API topic about this, but I didn' see any breaking changes for this functionality. 
+
+Did anyone notice this? Is something new in the API or just a isolated case?
+    
+===============================================================================================
+57
+A:As of Android 6.0, permission behaviour has changed to runtime. To use a feature that requires a permission, one should check first if the permission is granted previously. Using checkSelfPermission(permissionString) method a result is returned, wither ther permission is PERMISSION_GRANTED or PERMISSION_DENIED.
+
+If permission isn't granted or it is first time, a request for permission should be made. Giving a user an option to grant or deny.
+
+if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED){
+   requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION},
+                 PERMISSIONS_REQUEST_CODE_ACCESS_COARSE_LOCATION);
+    //After this point you wait for callback in onRequestPermissionsResult(int, String[], int[]) overriden method
+
+}else{
+    getScanningResults();
+   //do something, permission was previously granted; or legacy device
+}
+
+
+If your code is running on device prior to M, you proceed with your code, permission was granted using legacy method.
+
+Once requested for permission, dialog will be shown to user. His/her response will be delivered as:
+
+@Override
+ public void onRequestPermissionsResult(int requestCode, String[] permissions,
+         int[] grantResults) {
+     if (requestCode == PERMISSIONS_REQUEST_CODE_ACCESS_COARSE_LOCATION
+             && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+         // Do something with granted permission
+        mWifiListener.getScanningResults();
+     }
+ }
+
+
+After that, you can check if the Location Services is ON, using LocationServices.SettingsApi and request the user to enable if this options is disabled. This is possible with Play Services LocationSettingsStatusCodes.RESOLUTION_REQUIRED callback.
+    

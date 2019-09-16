@@ -1,0 +1,106 @@
+188
+Q:I'm trying to create a custom view GhostSurfaceCameraView that extends SurfaceView. Here's my class definition file 
+
+GhostSurfaceCameraView.java:
+
+public class GhostSurfaceCameraView extends SurfaceView implements SurfaceHolder.Callback {
+    SurfaceHolder mHolder;
+    Camera mCamera;
+
+    GhostSurfaceCameraView(Context context) {
+        super(context);
+
+        // Install a SurfaceHolder.Callback so we get notified when the
+        // underlying surface is created and destroyed.
+        mHolder = getHolder();
+        mHolder.addCallback(this);
+        mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+    }
+
+    public void surfaceCreated(SurfaceHolder holder) {
+        // The Surface has been created, acquire the camera and tell it where to draw.
+        mCamera = Camera.open();
+        try {
+            mCamera.setPreviewDisplay(holder);
+        } catch (IOException exception) {
+            mCamera.release();
+            mCamera = null;
+            // TODO: add more exception handling logic here
+        }
+    }
+
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        // Surface will be destroyed when we return, so stop the preview.
+        // Because the CameraDevice object is not a shared resource, it's very
+        // important to release it when the activity is paused.
+        mCamera.stopPreview();
+        mCamera.release();
+        mCamera = null;
+    }   
+
+    public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
+        // Now that the size is known, set up the camera parameters and begin
+        // the preview.
+        Camera.Parameters parameters = mCamera.getParameters();
+        parameters.setPreviewSize(w, h);
+        parameters.set("orientation", "portrait");
+        // parameters.setRotation(90); // API 5+
+        mCamera.setParameters(parameters);
+        mCamera.startPreview();
+    }
+}
+
+
+And this is in my ghostviewscreen.xml:
+
+<com.alpenglow.androcap.GhostSurfaceCameraView android:id="@+id/ghostview_cameraview"
+  android:layout_width="fill_parent"
+  android:layout_height="fill_parent"/>
+
+
+Now in the activity I made: 
+
+protected void onCreate(Bundle savedInstanceState) {
+    try {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.ghostviewscreen);
+    }
+}
+
+
+When setContentView() gets called, an exception is thrown: 
+
+Binary XML file 09-17 22:47:01.958: ERROR/ERROR(337):
+ERROR IN CODE:
+android.view.InflateException: Binary
+XML file line #14: Error inflating
+class
+com.alpenglow.androcap.GhostSurfaceCameraView
+
+
+Can anyone tell me why I get this error? Thanks.
+    
+===============================================================================================
+366
+A:I think I figured out why this wasn't working. I was only providing a constructor for the case of one parameter 'context' when I should have provided a constructor for the two parameter 'Context, AttributeSet' case. I also needed to give the constructor(s) public access. Here's my fix:
+
+public class GhostSurfaceCameraView extends SurfaceView implements SurfaceHolder.Callback {
+        SurfaceHolder mHolder;
+        Camera mCamera;
+
+        public GhostSurfaceCameraView(Context context)
+        {
+            super(context);
+            init();
+        }
+        public GhostSurfaceCameraView(Context context, AttributeSet attrs)
+        {
+            super(context, attrs);
+            init();
+        }
+        public GhostSurfaceCameraView(Context context, AttributeSet attrs, int defStyle) {
+            super(context, attrs, defStyle);
+            init();
+        }
+
+    

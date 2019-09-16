@@ -1,0 +1,126 @@
+101
+Q:I'd like to know what differs those states. I didn't find any webpage clarifying this.
+    
+===============================================================================================
+172
+A:The difference between Checked and Activated is actually quite interesting. Even the Google documentation is apologetic (emphasis below added): 
+
+
+  ... For example, in a list view with single or multiple selection
+  enabled, the views in the current selection set are activated. (Um,
+  yeah, we are deeply sorry about the terminology here.) The activated
+  state is propagated down to children of the view it is set on.
+
+
+So here is the difference:
+
+
+Activated was introduced in Honeycomb so you can't use it before that
+Activated is now a property of every View. It has methods setActivated() and isActivated()
+Activated propagates to children of the View on which it is set
+Checked revolves around a View implementing the Checkable interface. Methods setChecked(), isChecked(), toggle()
+ListView (after Honeycomb) calls setChecked() OR setActivated() depending on Android version as below (taken from Android source code):
+
+if (mChoiceMode != CHOICE_MODE_NONE && mCheckStates != null) {
+    if (child instanceof Checkable) {
+        ((Checkable) child).setChecked(mCheckStates.get(position));
+    } else if (getContext().getApplicationInfo().targetSdkVersion
+            >= android.os.Build.VERSION_CODES.HONEYCOMB) {
+        child.setActivated(mCheckStates.get(position));
+    }
+}
+
+
+Note the mCheckStates variable. It keeps track of which positions in your list are checked / activated. These are accessible via, for example, getCheckedItemPositions(). Note also that a call to ListView.setItemChecked() invokes the above. In other words, it could equally be called setItemActivated().
+Prior to Honeycomb we had to implement workarounds to reflect state_checked in our list items. This is because ListView calls setChecked() ONLY on the topmost View in the layout (and layouts do not implement checkable) ... and it does NOT propagate without help. These workarounds were of the following form: Extend the root layout to implement Checkable. In its constructor, recursively find all the children that implement Checkable. When setChecked() etc... are called, pass the call on to those Views. If those views implement state list drawables (eg a CheckBox) with a different drawable for state_checked then the checked state is reflected in the UI.
+To do a nice background to a list item after Honeycomb all you need do is have a state list drawable with a drawable for the state state_activated like this (and use setItemChecked() of course):
+
+
+
+
+<item android:state_pressed="true"
+    android:drawable="@drawable/list_item_bg_pressed"/>
+<item android:state_activated="true"
+    android:drawable="@drawable/list_item_bg_activated"/>
+<item android:drawable="@drawable/list_item_bg_normal"/>
+
+
+
+To do a nice background to a list item prior to HoneyComb you would do something like the above for state_checked and you ALSO need to extend your topmost view to implement the Checkable interface. Within that you then need to tell Android whether the state you are implementing is true or false by implementing onCreateDrawableState() and calling  refreshDrawableState() whenever the state changes.
+
+
+
+
+<item android:state_pressed="true"
+    android:drawable="@drawable/list_item_bg_pressed"/>
+<item android:state_checked="true"
+    android:drawable="@drawable/list_item_bg_checked"/>
+<item android:drawable="@drawable/list_item_bg_normal"/>
+
+
+
+
+
+... and the code to implement Checkable combined with state_checked in a RelativeLayout could be:
+
+public class RelativeLayoutCheckable extends RelativeLayout implements Checkable {
+
+    public RelativeLayoutCheckable(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public RelativeLayoutCheckable(Context context) {
+        super(context);
+    }
+
+    private boolean mChecked = false;
+
+    @Override
+    protected void onFinishInflate() {
+        super.onFinishInflate();
+    }
+    @Override
+    public boolean isChecked() {
+        return mChecked;
+    }
+
+    @Override
+    public void setChecked(boolean checked) {
+        mChecked = checked;
+        refreshDrawableState();
+    }
+
+    private static final int[] mCheckedStateSet = {
+        android.R.attr.state_checked,
+    };
+
+    @Override
+    protected int[] onCreateDrawableState(int extraSpace) {
+        final int[] drawableState = super.onCreateDrawableState(extraSpace + 1);
+        if (isChecked()) {
+            mergeDrawableStates(drawableState, mCheckedStateSet);
+        }
+        return drawableState;
+    }    
+
+    @Override
+    public void toggle() {
+        setChecked(!mChecked);
+    }
+}
+
+
+Thanks to the following:
+
+http://sriramramani.wordpress.com/2012/11/17/custom-states/
+
+Stackoverflow: How to add a custom button state
+
+Stackoverflow: Custom Checkable View which responds to Selector
+
+http://www.charlesharley.com/2012/programming/custom-drawable-states-in-android/
+
+http://developer.android.com/guide/topics/resources/drawable-resource.html#StateList
+
+http://blog.marvinlabs.com/2010/10/29/custom-listview-ability-check-items/
+    

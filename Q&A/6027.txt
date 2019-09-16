@@ -1,0 +1,36 @@
+42
+Q:I want to use this unicode character in my resource file.
+
+But whatever I do, I end with dalvikvm crash (tested with Android 2.3 and 4.2.2):
+
+W/dalvikvm( 8797): JNI WARNING: input is not valid Modified UTF-8: illegal start byte 0xf0
+W/dalvikvm( 8797):              string: '\xf0\x9f\x93\xa1'
+W/dalvikvm( 8797):              in Landroid/content/res/StringBlock;.nativeGetString:(II)Ljava/lang/String; (NewStringUTF)
+E/dalvikvm( 8797): VM aborting
+F/libc    ( 8797): Fatal signal 11 (SIGSEGV) at 0xdeadd00d (code=1), thread 8797 (cz.ipex...)
+
+
+I tried these version in my resource file:
+
+<string name="geolocation_icon" translatable="false">&#x1f4e1;</string> <!-- HTML -->
+<string name="geolocation_icon" translatable="false">\\uD83D\\uDCE1</string> <!-- escaped unicode -->
+<string name="geolocation_icon" translatable="false">\xf0\x9f\x93\xa1</string> <!-- unicode character -->
+
+
+Note that using it in Java String in code works ok:
+
+final String geolocation_icon = "\\uD83D\\uDCE1";
+
+    
+===============================================================================================
+52
+A:Your character (U+1F4E1) is outside of Unicode BMP (Basic Multilingual Plane - range from U+0000 to U+FFFF).
+
+Unfortunately, Android has very weak (if any) support for non-BMP characters. UTF-8 representation for non-BMP characters requires 4 bytes (0xF0 0x9F 0x93 0xA1). But, Android UTF-8 parser only understands 3 bytes maximum (see it here and here).
+
+It works for you when you use UTF-16 surrogate form representation of this character: "\\uD83D\\uDCE1". If you were able to encode each surrogate UTF-16 character in modified UTF-8 (aka CESU-8) - it would take 6 bytes total (3 bytes in UTF-8 for each member of surrogate pair), then it would be possible. But, Android does not support CESU-8 explicitly either.
+
+So, your current solution - hard-coding this symbol in source code as surrogate UTF-16 pair seems easiest, at least until Android starts fully supporting non-BMP UTF-8.
+
+UPDATE: this seems to be partially fixed in Android 6.0. This commit has been merged into Android 6, and permits presence of 4-byte UTF-8 characters in XML resources. Its not perfect solution - it will simply automatically convert 4-byte UTF-8 into appropriate surrogate pair. However, it allows to move them from your source code into XML resources. Unfortunately, you can't use this solution until your application can stop supporting any Android version except for 6.0 and later.
+    

@@ -1,0 +1,65 @@
+70
+Q:I'm rather newbie on Android, and I'm working on a simple application to get some basic experience. My app is pretty simple and consists among other things of a broadcast receiver and some activities. Both components make use of a single database, so in theory it could happen that both try to access the db concurrently.
+
+Currently I'm simply instantiating the db object (which is-a SQLite db helper class) each time I need it, and performing the needed operations: query, insert, etc.
+
+From what I've been reading here and in some other documents, this has the problem of getting a "db locked" exception in case the db is accessed concurrently, so a better approach would be having a single instance of this db object so all components use the same db connection at all times.
+
+Is the above reasoning correct? Would a singleton then be a good-enough solution for this? I know some purists may argue against it, but please note that this is a rather simple application so I can afford doing things I wouldn't in other cases.
+
+Otherwise, what would a better option be? I've read about using content provider but it would be too much for this, besides that I'm not interested to share the data with other activities. I have indeed read this post and found it rather helpful.
+    
+===============================================================================================
+96
+A:Click here to see my blog post on this subject.
+
+
+
+Here is some sample code that illustrates three possible approaches. These will allow access to the database throughout the application. 
+
+Approach #1: have `SQLiteOpenHelper` be a static data member
+
+This isn't the complete implementation, but it should give you a good idea on how to go about designing the DatabaseHelper class correctly. The static factory method ensures that there exists only one DatabaseHelper instance at any time.
+
+/**
+ * create custom DatabaseHelper class that extends SQLiteOpenHelper
+ */
+public class DatabaseHelper extends SQLiteOpenHelper { 
+    private static DatabaseHelper mInstance = null;
+
+    private static final String DATABASE_NAME = "databaseName";
+    private static final String DATABASE_TABLE = "tableName";
+    private static final int DATABASE_VERSION = 1;
+
+    private Context mCxt;
+
+    public static DatabaseHelper getInstance(Context ctx) {
+        /** 
+         * use the application context as suggested by CommonsWare.
+         * this will ensure that you dont accidentally leak an Activitys
+         * context (see this article for more information: 
+         * http://android-developers.blogspot.nl/2009/01/avoiding-memory-leaks.html)
+         */
+        if (mInstance == null) {
+            mInstance = new DatabaseHelper(ctx.getApplicationContext());
+        }
+        return mInstance;
+    }
+
+    /**
+     * constructor should be private to prevent direct instantiation.
+     * make call to static factory method "getInstance()" instead.
+     */
+    private DatabaseHelper(Context ctx) {
+        super(context, DATABASE_NAME, null, DATABASE_VERSION);
+        this.mCtx = ctx;
+    }
+}
+
+
+Approach #2: abstract the SQLite database with a `ContentProvider`
+
+This is the approach I would suggest. For one, the new CursorLoader class requires ContentProviders, so if you want an Activity or Fragment to implement LoaderManager.LoaderCallbacks<Cursor> with a CursorLoader (which I suggest you take advantage of, it is magical!), you'll need to implement a ContentProvider for your application. Further, you don't need to worry about making a Singleton database helper with ContentProviders. Simply call getContentResolver() from the Activity and the system will take care of everything for you (in other words, there is no need for designing a Singleton pattern to prevent multiple instances from being created).
+
+Hope this helps!
+    

@@ -1,0 +1,423 @@
+36
+Q:I'm trying to create and use a cache for a server JSON response. 
+
+For example:
+
+cache JSON objects to internal memory and use that when we don't have an internet connection. 
+
+In the following sample code, I can not find any document about how to cache it with Volley and reuse that when server header for update again don't expire. 
+
+Like this: set expiration to header and use cache and try to load again after expiration.
+
+I'm trying to set cache mechanism for this method:
+
+private void makeJsonArryReq() {
+    JsonArrayRequest req = new JsonArrayRequest(Const.URL_JSON_ARRAY,
+            new Response.Listener<JSONArray>() {
+                @Override
+                public void onResponse(JSONArray response) {
+                    msgResponse.setText(response.toString());
+                }
+            }, new Response.ErrorListener() {
+        @Override
+        public void onErrorResponse(VolleyError error) {
+        }
+    });
+    AppController.getInstance().addToRequestQueue(req,tag_json_arry);
+}
+
+
+Cache method:
+
+public static Cache.Entry parseIgnoreCacheHeaders(NetworkResponse response) {
+    long now = System.currentTimeMillis();
+
+    Map<String, String> headers = response.headers;
+    long serverDate = 0;
+    String serverEtag = null;
+    String headerValue;
+
+    headerValue = headers.get("Date");
+    if (headerValue != null) {
+        serverDate = HttpHeaderParser.parseDateAsEpoch(headerValue);
+    }
+
+    serverEtag = headers.get("ETag");
+
+    final long cacheHitButRefreshed = 3 * 60 * 1000; // in 3 minutes cache will be hit, but also refreshed on background
+    final long cacheExpired = 24 * 60 * 60 * 1000; // in 24 hours this cache entry expires completely
+    final long softExpire = now + cacheHitButRefreshed;
+    final long ttl = now + cacheExpired;
+
+    Cache.Entry entry = new Cache.Entry();
+    entry.data = response.data;
+    entry.etag = serverEtag;
+    entry.softTtl = softExpire;
+    entry.ttl = ttl;
+    entry.serverDate = serverDate;
+    entry.responseHeaders = headers;
+
+    return entry;
+}
+
+    
+===============================================================================================
+59
+A:Please note that if the web service supports caching output, you don't have to use CacheRequest below, because Volley will automatically cache.
+
+
+
+For your issue, I use some codes inside parseCacheHeaders (and refering to @oleksandr_yefremov's codes). The following code I have tested. Of course, can use for JsonArrayRequest also. Hope this help!
+
+    JsonObjectRequest jsonObjectRequest = new JsonObjectRequest(0, mUrl, new Response.Listener<JSONObject>() {
+        @Override
+        public void onResponse(JSONObject response) {
+            try {
+                mTextView.setText(response.toString(5));
+            } catch (JSONException e) {
+                mTextView.setText(e.toString());
+            }
+        }
+    }, new Response.ErrorListener() {
+        @Override
+        public void onErrorResponse(VolleyError error) {
+
+        }
+    }) {
+        @Override
+        protected Response<JSONObject> parseNetworkResponse(NetworkResponse response) {
+            try {                    
+                Cache.Entry cacheEntry = HttpHeaderParser.parseCacheHeaders(response);
+                if (cacheEntry == null) {
+                    cacheEntry = new Cache.Entry();
+                }
+                final long cacheHitButRefreshed = 3 * 60 * 1000; // in 3 minutes cache will be hit, but also refreshed on background
+                final long cacheExpired = 24 * 60 * 60 * 1000; // in 24 hours this cache entry expires completely
+                long now = System.currentTimeMillis();
+                final long softExpire = now + cacheHitButRefreshed;
+                final long ttl = now + cacheExpired;
+                cacheEntry.data = response.data;
+                cacheEntry.softTtl = softExpire;
+                cacheEntry.ttl = ttl;
+                String headerValue;
+                headerValue = response.headers.get("Date");
+                if (headerValue != null) {
+                    cacheEntry.serverDate = HttpHeaderParser.parseDateAsEpoch(headerValue);
+                }
+                headerValue = response.headers.get("Last-Modified");
+                if (headerValue != null) {
+                    cacheEntry.lastModified = HttpHeaderParser.parseDateAsEpoch(headerValue);
+                }
+                cacheEntry.responseHeaders = response.headers;
+                final String jsonString = new String(response.data,
+                        HttpHeaderParser.parseCharset(response.headers));
+                return Response.success(new JSONObject(jsonString), cacheEntry);
+            } catch (UnsupportedEncodingException e) {
+                return Response.error(new ParseError(e));
+            } catch (JSONException e) {
+                return Response.error(new ParseError(e));
+            }
+        }
+
+        @Override
+        protected void deliverResponse(JSONObject response) {
+            super.deliverResponse(response);
+        }
+
+        @Override
+        public void deliverError(VolleyError error) {
+            super.deliverError(error);
+        }
+
+        @Override
+        protected VolleyError parseNetworkError(VolleyError volleyError) {
+            return super.parseNetworkError(volleyError);
+        }
+    };
+
+    MySingleton.getInstance(this).addToRequestQueue(jsonObjectRequest);
+
+
+
+
+UPDATE:
+
+If you want a base class, refer to the following codes:
+
+public class CacheRequest extends Request<NetworkResponse> {
+    private final Response.Listener<NetworkResponse> mListener;
+    private final Response.ErrorListener mErrorListener;
+
+    public CacheRequest(int method, String url, Response.Listener<NetworkResponse> listener, Response.ErrorListener errorListener) {
+        super(method, url, errorListener);
+        this.mListener = listener;
+        this.mErrorListener = errorListener;
+    }
+
+
+    @Override
+    protected Response<NetworkResponse> parseNetworkResponse(NetworkResponse response) {
+        Cache.Entry cacheEntry = HttpHeaderParser.parseCacheHeaders(response);
+        if (cacheEntry == null) {
+            cacheEntry = new Cache.Entry();
+        }
+        final long cacheHitButRefreshed = 3 * 60 * 1000; // in 3 minutes cache will be hit, but also refreshed on background
+        final long cacheExpired = 24 * 60 * 60 * 1000; // in 24 hours this cache entry expires completely
+        long now = System.currentTimeMillis();
+        final long softExpire = now + cacheHitButRefreshed;
+        final long ttl = now + cacheExpired;
+        cacheEntry.data = response.data;
+        cacheEntry.softTtl = softExpire;
+        cacheEntry.ttl = ttl;
+        String headerValue;
+        headerValue = response.headers.get("Date");
+        if (headerValue != null) {
+            cacheEntry.serverDate = HttpHeaderParser.parseDateAsEpoch(headerValue);
+        }
+        headerValue = response.headers.get("Last-Modified");
+        if (headerValue != null) {
+            cacheEntry.lastModified = HttpHeaderParser.parseDateAsEpoch(headerValue);
+        }
+        cacheEntry.responseHeaders = response.headers;
+        return Response.success(response, cacheEntry);
+    }
+
+    @Override
+    protected void deliverResponse(NetworkResponse response) {
+        mListener.onResponse(response);
+    }
+
+    @Override
+    protected VolleyError parseNetworkError(VolleyError volleyError) {
+        return super.parseNetworkError(volleyError);
+    }
+
+    @Override
+    public void deliverError(VolleyError error) {
+        mErrorListener.onErrorResponse(error);
+    }
+}
+
+
+Then in MainActivity, you can call like this
+
+CacheRequest cacheRequest = new CacheRequest(0, mUrl, new Response.Listener<NetworkResponse>() {
+        @Override
+        public void onResponse(NetworkResponse response) {
+            try {
+                final String jsonString = new String(response.data,
+                        HttpHeaderParser.parseCharset(response.headers));
+                JSONObject jsonObject = new JSONObject(jsonString);
+                mTextView.setText(jsonObject.toString(5));
+            } catch (UnsupportedEncodingException | JSONException e) {
+                e.printStackTrace();
+            }
+        }
+    }, new Response.ErrorListener() {
+        @Override
+        public void onErrorResponse(VolleyError error) {
+            mTextView.setText(error.toString());
+        }
+    });
+
+    MySingleton.getInstance(this).addToRequestQueue(cacheRequest);
+
+
+
+
+UPDATE WITH FULL SOURCE CODE:
+
+MainActivity.java:
+
+package com.example.cachevolley;
+
+import android.content.Context;
+import android.os.Bundle;
+import android.support.v7.app.AppCompatActivity;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import com.android.volley.Cache;
+import com.android.volley.NetworkResponse;
+import com.android.volley.Request;
+import com.android.volley.RequestQueue;
+import com.android.volley.Response;
+import com.android.volley.VolleyError;
+import com.android.volley.toolbox.HttpHeaderParser;
+import com.android.volley.toolbox.Volley;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.UnsupportedEncodingException;
+
+public class MainActivity extends AppCompatActivity {
+
+    private final Context mContext = this;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        final TextView textView = (TextView) findViewById(R.id.textView);
+
+        RequestQueue queue = Volley.newRequestQueue(this);
+        String url = "http://192.168.0.100/apitest";
+
+        CacheRequest cacheRequest = new CacheRequest(0, url, new Response.Listener<NetworkResponse>() {
+            @Override
+            public void onResponse(NetworkResponse response) {
+                try {
+                    final String jsonString = new String(response.data,
+                            HttpHeaderParser.parseCharset(response.headers));
+                    JSONObject jsonObject = new JSONObject(jsonString);
+                    textView.setText(jsonObject.toString(5));
+                    Toast.makeText(mContext, "onResponse:\
+\
+" + jsonObject.toString(), Toast.LENGTH_SHORT).show();
+                } catch (UnsupportedEncodingException | JSONException e) {
+                    e.printStackTrace();
+                }
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                Toast.makeText(mContext, "onErrorResponse:\
+\
+" + error.toString(), Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Add the request to the RequestQueue.
+        queue.add(cacheRequest);
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        getMenuInflater().inflate(R.menu.menu_main, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle action bar item clicks here. The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
+        int id = item.getItemId();
+
+        //noinspection SimplifiableIfStatement
+        if (id == R.id.action_settings) {
+            return true;
+        }
+
+        return super.onOptionsItemSelected(item);
+    }
+
+    private class CacheRequest extends Request<NetworkResponse> {
+        private final Response.Listener<NetworkResponse> mListener;
+        private final Response.ErrorListener mErrorListener;
+
+        public CacheRequest(int method, String url, Response.Listener<NetworkResponse> listener, Response.ErrorListener errorListener) {
+            super(method, url, errorListener);
+            this.mListener = listener;
+            this.mErrorListener = errorListener;
+        }
+
+
+        @Override
+        protected Response<NetworkResponse> parseNetworkResponse(NetworkResponse response) {
+            Cache.Entry cacheEntry = HttpHeaderParser.parseCacheHeaders(response);
+            if (cacheEntry == null) {
+                cacheEntry = new Cache.Entry();
+            }
+            final long cacheHitButRefreshed = 3 * 60 * 1000; // in 3 minutes cache will be hit, but also refreshed on background
+            final long cacheExpired = 24 * 60 * 60 * 1000; // in 24 hours this cache entry expires completely
+            long now = System.currentTimeMillis();
+            final long softExpire = now + cacheHitButRefreshed;
+            final long ttl = now + cacheExpired;
+            cacheEntry.data = response.data;
+            cacheEntry.softTtl = softExpire;
+            cacheEntry.ttl = ttl;
+            String headerValue;
+            headerValue = response.headers.get("Date");
+            if (headerValue != null) {
+                cacheEntry.serverDate = HttpHeaderParser.parseDateAsEpoch(headerValue);
+            }
+            headerValue = response.headers.get("Last-Modified");
+            if (headerValue != null) {
+                cacheEntry.lastModified = HttpHeaderParser.parseDateAsEpoch(headerValue);
+            }
+            cacheEntry.responseHeaders = response.headers;
+            return Response.success(response, cacheEntry);
+        }
+
+        @Override
+        protected void deliverResponse(NetworkResponse response) {
+            mListener.onResponse(response);
+        }
+
+        @Override
+        protected VolleyError parseNetworkError(VolleyError volleyError) {
+            return super.parseNetworkError(volleyError);
+        }
+
+        @Override
+        public void deliverError(VolleyError error) {
+            mErrorListener.onErrorResponse(error);
+        }
+    }
+}
+
+
+Manifest file:
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.cachevolley" >
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme" >
+        <activity
+            android:name=".MainActivity"
+            android:label="@string/app_name" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
+
+
+Layout file:
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingBottom="@dimen/activity_vertical_margin"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="@dimen/activity_vertical_margin"
+    tools:context=".MainActivity">
+
+    <TextView
+        android:id="@+id/textView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/hello_world" />
+
+</RelativeLayout>
+
+    

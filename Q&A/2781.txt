@@ -1,0 +1,154 @@
+77
+Q:I am creating a server in .NET and a client application for Android. I would like to implement an authentication method which sends username and password to server and a server sends back a session string.
+
+I'm not familiar with WCF so I would really appreciate your help.
+
+In java I've written the following method:
+
+private void Login()
+{
+  HttpClient httpClient = new DefaultHttpClient();
+  try
+  {
+      String url = "http://192.168.1.5:8000/Login?username=test&password=test";
+
+    HttpGet method = new HttpGet( new URI(url) );
+    HttpResponse response = httpClient.execute(method);
+    if ( response != null )
+    {
+      Log.i( "login", "received " + getResponse(response.getEntity()) );
+    }
+    else
+    {
+      Log.i( "login", "got a null response" );
+    }
+  } catch (IOException e) {
+    Log.e( "error", e.getMessage() );
+  } catch (URISyntaxException e) {
+    Log.e( "error", e.getMessage() );
+  }
+}
+
+private String getResponse( HttpEntity entity )
+{
+  String response = "";
+
+  try
+  {
+    int length = ( int ) entity.getContentLength();
+    StringBuffer sb = new StringBuffer( length );
+    InputStreamReader isr = new InputStreamReader( entity.getContent(), "UTF-8" );
+    char buff[] = new char[length];
+    int cnt;
+    while ( ( cnt = isr.read( buff, 0, length - 1 ) ) > 0 )
+    {
+      sb.append( buff, 0, cnt );
+    }
+
+      response = sb.toString();
+      isr.close();
+  } catch ( IOException ioe ) {
+    ioe.printStackTrace();
+  }
+
+  return response;
+}
+
+
+But on the server side so far I haven't figured out anything.
+
+I would be really thankful if anyone could explain how to create an appropriate method string Login(string username, string password) with appropriate App.config settings and Interface with appropriate [OperationContract] signature in order to read these two parameters from client and reply with session string.
+
+Thanks!
+    
+===============================================================================================
+40
+A:To get started with WCF, it might be easiest to just use the default SOAP format and HTTP POST (rather than GET) for the web-service bindings.  The easiest HTTP binding to get working is "basicHttpBinding".  Here is an example of what the ServiceContract/OperationContract might look like for your login service:
+
+[ServiceContract(Namespace="http://mycompany.com/LoginService")]
+public interface ILoginService
+{
+    [OperationContract]
+    string Login(string username, string password);
+}
+
+
+The implementation of the service could look like this:
+
+public class LoginService : ILoginService
+{
+    public string Login(string username, string password)
+    {
+        // Do something with username, password to get/create sessionId
+        // string sessionId = "12345678";
+        string sessionId = OperationContext.Current.SessionId;
+
+        return sessionId;
+    }
+}
+
+
+You can host this as a windows service using a ServiceHost, or you can host it in IIS like a normal ASP.NET web (service) application.  There are a lot of tutorials out there for both of these.
+
+The WCF service config might look like this:
+
+<?xml version="1.0" encoding="utf-8" ?>
+<configuration>
+
+
+    <system.serviceModel>
+        <behaviors>
+            <serviceBehaviors>
+                <behavior name="LoginServiceBehavior">
+                    <serviceMetadata />
+                </behavior>
+            </serviceBehaviors>
+        </behaviors>
+
+        <services>
+            <service name="WcfTest.LoginService"
+                     behaviorConfiguration="LoginServiceBehavior" >
+                <host>
+                    <baseAddresses>
+                        <add baseAddress="http://somesite.com:55555/LoginService/" />
+                    </baseAddresses>
+                </host>
+                <endpoint name="LoginService"
+                          address=""
+                          binding="basicHttpBinding"
+                          contract="WcfTest.ILoginService" />
+
+                <endpoint name="LoginServiceMex"
+                          address="mex"
+                          binding="mexHttpBinding"
+                          contract="IMetadataExchange" />
+            </service>
+        </services>
+    </system.serviceModel>
+</configuration>
+
+
+(The MEX stuff is optional for production, but is needed for testing with WcfTestClient.exe, and for exposing the service meta-data).
+
+You'll have to modify your Java code to POST a SOAP message to the service.  WCF can be a little picky when inter-operating with non-WCF clients, so you'll have to mess with the POST headers a little to get it to work.  Once you get this running, you can then start to investigate security for the login (might need to use a different binding to get better security), or possibly using WCF REST to allow for logins with a GET rather than SOAP/POST.
+
+Here is an example of what the HTTP POST should look like from the Java code.  There is a tool called "Fiddler" that can be really useful for debugging web-services.
+
+POST /LoginService HTTP/1.1
+Content-Type: text/xml; charset=utf-8
+SOAPAction: "http://mycompany.com/LoginService/ILoginService/Login"
+Host: somesite.com:55555
+Content-Length: 216
+Expect: 100-continue
+Connection: Keep-Alive
+
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+<s:Body>
+<Login xmlns="http://mycompany.com/LoginService">
+<username>Blah</username>
+<password>Blah2</password>
+</Login>
+</s:Body>
+</s:Envelope>
+
+    

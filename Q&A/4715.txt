@@ -1,0 +1,174 @@
+51
+Q:I just enabled instant run in my android studio project. (Followed the instructions here)
+
+My project contains git submodules and somehow these do not compile anymore.
+
+This is the error i get:
+
+
+  Error:(8, 0) Cannot change dependencies of configuration
+  ':libraries:my_library:classpath' after it has been resolved.
+
+
+Any idea what could be wrong there ? 
+
+Top level build.gradle:
+
+buildscript {
+repositories {
+    mavenCentral()
+    jcenter()
+    maven { url 'https://maven.fabric.io/public' }
+}
+
+dependencies {
+    classpath 'com.android.tools.build:gradle:2.0.0-alpha1'
+    classpath 'com.novoda:bintray-release:0.2.7'
+    classpath 'io.fabric.tools:gradle:1.+'
+}}
+
+
+Module build.gradle:
+
+apply plugin: 'android'
+apply plugin: 'io.fabric'
+
+android {
+
+    defaultConfig {
+       versionCode 4850
+       versionName '4850'
+       compileSdkVersion 23
+       buildToolsVersion '23.0.1'
+    }
+
+    packagingOptions {
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/MANIFEST.MF'
+        exclude 'META-INF/NOTICE'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_7
+        targetCompatibility JavaVersion.VERSION_1_7
+    }
+
+    useLibrary 'org.apache.http.legacy'
+}
+
+repositories {
+    mavenCentral()
+    jcenter()
+}
+
+
+dependencies {
+    [skip]
+    compile project(':libraries:my_library:sdk')
+}
+
+
+Library build.gradle
+
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion 23
+    buildToolsVersion '23.0.2'
+
+    defaultConfig {
+        minSdkVersion 14
+        targetSdkVersion 23
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile fileTree(include: '*.jar', dir: 'libs')
+    compile 'com.android.support:support-v4:23.1.0'
+    compile 'com.android.support:appcompat-v7:23.1.0'
+
+    testCompile 'junit:junit:4.12'
+
+}
+
+    
+===============================================================================================
+28
+A:I had the same problem. I compared it to the (working) sample project by @RaGe and found the minor difference.
+
+The sub project folder has to start with a Upper case letter.
+
+Here is the change I did on @RaGes sample to break it and get it working again.
+
+Broken structure:
+
+android-multi-project-sample
+    + .gralde
+    + .idea
+    + app
+    + build
+    + gradle
+    + myApplication2
+    - .gitignore
+    - android-multi-project-sample.iml
+    - build.gradle
+    - gradle.properties
+    - gradlew
+    - gradlew.bat
+    - local.properties
+    - settings.gradle
+
+
+results in the following error:
+
+Error:(8, 0) Cannot change dependencies of configuration ':myApplication2:classpath' after it has been resolved.
+
+Working structure (with upper case sub project)
+
+android-multi-project-sample
+    + .gralde
+    + .idea
+    + app
+    + build
+    + gradle
+    + MyApplication2     // upper case!!!!!!
+    - .gitignore
+    - android-multi-project-sample.iml
+    - build.gradle
+    - gradle.properties
+    - gradlew
+    - gradlew.bat
+    - local.properties
+    - settings.gradle
+
+
+also the top level settings.gradle has to be changed:
+
++ include ':app', ':MyApplication2:mylibrary'
+- include ':app', ':myApplication2:mylibrary'
+
+
+and app/build.gradle has to change this
+
++ compile project(':MyApplication2:mylibrary')
+- compile project(':myApplication2:mylibrary')
+
+
+Everything compiles
+
+Be careful! Git is not case sensitive by default. Use 
+
+git mv -f myApplication2 temp
+git mv -f temp MyApplication2
+
+
+to rename the folder.
+    

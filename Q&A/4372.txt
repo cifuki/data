@@ -1,0 +1,143 @@
+54
+Q:I'm trying to use Parcel to write and then read back a Parcelable.  For some reason, when I read the object back from the file, it's coming back as null.
+
+public void testFoo() {
+    final Foo orig = new Foo("blah blah");
+
+    // Wrote orig to a parcel and then byte array
+    final Parcel p1 = Parcel.obtain();
+    p1.writeValue(orig);
+    final byte[] bytes = p1.marshall();
+
+
+    // Check to make sure that the byte array seems to contain a Parcelable
+    assertEquals(4, bytes[0]); // Parcel.VAL_PARCELABLE
+
+
+    // Unmarshall a Foo from that byte array
+    final Parcel p2 = Parcel.obtain();
+    p2.unmarshall(bytes, 0, bytes.length);
+    final Foo result = (Foo) p2.readValue(Foo.class.getClassLoader());
+
+
+    assertNotNull(result); // FAIL
+    assertEquals( orig.str, result.str );
+}
+
+
+protected static class Foo implements Parcelable {
+    protected static final Parcelable.Creator<Foo> CREATOR = new Parcelable.Creator<Foo>() {
+        public Foo createFromParcel(Parcel source) {
+            final Foo f = new Foo();
+            f.str = (String) source.readValue(Foo.class.getClassLoader());
+            return f;
+        }
+
+        public Foo[] newArray(int size) {
+            throw new UnsupportedOperationException();
+        }
+
+    };
+
+
+    public String str;
+
+    public Foo() {
+    }
+
+    public Foo( String s ) {
+        str = s;
+    }
+
+    public int describeContents() {
+        return 0;
+    }
+
+    public void writeToParcel(Parcel dest, int ignored) {
+        dest.writeValue(str);
+    }
+
+
+}
+
+
+What am I missing?
+
+UPDATE:  To simplify the test I've removed the reading and writing of files in my original example.
+    
+===============================================================================================
+70
+A:Ah, I finally found the problem.  There were two in fact.
+
+
+CREATOR must be public, not protected.  But more importantly,
+You must call setDataPosition(0) after unmarshalling your data.
+
+
+Here is the revised, working code:
+
+public void testFoo() {
+    final Foo orig = new Foo("blah blah");
+    final Parcel p1 = Parcel.obtain();
+    final Parcel p2 = Parcel.obtain();
+    final byte[] bytes;
+    final Foo result;
+
+    try {
+        p1.writeValue(orig);
+        bytes = p1.marshall();
+
+        // Check to make sure that the byte stream seems to contain a Parcelable
+        assertEquals(4, bytes[0]); // Parcel.VAL_PARCELABLE
+
+        p2.unmarshall(bytes, 0, bytes.length);
+        p2.setDataPosition(0);
+        result = (Foo) p2.readValue(Foo.class.getClassLoader());
+
+    } finally {
+        p1.recycle();
+        p2.recycle();
+    }
+
+
+    assertNotNull(result);
+    assertEquals( orig.str, result.str );
+
+}
+
+protected static class Foo implements Parcelable {
+    public static final Parcelable.Creator<Foo> CREATOR = new Parcelable.Creator<Foo>() {
+        public Foo createFromParcel(Parcel source) {
+            final Foo f = new Foo();
+            f.str = (String) source.readValue(Foo.class.getClassLoader());
+            return f;
+        }
+
+        public Foo[] newArray(int size) {
+            throw new UnsupportedOperationException();
+        }
+
+    };
+
+
+    public String str;
+
+    public Foo() {
+    }
+
+    public Foo( String s ) {
+        str = s;
+    }
+
+    public int describeContents() {
+        return 0;
+    }
+
+    public void writeToParcel(Parcel dest, int ignored) {
+        dest.writeValue(str);
+    }
+
+
+}
+
+    

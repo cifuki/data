@@ -1,0 +1,181 @@
+28
+Q:I've been searching around but could not find any answers to this. What I'm trying to implement is an EditText similar to the 'To' field found in the composing screen of the ICS gmail app.
+
+Here's an image describing what I want:
+
+
+I'm thinking of extending EditText and implementing my own custom EditText class but I'm not really sure how to do that or even if that's the best solution. Any thoughts?
+    
+===============================================================================================
+8
+A:Adapted the solution from this answer. Separates the input automatically when inserting a comma (separator can be adjusted). Creates a an ImageSpan and a ClickableSpan (entries can be removed by clicking on the right part).
+
+public class TagEditText extends EditText {
+
+    TextWatcher textWatcher;
+
+    String lastString;
+
+    String separator = ",";
+
+    public TagEditText(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        init();
+    }
+
+
+    private void init() {
+        setMovementMethod(LinkMovementMethod.getInstance());
+
+        textWatcher = new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                String thisString = s.toString();
+                if (thisString.length() > 0 && !thisString.equals(lastString)) {
+                    format();
+
+                }
+            }
+        };
+
+        addTextChangedListener(textWatcher);
+    }
+
+
+    private void format() {
+
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        String fullString = getText().toString();
+
+        String[] strings = fullString.split(separator);
+
+
+        for (int i = 0; i < strings.length; i++) {
+
+            String string = strings[i];
+            sb.append(string);
+
+            if (fullString.charAt(fullString.length() - 1) != separator.charAt(0) && i == strings.length - 1) {
+                break;
+            }
+
+            BitmapDrawable bd = (BitmapDrawable) convertViewToDrawable(createTokenView(string));
+            bd.setBounds(0, 0, bd.getIntrinsicWidth(), bd.getIntrinsicHeight());
+
+            int startIdx = sb.length() - (string.length());
+            int endIdx = sb.length();
+
+            sb.setSpan(new ImageSpan(bd), startIdx, endIdx, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+            MyClickableSpan myClickableSpan = new MyClickableSpan(startIdx, endIdx);
+            sb.setSpan(myClickableSpan, Math.max(endIdx-2, startIdx), endIdx, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+            if (i < strings.length - 1) {
+                sb.append(separator);
+            } else if (fullString.charAt(fullString.length() - 1) == separator.charAt(0)) {
+                sb.append(separator);
+            }
+        }
+
+
+        lastString = sb.toString();
+
+        setText(sb);
+        setSelection(sb.length());
+
+    }
+
+    public View createTokenView(String text) {
+
+
+        LinearLayout l = new LinearLayout(getContext());
+        l.setOrientation(LinearLayout.HORIZONTAL);
+        l.setBackgroundResource(R.drawable.bordered_rectangle_rounded_corners);
+
+        TextView tv = new TextView(getContext());
+        l.addView(tv);
+        tv.setText(text);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+
+        ImageView im = new ImageView(getContext());
+        l.addView(im);
+        im.setImageResource(R.drawable.ic_cross_15dp);
+        im.setScaleType(ImageView.ScaleType.FIT_CENTER);
+
+        return l;
+    }
+
+    public Object convertViewToDrawable(View view) {
+        int spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+        view.measure(spec, spec);
+        view.layout(0, 0, view.getMeasuredWidth(), view.getMeasuredHeight());
+
+        Bitmap b = Bitmap.createBitmap(view.getMeasuredWidth(), view.getMeasuredHeight(), Bitmap.Config.ARGB_8888);
+
+        Canvas c = new Canvas(b);
+
+        c.translate(-view.getScrollX(), -view.getScrollY());
+        view.draw(c);
+        view.setDrawingCacheEnabled(true);
+        Bitmap cacheBmp = view.getDrawingCache();
+        Bitmap viewBmp = cacheBmp.copy(Bitmap.Config.ARGB_8888, true);
+        view.destroyDrawingCache();
+        return new BitmapDrawable(getContext().getResources(), viewBmp);
+    }
+
+    private class MyClickableSpan extends ClickableSpan{
+
+        int startIdx;
+        int endIdx;
+
+        public MyClickableSpan(int startIdx, int endIdx) {
+            super();
+            this.startIdx = startIdx;
+            this.endIdx = endIdx;
+        }
+
+        @Override
+        public void onClick(View widget) {
+
+
+
+            String s = getText().toString();
+
+            String s1 = s.substring(0, startIdx);
+            String s2 = s.substring(Math.min(endIdx+1, s.length()-1), s.length() );
+
+            TagEditText.this.setText(s1 + s2);
+        }
+
+    }
+}
+
+
+R.drawable.bordered_rectangle_rounded_corners:
+
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid
+        android:color="@color/transparent"/>
+    <stroke android:width="1dp" android:color="#AAAAAA" />
+    <corners
+        android:radius="100dp" />
+    <padding
+        android:left="5dp"
+        android:top="5dp"
+        android:right="5dp"
+        android:bottom="5dp" />
+</shape>
+
+
+Last thing to add is png for the "x-Button". Works well so far, only problem is that pressing long on the delete-key doesn't work (if someone has an idea how to make it work, feel free to comment)
+    

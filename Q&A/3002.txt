@@ -1,0 +1,52 @@
+73
+Q:I have an activity using an xml layout where a WebView is embedded. I am not using the WebView in my activity code at all, all it does is sitting there in my xml layout and being visible.
+
+Now, when I finish the activity, I find that my activity is not being cleared from memory. (I check via hprof dump). The activity is entirely cleared though if I remove the WebView from the xml layout.
+
+I already tried a 
+
+webView.destroy();
+webView = null;
+
+
+in onDestroy() of my activity, but that doesn't help much.
+
+In my hprof dump, my activity (named 'Browser') has the following remaining GC roots (after having called destroy() on it):
+
+com.myapp.android.activity.browser.Browser
+  - mContext of android.webkit.JWebCoreJavaBridge
+    - sJavaBridge of android.webkit.BrowserFrame [Class]
+  - mContext of android.webkit.PluginManager
+    - mInstance of android.webkit.PluginManager [Class]  
+
+
+I found that another developer has experienced similar thing, see the reply of Filipe Abrantes on:
+http://www.curious-creature.org/2008/12/18/avoid-memory-leaks-on-android/
+
+
+  Indeed a very interesting post.
+  Recently I had a very hard time
+  troubleshooting a memory leak on my
+  Android app. In the end it turned out
+  that my xml layout included a WebView
+  component that, even if not used, was
+  preventing the memory from being
+  g-collected after screen rotations/app
+  restart\xe2\x80\xa6 is this a bug of the current
+  implementation, or is there something
+  specific that one needs to do when
+  using WebViews
+
+
+Now, unfortunately there has been no reply on the blog or the mailing list about this question yet. Therefore I am wondering, is that a bug in the SDK (maybe similar to the MapView bug as reported http://code.google.com/p/android/issues/detail?id=2181) or how to get the activity entirely off the memory with a webview embedded?
+    
+===============================================================================================
+54
+A:I conclude from above comments and further tests, that the problem is a bug in the SDK: when creating a WebView via XML layout, the activity is passed as the context for the WebView, not the application context. When finishing the activity, the WebView still keeps references to the activity, therefore the activity doesn't get removed from the memory.
+I filed a bug report for that , see the link in the comment above.
+
+webView = new WebView(getApplicationContext());
+
+
+Note that this workaround only works for certain use cases, i.e. if you just need to display html in a webview, without any href-links nor links to dialogs, etc. See the comments below.
+    

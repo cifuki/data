@@ -1,0 +1,221 @@
+27
+Q:The latest Facebook's android app has a very nice floating comment window. There the user can dismiss the window swiping up or down making it really ease to use. 
+
+I want to implement a similar behaviour in my app but I don't know how to do it. Any idea or clue about how to do it will be really appreciated.
+
+Screenshots of the Facebook app
+(sorry, the Facebook app from where I took the screenshots is in Japanese)
+
+
+    
+===============================================================================================
+31
+A:I write some code that match this closing/resizing behaviour, I don't know if it's the way to go but my code is based on Activity class. First thing I do is create an activity and give it Transluscenttheme to get an activity with transparent background.
+
+In my manifest.xml : 
+
+<activity
+    android:name=".PopupActivity"
+    android:label="@string/title_activity_popup"
+    <!-- Use Translucent theme to get transparent activity background 
+     and NoTitleBar to avoid super old style title bar ;) -->
+    android:theme="@android:style/Theme.Translucent.NoTitleBar">
+</activity>
+
+
+Then I create a simple layout file containing a textview (corresponding to Facebook tchatting part) and a view (corresponding to Facebook "Write your msg"/"send smiley" tab)
+
+my layout/activity_popup.xml :
+
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/base_popup_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="8dp"
+    android:background="@android:color/darker_gray"
+    android:layout_marginBottom="124dp">
+
+    <TextView
+        android:text="@string/hello_world"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:background="@android:color/black"/>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:layout_alignParentBottom="true"
+        android:background="@android:color/holo_blue_dark"/>
+
+</RelativeLayout>
+
+
+Finally I handle touch and move event in my PopupActivity class, I use onTouchListener which provide callback in onTouch method.
+
+PopupActivity
+
+public class PopupActivity extends Activity implements View.OnTouchListener{
+
+    private RelativeLayout baseLayout;
+
+    private int previousFingerPosition = 0;
+    private int baseLayoutPosition = 0;
+    private int defaultViewHeight;
+
+    private boolean isClosing = false;
+    private boolean isScrollingUp = false;
+    private boolean isScrollingDown = false;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState){
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_popup);
+        baseLayout = (RelativeLayout) findViewById(R.id.base_popup_layout);
+        baseLayout.setOnTouchListener(this);
+    }
+
+
+    public boolean onTouch(View view, MotionEvent event) {
+
+        // Get finger position on screen
+        final int Y = (int) event.getRawY();
+
+        // Switch on motion event type
+        switch (event.getAction() & MotionEvent.ACTION_MASK) {
+
+            case MotionEvent.ACTION_DOWN:
+                // save default base layout height
+                defaultViewHeight = baseLayout.getHeight();
+
+                // Init finger and view position
+                previousFingerPosition = Y;
+                baseLayoutPosition = (int) baseLayout.getY();
+                break;
+
+            case MotionEvent.ACTION_UP:
+                // If user was doing a scroll up
+                if(isScrollingUp){
+                    // Reset baselayout position
+                    baseLayout.setY(0);
+                    // We are not in scrolling up mode anymore
+                    isScrollingUp = false;
+                }
+
+                // If user was doing a scroll down
+                if(isScrollingDown){
+                    // Reset baselayout position
+                    baseLayout.setY(0);
+                    // Reset base layout size
+                    baseLayout.getLayoutParams().height = defaultViewHeight;
+                    baseLayout.requestLayout();
+                    // We are not in scrolling down mode anymore
+                    isScrollingDown = false;
+                }
+                break;
+            case MotionEvent.ACTION_MOVE:
+                if(!isClosing){
+                    int currentYPosition = (int) baseLayout.getY();
+
+                    // If we scroll up
+                    if(previousFingerPosition >Y){
+                        // First time android rise an event for "up" move
+                        if(!isScrollingUp){
+                            isScrollingUp = true;
+                        }
+
+                    // Has user scroll down before -> view is smaller than it's default size -> resize it instead of change it position
+                    if(baseLayout.getHeight()<defaultViewHeight){
+                        baseLayout.getLayoutParams().height = baseLayout.getHeight() - (Y - previousFingerPosition);
+                        baseLayout.requestLayout();
+                    }
+                    else {
+                        // Has user scroll enough to "auto close" popup ?
+                        if ((baseLayoutPosition - currentYPosition) > defaultViewHeight / 4) {
+                            closeUpAndDismissDialog(currentYPosition);
+                            return true;
+                        }
+
+                        //
+                    }
+                    baseLayout.setY(baseLayout.getY() + (Y - previousFingerPosition));
+
+                }
+                // If we scroll down
+                else{
+
+                    // First time android rise an event for "down" move
+                    if(!isScrollingDown){
+                        isScrollingDown = true;
+                    }
+
+                    // Has user scroll enough to "auto close" popup ?
+                    if (Math.abs(baseLayoutPosition - currentYPosition) > defaultViewHeight / 2)
+                    {
+                        closeDownAndDismissDialog(currentYPosition);
+                        return true;
+                    }
+
+                    // Change base layout size and position (must change position because view anchor is top left corner)
+                    baseLayout.setY(baseLayout.getY() + (Y - previousFingerPosition));
+                    baseLayout.getLayoutParams().height = baseLayout.getHeight() - (Y - previousFingerPosition);
+                    baseLayout.requestLayout();
+                }
+
+                // Update position
+                previousFingerPosition = Y;
+            }
+            break;
+        }
+        return true;
+    }
+}
+
+
+There are two small methods called when user has scroll enough to close popup (ie animate and finish activity) :
+
+public void closeUpAndDismissDialog(int currentPosition){
+    isClosing = true;
+    ObjectAnimator positionAnimator = ObjectAnimator.ofFloat(baseLayout, "y", currentPosition, -baseLayout.getHeight());
+    positionAnimator.setDuration(300);
+    positionAnimator.addListener(new Animator.AnimatorListener()
+    {
+        . . .
+        @Override
+        public void onAnimationEnd(Animator animator)
+        {
+            finish();
+        }
+        . . .
+    });
+    positionAnimator.start();
+}
+
+public void closeDownAndDismissDialog(int currentPosition){
+    isClosing = true;
+    Display display = getWindowManager().getDefaultDisplay();
+    Point size = new Point();
+    display.getSize(size);
+    int screenHeight = size.y;
+    ObjectAnimator positionAnimator = ObjectAnimator.ofFloat(baseLayout, "y", currentPosition, screenHeight+baseLayout.getHeight());
+    positionAnimator.setDuration(300);
+    positionAnimator.addListener(new Animator.AnimatorListener()
+     {
+        . . .
+        @Override
+        public void onAnimationEnd(Animator animator)
+        {
+            finish();
+        }
+        . . .
+    });
+    positionAnimator.start();
+}
+
+
+With all this code your should be able to start PopupActivity that globally match Facebook popup behaviour. It's just a draft class and a lot of work remains to do : add animations, work on closing parameters and so on...
+
+Screenshots :
+
+
+    

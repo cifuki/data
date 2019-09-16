@@ -1,0 +1,136 @@
+45
+Q:I'm trying to integrate posting to one's wall from within my app. I already have an area where the user can save his/her username and password (encrypted). I would like my program to recall the saved username and password, pass that to Facebook for authentication, and then allow the app to post simple text (maybe a link too) to the user's wall. 
+
+That said, I've read everything on the developer pages at Facebook (the api looks completely foreign to me... I've never done any type of web app development before... just desktop apps), and experimented with the Java libraries here but to be honest, I don't understand any of the various implementations. Some claim to be simple to use, but apparently they are all way above my head. 
+
+I've even tried messing with the official Facebook Android SDK, but that uses a webview interface, and I can't pass in the username and password for easy authentication. Plus, I'm still clueless as to how to post to the wall even after correct authentication.
+
+Please help.
+Thanks.
+
+Oh, btw I already have a Facebook API key and Application ID.
+
+[UPDATE 1]
+
+For further clarification:
+If I use the following code snippet with the official Facebook Android SDK http://github.com/facebook/facebook-android-sdk what should I do next (after the user has logged-in)? This is unclear to me.
+
+Facebook facebookClient = new Facebook();
+facebookClient.authorize(this, "[APP ID]", new String[] {"publish_stream", "read_stream", "offline_access"}, this);
+
+
+where "this" is an Activity that implements a DialogListener, and "[APP ID]" is my Facebook application ID.
+
+Thanks.
+
+[UPDATE 2]
+
+I found a solution (see below), though the only thing missing is the ability to auto-populate the login text boxes with the data I have stored in the app. The official Facebook Android SDK may not allow for this. I'll keep looking into it.
+    
+===============================================================================================
+45
+A:I figured it out, with Tom's help (thanks). The key was creating a dialog with the "stream.publish" API call, using the Facebook Android SDK. Here are the steps:
+
+
+Download the official Facebook Android SDK : http://github.com/facebook/facebook-android-sdk
+Import the project files into Eclipse.
+Export the project as a *.jar file. (this might cause a conflict)
+
+[UPDATE]
+
+Facebook recently updated the source code and I noticed the icon file caused resource id conflicts with my projects (Android 1.5+). My solution is to forget about exporting as a jar. Instead, copy the Facebook "com" folder directly into your app's "src" folder (i.e. "com.facebook.android" should be a package in your app... right alongside your source files). If you already have a "com" folder in your "src" folder, don't worry about any dialog boxes that appear about overwriting files, none of your source files should be overwritten. Go back into Eclipse, and refresh the "src" folder and "com.facebook.android" should now be listed as a package. Copy one of the included Facebook icons to your app's "drawable" folder and refresh that as well. Eclipse will complain about the "FbDialog.java" file... just add an import pointing to your app's "R" file to the header of that file (e.g. if your app's package name is "com.android.myapp," then add this: "import com.android.myapp.R;"). Go to #5 if you needed to do this.
+Add the .jar file to your project's build path
+Look at the following simplified example code:
+
+
+
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.widget.LinearLayout;
+import com.facebook.android.*;
+import com.facebook.android.Facebook.DialogListener;
+
+public class FacebookActivity extends Activity implements DialogListener,
+        OnClickListener
+{
+
+    private Facebook facebookClient;
+    private LinearLayout facebookButton;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+        this.setContentView(R.layout.test);//my layout xml
+
+        facebookButton = (LinearLayout)this.findViewById(R.id.Test_Facebook_Layout);
+
+    }
+
+    @Override
+    public void onComplete(Bundle values)
+    {
+
+        if (values.isEmpty())
+        {
+            //"skip" clicked ?
+            return;
+        }
+
+        // if facebookClient.authorize(...) was successful, this runs
+        // this also runs after successful post
+        // after posting, "post_id" is added to the values bundle
+        // I use that to differentiate between a call from
+        // faceBook.authorize(...) and a call from a successful post
+        // is there a better way of doing this?
+        if (!values.containsKey("post_id"))
+        {
+            try
+            {
+                Bundle parameters = new Bundle();
+                parameters.putString("message", "this is a test");// the message to post to the wall
+                facebookClient.dialog(this, "stream.publish", parameters, this);// "stream.publish" is an API call
+            }
+            catch (Exception e)
+            {
+                // TODO: handle exception
+                System.out.println(e.getMessage());
+            }
+        }
+    }
+
+    @Override
+    public void onError(DialogError e)
+    {
+        System.out.println("Error: " + e.getMessage());
+    }
+
+    @Override
+    public void onFacebookError(FacebookError e)
+    {
+        System.out.println("Error: " + e.getMessage());
+    }
+
+    @Override
+    public void onCancel()
+    {
+    }
+
+    @Override
+    public void onClick(View v)
+    {
+        if (v == facebookButton)
+        {
+            facebookClient = new Facebook();
+            // replace APP_API_ID with your own
+            facebookClient.authorize(this, APP_API_ID,
+                new String[] {"publish_stream", "read_stream", "offline_access"}, this);
+        }
+    }
+}
+
+
+    

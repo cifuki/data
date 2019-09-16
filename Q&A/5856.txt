@@ -1,0 +1,58 @@
+43
+Q:I posted this back in May on the [android-developers] Google Group. I never heard back and was not able to reproduce the problem until one of my students did last week. I figured I'd post it here and see if it rang any bells for anyone.
+
+In one of my code samples, I have the following method:
+
+static Cursor getAll(SQLiteDatabase db, String orderBy) {
+        return(db.rawQuery("SELECT * FROM restaurants "+orderBy, null));
+
+}
+
+
+When I run it, sporadically, I get this:
+
+05-01 14:45:05.849: ERROR/AndroidRuntime(1145):
+java.lang.IllegalStateException: attempt to acquire a reference on a
+close SQLiteClosable
+05-01 14:45:05.849: ERROR/AndroidRuntime(1145):     at
+android.database.sqlite.SQLiteClosable.acquireReference(SQLiteClosable.java:31)
+05-01 14:45:05.849: ERROR/AndroidRuntime(1145):     at
+android.database.sqlite.SQLiteProgram.<init>(SQLiteProgram.java:56)
+05-01 14:45:05.849: ERROR/AndroidRuntime(1145):     at
+android.database.sqlite.SQLiteQuery.<init>(SQLiteQuery.java:49)
+05-01 14:45:05.849: ERROR/AndroidRuntime(1145):     at
+android.database.sqlite.SQLiteDirectCursorDriver.query(SQLiteDirectCursorDriver.java:49)
+05-01 14:45:05.849: ERROR/AndroidRuntime(1145):     at
+android.database.sqlite.SQLiteDatabase.rawQueryWithFactory(SQLiteDatabase.java:1118)
+05-01 14:45:05.849: ERROR/AndroidRuntime(1145):     at
+android.database.sqlite.SQLiteDatabase.rawQuery(SQLiteDatabase.java:1092)
+05-01 14:45:05.849: ERROR/AndroidRuntime(1145):     at
+apt.tutorial.Restaurant.getAll(Restaurant.java:14)
+
+
+This makes no sense to me. The database is definitely open. The
+SQLiteClosable is the SQLiteQuery created by SQLiteQueryDriver, and I
+see no evidence that there is an object pool or something going on here
+that might explain how a "new" SQLiteClosable is already closed. The
+fact that it is sporadic (meaning the same UI operations sometimes
+trigger the exception, but not always) suggests some sort of pool, race
+condition, or something...but I'm not sure where. 
+
+Thoughts?
+
+Thanks!
+
+UPDATE: The code in question is from the LunchList tutorials out of my Android Programming Tutorials book. It's a bit spread out and not terribly suitable for posting directly in SO. You can download the code for that book from the above link if you want to take a look at it. I do not recall exactly which edition of the tutorial the student was working on at the time, though it was in the Tutorial 12-Tutorial 16 range. I was mostly hoping to run across somebody who had tripped over this problem before and had a likely culprit. I'm fairly certain my database is open. Thanks again!
+    
+===============================================================================================
+53
+A:This one drove me insane for the longest time. The solution I have found is fairly simple: don't keep references to SQLiteDatabase objects. Instead, use a SQLiteOpenHelper and call getWritableDatabase() every time you need one. From the docs:
+
+
+  public synchronized SQLiteDatabase getWritableDatabase()
+  
+  Create and/or open a database that will be used for reading and writing. Once opened successfully, the database is cached, so you can call this method every time you need to write to the database.
+
+
+The answer was right there the whole time.
+    

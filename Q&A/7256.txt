@@ -1,0 +1,72 @@
+36
+Q:I hate inner class.
+
+I've a main activity who launches a 'short-life' AsyncTask.
+
+AsyncTask is in a separate file, is not an inner class of main activity
+
+I need async task updates a textView from main Activity.
+
+I know i can update a TextView from onProgressUpdate, if AsyncTask is a inner class
+
+But how from an external, indipendent, async task ?
+
+UPDATE: This looks like working :
+
+In acitivty i call the task
+
+backgroundTask = new BackgroundTask(this);
+backgroundTask.execute();
+
+
+In the constructor i've 
+
+public BackgroundTask(Activity myContext)
+{
+    debug = (TextView) myContext.findViewById(R.id.debugText);
+}
+
+
+where debug was a private field of AsyncTask.
+
+So onProgressUpdate I can 
+
+debug.append(text);
+
+
+Thanks for all of you suggestions
+    
+===============================================================================================
+37
+A:EDIT I edited the answer to use WeakReference
+
+
+
+AsyncTask is always separate class from Activity, but I suspect you mean it is in different file than your activity class file, so you cannot benefit from being activity's inner class. Simply pass Activity context as argument to your Async Task (i.e. to its constructor)
+
+class MyAsyncTask extends AsyncTask<URL, Integer, Long> {
+
+    WeakReference<Activity> mWeakActivity;
+
+    public MyAsyncTask(Activity activity) {
+       mWeakActivity = new WeakReference<Activity>(activity);
+    }
+
+ ...
+
+
+and use when you need it (remember to NOT use in during doInBackground()) i.e. so when you would normally call
+
+int id = findViewById(...)
+
+
+in AsyncTask you call i.e.
+
+Activity activity = mWeakActivity.get();
+if (activity != null) {
+   int id = activity.findViewById(...);
+}
+
+
+Note that our Activity can be gone while doInBackground() is in progress (so the reference returned can become null), but by using WeakReference we do not prevent GC from collecting it (and leaking memory) and as Activity is gone, it's usually pointless to even try to update it state (still, depending on your logic you may want to do something like changing internal state or update DB, but touching UI must be skipped).
+    

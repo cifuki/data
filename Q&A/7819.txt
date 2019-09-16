@@ -1,0 +1,97 @@
+34
+Q:I've been looking around for about a week+ to implement a method I have in mind. I have came across (and read) many articles on all of these different methods, but I am still left confused, so I was hoping maybe someone can spread their knowledge of these topics so I can more easily go about creating my sought after method and implementing it in Android.
+
+My "sought after" method:
+
+
+Must generate RSA Public & Private keys
+Public must have PKCS#1 padding
+Must be RSA 2048
+Return Public Key in Byte array
+
+
+Apparently you can go about it four ways:
+
+
+Standard Java
+Bouncy Castle
+Spongy Castle (Android Friendly?)
+JSch
+
+
+Since I'm very new to security and Java as a whole I was wondering if someone could finally give a good clear cut explanation of all of this.
+
+Below are the ways I have tried to implement my sought after method (mentioned above) in the 4 different programming methods. If I don't know something it's because I can't figure out through the respective documentation. Please feel free to correct me.
+
+1. Standard Java (Not sure if PKCS#1):
+
+public byte[] returnPublicKeyInBytes() throws NoSuchAlgorithmException {
+    KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+    kpg.initialize(2048);
+    KeyPair keyPair = kpg.genKeyPair();
+    byte[] pri = keyPair.getPrivate().getEncoded();
+    byte[] pub = keyPair.getPublic().getEncoded();
+    return pub;
+}
+
+
+2. Bouncy Castle (Not yet functional =/ Ideas?):
+
+public byte[] returnPublicKeyInBytes() throws NoSuchAlgorithmException {
+    RSAKeyPairGenerator r = new RSAKeyPairGenerator();
+    r.init(new KeyGenerationParameters(new SecureRandom(),4096));
+    AsymmetricCipherKeyPair keys = r.generateKeyPair();
+    CipherParameters pri = keys.getPrivate();
+    CipherParameters pub = keys.getPublic();
+    byte[] pubbyte = pub.toString().getBytes();
+    return pubbyte; //NOT WORKING
+}
+
+
+3. SpongyCastle (Havn't started it/Same as Bouncy Castle?):
+
+4. JSch (Very Dis-functional/Work in progress)
+
+public byte[] returnPublicKeyInBytes(JSch jSch) {
+    try { 
+        KeyPair keyPair = KeyPair.genKeyPair(jSch, KeyPair.RSA);
+        ByteArrayOutputStream bs = new ByteArrayOutputStream(); 
+        keyPair.writePrivateKey(bs); 
+        jSch.addIdentity("Generated", bs.toByteArray(), keyPair.getPublicKeyBlob(), null);
+        return keyPair.getPublicKeyBlob(); 
+    } catch (JSchException e) { 
+        // TODO Auto-generated catch block 
+        e.printStackTrace(); 
+    }
+    return null;
+}
+
+
+I'd like this to really become more of a resource for anyone that has problems with RSA key generation in Android (like I, and many others have had).
+
+
+
+I feel that Bouncy Castle has very little information about it's API which makes it extremely difficult for a beginner (like me) to understand it. From my research, people use Bouncy Castle in Java instead of the built-in security provider because Bouncy Castle is much more robust. Using Bouncy Castle in Android is not desired because it "ships with a crippled version of Bouncy Castle" which may be prone to errors. Spongy Castle is simply a repackage of Bouncy Castle.
+
+To this end, I will ask my final question of, which method should be used for Android?
+
+Update
+
+I hope someone can answer this later on. As for what I did to solve my problem was to just use NDK.
+    
+===============================================================================================
+45
+A:It is complicated, but I'll try to explain as best I can. I think I'll start with Java. My discussion is geared to Java 6, I'm not sure what has changed in Java 7.  
+
+Java' built-in cryptography is available through the Java Cryptography Extension (JCE). This extension has two parts to it, the application API and service provider API. The application API is the part you interact with. You use the getInstance() factory methods of various crypto classes. The service provider aspect is more confusing for the average programmer. They don't care about how the crypto is implemented, they just want something that works. But under the hood there are the crypto provider classes that do the actual work. If you look at the arguments to getInstance() you'll see that you can specify the provider if you want. Why would you ever want to? Maybe you have paid $$$ for an optimized commercial implementation of RSA, so you want to use that one. Perhaps one provider has a FIPS certificate or some other certification that you need for your app. Then you would specify that provider. Sun/Oracle ships their Java environment with several providers that together comprise the default provider set for their Java environment. Don't look at them too carefully because they are overlapping and thus confusing due somewhat to historical artifacts. Basically, when using Oracle Java you ask for some crypto like a KeyPairGenerator through KeyPairGenerator.getInstance("RSA"); you're going to get an appropriate class instance from one of these providers.
+
+Next, lets look at bouncycastle. The bouncycastle library consists of two parts. One is their unique crypto library whose API you have experimented with in your #2 above. The second part is a lot of glue code to allow this library to be used as crypt provider for the JCE. This means you as a programmer have a choice as to how you use the bouncycastle crypto library. You can use their API directly as in #2 above. Or, you can use the JCE api but explicitly specify the bouncycastle implementation by something like KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", "BC");.
+
+If you prefer to use the unique bouncycastle API directly (they call it their "lightweight API") then you have no need for all the glue code used to make it work as a JCE provider. For this bouncycastle does provide a download of just the lightweight API classes.
+
+And now, at last, we look at Android's implementation. Google didn't license Oracle's Java source code, so they didn't have any of Oracle's JCE providers. They had to provide their own providers. Since bouncycastle had all the code needed, and was open source and liberally licensed, Google/Android chose to use bouncycastle as the basis for their default JCE provider. But, Android has made no effort to make available the unique lightweight API for Android programmers. They expect you to use these classes solely through the JCE. They have modified the bouncycastle code to tune it for Android. They fact that you can find and maybe use some of the lightweight API directly on Android is simply a side-effect of the fact that it's there under the hood. And not everything is there. Some have described this situation as "bouncycastle on Android is crippled".
+
+To actually provide a full featured version of the bouncycastle library on Android some developers produced something called the Spongycastle library. It is nothing more than the bouncycastle library modified so that it can work on Android. The chief modification was to change the package names from org.bouncycastle.* to org.spongycastle.* to prevent namespace conflicts.
+
+So what should you use? That depends on what you want to do, what your portability needs are, what your style preferences are, and what you crypto skill level is. In general, when you are using these libraries you are using crypto at fairly low level. You are concentrating at how to do it (use RSA for key transport, use AES for message encryption, use HMAC-SHA256 for message integrity, etc.) versus what to do (I want to send an encrypted message to a recipient via an email-like mechanism). Obviously, if you can you should stick to higher-level libraries that directly solve your problem. These libraries already understand what PKCS#1 is and how to use it as part of larger and more complete protocols.
+    

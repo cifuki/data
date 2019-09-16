@@ -1,0 +1,44 @@
+37
+Q:I want to have SupportMapFragment in one of my Activity. I add this fragment directly to layout xml and this layout set as content view. But when Activity is launched for the first time, it takes too long (over 1 second). Next launches are ok and take few milliseconds.
+
+I tried:
+
+
+remove any initialization
+use MapFragment instead of SupportMapFragment
+add MapFragment programatically
+
+
+but nothing helped. Map is shown without any problem or suspicious log. 
+
+Do you have any suggestion, what it causes and how to improve it? 
+
+edit:
+I have a ListView and when user clicks on Item, it launches DetailActivity with MapFragment. After click on item there is a noticeable delay before DetailActivity shows up. Only method onCreate, where I call setContentView, runs over 1 second. And while activity is in onCreate method, there is no visible content from this activity. This delay between click and showing content is not very user friendly.
+
+Thank you
+    
+===============================================================================================
+21
+A:The reason why the first load takes so long is because the Play Services APIs have to load as seen in log lines:
+
+I/Google Maps Android API\xef\xb9\x95 Google Play services client version: 6587000
+I/Google Maps Android API\xef\xb9\x95 Google Play services package version: 6768430
+
+
+Unfortunately, the "package" one takes about a second to load and using the MapsInitializer only will get you the "client." So here is a a not so pretty work around: Initialize a dummy map in your main launcher activity.
+
+mDummyMapInitializer.getMapAsync(new OnMapReadyCallback() {
+  @Override
+  public void onMapReady(GoogleMap googleMap) {
+    Log.d(TAG, "onMapReady");
+  }
+});
+
+
+Now when you load your actual map later on, it shouldn't have to initialize the Play services APIs. This shouldn't cause any delays in your main activity either because the async method executes off the main thread. 
+
+Since you have to do the initialization somewhere no matter what, I think it makes sense to do it right when the app starts, so that when you load an activity that actually needs a map, you do not have to wait at all.
+
+Note: mDummyMapInitializer must be a MapFragment or SupportMapFragmentand must be added to the activity, or else the Play Services APIs won't be loaded. The getMapAsync method itself must also be called from the main thread.
+    

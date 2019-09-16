@@ -1,0 +1,80 @@
+32
+Q:I am reading ListFragment source code and I see this implementation:
+
+ListAdapter mAdapter;
+ListView mList;
+View mEmptyView;
+TextView mStandardEmptyView;
+View mProgressContainer;
+View mListContainer;
+CharSequence mEmptyText;
+boolean mListShown;
+
+/**
+ * Detach from list view.
+ */
+@Override
+public void onDestroyView() {
+    mHandler.removeCallbacks(mRequestFocus);
+    mList = null;
+    mListShown = false;
+    mEmptyView = mProgressContainer = mListContainer = null;
+    mStandardEmptyView = null;
+    super.onDestroyView();
+}
+
+
+In this function, Google developers set Null to all view fields that declared in ListFragment and remove callback 'mRequestFocus'.
+
+In ListActivity source code. Google developers implemented like below:
+
+protected ListAdapter mAdapter;
+protected ListView mList;
+
+private Handler mHandler = new Handler();
+
+
+@Override
+protected void onDestroy() {
+    mHandler.removeCallbacks(mRequestFocus);
+    super.onDestroy();
+}
+
+
+I didn't see Google developers set Null to mList on onDestroy of ListActivity as they did for ListFragment class.
+
+My question is
+
+
+Why google developers didnot set Null to mList in onDestroy of ListActivity? Any reasons?
+Do we need to set Null to all View fields in Activity's onDestroy and Fragment's onDestroyView?
+
+
+3. Any practices for set Null in these two functions: Activity's onDestroy and Fragment's onDestroyView?
+
+Thank you for your ideas!
+    
+===============================================================================================
+59
+A:So the reason it's different between Fragments and Activities is because their lifecycles are different. When an Activity is destroyed, it's going away for good. However, Fragments may create and destroy their views multiple times before they're actually destroyed. For clarification, in an Activity:
+
+onDestroy()
+onCreate()
+
+
+will never happen in sequence for the same Activity instance. For a Fragment, the following is perfectly valid:
+
+onCreate()
+onCreateView()
+onDestroyView()
+onCreateView()
+onDestroyView()
+onDestroy()
+
+
+One case where you can see this is when a Fragment goes into the back stack. Its view will be destroyed (as it is no longer visible) but the instance will remain around to be easily resumed when the user presses back to return to it (at which point onCreateView() will again be called).
+
+After onDestroyView(), you can (and likely should) release all of your View references to allow them to be garbage collected. In many cases, it's not necessary, as if it's just happening during a configuration change, onDestroy() will immediately follow and the whole instance will be garbage collected.
+
+Essentially, I would say it is good practice to release any and all view references in onDestroyView(), and could save quite a bit of memory if your app has a large backstack.
+    

@@ -1,0 +1,61 @@
+29
+Q:I want to make void enqueue(Callback<T> callback); method invocation code block more expressive, Here is what I have an usually 
+
+request.enqueue(object : Callback<MyModel> {
+      override fun onFailure(call: Call<MyModel>?, t: Throwable?) {
+           //
+      }
+
+      override fun onResponse(call: Call<MyModel>?, response: Response<MyModel>?) {
+           //
+      }
+ })
+
+
+And what I want and mean is that, to change this code blocks more cleaner way and remove those override, object, Callback keywords and do something like that: 
+
+request.enqueue({throwable, response -> })
+
+I think it could be improved somehow using extensions and higher-order functions. Does anyone know how it can be done? 
+    
+===============================================================================================
+27
+A:this is how i do it with extension function and a class
+
+fun<T> Call<T>.enqueue(callback: CallBackKt<T>.() -> Unit) {
+    val callBackKt = CallBackKt<T>()
+    callback.invoke(callBackKt)
+    this.enqueue(callBackKt)
+}
+
+class CallBackKt<T>: Callback<T> {
+
+    var onResponse: ((Response<T>) -> Unit)? = null
+    var onFailure: ((t: Throwable?) -> Unit)? = null
+
+    override fun onFailure(call: Call<T>, t: Throwable) {
+        onFailure?.invoke(t)
+    }
+
+    override fun onResponse(call: Call<T>, response: Response<T>) {
+        onResponse?.invoke(response)
+    }
+
+}
+
+
+then you can use it like this
+
+request.enqueue {
+
+    onResponse = {
+        // do
+    }
+
+    onFailure = {
+        // do
+    }
+
+}
+
+    

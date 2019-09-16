@@ -1,0 +1,300 @@
+318
+Q:Using Android Studio 3.3 Canary 11 with the gradle plugin version 3.3.0-alpha11. It throws the following error when trying to sync gradle 
+
+WARNING: API 'variant.getExternalNativeBuildTasks()' is obsolete and has been 
+replaced with 'variant.getExternalNativeBuildProviders()'.
+It will be removed at the end of 2019.
+For more information, see https://d.android.com/r/tools/task-configuration- 
+avoidance
+Affected Modules: app
+
+
+Clicking on the error leads me to this line in the gradle file 
+
+applicationVariants.all { variant ->
+            variant.outputs.all {
+                outputFileName = "${variant.name}-${variant.versionName}.apk"
+            }
+        }
+
+
+What exactly do I need to change here?
+
+project build.gradle
+
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    repositories {
+        jcenter()
+        mavenCentral() // jcenter() works as well because it pulls from Maven Central
+        maven { url "https://maven.google.com" }
+        google()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:3.3.0-alpha11'
+
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+        classpath "io.realm:realm-gradle-plugin:4.1.1"
+        classpath 'com.google.gms:google-services:3.2.1'
+        classpath 'com.google.firebase:firebase-plugins:1.1.5'
+    }
+}
+
+allprojects {
+    repositories {
+        jcenter()
+        maven { url "https://maven.google.com" }
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+// Define versions in a single place
+ext {
+    // Sdk and tools
+    minSdkVersion = 21
+    targetSdkVersion = 27
+    compileSdkVersion = 27
+    buildToolsVersion = '27.0.3'
+
+    // App dependencies
+    supportLibraryVersion = '27.1.1'
+    appCompactLibraryVersion = '27.1.1'
+    playServicesVersion = '15.0.1'
+    firebaseVersionCore = '16.0.1'
+    firebaseVersionPerf = '16.0.0'
+    firebaseVersionMessaging = '17.1.0'
+
+    //lottie
+    lottieVersion = '2.5.0'
+}
+
+
+app build.gradle 
+
+buildscript {
+    repositories {
+        maven { url 'https://maven.fabric.io/public' }
+    }
+
+    dependencies {
+        classpath 'io.fabric.tools:gradle:1.25.4'
+    }
+    buildscript {
+        repositories {
+            maven { url "https://maven.google.com" }
+            maven { url 'https://maven.fabric.io/public' }
+            mavenCentral()
+
+        }
+
+        dependencies {
+            // These docs use an open ended version so that our plugin
+            // can be updated quickly in response to Android tooling updates
+
+            // We recommend changing it to the latest version from our changelog:
+            // https://docs.fabric.io/android/changelog.html#fabric-gradle-plugin
+            classpath 'io.fabric.tools:gradle:'
+        }
+    }
+}
+apply plugin: 'com.android.application'
+apply plugin: 'com.google.firebase.firebase-perf'
+repositories {
+    maven { url 'https://maven.fabric.io/public' }
+}
+
+apply plugin: 'io.fabric'
+apply plugin: 'realm-android'
+
+android {
+
+    realm {
+        syncEnabled = false
+    }
+
+    dexOptions {
+        javaMaxHeapSize "4g"
+    }
+
+    compileSdkVersion rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        applicationId "example.com"
+        minSdkVersion rootProject.ext.minSdkVersion
+        multiDexEnabled true
+        versionCode mVersionCode
+        versionName mVersionName
+        vectorDrawables.useSupportLibrary = true
+
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    buildTypes {
+
+        applicationVariants.all { variant ->
+            variant.outputs.all {
+                outputFileName = "${variant.name}-${variant.versionName}.apk"
+            }
+        }
+
+        release {
+            shrinkResources true
+            minifyEnabled true
+            useProguard true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+
+            lintOptions {
+                disable 'MissingTranslation'
+            }
+
+            applicationVariants.all { variant ->
+                variant.outputs.all {
+                    outputFileName = "${variant.name}-${variant.versionName}.apk"
+                }
+            }
+
+        }
+        debug {
+            shrinkResources true
+            minifyEnabled true
+            useProguard true
+            debuggable true
+            versionNameSuffix '-DEBUG'
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'debug-proguard-rules.pro'
+
+            ext.enableCrashlytics = false
+            crunchPngs false
+
+        }
+    }
+
+    flavorDimensions "default"
+
+    lintOptions {
+
+        checkReleaseBuilds false
+
+    }
+
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES.txt'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/notice.txt'
+        exclude 'META-INF/license.txt'
+        exclude 'META-INF/dependencies.txt'
+        exclude 'META-INF/LGPL2.1'
+    }
+    buildToolsVersion '28.0.2'
+}
+
+configurations {
+    implementation.exclude group: "org.apache.httpcomponents", module: "httpclient"
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+
+    implementation "com.android.support:appcompat-v7:$rootProject.appCompactLibraryVersion"
+    implementation "com.android.support:support-compat:$rootProject.supportLibraryVersion"
+    implementation "com.android.support:mediarouter-v7:$rootProject.supportLibraryVersion"
+    implementation "com.android.support:cardview-v7:$rootProject.supportLibraryVersion"
+    implementation "com.android.support:design:$rootProject.supportLibraryVersion"
+
+
+    api 'com.squareup.retrofit2:retrofit:2.4.0'
+    api 'com.squareup.okhttp3:okhttp:3.11.0'
+    api 'com.squareup.okhttp3:logging-interceptor:3.10.0'
+    implementation 'com.google.code.gson:gson:2.8.2'
+    implementation 'com.squareup.retrofit2:converter-gson:2.3.0'
+    implementation 'com.squareup.picasso:picasso:2.5.2'
+    implementation 'com.squareup.retrofit2:adapter-rxjava:2.3.0'
+    implementation 'com.android.support:multidex:1.0.3'
+    implementation 'com.daimajia.easing:library:2.0@aar'
+    implementation 'com.daimajia.androidanimations:library:2.3@aar'
+
+    implementation 'com.akexorcist:googledirectionlibrary:1.0.5'
+    implementation 'io.reactivex:rxandroid:1.2.1'
+    implementation 'io.reactivex:rxjava:1.3.0'
+    // Wifi hotspot library
+    implementation 'cc.mvdan.accesspoint:library:0.2.0'
+    implementation 'com.android.support.constraint:constraint-layout:1.1.3'
+    implementation 'org.jsoup:jsoup:1.10.3'
+    api "com.airbnb.android:lottie:$rootProject.lottieVersion"
+    implementation 'com.android.support:support-v4:27.1.1'
+    implementation 'com.android.support:recyclerview-v7:27.1.1'
+    testImplementation 'junit:junit:4.12'
+    implementation 'com.jakewharton:butterknife:8.8.1'
+
+    debugImplementation 'com.squareup.leakcanary:leakcanary-android:1.5.4'
+    releaseImplementation 'com.squareup.leakcanary:leakcanary-android-no-op:1.5.4'
+
+    implementation 'com.googlecode.libphonenumber:libphonenumber:8.2.0'
+
+    implementation "com.google.android.gms:play-services-base:$rootProject.playServicesVersion"
+    implementation "com.google.android.gms:play-services-cast-framework:$rootProject.playServicesVersion"
+    implementation "com.google.android.gms:play-services-auth:$rootProject.playServicesVersion"
+    implementation "com.google.android.gms:play-services-identity:$rootProject.playServicesVersion"
+    implementation "com.google.android.gms:play-services-awareness:$rootProject.playServicesVersion"
+    implementation "com.google.android.gms:play-services-cast:$rootProject.playServicesVersion"
+    implementation "com.google.android.gms:play-services-drive:$rootProject.playServicesVersion"
+    implementation "com.google.android.gms:play-services-location:$rootProject.playServicesVersion"
+    implementation "com.google.android.gms:play-services-maps:$rootProject.playServicesVersion"
+
+    implementation "com.google.firebase:firebase-core:$rootProject.firebaseVersionCore"
+    implementation "com.google.firebase:firebase-perf:$rootProject.firebaseVersionPerf"
+    implementation "com.google.firebase:firebase-messaging:$rootProject.firebaseVersionMessaging"
+    implementation "com.google.firebase:firebase-analytics:$rootProject.firebaseVersionCore"
+
+
+    api('com.crashlytics.sdk.android:crashlytics:2.8.0@aar') {
+        transitive = true
+    }
+    api('com.crashlytics.sdk.android:answers:1.4.1@aar') {
+        transitive = true
+    }
+    annotationProcessor 'com.jakewharton:butterknife-compiler:8.8.1'
+    api project(path: ':libraryBTHelper')
+    api project(':bkk_rush')
+
+    debugApi 'com.amitshekhar.android:debug-db:1.0.3'
+    api "org.jdeferred:jdeferred-android-aar:1.2.6"
+    implementation 'com.android.support:gridlayout-v7:27.1.1'
+}
+
+apply plugin: 'com.google.gms.google-services'
+
+
+I have skipped out a few constants and other sensitive information in the app/build.gradle file.
+    
+===============================================================================================
+255
+A:The issue has been fixed in their latest release 'io.fabric.tools:gradle:1.30.0'
+
+Please update your both gradle fabric tools with 1.30.0
+
+buildscript {
+  // ... repositories, etc. ...
+
+   dependencies {
+       // ...other dependencies ...
+       classpath 'io.fabric.tools:gradle:1.30.0'
+   }
+}
+
+
+For more details https://github.com/firebase/firebase-android-sdk/issues/198#issuecomment-473435453
+    

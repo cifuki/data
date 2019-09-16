@@ -1,0 +1,839 @@
+30
+Q:I have created one Activity in that I am implementing CursorLoader for load data from Database.
+
+I have done that thing for all records of that Table but I want to load 30-30 records like Load More Functionality
+
+I have tried to create query and its loading first 30 records but I cant able to understand how can I request for new records.
+
+My Activity Code is Like:
+
+public class ProductListActivity extends AppCompatActivity
+        implements LoaderManager.LoaderCallbacks<Cursor> {
+
+    /**
+     * Records in list
+     */
+    int offset = 0;
+
+    /**
+     * For Current Activity *
+     */
+    Context mContext;
+
+    /**
+     * Activity Binding
+     */
+    ActivityProductListBinding activityProductListBinding;
+
+    /**
+     * Product Adapter
+     */
+    ProductListAdapter productListAdapter;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        /**
+         * DataBinding with XML
+         */
+        activityProductListBinding = DataBindingUtil.setContentView(this, R.layout.activity_product_list);
+
+        /**
+         * Getting Context
+         */
+        mContext = getApplicationContext();
+
+        /***
+         * TOOLBAR Settings...
+         */
+        setSupportActionBar(activityProductListBinding.toolbar);
+        activityProductListBinding.toolbarTitleTextview.setText(R.string.string_title_products);
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        getSupportActionBar().setDisplayShowTitleEnabled(false);
+
+        final ActionBar ab = getSupportActionBar();
+        if (ab != null)
+            ab.setDisplayHomeAsUpEnabled(true);
+
+        /**
+         * RecyclerView Setup
+         */
+        GridLayoutManager manager = new GridLayoutManager(this, 2);
+        activityProductListBinding.productListRecyclerView.setLayoutManager(manager);
+
+        /**
+         * First Time init Loader
+         */
+        getSupportLoaderManager().initLoader(1, null, this);
+    }
+
+    @Override
+    public Loader<Cursor> onCreateLoader(int id, Bundle args) {
+        final Uri CONTENT_URI = KOOPSContentProvider.CONTENT_URI_PRODUCT.buildUpon()
+                .appendQueryParameter(KOOPSContentProvider.QUERY_PARAMETER_OFFSET,
+                        String.valueOf(offset))
+                .build();
+        return new CursorLoader(this, CONTENT_URI ,null, null, null, null);
+    }
+
+    @Override
+    public void onLoadFinished(Loader<Cursor> loader, Cursor data) {
+        //When the loader has loaded some data (either initially, or the
+        //datasource has changed and a new cursor is being provided),
+        //Then we'll swap out the cursor in our recyclerview's adapter
+        // and we'll create the adapter if necessary
+        Log.d(LogUtils.TAG, "Cursor : " + data.getCount());
+        if (productListAdapter == null) {
+            productListAdapter = new ProductListAdapter(this, data);
+            activityProductListBinding.productListRecyclerView.setAdapter(productListAdapter);
+        }
+    }
+
+    @Override
+    public void onLoaderReset(Loader<Cursor> loader) {
+        //If the loader is reset, we need to clear out the
+        //current cursor from the adapter.
+        productListAdapter.reQuery(null);
+    }
+}
+
+
+UPDATE:
+
+I have added EndlessRecyclerViewScrollListener 
+
+activityProductListBinding.productListRecyclerView.addOnScrollListener(new EndlessRecyclerViewScrollListener(manager) {
+            @Override
+            public void onLoadMore(int page, int totalItemsCount) {
+                // Triggered only when new data needs to be appended to the list
+                // Add whatever code is needed to append new items to the bottom of the list
+                offset = limit * page;
+                /**
+                 * Adding Bundle in Loader and then Call
+                 */
+                getSupportLoaderManager().initLoader(LOADER_ID, productQueryData, ProductListActivity.this);
+            }
+        });
+
+
+I have tried to MergeCursor in adapter but getting error:
+
+FATAL EXCEPTION: main
+
+Process: com.kevalam.koopsv3, PID: 25021
+
+java.lang.IllegalStateException: Observer android.database.MergeCursor$1@570f82d is already registered.
+    at android.database.Observable.registerObserver(Observable.java:49)
+    at android.database.AbstractCursor.registerDataSetObserver(AbstractCursor.java:358)
+    at android.database.CursorWrapper.registerDataSetObserver(CursorWrapper.java:222)
+    at android.database.MergeCursor.<init>(MergeCursor.java:50)
+    at com.kevalam.koops.adapter.ProductListAdapter.mergeCursor(ProductListAdapter.java:71)
+    at com.kevalam.koops.ui.ProductListActivity.onLoadFinished(ProductListActivity.java:161)
+    at com.kevalam.koops.ui.ProductListActivity.onLoadFinished(ProductListActivity.java:38)
+
+
+Edited (ADAPTER Code):
+
+public class ProductListAdapter extends RecyclerView.Adapter<ProductListAdapter.ViewHolder> {
+
+    // Because RecyclerView.Adapter in its current form doesn't natively 
+    // support cursors, we wrap a CursorAdapter that will do all the job
+    // for us.
+    CursorAdapter mCursorAdapter;
+
+    Activity mContext;
+    Random rnd;
+
+    public ProductListAdapter(AppCompatActivity context, Cursor c) {
+
+        mContext = context;
+        rnd = new Random();
+
+        mCursorAdapter = new CursorAdapter(mContext, c, 0) {
+
+            @Override
+            public View newView(Context context, Cursor cursor, ViewGroup parent) {
+                // Inflate the view here
+                LayoutInflater inflater = (LayoutInflater) context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+                return inflater.inflate(R.layout.row_product_layout_grid, parent, false);
+            }
+
+            @Override
+            public void bindView(View view, Context context, Cursor cursor) {
+                String productName = cursor.getString(cursor.getColumnIndex(PRODUCT_NAME));
+
+                // Binding operations
+                ((TextView) view.findViewById(R.id.sub_product_name_text_view)).setText(productName);
+
+                int color = Color.argb(200, rnd.nextInt(256), rnd.nextInt(256), rnd.nextInt(256));
+
+                String url = "http://dummyimage.com/300/" + color + "/ffffff&text=" + (cursor.getPosition() + 1);
+
+                Picasso
+                        .with(context)
+                        .load(url)
+                        .placeholder(R.mipmap.ic_launcher) // can also be a drawable
+                        .into((ImageView) view.findViewById(R.id.sub_product_image_view));
+            }
+        };
+    }
+
+    public void mergeCursor(Cursor c) {
+        if (mCursorAdapter != null) {
+            Cursor[] cursorArray = {mCursorAdapter.getCursor(), c};
+            MergeCursor mergeCursor = new MergeCursor(cursorArray);
+            reQuery(mergeCursor);
+        }
+    }
+
+    public void reQuery(Cursor c) {
+        if (mCursorAdapter != null) {
+            mCursorAdapter.changeCursor(c);
+            mCursorAdapter.notifyDataSetChanged();
+            notifyDataSetChanged();
+        }
+    }
+
+    @Override
+    public int getItemCount() {
+        return mCursorAdapter.getCount();
+    }
+
+    @Override
+    public void onBindViewHolder(ViewHolder holder, int position) {
+        // Passing the binding operation to cursor loader
+        mCursorAdapter.getCursor().moveToPosition(position); //EDITED: added this line as suggested in the comments below, thanks :)
+        mCursorAdapter.bindView(holder.view, mContext, mCursorAdapter.getCursor());
+    }
+
+    @Override
+    public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+        // Passing the inflater job to the cursor-adapter
+        View v = mCursorAdapter.newView(mContext, mCursorAdapter.getCursor(), parent);
+        return new ViewHolder(v);
+    }
+
+    public static class ViewHolder extends RecyclerView.ViewHolder {
+        View view;
+
+        public ViewHolder(View itemView) {
+            super(itemView);
+            view = itemView.findViewById(R.id.product_row_card_view);
+        }
+    }
+}
+
+
+Anybody can help please, Thanks in advance.
+    
+===============================================================================================
+41
+A:Update 01.10.2017
+Google announced new library for paging, more info here https://developer.android.com/topic/libraries/architecture/paging.html
+
+
+
+Here is working sample with pagination based on cursoradapter+recyclerview+provider. 
+
+I give you step by step with code + bonus with gif preview.
+
+But IMHO pagination on cursor adapter has nonsense because db is handling all heavy stuff with load more data :)
+
+Step 1. create database:
+
+public class CustomSqliteOpenHelper extends SQLiteOpenHelper {
+
+    private static final String TAG = "CustomSqliteOpenHelper";
+
+    public CustomSqliteOpenHelper(Context context) {
+        super(context, "db.db", null, 1);
+    }
+
+    @Override
+    public void onOpen(SQLiteDatabase db) {
+        super.onOpen(db);
+    }
+
+    @Override
+    public void onCreate(SQLiteDatabase db) {
+        db.execSQL(TableItems.CREATE_TABLE);
+    }
+
+    @Override
+    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        db.execSQL(TableItems.DROP_TABLE);
+        onCreate(db);
+    } 
+}
+
+
+Step 2. create table
+
+public class TableItems {
+    public static final String NAME = TableItems.class.getSimpleName().toLowerCase();
+    public static final String _ID = "_id";
+    public static final String TEXT = "text";
+
+    public static final String CREATE_TABLE =
+            "CREATE TABLE " + NAME +
+                    " ( " +
+                    _ID + " integer primary key autoincrement, " +
+                    TEXT + " text " +
+                    " ); ";
+
+    public static final String DROP_TABLE = "DROP TABLE IF EXISTS " + NAME;
+    public static String[] Columns = new String[]{_ID, TEXT};
+}
+
+
+Step 3. create provider
+
+import android.content.ContentProvider;
+import android.content.ContentUris;
+import android.content.ContentValues;
+import android.content.UriMatcher;
+import android.database.Cursor;
+import android.database.SQLException;
+import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteOpenHelper;
+import android.database.sqlite.SQLiteQueryBuilder;
+import android.net.Uri;
+import android.support.annotation.NonNull;
+import android.util.Log;
+
+import com.example.pagingproject.BuildConfig;
+
+public class RequestProvider extends ContentProvider {
+    private static final String TAG = "RequestProvider";
+
+    private SQLiteOpenHelper mSqliteOpenHelper;
+    private static final UriMatcher sUriMatcher;
+
+    public static final String AUTHORITY = BuildConfig.APPLICATION_ID + ".db";
+
+    private static final int
+            TABLE_ITEMS = 0;
+
+    static {
+        sUriMatcher = new UriMatcher(UriMatcher.NO_MATCH);
+        sUriMatcher.addURI(AUTHORITY, TableItems.NAME + "/offset/" + "#", TABLE_ITEMS);
+    }
+
+    public static Uri urlForItems(int limit) {
+        return Uri.parse("content://" + AUTHORITY + "/" + TableItems.NAME + "/offset/" + limit);
+    }
+
+    @Override
+    public boolean onCreate() {
+        mSqliteOpenHelper = new CustomSqliteOpenHelper(getContext());
+        return true;
+    }
+
+    @Override
+    synchronized public Cursor query(@NonNull Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
+
+        SQLiteDatabase db = mSqliteOpenHelper.getReadableDatabase();
+        SQLiteQueryBuilder sqb = new SQLiteQueryBuilder();
+        Cursor c = null;
+        String offset;
+
+        switch (sUriMatcher.match(uri)) {
+            case TABLE_ITEMS: {
+                sqb.setTables(TableItems.NAME);
+                offset = uri.getLastPathSegment();
+                break;
+            }
+
+            default:
+                throw new IllegalArgumentException("uri not recognized!");
+        }
+
+        int intOffset = Integer.parseInt(offset);
+
+        String limitArg = intOffset + ", " + 30;
+        Log.d(TAG, "query: " + limitArg);
+        c = sqb.query(db, projection, selection, selectionArgs, null, null, sortOrder, limitArg);
+
+        c.setNotificationUri(getContext().getContentResolver(), uri);
+
+        return c;
+    }
+
+    @Override
+    public String getType(@NonNull Uri uri) {
+        return BuildConfig.APPLICATION_ID + ".item";
+    }
+
+    @Override
+    public Uri insert(@NonNull Uri uri, ContentValues values) {
+        String table = "";
+        switch (sUriMatcher.match(uri)) {
+            case TABLE_ITEMS: {
+                table = TableItems.NAME;
+                break;
+            }
+        }
+
+        long result = mSqliteOpenHelper.getWritableDatabase().insertWithOnConflict(table, null, values, SQLiteDatabase.CONFLICT_IGNORE);
+
+        if (result == -1) {
+            throw new SQLException("insert with conflict!");
+        }
+
+        Uri retUri = ContentUris.withAppendedId(uri, result);
+        return retUri;
+    }
+
+    @Override
+    public int delete(@NonNull Uri uri, String selection, String[] selectionArgs) {
+        return -1;
+    }
+
+    @Override
+    public int update(@NonNull Uri uri, ContentValues values, String selection, String[] selectionArgs) {
+        return -1;
+    }
+}
+
+
+Step 4. create an abstract cursor adapters, I took sample from StackOverflow custom-cursor-recyclerView-adapter
+
+import android.content.Context;
+import android.database.Cursor;
+import android.database.DataSetObserver;
+import android.support.v7.widget.RecyclerView;
+import android.view.ViewGroup;
+
+/**
+ * Created by skyfishjy on 10/31/14.
+ */
+
+public abstract class CursorRecyclerViewAdapter<VH extends RecyclerView.ViewHolder> extends RecyclerView.Adapter<VH> {
+
+    protected Context mContext;
+
+    private Cursor mCursor;
+
+    private boolean mDataValid;
+
+    private int mRowIdColumn;
+
+    private DataSetObserver mDataSetObserver;
+
+    public CursorRecyclerViewAdapter(Context context, Cursor cursor) {
+        mContext = context;
+        mCursor = cursor;
+        mDataValid = cursor != null;
+        mRowIdColumn = mDataValid ? mCursor.getColumnIndex("_id") : -1;
+        mDataSetObserver = new NotifyingDataSetObserver(this);
+        if (mCursor != null) {
+            mCursor.registerDataSetObserver(mDataSetObserver);
+        }
+    }
+
+    public Cursor getCursor() {
+        return mCursor;
+    }
+
+    @Override
+    public int getItemCount() {
+        if (mDataValid && mCursor != null) {
+            return mCursor.getCount();
+        }
+        return 0;
+    }
+
+    @Override
+    public long getItemId(int position) {
+        if (mDataValid && mCursor != null && mCursor.moveToPosition(position)) {
+            return mCursor.getLong(mRowIdColumn);
+        }
+        return 0;
+    }
+
+    @Override
+    public void setHasStableIds(boolean hasStableIds) {
+        super.setHasStableIds(true);
+    }
+
+    public static final String TAG = CursorRecyclerViewAdapter.class.getSimpleName();
+
+    public abstract void onBindViewHolder(VH viewHolder, Cursor cursor);
+
+    @Override
+    public VH onCreateViewHolder(ViewGroup parent, int viewType) {
+        return null;
+    }
+
+    @Override
+    public void onBindViewHolder(VH viewHolder, int position) {
+        if (!mDataValid) {
+            throw new IllegalStateException("this should only be called when the cursor is valid");
+        }
+        if (!mCursor.moveToPosition(position)) {
+            throw new IllegalStateException("couldn't move cursor to position " + position);
+        }
+        onBindViewHolder(viewHolder, mCursor);
+    }
+
+    /**
+     * Change the underlying cursor to a new cursor. If there is an existing cursor it will be
+     * closed.
+     */
+    public void changeCursor(Cursor cursor) {
+        Cursor old = swapCursor(cursor);
+        if (old != null) {
+            old.close();
+        }
+    }
+
+    /**
+     * Swap in a new Cursor, returning the old Cursor.  Unlike
+     * {@link #changeCursor(Cursor)}, the returned old Cursor is <em>not</em>
+     * closed.
+     */
+    public Cursor swapCursor(Cursor newCursor) {
+        if (newCursor == mCursor) {
+            return null;
+        }
+        final Cursor oldCursor = mCursor;
+        if (oldCursor != null && mDataSetObserver != null) {
+            oldCursor.unregisterDataSetObserver(mDataSetObserver);
+        }
+        mCursor = newCursor;
+        if (mCursor != null) {
+            if (mDataSetObserver != null) {
+                mCursor.registerDataSetObserver(mDataSetObserver);
+            }
+            mRowIdColumn = newCursor.getColumnIndexOrThrow("_id");
+            mDataValid = true;
+            notifyDataSetChanged();
+        } else {
+            mRowIdColumn = -1;
+            mDataValid = false;
+            notifyDataSetChanged();
+            //There is no notifyDataSetInvalidated() method in RecyclerView.Adapter
+        }
+        return oldCursor;
+    }
+
+    public void setDataValid(boolean mDataValid) {
+        this.mDataValid = mDataValid;
+    }
+
+    private class NotifyingDataSetObserver extends DataSetObserver {
+        private RecyclerView.Adapter adapter;
+
+        public NotifyingDataSetObserver(RecyclerView.Adapter adapter) {
+            this.adapter = adapter;
+        }
+
+        @Override
+        public void onChanged() {
+            super.onChanged();
+            ((CursorRecyclerViewAdapter) adapter).setDataValid(true);
+            adapter.notifyDataSetChanged();
+        }
+
+        @Override
+        public void onInvalidated() {
+            super.onInvalidated();
+            ((CursorRecyclerViewAdapter) adapter).setDataValid(false);
+        }
+    }
+}
+
+
+Step 5. create your own adapter with extending(inheriting) previous class
+
+import android.content.Context;
+import android.database.Cursor;
+import android.support.v7.widget.RecyclerView;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+
+/**
+ * Created by deadfish on 2016-01-28.
+ */
+public class CustomCursorRecyclerViewAdapter extends CursorRecyclerViewAdapter {
+
+    public CustomCursorRecyclerViewAdapter(Context context, Cursor cursor) {
+        super(context, cursor);
+    }
+
+    @Override
+    public long getItemId(int position) {
+        return super.getItemId(position);
+    }
+
+    @Override
+    public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+        View v = LayoutInflater.from(mContext).inflate(android.R.layout.simple_list_item_1, parent, false);
+        return new CustomViewHolder(v);
+    }
+
+    @Override
+    public void onBindViewHolder(RecyclerView.ViewHolder viewHolder, Cursor cursor) {
+        CustomViewHolder holder = (CustomViewHolder) viewHolder;
+        cursor.moveToPosition(cursor.getPosition());
+        holder.setData(cursor);
+    }
+
+    @Override
+    public int getItemCount() {
+        return super.getItemCount();
+    }
+
+    @Override
+    public int getItemViewType(int position) {
+        return 0;
+    }
+}
+
+
+Step 6. create custom viewHolder
+
+import android.database.Cursor;
+import android.support.v7.widget.RecyclerView;
+import android.view.View;
+import android.widget.TextView;
+
+public class CustomViewHolder extends RecyclerView.ViewHolder {
+
+    public TextView textView1;
+
+    public CustomViewHolder(View itemView) {
+        super(itemView);
+        textView1 = (TextView) itemView.findViewById(android.R.id.text1);
+    }
+
+    public void setData(Cursor c) {
+        textView1.setText(c.getString(c.getColumnIndex("text")));
+    }
+}
+
+
+Step 7. write code in sample MainActivity
+
+import android.content.ContentValues;
+import android.database.Cursor;
+import android.database.MatrixCursor;
+import android.os.Bundle;
+import android.os.Handler;
+import android.support.v4.app.LoaderManager;
+import android.support.v4.content.CursorLoader;
+import android.support.v4.content.Loader;
+import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
+import android.util.Log;
+import android.widget.Toast;
+
+import com.example.pagingproject.adapters.CustomCursorRecyclerViewAdapter;
+import com.example.pagingproject.databases.RequestProvider;
+import com.example.pagingproject.databases.TableItems;
+
+public class MainActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Cursor> {
+
+    public final int offset = 30;
+    private int page = 0;
+
+    private RecyclerView mRecyclerView;
+    private boolean loadingMore = false;
+    private Toast shortToast;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        LinearLayoutManager mLayoutManager = new LinearLayoutManager(this);
+        CustomCursorRecyclerViewAdapter mAdapter = new CustomCursorRecyclerViewAdapter(this, null);
+
+        mRecyclerView = (RecyclerView) findViewById(R.id.recyclerView);
+        mRecyclerView.setLayoutManager(mLayoutManager);
+        mRecyclerView.setAdapter(mAdapter);
+
+        int itemsCountLocal = getItemsCountLocal();
+        if (itemsCountLocal == 0) {
+            fillTestElements();
+        }
+
+        shortToast = Toast.makeText(this, "", Toast.LENGTH_SHORT);
+
+        mRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
+                super.onScrolled(recyclerView, dx, dy);
+
+                LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerView.getLayoutManager();
+                int lastVisibleItemPosition = layoutManager.findLastVisibleItemPosition();
+                int maxPositions = layoutManager.getItemCount();
+
+                if (lastVisibleItemPosition == maxPositions - 1) {
+                    if (loadingMore)
+                        return;
+
+                    loadingMore = true;
+                    page++;
+                    getSupportLoaderManager().restartLoader(0, null, MainActivity.this);
+                }
+            }
+        });
+
+        getSupportLoaderManager().restartLoader(0, null, this);
+    }
+
+    private void fillTestElements() {
+        int size = 1000;
+        ContentValues[] cvArray = new ContentValues[size];
+        for (int i = 0; i < cvArray.length; i++) {
+            ContentValues cv = new ContentValues();
+            cv.put(TableItems.TEXT, ("text " + i));
+            cvArray[i] = cv;
+        }
+
+        getContentResolver().bulkInsert(RequestProvider.urlForItems(0), cvArray);
+    }
+
+    private int getItemsCountLocal() {
+        int itemsCount = 0;
+
+        Cursor query = getContentResolver().query(RequestProvider.urlForItems(0), null, null, null, null);
+        if (query != null) {
+            itemsCount = query.getCount();
+            query.close();
+        }
+        return itemsCount;
+    }
+
+    /*loader*/
+
+    @Override
+    public Loader<Cursor> onCreateLoader(int id, Bundle args) {
+        switch (id) {
+            case 0:
+                return new CursorLoader(this, RequestProvider.urlForItems(offset * page), null, null, null, null);
+            default:
+                throw new IllegalArgumentException("no id handled!");
+        }
+    }
+
+    @Override
+    public void onLoadFinished(Loader<Cursor> loader, Cursor data) {
+        switch (loader.getId()) {
+            case 0:
+                Log.d(TAG, "onLoadFinished: loading MORE");
+                shortToast.setText("loading MORE " + page);
+                shortToast.show();
+
+                Cursor cursor = ((CustomCursorRecyclerViewAdapter) mRecyclerView.getAdapter()).getCursor();
+
+                //fill all exisitng in adapter
+                MatrixCursor mx = new MatrixCursor(TableItems.Columns);
+                fillMx(cursor, mx);
+
+                //fill with additional result
+                fillMx(data, mx);
+
+                ((CustomCursorRecyclerViewAdapter) mRecyclerView.getAdapter()).swapCursor(mx);
+
+
+                handlerToWait.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        loadingMore = false;
+                    }
+                }, 2000);
+
+                break;
+            default:
+                throw new IllegalArgumentException("no loader id handled!");
+        }
+    }
+
+    private Handler handlerToWait = new Handler();
+
+    private void fillMx(Cursor data, MatrixCursor mx) {
+        if (data == null)
+            return;
+
+        data.moveToPosition(-1);
+        while (data.moveToNext()) {
+            mx.addRow(new Object[]{
+                    data.getString(data.getColumnIndex(TableItems._ID)),
+                    data.getString(data.getColumnIndex(TableItems.TEXT))
+            });
+        }
+    }
+
+    @Override
+    public void onLoaderReset(Loader<Cursor> loader) {
+        // TODO: 2016-10-13
+    }
+
+    //
+
+    private static final String TAG = "MainActivity";
+
+}
+
+
+Step 8. declare provider in AndroidManifest
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.pagingproject">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name=".databases.RequestProvider"
+            android:authorities="${applicationId}.db"
+            android:exported="false" />
+    </application>
+
+</manifest>
+
+
+Step 9. create xml for MainActivity class
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/activity_main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingBottom="@dimen/activity_vertical_margin"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="@dimen/activity_vertical_margin"
+    tools:context="com.example.pagingproject.MainActivity">
+
+    <android.support.v7.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+</RelativeLayout>
+
+
+Test it:
+
+Trigger to load more is every 30th item element, so if index starts from 0, 29 will be the trigger.
+
+
+    

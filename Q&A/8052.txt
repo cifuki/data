@@ -1,0 +1,222 @@
+33
+Q:I am doing an application which Locks the screen on shake. Now it is locking and from there it going to a broadcast receiver from there if the screen is off its entering into a service which has to turn the screen on.
+
+Below is the broadcast receiver:
+
+  public class ScreenReceiver extends BroadcastReceiver {   
+    public static boolean wasScreenOn = true;
+    @Override
+    public void onReceive(Context context, Intent intent) {
+
+        System.out.println("Entered Broadcaste Reciever");
+
+        if (intent.getAction().equals(Intent.ACTION_SCREEN_OFF)) {
+            // DO WHATEVER YOU NEED TO DO HERE
+             System.out.println("SCREEN_OFF"+wasScreenOn);
+            wasScreenOn = false;
+
+            Intent i = new Intent(context, UpdateService.class);
+            i.putExtra("screen_state", wasScreenOn);
+            context.startService(i);
+
+            System.out.println("jrkejhr keh");
+        }
+        else if (intent.getAction().equals(Intent.ACTION_SCREEN_ON)) {
+            // AND DO WHATEVER YOU NEED TO DO HERE
+            wasScreenOn = true;
+            System.out.println("SCREEN_ON"+wasScreenOn);
+        }
+    }
+
+
+And its entering to a service where i had written the intent action to go home is...
+
+  ShakeListener mShaker;
+    int amountOfTime = 0;
+    Context context1;   
+    @Override   
+         public void onCreate() {
+
+            super.onCreate();
+
+            // REGISTER RECEIVER THAT HANDLES SCREEN ON AND SCREEN OFF LOGIC
+            System.out.println("Enterd Service");
+            final Vibrator vibe = (Vibrator)getSystemService(Context.VIBRATOR_SERVICE);
+
+            mShaker = new ShakeListener(this);
+            mShaker.setOnShakeListener(new ShakeListener.OnShakeListener () {
+              public void onShake() {
+                vibe.vibrate(100);
+                Intent goHome = new Intent();
+                goHome.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                goHome.setAction("android.intent.action.MAIN");
+                goHome.addCategory("android.intent.category.HOME");
+                startActivity(goHome);                      
+               }
+            });
+         }
+       @Override
+        public IBinder onBind(Intent intent) {
+            // TODO Auto-generated method stub
+            return null;
+     }
+
+
+It is entering into the service. But home screen is not displaying. When the service is invoked the the screen is locked.
+    
+===============================================================================================
+33
+A:Edit:
+
+As some folks needs help in Unlocking device after locking programmatically,
+I came through post Android screen lock/ unlock programatically, please have look, may help you. 
+
+Original Answer was:
+
+You need to get Admin permission and you can lock phone screen
+
+please check below simple tutorial to achive this one
+
+Lock Phone Screen Programmtically 
+
+also here is the code example..
+
+LockScreenActivity.java
+
+public class LockScreenActivity extends Activity implements OnClickListener {  
+ private Button lock;  
+ private Button disable;  
+ private Button enable;  
+ static final int RESULT_ENABLE = 1;  
+
+     DevicePolicyManager deviceManger;  
+     ActivityManager activityManager;  
+     ComponentName compName;  
+
+    @Override  
+    public void onCreate(Bundle savedInstanceState) {  
+        super.onCreate(savedInstanceState);  
+        setContentView(R.layout.main);  
+
+        deviceManger = (DevicePolicyManager)getSystemService(  
+          Context.DEVICE_POLICY_SERVICE);  
+        activityManager = (ActivityManager)getSystemService(  
+          Context.ACTIVITY_SERVICE);  
+        compName = new ComponentName(this, MyAdmin.class);  
+
+        setContentView(R.layout.main);  
+
+        lock =(Button)findViewById(R.id.lock);  
+        lock.setOnClickListener(this);  
+
+        disable = (Button)findViewById(R.id.btnDisable);  
+        enable =(Button)findViewById(R.id.btnEnable);  
+        disable.setOnClickListener(this);  
+        enable.setOnClickListener(this);  
+    }  
+
+ @Override  
+ public void onClick(View v) {  
+
+  if(v == lock){  
+    boolean active = deviceManger.isAdminActive(compName);  
+             if (active) {  
+                 deviceManger.lockNow();  
+             }  
+  }  
+
+  if(v == enable){  
+   Intent intent = new Intent(DevicePolicyManager  
+     .ACTION_ADD_DEVICE_ADMIN);  
+            intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN,  
+                    compName);  
+            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,  
+                    "Additional text explaining why this needs to be added.");  
+            startActivityForResult(intent, RESULT_ENABLE);  
+  }  
+
+  if(v == disable){  
+     deviceManger.removeActiveAdmin(compName);  
+              updateButtonStates();  
+  }    
+ }  
+
+ private void updateButtonStates() {  
+
+        boolean active = deviceManger.isAdminActive(compName);  
+        if (active) {  
+            enable.setEnabled(false);  
+            disable.setEnabled(true);  
+
+        } else {  
+            enable.setEnabled(true);  
+            disable.setEnabled(false);  
+        }      
+ }  
+
+  protected void onActivityResult(int requestCode, int resultCode, Intent data) {  
+         switch (requestCode) {  
+             case RESULT_ENABLE:  
+                 if (resultCode == Activity.RESULT_OK) {  
+                     Log.i("DeviceAdminSample", "Admin enabled!");  
+                 } else {  
+                     Log.i("DeviceAdminSample", "Admin enable FAILED!");  
+                 }  
+                 return;  
+         }  
+         super.onActivityResult(requestCode, resultCode, data);  
+     }  
+}
+
+
+MyAdmin.java
+
+public class MyAdmin extends DeviceAdminReceiver{  
+
+
+    static SharedPreferences getSamplePreferences(Context context) {  
+        return context.getSharedPreferences(  
+          DeviceAdminReceiver.class.getName(), 0);  
+    }  
+
+    static String PREF_PASSWORD_QUALITY = "password_quality";  
+    static String PREF_PASSWORD_LENGTH = "password_length";  
+    static String PREF_MAX_FAILED_PW = "max_failed_pw";  
+
+    void showToast(Context context, CharSequence msg) {  
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show();  
+    }  
+
+    @Override  
+    public void onEnabled(Context context, Intent intent) {  
+        showToast(context, "Sample Device Admin: enabled");  
+    }  
+
+    @Override  
+    public CharSequence onDisableRequested(Context context, Intent intent) {  
+        return "This is an optional message to warn the user about disabling.";  
+    }  
+
+    @Override  
+    public void onDisabled(Context context, Intent intent) {  
+        showToast(context, "Sample Device Admin: disabled");  
+    }  
+
+    @Override  
+    public void onPasswordChanged(Context context, Intent intent) {  
+        showToast(context, "Sample Device Admin: pw changed");  
+    }  
+
+    @Override  
+    public void onPasswordFailed(Context context, Intent intent) {  
+        showToast(context, "Sample Device Admin: pw failed");  
+    }  
+
+    @Override  
+    public void onPasswordSucceeded(Context context, Intent intent) {  
+        showToast(context, "Sample Device Admin: pw succeeded");  
+    }  
+
+}
+
+    

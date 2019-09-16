@@ -1,0 +1,71 @@
+284
+Q:I'm developing an Android 2.3.3 application with a service. I have this inside that service to communicate with Main activity:
+
+public class UDPListenerService extends Service
+{
+    private static final String TAG = "UDPListenerService";
+    //private ThreadGroup myThreads = new ThreadGroup("UDPListenerServiceWorker");
+    private UDPListenerThread myThread;
+    /**
+     * Handler to communicate from WorkerThread to service.
+     */
+    private Handler mServiceHandler;
+
+    // Used to receive messages from the Activity
+    final Messenger inMessenger = new Messenger(new IncomingHandler());
+    // Use to send message to the Activity
+    private Messenger outMessenger;
+
+    class IncomingHandler extends Handler
+    {
+        @Override
+        public void handleMessage(Message msg)
+        {
+        }
+    }
+
+    /**
+     * Target we publish for clients to send messages to Incoming Handler.
+     */
+    final Messenger mMessenger = new Messenger(new IncomingHandler());
+    [ ... ]
+}
+
+
+And here, final Messenger mMessenger = new Messenger(new IncomingHandler());, I get the following Lint warning:
+
+This Handler class should be static or leaks might occur: IncomingHandler
+
+What does it mean?
+    
+===============================================================================================
+378
+A:If IncomingHandler class is not static, it will have a reference to your Service object.
+
+Handler objects for the same thread all share a common Looper object, which they post messages to and read from. 
+
+As messages contain target Handler, as long as there are messages with target handler in the message queue, the handler cannot be garbage collected. If handler is not static, your Service or Activity cannot be garbage collected, even after being destroyed.
+
+This may lead to memory leaks, for some time at least - as long as the messages stay int the queue. This is not much of an issue unless you post long delayed messages.
+
+You can make IncomingHandler static and have a WeakReference to your service:
+
+static class IncomingHandler extends Handler {
+    private final WeakReference<UDPListenerService> mService; 
+
+    IncomingHandler(UDPListenerService service) {
+        mService = new WeakReference<UDPListenerService>(service);
+    }
+    @Override
+    public void handleMessage(Message msg)
+    {
+         UDPListenerService service = mService.get();
+         if (service != null) {
+              service.handleMessage(msg);
+         }
+    }
+}
+
+
+See this post  by Romain Guy for further reference
+    

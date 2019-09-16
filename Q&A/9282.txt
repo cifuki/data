@@ -1,0 +1,34 @@
+29
+Q:I am making an app that does not require a user account/login, and allows the user to purchase a subscription. I want to use the Google Play Developer API to verify whether or not a user has a purchased/active subscription. From all of the documentation, I've gathered the following steps.
+
+Are they correct, and could you answer the two questions in them?
+
+
+Create a Service Account in the Google APIs Console.
+Save the private key that is given to me (where? surely not in my code/on the device as this sample code suggests)
+Use Google APIs Client Library for Java to create and sign a JWT with the private key (how? the docs give me this, but that is not Java code... What do I do with it?) 
+Construct an access token request, and get access to the API 
+Application can now send a GET request to the API to find out whether or not the
+user has a subscription 
+When the access token expires, go back to step 3.
+
+
+Also, I have a web service, though I know nothing about web services or web service programming... I only know enough to be aware that it is probably necessary to use here.
+
+EDIT: These steps were not correct. See my answer below for the correct steps. However, note that this only applies to using a service account (because I did not want to require a user to have to explicitly allow API access)
+    
+===============================================================================================
+39
+A:As it turns out, my steps were not correct. It took me weeks to figure this out and it doesn't seem to be documented anywhere else. You're welcome:
+
+
+Create a Web Application account in the Google APIs Console. Put any website as a "redirect URI"; it doesn't matter since you will not really be using it. You will get a client id and client secret when you create the account.
+In a browser on your computer go to https://accounts.google.com/o/oauth2/auth?scope=https://www.googleapis.com/auth/androidpublisher&response_type=code&access_type=offline&redirect_uri=[YOUR REDIRECT URI]&client_id=[YOUR CLIENT ID] and allow access when prompted.
+Look in the address bar. At the end of the URI you entered originally will be your refresh token. It looks like 1/.... You will need this "code" in the next step. The refresh token never expires.
+Convert this "code" to a "refresh token" by going to https://accounts.google.com/o/oauth2/token?client_id=[YOUR CLIENT ID]&client_secret=[YOUR CLIENT SECRET]&code=[CODE FROM PREVIOUS STEP]&grant_type=authorization_code&redirect_uri=[YOUR REDIRECT URI].  You can save the resulting value right in your program; it never expires unless explicitly revoked.  (this step inserted by @BrianWhite -- see comments)
+Make sure you are using POST.(inserted by Gintas)
+In your code, send an HttpPost request to https://accounts.google.com/o/oauth2/token with the BasicNameValuePairs "grant_type","refresh_token", "client_id",[YOUR CLIENT ID], "client_secret",[YOUR CLIENT SECRET], "refresh_token",[YOUR REFRESH TOKEN]. For an example look here. You will need to do this in a separate thread, probably using AsyncTask. This will return a JSONObject.
+Get the access token from the returned JSONObject. For an example look here. You will need to get the string "access_token". The access token expires in 1 hour.
+In your code, send an HttpGet request to https://www.googleapis.com/androidpublisher/v1/applications/[YOUR APP'S PACKAGE NAME]/subscriptions/[THE ID OF YOUR PUBLISHED SUBSCRIPTION FROM YOUR ANDROID DEVELOPER CONSOLE]/purchases/[THE PURCHASE TOKEN THE USER RECEIVES UPON PURCHASING THE SUBSCRIPTION]?accesstoken="[THE ACCESS TOKEN FROM STEP 4]". For an example look here.
+
+    

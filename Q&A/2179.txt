@@ -1,0 +1,79 @@
+92
+Q:With the new design library there are several new layouts that change a lot how the toolbar can behave if the developer so wishes. Since different fragments have different behaviors and objectives, for example a gallery fragment with a collapsing toolbar showing an important photo, or a fragment without a scrollview that just doesn't need the appbarlayout for hiding the toolbar, having a single toolbar in the activity can prove difficult.
+
+So with this, should I move the toolbar to each fragment? If so, I have to set the supportActionBar each time I show a fragment and also have a reference of the activity in the fragment which nullifies the independent nature of fragments. If I leave the toolbar in the Activity alone, I have to have multiple layouts defined for each type of behavior in each fragment. What would be the best approach?
+    
+===============================================================================================
+52
+A:As for me it sounds too weird to have appbar and toolbar in each fragment. So I've chosen to have single appbar with toolbar in activity.
+
+To solve that issue with CoordinatorLayout you will have to set different behaviour of your FrameLayout (or any other Layout) that supposed to hold fragments from each fragment that you want to override default behaviour. 
+
+Lets assume, that your default behaviour is app:layout_behavior="@string/appbar_scrolling_view_behavior"
+
+Then in your fragment_activity_layout.xml you may have something like that: 
+
+<android.support.design.widget.CoordinatorLayout
+    android:id="@+id/coordinator"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <android.support.design.widget.AppBarLayout
+        android:id="@+id/appbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <android.support.v7.widget.Toolbar
+            android:id="@+id/dashboard_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:theme="@style/AppTheme.Toolbar"
+            app:layout_scrollFlags="scroll|enterAlways"/>
+    </android.support.design.widget.AppBarLayout>
+
+    <FrameLayout
+        android:id="@+id/dashboard_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior"/>
+</android.support.design.widget.CoordinatorLayout>
+
+
+And in each fragment you wish not to implement app:layout_behavior="@string/appbar_scrolling_view_behavior" you will have to override onAttach and onDetach methods that will change behaviour of your FrameLayout:
+
+CoordinatorLayout.Behavior behavior;
+
+@Override
+public void onAttach(Activity activity) {
+    super.onAttach(activity);
+
+    if(behavior != null)
+        return;
+
+    FrameLayout layout =(FrameLayout) getActivity().findViewById(R.id.dashboard_content);
+    CoordinatorLayout.LayoutParams params = (CoordinatorLayout.LayoutParams) layout.getLayoutParams();
+
+    behavior = params.getBehavior();
+    params.setBehavior(null);
+
+}
+
+@Override
+public void onDetach() {
+    super.onDetach();
+    if(behavior == null)
+        return;
+
+    FrameLayout layout =(FrameLayout) getActivity().findViewById(R.id.dashboard_content);
+    CoordinatorLayout.LayoutParams params = (CoordinatorLayout.LayoutParams) layout.getLayoutParams();
+
+    params.setBehavior(behavior);
+
+    layout.setLayoutParams(params);
+
+    behavior = null;
+}
+
+
+After that CoordinatorLayout won't collapse appbar, etc. and will allow fragment layouts to be full-height.
+    

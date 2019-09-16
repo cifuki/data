@@ -1,0 +1,73 @@
+114
+Q:Yesterday Google presented at Google I/O the new notification system based on the new Firebase. I tried this new FCM ( Firebase Cloud Messaging ) with the example on Github.
+
+The icon of the notification is always the ic_launcher despite I have declared a specific drawable
+
+Why ? 
+Here below the official code for handling the message
+
+public class AppFirebaseMessagingService extends FirebaseMessagingService {
+
+    /**
+     * Called when message is received.
+     *
+     * @param remoteMessage Object representing the message received from Firebase Cloud Messaging.
+     */
+    // [START receive_message]
+    @Override
+    public void onMessageReceived(RemoteMessage remoteMessage) {
+        // If the application is in the foreground handle both data and notification messages here.
+        // Also if you intend on generating your own notifications as a result of a received FCM
+        // message, here is where that should be initiated. See sendNotification method below.
+        sendNotification(remoteMessage);
+    }
+    // [END receive_message]
+
+    /**
+     * Create and show a simple notification containing the received FCM message.
+     *
+     * @param remoteMessage FCM RemoteMessage received.
+     */
+    private void sendNotification(RemoteMessage remoteMessage) {
+
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0 /* Request code */, intent,
+                PendingIntent.FLAG_ONE_SHOT);
+
+        Uri defaultSoundUri= RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+
+// this is a my insertion looking for a solution
+        int icon = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP ? R.drawable.myicon: R.mipmap.myicon;
+        NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this)
+                .setSmallIcon(icon)
+                .setContentTitle(remoteMessage.getFrom())
+                .setContentText(remoteMessage.getNotification().getBody())
+                .setAutoCancel(true)
+                .setSound(defaultSoundUri)
+                .setContentIntent(pendingIntent);
+
+        NotificationManager notificationManager =
+                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+
+        notificationManager.notify(0 /* ID of notification */, notificationBuilder.build());
+    }
+
+}
+
+    
+===============================================================================================
+233
+A:Unfortunately this was a limitation of Firebase Notifications in SDK 9.0.0-9.6.1. When the app is in the background the launcher icon is use from the manifest (with the requisite Android tinting) for messages sent from the console.
+
+With SDK 9.8.0 however, you can override the default! In your AndroidManifest.xml you can set the following fields to customise the icon and color: 
+
+<meta-data
+        android:name="com.google.firebase.messaging.default_notification_icon"
+        android:resource="@drawable/notification_icon" />
+<meta-data android:name="com.google.firebase.messaging.default_notification_color"
+        android:resource="@color/google_blue" />
+
+
+Note that if the app is in the foreground (or a data message is sent) you can completely use your own logic to customise the display. You can also always customise the icon if sending the message from the HTTP/XMPP APIs.  
+    

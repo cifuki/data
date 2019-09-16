@@ -1,0 +1,75 @@
+39
+Q:app:srcCompat with ImageView allows for backward compatible use of vector drawables. But how can you use them with other Views besides ImageView? For example, the TextView attributes like android:drawableLeft.
+
+Also using the vector drawable as an android:icon with MenuItem caused a crash with the following exception:
+
+Fatal Exception: android.view.InflateException: Binary XML file line #2: Error inflating class <unknown>
+   at android.view.LayoutInflater.createView(LayoutInflater.java:626)
+   at android.view.LayoutInflater.createViewFromTag(LayoutInflater.java:702)
+   at android.view.LayoutInflater.inflate(LayoutInflater.java:470)
+   at android.view.LayoutInflater.inflate(LayoutInflater.java:398)
+   at android.support.v7.view.menu.MenuItemImpl.setActionView(MenuItemImpl.java:621)
+   at android.support.v7.view.menu.MenuItemImpl.setActionView(MenuItemImpl.java:40)
+   at android.support.v4.view.MenuItemCompat.setActionView(MenuItemCompat.java:310)
+   at android.support.v7.view.SupportMenuInflater$MenuState.setItem(SupportMenuInflater.java:465)
+   at android.support.v7.view.SupportMenuInflater$MenuState.addItem(SupportMenuInflater.java:479)
+   at android.support.v7.view.SupportMenuInflater.parseMenu(SupportMenuInflater.java:196)
+   at android.support.v7.view.SupportMenuInflater.inflate(SupportMenuInflater.java:118)
+   at com.example.niceapp.context.main.MainActivity.onCreateOptionsMenu(MainActivity.java:101)
+   at android.app.Activity.onCreatePanelMenu(Activity.java:2578)
+
+
+With Support Library 23.2.0, how can this issue be addressed?
+    
+===============================================================================================
+29
+A:For AppCompat version 23.3.0 where no work solution via selector XML (razzledazzle's accepted answer) we can do this by programmatically:
+
+activity_main.xml
+
+<android.support.v7.widget.AppCompatImageButton
+    android:id="@+id/btnEnter"
+    />
+
+
+MainActivity.java
+
+AppCompatImageButton image = (AppCompatImageButton) findViewById(R.id.btnEnter);
+if (image != null) {
+    VectorDrawableCompat vcAccept = VectorDrawableCompat.create(getResources(), R.drawable.vc_accept, getTheme());
+    VectorDrawableCompat vcAcceptWhite = VectorDrawableCompat.create(getResources(), R.drawable.vc_accept_white, getTheme());
+
+    StateListDrawable stateList = new StateListDrawable();
+    stateList.addState(new int[]{android.R.attr.state_focused, -android.R.attr.state_pressed}, vcAccept);
+    stateList.addState(new int[]{android.R.attr.state_focused, android.R.attr.state_pressed}, vcAcceptWhite);
+    stateList.addState(new int[]{-android.R.attr.state_focused, android.R.attr.state_pressed}, vcAcceptWhite);
+    stateList.addState(new int[]{}, vcAccept);
+
+    image.setImageDrawable(stateList);
+}
+
+
+This code is equivalent for this selector xml:
+
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:state_pressed="false" android:drawable="@drawable/vc_accept" />
+    <item android:state_focused="true" android:state_pressed="true" android:drawable="@drawable/vc_accept_white" />
+    <item android:state_focused="false" android:state_pressed="true" android:drawable="@drawable/vc_accept_white" />
+    <item android:drawable="@drawable/vc_accept" />
+</selector>
+
+
+
+
+UPDATE
+
+If the vector drawable is not shown using API 23, you'll need to convert the VectorDrawable to a regular Drawable first. If you want to use setCompoundDrawablesWithIntrinsicBounds you'll need to do this, but for StateListDrawable I didn't need to.
+
+Drawable icon;
+if (android.os.Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+    icon = VectorDrawableCompat.create(getResources(), R.drawable.vc_icon, getContext().getTheme());
+} else {
+    icon = getResources().getDrawable(R.drawable.vc_icon, getContext().getTheme());
+}
+
+    

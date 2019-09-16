@@ -1,0 +1,130 @@
+139
+Q:I am facing the problem while retrieving the contacts from the contact book in Android 8.0 Oreo java.lang.IllegalStateException: Only fullscreen opaque activities can request orientation
+
+I am trying to get the contact in my activity from the phone contact book and it works perfect for Lollipop, Marshmallow, Nougat, etc but it will gives me the error for Oreo like this please help me. My code is here below.
+
+Demo Code :-
+
+private void loadContacts() {
+            contactAsync = new ContactLoaderAsync();
+            contactAsync.execute();
+        }
+
+        private class ContactLoaderAsync extends AsyncTask<Void, Void, Void> {
+            private Cursor numCursor;
+
+            @Override
+            protected void onPreExecute() {
+                super.onPreExecute();
+                Uri numContacts = ContactsContract.CommonDataKinds.Phone.CONTENT_URI;
+                String[] numProjection = new String[]{ContactsContract.CommonDataKinds.Phone.CONTACT_ID, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER, ContactsContract.CommonDataKinds.Phone.TYPE};
+                if (android.os.Build.VERSION.SDK_INT < 11) {
+                    numCursor = InviteByContactActivity.this.managedQuery(numContacts, numProjection, null, null, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE ASC");
+                } else {
+                    CursorLoader cursorLoader = new CursorLoader(InviteByContactActivity.this, numContacts, numProjection, null, null, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE ASC");
+                    numCursor = cursorLoader.loadInBackground();
+                }
+
+            }
+
+            @Override
+            protected Void doInBackground(Void... params) {
+                if (numCursor.moveToFirst()) {
+                    try {
+                        final int contactIdIndex = numCursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.CONTACT_ID);
+                        final int displayNameIndex = numCursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME);
+                        final int numberIndex = numCursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER);
+                        final int typeIndex = numCursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.TYPE);
+                        String displayName, number, type;
+                        do {
+                            displayName = numCursor.getString(displayNameIndex);
+                            number = numCursor.getString(numberIndex);
+                            type = getContactTypeString(numCursor.getString(typeIndex), true);
+                            final ContactModel contact = new ContactModel(displayName, type, number);
+                            phoneNumber = number.replaceAll(" ", "").replaceAll("\\\\(", "").replaceAll("\\\\)", "").replaceAll("-", "");
+
+                            if (phoneNumber != null || displayName != null) {
+                                contacts.add(phoneNumber);
+                                contactsName.add(displayName);
+                                contactsChecked.add(false);
+
+                                filterdNames.add(phoneNumber);
+                                filterdContactNames.add(displayName);
+                                filterdCheckedNames.add(false);
+                            }
+                        } while (numCursor.moveToNext());
+                    } finally {
+                        numCursor.close();
+                    }
+                }
+
+
+                Collections.sort(contacts, new Comparator<String>() {
+                    @Override
+                    public int compare(String lhs, String rhs) {
+                        return lhs.compareToIgnoreCase(rhs);
+                    }
+                });
+
+                InviteByContactActivity.this.runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mContactAdapter.notifyDataSetChanged();
+                    }
+                });
+
+                return null;
+            }
+        }
+
+        private String getContactTypeString(String typeNum, boolean isPhone) {
+            String type = PHONE_TYPES.get(typeNum);
+            if (type == null)
+                return "other";
+            return type;
+        }
+
+        static HashMap<String, String> PHONE_TYPES = new HashMap<String, String>();
+
+        static {
+            PHONE_TYPES.put(ContactsContract.CommonDataKinds.Phone.TYPE_HOME + "", "home");
+            PHONE_TYPES.put(ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE + "", "mobile");
+            PHONE_TYPES.put(ContactsContract.CommonDataKinds.Phone.TYPE_WORK + "", "work");
+        }
+}
+
+
+Error Log:-
+
+E/AndroidRuntime: FATAL EXCEPTION: main Process: com.example, PID: 6573
+                                                             java.lang.RuntimeException: Unable to start activity ComponentInfo{com.example/com.example.Activity.InviteByContactActivity}: java.lang.IllegalStateException: Only fullscreen opaque activities can request orientation
+                                                              Caused by: java.lang.IllegalStateException: Only fullscreen opaque activities can request orientation
+
+    
+===============================================================================================
+33
+A:The problem seems to be happening when your target sdk is 28. So after trying out many options finally this worked.
+
+<activity
+            android:name=".activities.FilterActivity"
+            android:theme="@style/Transparent"
+            android:windowSoftInputMode="stateHidden|adjustResize" />
+
+
+style:-
+
+<style name="Transparent" parent="Theme.AppCompat.Light.NoActionBar">
+     <item name="android:windowIsTranslucent">true</item>
+     <item name="android:windowBackground">@android:color/transparent</item>
+     <item name="android:windowIsFloating">true</item>
+     <item name="android:windowContentOverlay">@null</item>
+     <item name="android:windowNoTitle">true</item>
+     <item name="android:backgroundDimEnabled">false</item>
+ </style>
+
+
+Note:parent="Theme.AppCompat.Light.NoActionBar" is needed for api 28. Previously had something else at api 26. Was working great but started to give problem at 28.
+Hope it helps someone out here.
+EDIT: For some only by setting <item name="android:windowIsTranslucent">false</item> and  <item name="android:windowIsFloating">false</item>
+ worked.May be depends upon the way you implement the solution works.In my case it worked by setting them to true. 
+    

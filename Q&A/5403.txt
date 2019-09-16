@@ -1,0 +1,104 @@
+46
+Q:I have question about wakelock. In cases shown below, does android OS release wakelock (PARTIAL_WAKE_LOCK if you need to specify) to prevent wakelock was left acquired and wasting battery until turning power off (not sleep).
+
+Case 1-a:
+App has acquired wakelock (w/o timeout option) in one of its threads (please think it is reasonable in this case) and it was designed to release wakelock when critical task was finished. App can be killed by taskmanager or notorious taskkiller, and app has no chance to let its thread release wakelock. What happens to that wakelock?
+
+Case 1-b:
+(If answer to case 1-a is "Yes, don't worry", then please ignore this case.)
+Same as case 1-a but app gave timeout option to wakelock, say 3 seconds. Is this timeout option kept valid?
+
+Case 2-a:
+Please imagine there is a service which was started by AlarmManager (via Broadcast receiver) and the service has acquired a wakelock (w/o timeout option). This service is designed to make wakelock-acquired-time minimum. But unfortunately, Android OS picked this service to kill due to memory crunch. (I don't know if OS won't kill service when wakelock is acquired, but I guess OS  doesn't care. But I hope OS will release wakelock later.) What happens to that wakelock?
+
+Case 2-b:
+(If answer to case 2-a is "Yes, don't worry", then please ignore this case.)
+Same as case 2-a but service gave timeout option to wakelock, say 3 seconds. Is this timeout option kept valid?
+    
+===============================================================================================
+47
+A:WakeLock Implementation Overview
+
+When we use pm.newWakeLock to create a new wakelock, the PowerManager simply creates a new WakeLock object and returns. The WakeLock object is not a binder object, so it cannot be used through multiple processes. However, in that WakeLock object, it contains a Binder object named mToken. 
+
+    WakeLock(int flags, String tag) {
+        mFlags = flags;
+        mTag = tag;
+        mToken = new Binder();
+    }
+
+
+So when you call acquire or release on this WakeLock object, it actually passes that token to PowerManagerService.
+
+    private void acquireLocked() {
+        if (!mRefCounted || mCount++ == 0) {
+            mHandler.removeCallbacks(mReleaser);
+            try {
+                mService.acquireWakeLock(mToken, mFlags, mTag, mWorkSource);
+            } catch (RemoteException e) {
+            }
+            mHeld = true;
+        }
+    }
+
+
+Look at how PowerManagerService works when acquiring or releasing a wakelock will help you answer your question.
+
+void acquireWakeLockInternal(IBinder lock, int flags, String tag, WorkSource ws,
+        int uid, int pid) {
+    synchronized (mLock) {
+        ...
+        WakeLock wakeLock;
+        int index = findWakeLockIndexLocked(lock);
+        if (index >= 0) {
+            ...
+            // Update existing wake lock.  This shouldn't happen but is harmless.
+            ...
+        } else {
+            wakeLock = new WakeLock(lock, flags, tag, ws, uid, pid);
+            try {
+                lock.linkToDeath(wakeLock, 0);
+            } catch (RemoteException ex) {
+                throw new IllegalArgumentException("Wake lock is already dead.");
+            }
+            notifyWakeLockAcquiredLocked(wakeLock);
+            mWakeLocks.add(wakeLock);
+        }
+        ...
+    }
+    ...
+}
+
+
+The key statement is the lock.linkToDeath(wakeLock, 0);. That lock is exactly the mToken we mentioned before. This method registers the recipient (the wakeLock) for a notification if this binder goes away.  If this binder object unexpectedly goes away (typically because its hosting process has been killed), then the binderDied method will get called on the recipient. 
+
+Notice that the WakeLock in PowerManagerService is different from the WakeLock in PowerManager, it is an implementation of IBinder.DeathRecipient. So check out its binderDied method.
+
+    @Override
+    public void binderDied() {
+        PowerManagerService.this.handleWakeLockDeath(this);
+    }
+
+
+The handleWakeLockDeath will release that wakelock. 
+
+private void handleWakeLockDeath(WakeLock wakeLock) {
+    synchronized (mLock) {
+        ...
+        int index = mWakeLocks.indexOf(wakeLock);
+        if (index < 0) {
+            return;
+        }
+
+        mWakeLocks.remove(index);
+        notifyWakeLockReleasedLocked(wakeLock);
+
+        applyWakeLockFlagsOnReleaseLocked(wakeLock);
+        mDirty |= DIRTY_WAKE_LOCKS;
+        updatePowerStateLocked();
+    }
+}
+
+
+So I think in both cases in your question, the answer is don't worry. At least in Android 4.2 (where the code comes from), it is true. Moreover, there is a finalize method on the WakeLock class in PowerManager, but this is not the key to your question. 
+    

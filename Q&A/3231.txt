@@ -1,0 +1,222 @@
+69
+Q:Android Support Library 22.1 was released yesterday. Many new features were added into the v4 support library and v7, among which android.support.v7.util.SortedList<T> draws my attention. 
+
+It's said that, SortedList is a new data structure, works with RecyclerView.Adapter, maintains the item added/deleted/moved/changed animations provided by RecyclerView. It sounds like a List<T> in a ListView but seems more advanced and powerful. 
+
+So, what is the difference between SortedList<T> and List<T>? How could I use it efficiently? What's the enforcement of SortedList<T> over List<T> if it is so? Could somebody post some samples of it?
+
+Any tips or codes will be appreciated. Thanks in advance.
+    
+===============================================================================================
+94
+A:SortedList handles the communication to the Recycler adapter via Callback. 
+
+One difference between SortedList and List is seen in the addAll helper method in the sample below. 
+
+public void addAll(List<Page> items) {
+        mPages.beginBatchedUpdates();
+        for (Page item : items) {
+            mPages.add(item);
+        }
+        mPages.endBatchedUpdates();
+    }
+
+
+
+Keeps last added item
+
+
+Say I have 10 cached items to load immediately when my recycler list is populated. At the same time, I query my network for the same 10 items because they could have changed since I cached them. I can call the same addAll method and SortedList will replace the cachedItems with fetchedItems under the hood (always keeps the last added item). 
+
+// After creating adapter
+myAdapter.addAll(cachedItems)
+// Network callback
+myAdapter.addAll(fetchedItems)
+
+
+In a regular List, I would have duplicates of all my items (list size of 20). With SortedList its replaces items that are the same using the Callback's areItemsTheSame.
+
+
+Its smart about when to update the Views
+
+
+When the fetchedItems are added, onChange will only be called if one or more of the Page's title changed. You can customize what SortedList looks for in the Callback's areContentsTheSame. 
+
+
+Its performant 
+
+
+
+  If you are going to add multiple items to a SortedList, BatchedCallback call convert individual onInserted(index, 1) calls into one onInserted(index, N) if items are added into consecutive indices. This change can help RecyclerView resolve changes much more easily.
+
+
+Sample
+
+You can have a getter on your adapter for your SortedList, but I just decided to add helper methods to my adapter. 
+
+Adapter Class:
+
+  public class MyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+    private SortedList<Page> mPages;
+
+    public MyAdapter() {
+        mPages = new SortedList<Page>(Page.class, new SortedList.Callback<Page>() {
+            @Override
+            public int compare(Page o1, Page o2) {
+                return o1.getTitle().compareTo(o2.getTitle());
+            }
+
+            @Override
+            public void onInserted(int position, int count) {
+                notifyItemRangeInserted(position, count);
+            }
+
+            @Override
+            public void onRemoved(int position, int count) {
+                notifyItemRangeRemoved(position, count);
+            }
+
+            @Override
+            public void onMoved(int fromPosition, int toPosition) {
+                notifyItemMoved(fromPosition, toPosition);
+            }
+
+            @Override
+            public void onChanged(int position, int count) {
+                notifyItemRangeChanged(position, count);
+            }
+
+            @Override
+            public boolean areContentsTheSame(Page oldItem, Page newItem) {
+                // return whether the items' visual representations are the same or not.
+                return oldItem.getTitle().equals(newItem.getTitle());
+            }
+
+            @Override
+            public boolean areItemsTheSame(Page item1, Page item2) {
+                return item1.getId() == item2.getId();
+            }
+        });
+
+    }
+
+    @Override
+    public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+        View view = LayoutInflater.from(parent.getContext())
+                .inflate(R.layout.viewholder_page, parent, false);
+        return new PageViewHolder(view);
+    }
+
+    @Override
+    public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+        PageViewHolder pageViewHolder = (PageViewHolder) holder;
+        Page page = mPages.get(position);
+        pageViewHolder.textView.setText(page.getTitle());
+    }
+
+    @Override
+    public int getItemCount() {
+        return mPages.size();
+    }
+
+    // region PageList Helpers
+    public Page get(int position) {
+        return mPages.get(position);
+    }
+
+    public int add(Page item) {
+        return mPages.add(item);
+    }
+
+    public int indexOf(Page item) {
+        return mPages.indexOf(item);
+    }
+
+    public void updateItemAt(int index, Page item) {
+        mPages.updateItemAt(index, item);
+    }
+
+    public void addAll(List<Page> items) {
+        mPages.beginBatchedUpdates();
+        for (Page item : items) {
+            mPages.add(item);
+        }
+        mPages.endBatchedUpdates();
+    }
+
+    public void addAll(Page[] items) {
+        addAll(Arrays.asList(items));
+    }
+
+    public boolean remove(Page item) {
+        return mPages.remove(item);
+    }
+
+    public Page removeItemAt(int index) {
+        return mPages.removeItemAt(index);
+    }
+
+    public void clear() {
+       mPages.beginBatchedUpdates();
+       //remove items at end, to avoid unnecessary array shifting
+       while (mPages.size() > 0) {
+          mPages.removeItemAt(mPages.size() - 1);
+       }
+       mPages.endBatchedUpdates();
+    }
+}
+
+
+Page class:
+
+public class Page {
+    private String title;
+    private long id;
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public long getId() {
+        return id;
+    }
+
+    public void setId(long id) {
+        this.id = id;
+    }
+}
+
+
+Viewholder xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <TextView
+        android:id="@+id/text_view"
+        style="@style/TextStyle.Primary.SingleLine"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+</LinearLayout>
+
+
+Viewholder class:
+
+public class PageViewHolder extends RecyclerView.ViewHolder {
+    public TextView textView;
+
+
+    public PageViewHolder(View itemView) {
+        super(itemView);
+        textView = (TextView)item.findViewById(R.id.text_view);
+    }
+}
+
+    

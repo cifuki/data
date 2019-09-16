@@ -1,0 +1,118 @@
+103
+Q:I'm trying to convert an Activity to fragment. The error mark on runOnUiThread.
+on the past: 
+
+
+  GoogleActivityV2 extends from Activity. runOnUiThread in class
+  ExecuteTask. class ExecuteTask nested on activity.
+
+
+(Run ok)
+now        : 
+
+
+  GoogleActivityV2 extends from Fragment. runOnUiThread in class
+  ExecuteTask. class ExecuteTask nested on activity.   (Error on
+  runOnUiThread)
+
+
+here is my code
+
+public class GoogleActivityV2 extends SherlockMapFragment implements OnMapClickListener , OnMapLongClickListener , OnCameraChangeListener , TextWatcher {
+
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState){
+        View rootView = inflater.inflate(R.layout.activity_googlev2, container, false);
+        Init();
+        adapter = new ArrayAdapter<String>(getActivity(), android.R.layout.simple_dropdown_item_1line);
+        textView = (AutoCompleteTextView) getView().findViewById(R.id.autoCompleteTextView1);
+        return rootView;
+    }
+
+    public void onCameraChange(CameraPosition arg0){
+        // TODO Auto-generated method stub
+    }
+
+    public void onMapLongClick(LatLng arg0){
+        llLoc = arg0;
+        stCommand = "onTouchEvent";
+        lp = new ExecuteTask();
+        lp.execute();
+    }
+
+    public void onMapClick(LatLng arg0){
+        // TODO Auto-generated method stub
+    }
+
+    class ExecuteTask extends AsyncTask<String, String, String> {
+        @Override
+        protected void onPreExecute(){
+            super.onPreExecute();
+            if(stCommand.compareTo("AutoCompleteTextView") != 0) {
+                pDialog = new ProgressDialog(getActivity());
+                pDialog.setMessage(Html.fromHtml("<b>Search</b><br/>Loading ..."));
+                pDialog.setIndeterminate(false);
+                pDialog.setCancelable(false);
+                pDialog.show();
+            }
+        }
+
+        protected String doInBackground(String ... args){
+            do something
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(String file_url){
+            if(stCommand.compareTo("AutoCompleteTextView") != 0) pDialog.dismiss();
+            runOnUiThread(new Runnable() {
+                public void run(){
+                    do something
+                }
+            });
+        }
+    }
+    public void afterTextChanged(Editable s){
+        // TODO Auto-generated method stub
+    }
+
+    public void beforeTextChanged(CharSequence s, int start, int count, int after){
+        // TODO Auto-generated method stub
+    }
+
+    public void onTextChanged(CharSequence s, int start, int before, int count){
+        // TODO Auto-generated method stub
+    }
+}
+
+
+the error says:
+
+
+how can I fix this error?
+    
+===============================================================================================
+237
+A:Try this: getActivity().runOnUiThread(new Runnable...
+
+It's because:
+
+1) the implicit this in your call to runOnUiThread is referring to AsyncTask, not your fragment.
+
+2) Fragment doesn't have runOnUiThread.
+
+However, Activity does.
+
+Note that Activity just executes the Runnable if you're already on the main thread, otherwise it uses a Handler. You can implement a Handler in your fragment if you don't want to worry about the context of this, it's actually very easy:
+
+// A class instance
+private Handler mHandler = new Handler(Looper.getMainLooper());
+
+// anywhere else in your code
+mHandler.post(<your runnable>);
+// ^ this will always be run on the next run loop on the main thread.
+
+
+EDIT: @rciovati is right, you are in onPostExecute, that's already on the main thread.
+    

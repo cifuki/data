@@ -1,0 +1,103 @@
+44
+Q:Prelude
+
+I'm trying to add a chronometer on the notification. The chronometer is a service. Every second this line is called (continue Thread is a the "running" boolean, timeString is the elaborated String showing the time):
+
+NotificationChrono.updateNotification(getApplicationContext(), continueThread, 
+NOTIF_ID, timeString, "Chronometer", notificationManager);
+
+
+This is the NotificationChrono class:
+
+public class NotificationChrono {
+
+    static public void updateNotification(Context context, boolean running,
+        int id, String title, String text,
+        NotificationManager notificationManager) {
+
+        Intent stopIntent = new Intent("com.corsalini.david.barcalc.STOP");
+        PendingIntent stopPendingIntent = PendingIntent.getBroadcast(context,
+            0, stopIntent, 0);
+
+    Intent startIntent = new Intent(
+            "com.corsalini.david.barcalc.STARTPAUSE");
+    PendingIntent startPendingIntent = PendingIntent.getBroadcast(context,
+            0, startIntent, 0);
+
+    NotificationCompat.Builder builder = new NotificationCompat.Builder(
+            context)
+
+            .setContentText(context.getString(R.string.notif_text))
+
+            .setContentTitle(title)
+
+            .setSmallIcon(R.drawable.ic_action_alarm_2)
+
+            .setAutoCancel(false)
+
+            .setOngoing(running)
+
+            .setOnlyAlertOnce(true)
+
+            .setContentIntent(
+                    PendingIntent.getActivity(context, 10, new Intent(
+                            context, FrontActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP), 0))
+            .addAction(
+                    running ? R.drawable.ic_action_pause
+                            : R.drawable.ic_action_play,
+                    running ? context.getString(R.string.pause) : context
+                            .getString(R.string.start), startPendingIntent)
+            .addAction(R.drawable.ic_action_stop,
+                    context.getString(R.string.stop), stopPendingIntent);
+
+    notificationManager.notify(id, builder.build());
+}
+}
+
+
+Problem
+
+Every second the notification is deleted and recreated, visually it means that every second the notification disappears and reappears in the notification list. 
+
+What I would want is to just update the TITLE text, not recreating the notification entirely every second. Is it possible?
+    
+===============================================================================================
+96
+A:Be sure to use the same NotificationCompat.Builder builder each time for creating the Notification!
+
+Although the first time you have to set everything, the second time using the Builder you only have to set the value(s) you want to update. After that it's calling notificationManager.notify(id, builder.build()) just like you did. If you use the same ID then the notification gets updated (important!).
+
+Example:
+
+//First time
+NotificationCompat.Builder builder = new NotificationCompat.Builder(context)
+            .setContentText(context.getString(R.string.notif_text))
+            .setContentTitle(title)
+            .setSmallIcon(R.drawable.ic_action_alarm_2)
+            .setAutoCancel(false)
+            .setOngoing(running)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(
+                    PendingIntent.getActivity(context, 10, 
+                            new Intent(context, FrontActivity.class)                                 
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                    0)
+            )
+            .addAction(running ? R.drawable.ic_action_pause 
+                               : R.drawable.ic_action_play,
+                       running ? context.getString(R.string.pause)
+                               : context.getString(R.string.start),
+                       startPendingIntent)
+            .addAction(R.drawable.ic_action_stop, context.getString(R.string.stop),
+                    stopPendingIntent);
+
+notificationManager.notify(id, builder.build());
+
+//Second time
+builder.setContentTitle(title);
+notificationManager.notify(id, builder.build());
+
+
+But you can also use the setUsesChronometer method of the NotificationCompat class. This automatically displays a chronometer using the given timestamp (able to set with setWhen).
+    

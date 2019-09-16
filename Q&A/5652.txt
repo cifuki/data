@@ -1,0 +1,115 @@
+44
+Q:I have a subclassed View that pops up the keyboard when it receives a 'touch up' in onTouchEvent.  It shows this by requesting focus, retrieving the InputMethodManager, and then calling showSoftInput.
+
+Now I need to figure out how to capture the tapped letters of the soft keyboard, as they are pressed.  I am currently only getting a response when the Next/Done button is pressed on the soft keyboard. 
+
+Here is my class:
+
+public class BigGrid extends View {
+
+    private static final String TAG = "BigGrid";
+
+    public BigGrid(Context context) {
+        super(context);
+        setFocusableInTouchMode(true); // allows the keyboard to pop up on
+                                       // touch down
+
+        setOnKeyListener(new OnKeyListener() {
+            public boolean onKey(View v, int keyCode, KeyEvent event) {
+                Log.d(TAG, "onKeyListener");
+                if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                    // Perform action on key press
+                    Log.d(TAG, "ACTION_DOWN");
+                    return true;
+                }
+                return false;
+            }
+        });
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        super.onTouchEvent(event);
+        Log.d(TAG, "onTOUCH");
+        if (event.getAction() == MotionEvent.ACTION_UP) {
+
+            // show the keyboard so we can enter text
+            InputMethodManager imm = (InputMethodManager) getContext()
+                    .getSystemService(Context.INPUT_METHOD_SERVICE);
+            imm.showSoftInput(this, InputMethodManager.SHOW_FORCED);
+        }
+        return true;
+    }
+
+    @Override
+    public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+        Log.d(TAG, "onCreateInputConnection");
+
+        BaseInputConnection fic = new BaseInputConnection(this, true);
+        outAttrs.actionLabel = null;
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT;
+        outAttrs.imeOptions = EditorInfo.IME_ACTION_NEXT;
+        return fic;
+    }
+
+    @Override
+    public boolean onCheckIsTextEditor() {
+        Log.d(TAG, "onCheckIsTextEditor");
+        return true;
+    }
+
+    @Override
+    public void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+
+        canvas.drawColor(R.color.grid_bg);
+        // .
+        // .
+        // alot more drawing code...
+        // .
+    }
+}
+
+
+The keyboard shows, but my onKeyListener only fires when I press the 'Next' button on the keyboard.  I need which character is tapped, so that I can display it in my onDraw() method.
+    
+===============================================================================================
+41
+A:It is actually possible to handle the key events yourself without deriving your view from TextView.
+
+To do this, just modify your original code as follows:
+
+1) Replace the following line in onCreateInputConnection():
+
+outAttrs.inputType = InputType.TYPE_CLASS_TEXT;
+
+
+with this one:
+
+outAttrs.inputType = InputType.TYPE_NULL;
+
+
+Per the documentation for InputType.TYPE_NULL:  "This should be interpreted to mean that the target input connection is not rich, it can not process and show things like candidate text nor retrieve the current text, so the input method will need to run in a limited 'generate key events' mode."
+
+2) Replace the following line in the same method:
+
+BaseInputConnection fic = new BaseInputConnection(this, true);
+
+
+with this one:
+
+BaseInputConnection fic = new BaseInputConnection(this, false);
+
+
+The false second argument puts the BaseInputConnection into "dummy" mode, which is also required in order for the raw key events to be sent to your view.  In the BaseInputConnection code, you can find several comments such as the following: "only if dummy mode, a key event is sent for the new text and the current editable buffer cleared."
+
+I have used this approach to have the soft keyboard send raw events to a view of mine that is derived from LinearLayout (i.e., a view not derived from TextView), and can confirm that it works.
+
+Of course, if you didn't need to set the IME_ACTION_DONE imeOptions value to show a Done button on the keyboard, then you could just remove the onCreateInputConnection()  and onCheckIsTextEditor() overrides entirely, and raw events would then be sent to your view by default, since no input connection capable of more sophisticated processing would have been defined.  
+
+But unfortunately, there does not seem to be a simple way to configure the EditorInfo attributes without overriding these methods and providing a BaseInputConnection object, and once you have done that you will have to dumb down the processing performed by that object as described above if you want to once again receive the raw key events. 
+
+WARNING: Two bugs were introduced in certain recent versions of the default LatinIME keyboard that ships with Android (Google Keyboard) that can impact keyboard event processing (as described above) when that keyboard is in use.  I've devised some workarounds on the app side, with sample code, that appear to get around these problems.  To view these workarounds, see the following answer:
+
+Android - cannot capture backspace/delete press in soft. keyboard
+    

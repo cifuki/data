@@ -1,0 +1,43 @@
+87
+Q:I spent 4 full days trying everything I can to figure out the memory leak in an app I'm developing, but things stopped making sense a long time ago.
+
+The app I'm developing is of social nature, so think profile Activities (P) and list Activities with data - for example badges (B). You can hop from profile to a badge list to other profiles, to other lists, etc.
+
+So imagine a flow like this P1 -> B1 -> P2 -> B2 -> P3 -> B3, etc. For consistency, I'm loading profiles and badges of the same user, so each P page is the same and so is each B page.
+
+The general gist of the problem is: after navigating for a bit, depending on the size of each page, I get an out-of-memory exception in random places - Bitmaps, Strings, etc - it doesn't seem to be consistent.
+
+After doing everything imaginable to figure out why I am running out of memory, I have come up with nothing. What I don't understand is why Android isn't killing P1, B1, etc if it runs out of memory upon loading and instead crashes. I would expect these earlier activities to die and be resurrected if I ever Back to them via onCreate() and onRestoreInstanceState().
+
+Let alone this - even if I do P1 -> B1 -> Back -> B1 -> Back -> B1, I still get a crash. This indicates some sort of a memory leak, yet even after dumping hprof and using MAT and JProfiler, I can't pinpoint it.
+
+I've disabled loading of images from the web (and increased the test data loaded to make up for it and make the test fair) and made sure the image cache uses SoftReferences. Android actually tries to free up the few SoftReferences it has, but right before it crashes out of memory.
+
+Badge pages get data from the web, load it into an array of EntityData from a BaseAdapter and feed it to a ListView (I'm actually using CommonsWare's excellent MergeAdapter, but in this Badge activity, there is really only 1 adapter anyway, but I wanted to mention this fact either way).
+
+I've gone through the code and was not able to find anything that would leak. I cleared and nulled everything I could find and even System.gc() left and right but still the app crashes.
+
+I still don't understand why inactive activities that are on the stack don't get reaped, and I'd really love to figure that out. 
+
+At this point, I'm looking for any hints, advice, solutions... anything that could help.
+
+Thank you.
+    
+===============================================================================================
+106
+A:I still don't understand why inactive activities that are on the stack
+  don't get reaped, and I'd really love to figure that out.
+
+
+This is not how things work.  The only memory management that impacts activity lifecycle is the global memory across all processes, as Android decides that it is running low on memory and so need to kill background processes to get some back.
+
+If your application is sitting in the foreground starting more and more activities, it is never going into the background, so it will always hit its local process memory limit before the system ever comes close to killing its process.  (And when it does kill its process, it will kill the process hosting all the activities, including whatever is currently in the foreground.)
+
+So it sounds to me like your basic problem is: you are letting too many activities run at the same time, and/or each of those activities is holding on to too many resources.
+
+You just need to redesign your navigation to not rely on stacking up an arbitrary number of potentially heavy-weight activities.  Unless you do a serious amount of stuff in onStop() (such as calling setContentView() to clear out the activity's view hierarchy and clear variables of whatever else it may be holding on to), you are just going to run out of memory.
+
+You may want to consider using the new Fragment APIs to replace this arbitrary stack of activities with a single activity that more tightly manages its memory.  For example if you use the back stack facilities of fragments, when a fragment goes on the back stack and is no longer visible, its onDestroyView() method is called to completely remove its view hierarchy, greatly reducing its footprint.
+
+Now, as far as you crashing in the flow where you press back, go to an activity, press back, go to another activity, etc and never have a deep stack, then yes you just have a leak.  This blog post describes how to debug leaks: http://android-developers.blogspot.com/2011/03/memory-analysis-for-android.html
+    

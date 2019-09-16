@@ -1,0 +1,150 @@
+111
+Q:I am trying to implement the Content-Provider-Sync Adapter pattern as discussed at Google IO - slide 26. My content provider is working, and my sync works when I trigger it from the Dev Tools Sync Tester application, however when I call ContentResolver.requestSync(account, authority, bundle) from my ContentProvider, my sync is never triggered.
+
+ContentResolver.requestSync(
+        account, 
+        AUTHORITY, 
+        new Bundle());
+
+
+Edit -- added manifest snippet
+My manifest xml contains:
+
+<service
+    android:name=".sync.SyncService"
+    android:exported="true">
+    <intent-filter>
+        <action
+            android:name="android.content.SyncAdapter" />
+    </intent-filter>
+    <meta-data android:name="android.content.SyncAdapter"
+    android:resource="@xml/syncadapter" />
+</service>
+
+
+--Edit
+
+My syncadapter.xml associated with my sync service contains:  
+
+<?xml version="1.0" encoding="utf-8"?>
+<sync-adapter xmlns:android="http://schemas.android.com/apk/res/android"  
+    android:contentAuthority="AUTHORITY"
+    android:accountType="myaccounttype"
+    android:supportsUploading="true"
+/>
+
+
+Not sure what other code would be useful.  The account passed to requestSync is of "myaccounttype" and the AUTHORITY passed to the call matches my syc adapter xml.
+
+Is ContentResolver.requestSync the correct way to request a sync?  It looks like the sync tester tool binds directly to the service and calls start sync, but that seems like it defeats the purpose of integrating with the sync architecture.
+
+If that is the correct way to request a sync then why would the sync tester work, but not my call to ContentResolver.requestSync?  Is there something I need to pass in the bundle?
+
+I am testing in the emulator on devices running 2.1 and 2.2.
+    
+===============================================================================================
+279
+A:Calling requestSync() will only work on an {Account, ContentAuthority} pair that is known to the system.  Your app needs to go through a number of steps to  tell Android that you are capable of synchronizing a specific kind of content using a specific kind of account.  It does this in the AndroidManifest.
+
+1. Notify Android that your application package provides syncing
+
+First off, in AndroidManifest.xml, you have to declare that you have a Sync Service:
+
+<service android:name=".sync.mySyncService" android:exported="true">
+   <intent-filter>
+      <action android:name="android.content.SyncAdapter" /> 
+    </intent-filter>
+    <meta-data 
+        android:name="android.content.SyncAdapter" 
+        android:resource="@xml/sync_myapp" /> 
+</service>
+
+
+The name attribute of the <service> tag is the name of your class to connect up sync...  I'll talk to that in a second.
+
+Setting exported true makes it visible to other components (needed so ContentResolver can call it).
+
+The intent filter lets it catch an intent requesting sync. (This Intent comes from ContentResolver when you call ContentResolver.requestSync() or related scheduling methods.)
+
+The <meta-data> tag will be discussed below.
+
+2. Provide Android a service used to find your SyncAdapter
+
+So the class itself...  Here's an example:
+
+public class mySyncService extends Service {
+
+    private static mySyncAdapter mSyncAdapter = null;
+
+    public SyncService() {
+        super();
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        if (mSyncAdapter == null) {
+            mSyncAdapter = new mySyncAdapter(getApplicationContext(), true);
+        }
+    }
+
+    @Override
+    public IBinder onBind(Intent arg0) {
+        return mSyncAdapter.getSyncAdapterBinder();
+    }
+}
+
+
+Your class must extend Service or one of its subclasses, must implement public IBinder onBind(Intent), and must return a SyncAdapterBinder when that's called... You need a variable of type AbstractThreadedSyncAdapter. So as you can see, that's pretty much everything in that class.  The only reason it's there is to provide a Service, that offers a standard interface for Android to query your class as to what your SyncAdapter itself is.  
+
+3. Provide a class SyncAdapter to actually perform the sync.
+
+mySyncAdapter is where the real sync logic itself is stored.  Its onPerformSync() method gets called when it's time to sync.  I figure you already have this in place.
+
+4. Establish a  binding between an Account-type and a Content Authority
+
+Looking back again at AndroidManifest, that strange <meta-data> tag in our service is the key piece that establishes the binding between a ContentAuthority and an account.  It externally references another xml file (call it whatever you like, something relevant to your app.)  Let's look at sync_myapp.xml:
+
+<?xml version="1.0" encoding="utf-8" ?> 
+<sync-adapter 
+    xmlns:android="http://schemas.android.com/apk/res/android"   
+    android:contentAuthority="com.android.contacts"
+    android:accountType="com.google" 
+    android:userVisible="true" /> 
+
+
+Okay, so what does this do?  It tells Android that the sync adapter we've defined (the class that was called out in the name element of the <service> tag that includes the <meta-data> tag that references this file...)  will sync contacts using a com.google style account.
+
+All your contentAuthority strings have to all match, and match with what you're syncing -- This should be a string you define, if you're creating your own database, or you should use some existing device strings if you're syncing known data types (like contacts or calendar events or what have you.)  The above ("com.android.contacts") happens to be the ContentAuthority string for contacts type data (surprise, surprise.)
+
+accountType also has to match one of those known account types that are already entered, or it has to match one you're creating (This involves creating a subclass of AccountAuthenticator to get auth on your server...  Worth an article, itself.)  Again, "com.google" is the defined string identifying... google.com style account credentials (again, this should not be a surprise.)
+
+5.  Enable Sync on a given Account / ContentAuthority pair
+
+Finally, sync has to be enabled.  You can do this in the Accounts & Sync page in the control panel by going to your app and setting the checkbox next to your app within the matching account.  Alternately, you can do it in some setup code in your app:
+
+ContentResolver.setSyncAutomatically(account, AUTHORITY, true);
+
+
+For sync to occur, your account/authority pair must be enabled to sync (like above) and the overall global sync flag on the system must be set, and the device must have network connectivity.  
+
+If your account/authority sync or the global sync are disabled, calling RequestSync() does have an effect -- It sets a flag that sync has been requested, and will be performed as soon as sync is enabled.  
+
+Also, per mgv, setting ContentResolver.SYNC_EXTRAS_MANUAL to true in the extras bundle of your requestSync will ask android to force a sync even if global sync is off (be respectful of your user here!)
+
+Finally, you can setup a periodic scheduled sync, again with ContentResolver functions.
+
+6.  Consider implications of multiple accounts
+
+It is possible to have more than one account of the same type (two @gmail.com accounts set up on one device or two facebook accounts, or two twitter accounts, etc...)  You should consider the application implications of doing that...  If you have two accounts, you probably don't want to try to sync both of them into the same database tables.  Maybe you need to specify that only one can be active at a time, and flush the tables and resync if you switch accounts. (through a property page that queries what accounts are present).  Maybe you create a different database for each account, maybe different tables, maybe a key column in each table.  All application specific and worthy of some thought.  ContentResolver.setIsSyncable(Account account, String authority, int syncable) might be of interest here.  setSyncAutomatically() controls whether an account/authority pair is checked or unchecked, whereas setIsSyncable() provides a way to uncheck and grey out the line so the user can't turn it on.  You might set one account Syncable and the other not Syncable (dsabled).
+
+7.  Be aware of ContentResolver.notifyChange()
+
+One tricky thing. ContentResolver.notifyChange() is a function used by ContentProviders to notify Android that the local database has been changed.  This serves two functions, first, it will cause cursors following that content uri to update, and in turn requery and invalidate and redraw a ListView, etc...  It's very magical, the database changes and your ListView just updates automatically.  Awesome.  Also, when the database changes, Android will request Sync for you, even outside your normal schedule, so that those changes get taken off the device and synced to the server as rapidly as possible.  Also awesome.  
+
+There's one edge case though.  If you pull from the server, and push an update into the ContentProvider, it will dutifully call notifyChange() and android will go, "Oh, database changes, better put them on the server!"  (Doh!)  Well-written ContentProviders will have some tests to see if the changes came from the network or from the user, and will set the boolean syncToNetwork flag false if so, to prevent this wasteful double-sync.  If you're feeding data into a ContentProvider, it behooves you to figure out how to get this working -- Otherwise you'll end up always performing two syncs when only one is needed.
+
+8.  Feel happy!
+
+Once you have all this xml metadata in place, and sync enabled, Android will know how to connect everything up for you, and sync should start working.  At this point, a lot of things that are nice will just click into place and it will feel a lot like magic.  Enjoy!
+    

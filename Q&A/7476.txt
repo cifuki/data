@@ -1,0 +1,255 @@
+35
+Q:I'm given to understand that both are the same. But I recently(a bit late to the party) came across  android support annotations . The note in the same reads 
+
+
+  However, it's possible for a UI thread to be different from the main
+  thread in the case of system apps with multiple views on different
+  threads
+
+
+I'm unable to understand the scene here. Can someone explain the same?
+
+EDIT: I have gone through the developer documentation and the same is contradicting the support doc linked in this question. Kindly stop posting both are the same.
+    
+===============================================================================================
+69
+A:Thanks for an exceptionally interesting question.
+
+Turns out, UI and Main threads are not necessarily the same. However, as stated in the documentation you quoted, the distinction is important only in context of some system applications (applications that run as part of OS). Therefore, as long as you don't build a custom ROM or work on customizing Android for phone manufacturers, I wouldn't bother to make any distinction at all.
+
+The long answer:
+
+First of all I found the commit that introduced @MainThread and @UiThread annotations into support library:
+
+commit 774c065affaddf66d4bec1126183435f7c663ab0
+Author: Tor Norbye <tnorbye@google.com>
+Date:   Tue Mar 10 19:12:04 2015 -0700
+
+    Add threading annotations
+
+    These describe threading requirements for a given method,
+    or threading promises made to a callback.
+
+    Change-Id: I802d2415c5fa60bc687419bc2564762376a5b3ef
+
+
+The comment doesn't contain any information related to the question, and since I don't have a communication channel to Tor Norbye (sigh), no luck here.
+
+Maybe these annotations are being used in source code of AOSP and we could derive some insights from there? Let's search for usages of either of the annotations in AOSP:
+
+aosp  $ find ./ -name *.java | xargs perl -nle 'print "in file: ".$ARGV."; match: ".$& if m{(\\@MainThread|\\@UiThread)(?!Test).*}'
+aosp  $
+
+
+the above command would find any usage of @MainThread or @UiThread in any .java file in AOSP (not followed by additional Test string). It found nothing. No luck here either.
+
+So we need to go and look for hints in the source of AOSP. I guessed that I could start from Activity#runOnUiThread(Runnable) method:
+
+public final void runOnUiThread(Runnable action) {
+    if (Thread.currentThread() != mUiThread) {
+        mHandler.post(action);
+    } else {
+        action.run();
+    }
+}
+
+
+nothing particularly interesting here. Let's see how mUiThread member is being initialized:
+
+final void attach(Context context, ActivityThread aThread,
+        Instrumentation instr, IBinder token, int ident,
+        Application application, Intent intent, ActivityInfo info,
+        CharSequence title, Activity parent, String id,
+        NonConfigurationInstances lastNonConfigurationInstances,
+        Configuration config, String referrer, IVoiceInteractor voiceInteractor) {
+    attachBaseContext(context);
+
+    mFragments.attachActivity(this, mContainer, null);
+
+    mWindow = PolicyManager.makeNewWindow(this);
+    mWindow.setCallback(this);
+    mWindow.setOnWindowDismissedCallback(this);
+    mWindow.getLayoutInflater().setPrivateFactory(this);
+    if (info.softInputMode != WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED) {
+        mWindow.setSoftInputMode(info.softInputMode);
+    }
+    if (info.uiOptions != 0) {
+        mWindow.setUiOptions(info.uiOptions);
+    }
+    mUiThread = Thread.currentThread();
+
+    mMainThread = aThread;
+
+    // ... more stuff here ...
+}
+
+
+Jackpot! The last two lines (others omitted because they are irrelevant) are the very first indication that "main" and "ui" threads might indeed be distinct threads.
+
+The notion of "ui" thread is clear from this line mUiThread = Thread.currentThread(); - "ui" thread is the thread on which Activity#attach(<params>) method is being called. So we need to find out what "main" thread is and compare the two.
+
+It looks like the next hint could be found in ActivityThread class. This class is quite a spaghetti, but I think that the interesting parts are where ActivityThread objects are being instantiated. 
+
+There are only two places: public static void main(String[]) and public static ActivityThread systemMain().
+
+The sources of these methods:
+
+public static void main(String[] args) {
+    SamplingProfilerIntegration.start();
+
+    // CloseGuard defaults to true and can be quite spammy.  We
+    // disable it here, but selectively enable it later (via
+    // StrictMode) on debug builds, but using DropBox, not logs.
+    CloseGuard.setEnabled(false);
+
+    Environment.initForCurrentUser();
+
+    // Set the reporter for event logging in libcore
+    EventLogger.setReporter(new EventLoggingReporter());
+
+    Security.addProvider(new AndroidKeyStoreProvider());
+
+    // Make sure TrustedCertificateStore looks in the right place for CA certificates
+    final File configDir = Environment.getUserConfigDirectory(UserHandle.myUserId());
+    TrustedCertificateStore.setDefaultUserDirectory(configDir);
+
+    Process.setArgV0("<pre-initialized>");
+
+    Looper.prepareMainLooper();
+
+    ActivityThread thread = new ActivityThread();
+    thread.attach(false);
+
+    if (sMainThreadHandler == null) {
+        sMainThreadHandler = thread.getHandler();
+    }
+
+    if (false) {
+        Looper.myLooper().setMessageLogging(new
+                LogPrinter(Log.DEBUG, "ActivityThread"));
+    }
+
+    Looper.loop();
+
+    throw new RuntimeException("Main thread loop unexpectedly exited");
+}
+
+
+and:
+
+public static ActivityThread systemMain() {
+    // The system process on low-memory devices do not get to use hardware
+    // accelerated drawing, since this can add too much overhead to the
+    // process.
+    if (!ActivityManager.isHighEndGfx()) {
+        HardwareRenderer.disable(true);
+    } else {
+        HardwareRenderer.enableForegroundTrimming();
+    }
+    ActivityThread thread = new ActivityThread();
+    thread.attach(true);
+    return thread;
+}
+
+
+Note the different value these methods pass to attach(boolean). For completeness I will post its source as well:
+
+private void attach(boolean system) {
+    sCurrentActivityThread = this;
+    mSystemThread = system;
+    if (!system) {
+        ViewRootImpl.addFirstDrawHandler(new Runnable() {
+            @Override
+            public void run() {
+                ensureJitEnabled();
+            }
+        });
+        android.ddm.DdmHandleAppName.setAppName("<pre-initialized>",
+                                                UserHandle.myUserId());
+        RuntimeInit.setApplicationObject(mAppThread.asBinder());
+        final IActivityManager mgr = ActivityManagerNative.getDefault();
+        try {
+            mgr.attachApplication(mAppThread);
+        } catch (RemoteException ex) {
+            // Ignore
+        }
+        // Watch for getting close to heap limit.
+        BinderInternal.addGcWatcher(new Runnable() {
+            @Override public void run() {
+                if (!mSomeActivitiesChanged) {
+                    return;
+                }
+                Runtime runtime = Runtime.getRuntime();
+                long dalvikMax = runtime.maxMemory();
+                long dalvikUsed = runtime.totalMemory() - runtime.freeMemory();
+                if (dalvikUsed > ((3*dalvikMax)/4)) {
+                    if (DEBUG_MEMORY_TRIM) Slog.d(TAG, "Dalvik max=" + (dalvikMax/1024)
+                            + " total=" + (runtime.totalMemory()/1024)
+                            + " used=" + (dalvikUsed/1024));
+                    mSomeActivitiesChanged = false;
+                    try {
+                        mgr.releaseSomeActivities(mAppThread);
+                    } catch (RemoteException e) {
+                    }
+                }
+            }
+        });
+    } else {
+        // Don't set application object here -- if the system crashes,
+        // we can't display an alert, we just want to die die die.
+        android.ddm.DdmHandleAppName.setAppName("system_process",
+                UserHandle.myUserId());
+        try {
+            mInstrumentation = new Instrumentation();
+            ContextImpl context = ContextImpl.createAppContext(
+                    this, getSystemContext().mPackageInfo);
+            mInitialApplication = context.mPackageInfo.makeApplication(true, null);
+            mInitialApplication.onCreate();
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    "Unable to instantiate Application():" + e.toString(), e);
+        }
+    }
+
+    // add dropbox logging to libcore
+    DropBox.setReporter(new DropBoxReporter());
+
+    ViewRootImpl.addConfigCallback(new ComponentCallbacks2() {
+        @Override
+        public void onConfigurationChanged(Configuration newConfig) {
+            synchronized (mResourcesManager) {
+                // We need to apply this change to the resources
+                // immediately, because upon returning the view
+                // hierarchy will be informed about it.
+                if (mResourcesManager.applyConfigurationToResourcesLocked(newConfig, null)) {
+                    // This actually changed the resources!  Tell
+                    // everyone about it.
+                    if (mPendingConfiguration == null ||
+                            mPendingConfiguration.isOtherSeqNewer(newConfig)) {
+                        mPendingConfiguration = newConfig;
+
+                        sendMessage(H.CONFIGURATION_CHANGED, newConfig);
+                    }
+                }
+            }
+        }
+        @Override
+        public void onLowMemory() {
+        }
+        @Override
+        public void onTrimMemory(int level) {
+        }
+    });
+}
+
+
+Why there are two means for initializing ActivityThread (which will become the "main" thread of the application)?
+
+I think the following takes place: 
+
+Whenever a new application started, public static void main(Strin[]) method of ActivityThread is being executed. The "main" thread is being initialized there, and all calls to Activity lifecycle methods are being made from that exact thread. In Activity#attach() method (its source was shown above) the system initializes "ui" thread to "this" thread, which is also happens to be the "main" thread. Therefore, for all practical cases "main" thread and "ui" thread are the same.
+
+This is true for all applications, with one exception.
+
+When Android framework is being started for the first time, it too runs as an application, but this application is special (for example: has privileged access). Part of this "specialty" is that it needs a specially configured "main" thread. Since it has already ran through public static void main(String[]) method (just like any other app), its "main" and "ui" threads are being set to the same thread. In order to get "main" thread with special characteristics, system app performs a static call to public static ActivityThread systemMain() and stores the obtained reference. But its "ui" thread is not overridden, therefore "main" and "ui" threads end up being not the same.
+    

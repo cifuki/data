@@ -1,0 +1,74 @@
+29
+Q:I am using Android DownloadManger System Service for downloading some files in following way 
+
+dwnId = mgr.enqueue(new DownloadManager.Request(serveruri)
+        .setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI |
+                DownloadManager.Request.NETWORK_MOBILE)
+                .setAllowedOverRoaming(false)
+                .setTitle(getAlbumName())
+                .setDescription(getTrackName())
+                .setDestinationUri(deviceUri)
+                .setShowRunningNotification(true));
+
+
+where mgr is Download Manager instance, dwnId is unique ID returned. I am also registering for ACTION_DOWNLOAD_COMPLETE
+
+registerReceiver(onDownloadComplete, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
+
+
+and in the onDownloadComplete BroadcastReceiver's onReceive() method I am getting download Id like
+
+Long dwnId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, 0);
+
+
+After that I am querying Download Manager for Download status
+
+Cursor c = downloadManager.query(new DownloadManager.Query().setFilterById(dwnId)); c.getInt(c.getColumnIndex(DownloadManager.COLUMN_STATUS));
+
+
+for DownloadManager.STATUS_* constants. 
+
+The problem is I am receiving the same downId twice (means onReceive method is called twice), once with DownloadManager.STATUS_SUCCESSFUL status and once with DownloadManager.STATUS_FAILED status for same dwnId. I am issuing request to download some 10 files at a time and but on device download manager it is showing the download count as some 12 or 13 in the notification bar top left means. I think that Download manager has some problem in downloading files and resumed or automatically restarted to download the same file again. Thats why there is a difference between the files count I requested to download and actual number in download queue. Because of this only I am getting same DownloadId complete action twice. If this is true, how to restrict it. Am I wrong what might be the reason for count difference between what I requested to actual download? Why is the broadcast receiver receiving the same download Id twice. Can anybody please let me know?
+
+Thanks In Advance... 
+    
+===============================================================================================
+35
+A:This is a reported bug see: http://code.google.com/p/android/issues/detail?id=18462
+
+The way around I found is to verify if the download was a success, if not ditch the intent or re-queue the file if it was never downloaded...
+
+Lost a couple of hours figuring that one :(
+
+** Edit: adding code example **
+
+/**
+ * Check if download was valid, see issue
+ * http://code.google.com/p/android/issues/detail?id=18462
+ * @param long1
+ * @return
+ */
+private boolean validDownload(long downloadId) {
+
+    Log.d(TAG,"Checking download status for id: " + downloadId);
+
+    //Verify if download is a success
+    Cursor c= dMgr.query(new DownloadManager.Query().setFilterById(downloadId));
+
+    if(c.moveToFirst()){            
+        int status = c.getInt(c.getColumnIndex(DownloadManager.COLUMN_STATUS));
+
+        if(status == DownloadManager.STATUS_SUCCESSFUL){
+            return true; //Download is valid, celebrate
+        }else{
+            int reason = c.getInt(c.getColumnIndex(DownloadManager.COLUMN_REASON));
+            Log.d(TAG, "Download not correct, status [" + status + "] reason [" + reason + "]");            
+            return false;
+        }   
+    }               
+    return false;                                   
+}
+
+
+For complete code see : https://github.com/flegare/JAV387_LaboWidget/blob/master/src/com/mobidroid/widgetfact/service/FactService.java  
+    

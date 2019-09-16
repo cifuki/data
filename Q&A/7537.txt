@@ -1,0 +1,83 @@
+35
+Q:I have an app that needs to pull data from a server and insert it into an SQLite database in response to user input. I thought this would be pretty simple - the code that pulls the data from the server is a fairly straightforward subclass of AsyncTask, and it works exactly as I expect it to without hanging the UI thread. I implemented callback functionality for it with a simple interface and wrapped it in a static class, so my code looks like this:
+
+MyServerCaller.getFolderContents(folderId, new OnFolderContentsResponseListener() {
+    @Override
+    public void onFolderContentsResponse(final List<FilesystemEntry> contents) {
+        // do something with contents
+    }
+}
+
+
+All still good. Even if the server takes an hour to retrieve the data, the UI still runs smoothly, because the code in getFolderContents is running in the doInBackground method of an AsyncTask (which is in a separate thread from the UI). At the very end of the getFolderContents method, the onFolderContentsResponse is called and passed the list of FilesystemEntry's that was received from the server. I only really say all this so that it's hopefully clear that my problem is not in the getFolderContents method or in any of my networking code, because it doesn't ever occur there.
+
+The problem arises when I try to insert into a database via my subclass of ContentProvider within the onFolderContentsResponse method; the UI always hangs while that code is executing, leading me to believe that despite being called from the doInBackground method of an AsyncTask, the inserts are somehow still running on the UI thread. Here's what the problematic code looks like:
+
+MyServerCaller.getFolderContents(folderId, new OnFolderContentsResponseListener() {
+    @Override
+    public void onFolderContentsResponse(final List<FilesystemEntry> contents) {
+        insertContentsIntoDB(contents);
+    }
+}
+
+
+And the insertContentsIntoDB method:
+
+void insertContentsIntoDB(final List<FilesystemEntry> contents) {
+    for (FilesystemEntry entry : contents) {
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_1, entry.attr1);
+        values.put(COLUMN_2, entry.attr2);
+        // etc.
+
+        mContentResolver.insert(MyContentProvider.CONTENT_URI, values);
+    }
+}
+
+
+where mContentResolver has been previously set to the result of the getContentResolver() method.
+
+I've tried putting insertContentsIntoDB in its own Thread, like so:
+
+MyServerCaller.getFolderContents(folderId, new OnFolderContentsResponseListener() {
+    @Override
+    public void onFolderContentsResponse(final List<FilesystemEntry> contents) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                insertContentsIntoDB(contents);
+            }
+        }).run();
+    }
+}
+
+
+I've also tried running each individual insert in its own thread (the insert method in MyContentProvider is synchronized, so this shouldn't cause any issues there):
+
+void insertContentsIntoDB(final List<FilesystemEntry> contents) {
+    for (FilesystemEntry entry : contents) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                ContentValues values = new ContentValues();
+                values.put(COLUMN_1, entry.attr1);
+                values.put(COLUMN_2, entry.attr2);
+                // etc.
+                mContentResolver.insert(MyContentProvider.CONTENT_URI, values);
+            }
+        }).run();
+    }
+}
+
+
+And just for good measure, I've also tried both of those solutions with the relevant code in the doInBackground method of another AsyncTask. Finally, I've explicitly defined MyContentProvider as living in a separate process in my AndroidManifest.xml:
+
+<provider android:name=".MyContentProvider" android:process=":remote"/>
+
+
+It runs fine, but it still seems to run in the UI thread. That's the point where I really started tearing my hair out over this, because that doesn't make any sense at all to me. No matter what I do, the UI always hangs during the inserts. Is there any way to get them not to?
+    
+===============================================================================================
+52
+A:Instead of calling mContentResolver.insert(), use AsyncQueryHandler and its startInsert() method. AsyncQueryHandler is designed to facilitate asynchronous ContentResolver queries.
+    

@@ -1,0 +1,69 @@
+273
+Q:I have 3 classes in my example:
+Class A, the main activity.  Class A calls a startActivityForResult:
+
+Intent intent = new Intent(this, ClassB.class);
+startActivityForResult(intent, "STRING");
+
+
+Class B, this class is a TabActivity:
+
+Intent intent = new Intent(this, ClassC.class);
+tabHost.addTab...
+
+
+Class C, this class is a regular Activity:
+
+Intent intent = this.getIntent();
+intent.putExtra("SOMETHING", "EXTRAS");
+this.setResult(RESULT_OK, intent);
+finish();
+
+
+onActivityResult is called in Class A, but the resultCode is RESULT_CANCELED instead of RESULT_OK and the returned intent is null.  How do I return something from the Activity inside a TabHost?
+
+I realize that the problem is that my Class C is actually running inside of Class B, and Class B is what is returning the RESULT_CANCELED back to Class A.  I just don't know a work around yet.
+    
+===============================================================================================
+364
+A:Oh, god! After spending several hours and downloading the Android sources, I have finally come to a solution.
+
+If you look at the Activity class, you will see, that finish() method only sends back the result if there is a mParent property set to null. Otherwise the result is lost.
+
+public void finish() {
+    if (mParent == null) {
+        int resultCode;
+        Intent resultData;
+        synchronized (this) {
+            resultCode = mResultCode;
+            resultData = mResultData;
+        }
+        if (Config.LOGV) Log.v(TAG, "Finishing self: token=" + mToken);
+        try {
+            if (ActivityManagerNative.getDefault()
+                .finishActivity(mToken, resultCode, resultData)) {
+                mFinished = true;
+            }
+        } catch (RemoteException e) {
+            // Empty
+        }
+    } else {
+        mParent.finishFromChild(this);
+    }
+}
+
+
+So my solution is to set result to the parent activity if present, like that:
+
+Intent data = new Intent();
+ [...]
+if (getParent() == null) {
+    setResult(Activity.RESULT_OK, data);
+} else {
+    getParent().setResult(Activity.RESULT_OK, data);
+}
+finish();
+
+
+I hope that will be helpful if someone looks for this problem workaround again.
+    

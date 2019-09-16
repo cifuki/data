@@ -1,0 +1,224 @@
+105
+Q:LATEST INFO:
+
+i have narrowed my problem down to being a problem with the fragmentManager retaining instances of old fragments and my viewpager being out of sync with my FragmentManager. See this issue... http://code.google.com/p/android/issues/detail?id=19211#makechanges . I still have no clue how to solve this. Any suggestions...
+
+I have tried to debug this for a long time and any help would be greatly appreciated. I am using a FragmentPagerAdapter which accepts a list of fragments like so:
+
+List<Fragment> fragments = new Vector<Fragment>();
+fragments.add(Fragment.instantiate(this, Fragment1.class.getName())); 
+...
+new PagerAdapter(getSupportFragmentManager(), fragments);
+
+
+The implementation is standard. I am using ActionBarSherlock and v4 computability library for Fragments.
+
+My problem is that after leaving the app and opening several other applications and coming back, the fragments lose their reference back to the FragmentActivity (ie. getActivity() == null). I can not figure out why this is happening. I tried to manually set setRetainInstance(true); but this does not help. I figured that this happens when my FragmentActivity gets destroyed, however this still happens if I open the app before I get the log message. Are there any ideas?
+
+@Override
+protected void onDestroy(){
+    Log.w(TAG, "DESTROYDESTROYDESTROYDESTROYDESTROYDESTROYDESTROY");
+    super.onDestroy();
+}
+
+
+The adapter:
+
+public class PagerAdapter extends FragmentPagerAdapter {
+    private List<Fragment> fragments;
+
+    public PagerAdapter(FragmentManager fm, List<Fragment> fragments) {
+        super(fm);
+
+        this.fragments = fragments;
+
+    }
+
+    @Override
+    public Fragment getItem(int position) {
+
+        return this.fragments.get(position);
+
+    }
+
+    @Override
+    public int getCount() {
+
+        return this.fragments.size();
+
+    }
+
+}
+
+
+One of my Fragments stripped but i commetned everyhting out thats stripped and still doesnt work...
+
+public class MyFragment extends Fragment implements MyFragmentInterface, OnScrollListener {
+...
+
+@Override
+public void onCreate(Bundle savedInstanceState){
+    super.onCreate(savedInstanceState);
+    handler = new Handler();    
+    setHasOptionsMenu(true);
+}
+
+@Override
+public void onAttach(Activity activity) {
+    super.onAttach(activity);
+    Log.w(TAG,"ATTACHATTACHATTACHATTACHATTACH");
+    context = activity;
+    if(context== null){
+        Log.e("IS NULL", "NULLNULLNULLNULLNULLNULLNULLNULLNULLNULLNULL");
+    }else{
+        Log.d("IS NOT NULL", "NOTNOTNOTNOTNOTNOTNOTNOT");
+    }
+
+}
+
+@Override
+public void onActivityCreated(Bundle savedState) {
+    super.onActivityCreated(savedState);
+}
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+    View v = inflater.inflate(R.layout.my_fragment,container, false);
+
+    return v;
+}
+
+
+@Override
+public void onResume(){
+    super.onResume();
+}
+
+private void callService(){
+    // do not call another service is already running
+    if(startLoad || !canSet) return;
+    // set flag
+    startLoad = true;
+    canSet = false;
+    // show the bottom spinner
+    addFooter();
+    Intent intent = new Intent(context, MyService.class);
+    intent.putExtra(MyService.STATUS_RECEIVER, resultReceiver);
+    context.startService(intent);
+}
+
+private ResultReceiver resultReceiver = new ResultReceiver(null) {
+    @Override
+    protected void onReceiveResult(int resultCode, final Bundle resultData) {
+        boolean isSet = false;
+        if(resultData!=null)
+        if(resultData.containsKey(MyService.STATUS_FINISHED_GET)){
+            if(resultData.getBoolean(MyService.STATUS_FINISHED_GET)){
+                removeFooter();
+                startLoad = false;
+                isSet = true;
+            }
+        }
+
+        switch(resultCode){
+        case MyService.STATUS_FINISHED: 
+            stopSpinning();
+            break;
+        case SyncService.STATUS_RUNNING:
+            break;
+        case SyncService.STATUS_ERROR:
+            break;
+        }
+    }
+};
+
+public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+    menu.clear();
+    inflater.inflate(R.menu.activity, menu);
+}
+
+@Override
+public void onPause(){
+    super.onPause();
+}
+
+public void onScroll(AbsListView arg0, int firstVisible, int visibleCount, int totalCount) {
+    boolean loadMore = /* maybe add a padding */
+        firstVisible + visibleCount >= totalCount;
+
+    boolean away = firstVisible+ visibleCount <= totalCount - visibleCount;
+
+    if(away){
+        // startLoad can now be set again
+        canSet = true;
+    }
+
+    if(loadMore) 
+
+}
+
+public void onScrollStateChanged(AbsListView arg0, int state) {
+    switch(state){
+    case OnScrollListener.SCROLL_STATE_FLING: 
+        adapter.setLoad(false); 
+        lastState = OnScrollListener.SCROLL_STATE_FLING;
+        break;
+    case OnScrollListener.SCROLL_STATE_IDLE: 
+        adapter.setLoad(true);
+        if(lastState == SCROLL_STATE_FLING){
+            // load the images on screen
+        }
+
+        lastState = OnScrollListener.SCROLL_STATE_IDLE;
+        break;
+    case OnScrollListener.SCROLL_STATE_TOUCH_SCROLL:
+        adapter.setLoad(true);
+        if(lastState == SCROLL_STATE_FLING){
+            // load the images on screen
+        }
+
+        lastState = OnScrollListener.SCROLL_STATE_TOUCH_SCROLL;
+        break;
+    }
+}
+
+@Override
+public void onDetach(){
+    super.onDetach();
+    if(this.adapter!=null)
+        this.adapter.clearContext();
+
+    Log.w(TAG, "DETACHEDDETACHEDDETACHEDDETACHEDDETACHEDDETACHED");
+}
+
+public void update(final int id, String name) {
+    if(name!=null){
+        getActivity().getSupportActionBar().setTitle(name);
+    }
+
+}
+
+
+}
+
+The update method is called when a user interacts with a different fragment and the getActivity is returning null. Here is the method the other fragment is calling...
+
+((MyFragment) pagerAdapter.getItem(1)).update(id, name);
+
+
+I believe that when the app is destroyed then created again instead of just starting the app up to the default fragment the app starts up and then viewpager navigates to the last known page. This seems strange, shouldn't the app just load to the default fragment? 
+    
+===============================================================================================
+119
+A:You are running into a problem because you are instantiating and keeping references to your fragments outside of PagerAdapter.getItem, and are trying to use those references independently of the ViewPager. As Seraph says, you do have guarantees that a fragment has been instantiated/added in a ViewPager at a particular time - this should be considered an implementation detail. A ViewPager does lazy loading of its pages; by default it only loads the current page, and the one to the left and right.
+
+If you put your app into the background, the fragments that have been added to the fragment manager are saved automatically. Even if your app is killed, this information is restored when you relaunch your app.
+
+Now consider that you have viewed a few pages, Fragments A, B and C. You know that these have been added to the fragment manager. Because you are using FragmentPagerAdapter and not FragmentStatePagerAdapter, these fragments will still be added (but potentially detached) when you scroll to other pages.
+
+Consider that you then background your application, and then it gets killed. When you come back, Android will remember that you used to have Fragments A, B and C in the fragment manager and so it recreates them for you and then adds them. However, the ones that are added to the fragment manager now are NOT the ones you have in your fragments list in your Activity.
+
+The FragmentPagerAdapter will not try to call getPosition if there is already a fragment added for that particular page position. In fact, since the fragment recreated by Android will never be removed, you have no hope of replacing it with a call to getPosition. Getting a handle on it is also pretty difficult to obtain a reference to it because it was added with a tag that is unknown to you. This is by design; you are discouraged from messing with the fragments that the view pager is managing. You should be performing all your actions within a fragment, communicating with the activity, and requesting to switch to a particular page, if necessary.
+
+Now, back to your problem with the missing activity. Calling pagerAdapter.getItem(1)).update(id, name) after all of this has happened returns you the fragment in your list, which has yet to be added to the fragment manager, and so it will not have an Activity reference. I would that suggest your update method should modify some shared data structure (possibly managed by the activity), and then when you move to a particular page it can draw itself based on this updated data.
+    

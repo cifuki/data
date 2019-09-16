@@ -1,0 +1,126 @@
+150
+Q:How to fit an image of random size to an ImageView?
+When:
+
+
+Initially ImageView dimensions are 250dp *  250dp
+The image's larger dimension should be scaled up/down to 250dp
+The image should keep its aspect ratio
+The ImageView dimensions should match scaled image's dimensions after scaling
+
+
+E.g. for an image of 100*150, the image and the ImageView should be 166*250.
+E.g. for an image of 150*100, the image and the ImageView should be 250*166. 
+
+If I set the bounds as
+
+<ImageView
+    android:id="@+id/picture"
+    android:layout_width="250dp"
+    android:layout_height="250dp"
+    android:layout_gravity="center_horizontal"
+    android:layout_marginTop="20dp"
+    android:adjustViewBounds="true" />
+
+
+images fit properly in the ImageView, but the ImageView is always 250dp * 250dp.
+    
+===============================================================================================
+131
+A:(The answer was heavily modified after clarifications to the original question)
+
+After clarifications:
+This cannot be done in xml only. It is not possible to scale both the image and the ImageView so that image's one dimension would always be 250dp and the ImageView would have the same dimensions as the image.
+
+This code scales Drawable of an ImageView to stay in a square like 250dp x 250dp with one dimension exactly 250dp and keeping the aspect ratio. Then the ImageView is resized to match the dimensions of the scaled image. The code is used in an activity. I tested it via button click handler.
+
+Enjoy. :)
+
+private void scaleImage(ImageView view) throws NoSuchElementException  {
+    // Get bitmap from the the ImageView.
+    Bitmap bitmap = null;
+
+    try {
+        Drawable drawing = view.getDrawable();
+        bitmap = ((BitmapDrawable) drawing).getBitmap();
+    } catch (NullPointerException e) {
+        throw new NoSuchElementException("No drawable on given view");
+    } catch (ClassCastException e) {
+        // Check bitmap is Ion drawable
+        bitmap = Ion.with(view).getBitmap();
+    }
+
+    // Get current dimensions AND the desired bounding box
+    int width = 0;
+
+    try {
+        width = bitmap.getWidth();
+    } catch (NullPointerException e) {
+        throw new NoSuchElementException("Can't find bitmap on given view/drawable");
+    }
+
+    int height = bitmap.getHeight();
+    int bounding = dpToPx(250);
+    Log.i("Test", "original width = " + Integer.toString(width));
+    Log.i("Test", "original height = " + Integer.toString(height));
+    Log.i("Test", "bounding = " + Integer.toString(bounding));
+
+    // Determine how much to scale: the dimension requiring less scaling is
+    // closer to the its side. This way the image always stays inside your
+    // bounding box AND either x/y axis touches it.  
+    float xScale = ((float) bounding) / width;
+    float yScale = ((float) bounding) / height;
+    float scale = (xScale <= yScale) ? xScale : yScale;
+    Log.i("Test", "xScale = " + Float.toString(xScale));
+    Log.i("Test", "yScale = " + Float.toString(yScale));
+    Log.i("Test", "scale = " + Float.toString(scale));
+
+    // Create a matrix for the scaling and add the scaling data
+    Matrix matrix = new Matrix();
+    matrix.postScale(scale, scale);
+
+    // Create a new bitmap and convert it to a format understood by the ImageView 
+    Bitmap scaledBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, matrix, true);
+    width = scaledBitmap.getWidth(); // re-use
+    height = scaledBitmap.getHeight(); // re-use
+    BitmapDrawable result = new BitmapDrawable(scaledBitmap);
+    Log.i("Test", "scaled width = " + Integer.toString(width));
+    Log.i("Test", "scaled height = " + Integer.toString(height));
+
+    // Apply the scaled bitmap
+    view.setImageDrawable(result);
+
+    // Now change ImageView's dimensions to match the scaled image
+    LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) view.getLayoutParams(); 
+    params.width = width;
+    params.height = height;
+    view.setLayoutParams(params);
+
+    Log.i("Test", "done");
+}
+
+private int dpToPx(int dp) {
+    float density = getApplicationContext().getResources().getDisplayMetrics().density;
+    return Math.round((float)dp * density);
+}
+
+
+The xml code for the ImageView:
+
+<ImageView a:id="@+id/image_box"
+    a:background="#ff0000"
+    a:src="@drawable/star"
+    a:layout_width="wrap_content"
+    a:layout_height="wrap_content"
+    a:layout_marginTop="20dp"
+    a:layout_gravity="center_horizontal"/>
+
+
+
+Thanks to this discussion for the scaling code:
+http://www.anddev.org/resize_and_rotate_image_-_example-t621.html
+
+
+UPDATE 7th, November 2012:
+Added null pointer check as suggested in comments
+    

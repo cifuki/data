@@ -1,0 +1,334 @@
+39
+Q:I am trying to filter the stream coming from the camera hardware by running it through an openGL filter, then displaying it in a GLSurfaceView.  When openGL goes to render the frame, the LogCat repeatedly spits out an error: 
+
+
+  [unnamed-3314-0] updateTexImage: clearing GL error: 0x502
+
+
+0x502 is a generic openGL error, and doesn't really help me track down the problem. This is a sequence of how the code works (or atleast should be working as seen in my head), and I've copied my code below that. I am hoping that somebody else can see what my problem is.
+
+
+  
+  Create new MyGLSurfaceView. This internally creates the new MyGL20Renderer object as well. This MyGLSurfaceView is set as the content view.
+  Once the MyGLSurfaceView is done inflating/initializing, this completion event triggers the renderer to create a DirectVideo draw object, which compiles/links the shaders defined and adds them to an openGL program. It then creates a new openGL texture object, and then calls back to the MainActivity with the texture object ID.
+  When the MainActivity method is invoked from the renderer, it creates a new SurfaceTexture object using the openGL texture object passed. It then sets itself as the surface's onFrameListener. It then creates/opens the camera object, sets the created SurfaceTexture as the video stream's target, and starts the camera feed.
+  When a frame is available from the feed, the onFrameAvailable sends a render request to the renderer. This is picked up on the openGL thread, which calls the SurfaceTexture's updateTexImage(), which loads the frame memory into the openGL texture. It then calls the DirectVideo's draw object, and the openGL program sequence is run. If I comment out this .draw() line, the mentioned error above disappears, so it seems likely that the problem lies somewhere inside here, but I am not ruling it out being caused by an improperly linked/created texture.
+  
+
+
+MainActivity.java
+
+public class MainActivity extends Activity implements SurfaceTexture.OnFrameAvailableListener
+{
+    private Camera mCamera;
+    private MyGLSurfaceView glSurfaceView;
+    private SurfaceTexture surface;
+    MyGL20Renderer renderer;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+
+        glSurfaceView = new MyGLSurfaceView(this);
+        renderer = glSurfaceView.getRenderer();
+        setContentView(glSurfaceView);
+    }
+
+    public void startCamera(int texture)
+    {
+        surface = new SurfaceTexture(texture);
+        surface.setOnFrameAvailableListener(this);
+        renderer.setSurface(surface);
+
+        mCamera = Camera.open();
+
+        try
+        {
+            mCamera.setPreviewTexture(surface);
+            mCamera.startPreview();
+        }
+        catch (IOException ioe)
+        {
+            Log.w("MainActivity","CAM LAUNCH FAILED");
+        }
+    }
+
+    public void onFrameAvailable(SurfaceTexture surfaceTexture)
+    {
+        glSurfaceView.requestRender();
+    }
+
+    @Override
+    public void onPause()
+    {
+        mCamera.stopPreview();
+        mCamera.release();
+        System.exit(0);
+    }
+
+
+MyGLSurfaceView.java
+
+class MyGLSurfaceView extends GLSurfaceView
+{
+    MyGL20Renderer renderer;
+    public MyGLSurfaceView(Context context)
+    {
+        super(context);
+
+        setEGLContextClientVersion(2);
+
+        renderer = new MyGL20Renderer((MainActivity)context);
+        setRenderer(renderer);
+        setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
+
+    }
+    public MyGL20Renderer getRenderer()
+    {
+        return renderer;
+    }
+}
+
+
+MyGL20Renderer.java
+
+public class MyGL20Renderer implements GLSurfaceView.Renderer
+{
+
+    DirectVideo mDirectVideo;
+    int texture;
+    private SurfaceTexture surface;
+    MainActivity delegate;
+
+    public MyGL20Renderer(MainActivity _delegate)
+    {
+        delegate = _delegate;
+    }
+
+    public void onSurfaceCreated(GL10 unused, EGLConfig config)
+    {
+        mDirectVideo = new DirectVideo(texture);
+        texture = createTexture();
+        GLES20.glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+        delegate.startCamera(texture);
+    }
+
+    public void onDrawFrame(GL10 unused)
+    {
+            float[] mtx = new float[16];
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+            surface.updateTexImage();
+            surface.getTransformMatrix(mtx); 
+
+            mDirectVideo.draw();
+    }
+
+    public void onSurfaceChanged(GL10 unused, int width, int height)
+    {
+        GLES20.glViewport(0, 0, width, height);
+    }
+
+    static public int loadShader(int type, String shaderCode)
+    {
+        int shader = GLES20.glCreateShader(type);
+
+        GLES20.glShaderSource(shader, shaderCode);
+        GLES20.glCompileShader(shader);
+
+        return shader;
+    }
+
+    static private int createTexture()
+    {
+        int[] texture = new int[1];
+
+        GLES20.glGenTextures(1,texture, 0);
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, texture[0]);
+        GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+             GL10.GL_TEXTURE_MIN_FILTER,GL10.GL_LINEAR);        
+        GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+             GL10.GL_TEXTURE_MAG_FILTER, GL10.GL_LINEAR);
+     GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+             GL10.GL_TEXTURE_WRAP_S, GL10.GL_CLAMP_TO_EDGE);
+     GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+             GL10.GL_TEXTURE_WRAP_T, GL10.GL_CLAMP_TO_EDGE);
+
+        return texture[0];
+    }
+
+    public void setSurface(SurfaceTexture _surface)
+    {
+        surface = _surface;
+    }
+}
+
+
+DirectVideo.java
+
+public class DirectVideo {
+
+
+    private final String vertexShaderCode =
+            "#extension GL_OES_EGL_image_external : require\
+"+
+            "attribute vec4 position;" +
+            "attribute vec4 inputTextureCoordinate;" +
+            "varying vec2 textureCoordinate;" +
+            "void main()" +
+            "{"+
+                "gl_Position = position;"+
+                "textureCoordinate = inputTextureCoordinate.xy;" +
+            "}";
+
+        private final String fragmentShaderCode =
+            "#extension GL_OES_EGL_image_external : require\
+"+
+            "precision mediump float;" +
+            "uniform vec4 vColor;" +
+            "void main() {" +
+            "  gl_FragColor = vColor;" +
+            "}";
+
+        private FloatBuffer vertexBuffer, textureVerticesBuffer;
+        private ShortBuffer drawListBuffer;
+         private final int mProgram;
+            private int mPositionHandle;
+            private int mColorHandle;
+            private int mTextureCoordHandle;
+
+
+    // number of coordinates per vertex in this array
+    static final int COORDS_PER_VERTEX = 2;
+    static float squareVertices[] = { // in counterclockwise order:
+         -1.0f,  1.0f,
+         -1.0f,  -1.0f,
+         1.0f,  -1.0f,
+         1.0f,  1.0f
+    };
+
+    private short drawOrder[] = { 0, 1, 2, 0, 2, 3 }; // order to draw vertices
+
+    static float textureVertices[] = { // in counterclockwise order:
+        1.0f,  1.0f,
+        1.0f,  0.0f,
+        0.0f,  1.0f,
+        0.0f,  0.0f
+   };
+
+    private final int vertexStride = COORDS_PER_VERTEX * 4; // 4 bytes per vertex
+
+    private int texture;
+
+    public DirectVideo(int _texture)
+    {
+        texture = _texture;
+
+        ByteBuffer bb = ByteBuffer.allocateDirect(squareVertices.length * 4);
+        bb.order(ByteOrder.nativeOrder());
+        vertexBuffer = bb.asFloatBuffer();
+        vertexBuffer.put(squareVertices);
+        vertexBuffer.position(0);
+
+        ByteBuffer dlb = ByteBuffer.allocateDirect(drawOrder.length * 2);
+        dlb.order(ByteOrder.nativeOrder());
+        drawListBuffer = dlb.asShortBuffer();
+        drawListBuffer.put(drawOrder);
+        drawListBuffer.position(0);
+
+        ByteBuffer bb2 = ByteBuffer.allocateDirect(textureVertices.length * 4);
+        bb2.order(ByteOrder.nativeOrder());
+        textureVerticesBuffer = bb2.asFloatBuffer();
+        textureVerticesBuffer.put(textureVertices);
+        textureVerticesBuffer.position(0);
+
+        int vertexShader = MyGL20Renderer.loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode);
+        int fragmentShader = MyGL20Renderer.loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode);
+
+        mProgram = GLES20.glCreateProgram();             // create empty OpenGL ES Program
+        GLES20.glAttachShader(mProgram, vertexShader);   // add the vertex shader to program
+        GLES20.glAttachShader(mProgram, fragmentShader); // add the fragment shader to program
+        GLES20.glLinkProgram(mProgram);          
+    }
+
+    public void draw()
+    {
+        GLES20.glUseProgram(mProgram);
+
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, texture);
+
+        mPositionHandle = GLES20.glGetAttribLocation(mProgram, "position");
+        GLES20.glEnableVertexAttribArray(mPositionHandle);
+        GLES20.glVertexAttribPointer(mPositionHandle, COORDS_PER_VERTEX, GLES20.GL_FLOAT, false,vertexStride, vertexBuffer);
+
+        mTextureCoordHandle = GLES20.glGetAttribLocation(mProgram, "inputTextureCoordinate");
+        GLES20.glEnableVertexAttribArray(mTextureCoordHandle);
+        GLES20.glVertexAttribPointer(mTextureCoordHandle, COORDS_PER_VERTEX, GLES20.GL_FLOAT, false,vertexStride, textureVerticesBuffer);
+
+        mColorHandle = GLES20.glGetUniformLocation(mProgram, "vColor");
+
+        GLES20.glDrawElements(GLES20.GL_TRIANGLES, drawOrder.length,
+        GLES20.GL_UNSIGNED_SHORT, drawListBuffer);
+
+        // Disable vertex array
+        GLES20.glDisableVertexAttribArray(mPositionHandle);
+        GLES20.glDisableVertexAttribArray(mTextureCoordHandle);
+    }
+}
+
+    
+===============================================================================================
+35
+A:mDirectVideo = new DirectVideo(texture);
+texture = createTexture();
+
+
+should be
+
+texture = createTexture();
+mDirectVideo = new DirectVideo(texture);
+
+
+Shader 
+
+private final String vertexShaderCode =
+        "attribute vec4 position;" +
+        "attribute vec2 inputTextureCoordinate;" +
+        "varying vec2 textureCoordinate;" +
+        "void main()" +
+        "{"+
+            "gl_Position = position;"+
+            "textureCoordinate = inputTextureCoordinate;" +
+        "}";
+
+    private final String fragmentShaderCode =
+        "#extension GL_OES_EGL_image_external : require\
+"+
+        "precision mediump float;" +
+        "varying vec2 textureCoordinate;                            \
+" +
+        "uniform samplerExternalOES s_texture;               \
+" +
+        "void main() {" +
+        "  gl_FragColor = texture2D( s_texture, textureCoordinate );\
+" +
+        "}";
+
+
+mColorHandle = GLES20.glGetUniformLocation(mProgram, "vColor");
+
+should be   
+
+mColorHandle = GLES20.glGetAttribLocation(mProgram, "s_texture");
+
+remove initialization stuff from DirectVideo draw.glVertexAttribPointer etc. Put it in some init function. 
+
+public void draw()
+{
+    GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, texture);
+    GLES20.glDrawElements(GLES20.GL_TRIANGLES, drawOrder.length,
+            GLES20.GL_UNSIGNED_SHORT, drawListBuffer);
+}
+
+    

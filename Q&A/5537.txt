@@ -1,0 +1,77 @@
+45
+Q:Application description:
+The application is intended as a safety program for a specific client (not to be deployed publicly). When the application has not detected movement for a certain period of time, the application should sound an alarm and bring itself to the foreground if it is in the background or the device is asleep.
+
+The problem:
+In the event the device is asleep and locked, we need to wake up and unlock the device. Using various techniques found here on SO and other places, we've been able to (partially) wake and unlock the device, however this ONLY behaves properly when the device is physically plugged in to a computer. If the device is sitting by itself unplugged, and we test the wake-unlock, nothing happens; the device seems to remain asleep, and the application seems to do nothing at all (no alarm).
+
+I have used this post about using PowerManager and KeyguardManager, and this post using window flags.
+
+Here is the code presently used to wake the device:
+
+public void wakeDevice() {
+    PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+    wakeLock = powerManager.newWakeLock((PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP), "TAG");
+    wakeLock.acquire();
+
+    KeyguardManager keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+    KeyguardLock keyguardLock = keyguardManager.newKeyguardLock("TAG");
+    keyguardLock.disableKeyguard();
+    runOnUiThread(new Runnable(){
+        public void run(){
+            getWindow().addFlags(
+                      WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                    | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                    | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                    | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);                
+        }
+    });
+}
+
+
+From the comments and posts on some of the other SO questions I've seen / used, it seems as though the PowerManager / KeyguardManager code should have done the trick. Again, as I said before, it does technically work while the device is plugged in via USB to the dev machine, but does absolutely nothing while the device is separated.
+
+Also note this is our first Android application, and so are fully aware we might be completely off on what we are trying to do. Any suggestions are welcome.
+
+So in short, given the code above, why does the device behave so differently based on whether it is plugged in, and what should we change in order to wake and unlock the device as described? Thank you in advance for your assistance!
+    
+===============================================================================================
+58
+A:I solved the issue. The reason we observed different behaviour when the device was plugged in via USB was because the device's CPU was not going to sleep. I assume this is either a result of the debug mode setting, or simply how it behaves when plugged in to a computer since the power-saving feature of CPU-sleeping would be irrelevant. Obviously, when the device is not plugged in, the CPU would happily take a nap, and while we did observe the application randomly running (it would wake itself up at random times), the timing would be inconsistent. I further assume this is because the few CPU cycles that occurred are allocated sparingly, and our application would be given very few cycles at "random" times.
+
+So our solution was to grab a partial wake lock when the device goes into the background (which is done in the onPause method), and release the lock in the onResume method. This seems to prevent the CPU from sleeping. We continue to use the full wake lock and keyguard disable to wake the device when we need to. Using the partial wake lock seems to keep the CPU from sleeping, and the device does appear to wake up properly when expected. Here is our updated code, in case anyone comes across this issue:
+
+// Called from onCreate
+protected void createWakeLocks(){
+    PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+    fullWakeLock = powerManager.newWakeLock((PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP), "Loneworker - FULL WAKE LOCK");
+    partialWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Loneworker - PARTIAL WAKE LOCK");
+}
+
+// Called implicitly when device is about to sleep or application is backgrounded
+protected void onPause(){
+    super.onPause();
+    partialWakeLock.acquire();
+}
+
+// Called implicitly when device is about to wake up or foregrounded
+protected void onResume(){
+    super.onResume();
+    if(fullWakeLock.isHeld()){
+        fullWakeLock.release();
+    }
+    if(partialWakeLock.isHeld()){
+        partialWakeLock.release();
+    }
+}
+
+// Called whenever we need to wake up the device
+public void wakeDevice() {
+    fullWakeLock.acquire();
+
+    KeyguardManager keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+    KeyguardLock keyguardLock = keyguardManager.newKeyguardLock("TAG");
+    keyguardLock.disableKeyguard();
+}
+
+    

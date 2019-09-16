@@ -1,0 +1,104 @@
+43
+Q:I've followed the examples on developer.android.com regarding  Input Methods and played with the SoftKeyboard sample application. These together give more than enough information regarding the creation of simple keyboard.
+
+What I can't see in the API is the ability to create alternate / multiple characters per key which is available on the standard Keyboard (LatinIME Keyboard).
+
+
+
+The above image is the result of a long press on the "a" key. When you long press a key it's possible to populate a popup with alternate characters.
+
+
+
+It is also possible to give a popup hint on some keys which will prompt the user to press and hold a key in order to get the popup menu.
+
+So far I haven't found a single source of information on how this is achieved, hopefully someone will be able to give me a head start, until then I'll follow the source code of the inbuilt keyboard and see if I can reverse engineer it.
+
+Edit: Would help if developer.android.com 's link to the LatinIME Keyboard didn't link to a picture of a Sheep :) Actual source code for LatinIME.java.
+
+Edit 2: More as a reference than anything else, this is the sequence I believe a usual longPress action goes through in order to show the popup keyboard in KeyboardView.java:
+
+onTouchEvent()
+onModifiedTouchEvent()
+mHandkler.handleMessage() with MSG_LONGPRESS
+openPopupIfRequired() 
+onLongPress()
+
+
+Edit 3: 
+
+I still haven't figured this out - How do you add label suggestions to keys? An answer suggests it isn't built into the API and indeed I haven't found the codeto do this. However the Keyboard on 2.3.4 (API 10) shows this functionality being implemented:
+
+
+
+Would very much like to figure out how IT does it but it isn't anywhere in the onDraw() method that I can see - which makes me believe it's being written outside of the KeyboardView element. I can't however find the layout file used to display the KeyboardView element on the inbuilt keyboard - If anyone knows where to find this perhaps that will give me the clue I need.
+
+Edit 4: Moved key Preview question here as it's slightly off topic:
+
+How do you disable the SoftKeyboard key preview window?
+    
+===============================================================================================
+51
+A:Implementing alternate key popup:
+
+For each key you wish to have a popup keyboard you should define popupCharacters and popupKeyboard:
+
+/res/xml/[Keyboard].xml
+
+<Key android:keyLabel="("
+    android:popupKeyboard="@xml/keyboard_popup_template"
+    android:popupCharacters="[{&lt;" />
+
+
+The popupKeyboard is an XML representation of the keyboard used in the popup containing the alternate keys:
+
+/res/xml/keyboard_popup_template.xml
+
+<Keyboard xmlns:android="http://schemas.android.com/apk/res/android"
+    android:keyWidth="10%p"
+    android:horizontalGap="0px"
+    android:verticalGap="0px"
+    android:keyHeight="56dp">
+</Keyboard>
+
+
+Styling the alternate key popup:
+
+If you want to change the layout/style of the popup (which defaults to @android:layout/ keyboard_popup_keyboard.xml) you can specify a android:popupLayout attribute which points to a layout file:
+
+<android.inputmethodservice.KeyboardView
+    android:id="@+id/keyboard"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_alignParentBottom="true"
+    android:background="#FF272727"
+    android:popupLayout="@layout/keyboard_popup_keyboard" />
+
+
+Implementing Key Preview Overlay:
+
+The only solution I've been able to knock together to show key previews (Without entirely rewriting the KeyboardView source code) is below:
+
+Wrapping the <KeyboardView> tag with a <FrameLayout> with a height specified by multiplying the keyHeight by the amount of rows. Inside this tag I've simply created a LinearLayout to hold rows, then a LinearLayout for each row containing a TextView with a weight equal to the %p value specified for each <Key>:
+
+<TextView android:text="!" style="@style/Custom.Widget.KeyboardKeyOverlay"  android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="10"/>
+
+
+And styled:
+
+<style name="CustomTheme.Widget.KeyboardKeyOverlay">
+    <item name="android:background">@android:color/transparent</item>
+    <item name="android:textColor">#FFAAAAAA</item>
+    <item name="android:paddingRight">6dp</item>
+    <item name="android:paddingTop">4dp</item>
+    <item name="android:textSize">10sp</item>
+    <item name="android:gravity">right</item>
+    <item name="android:textStyle">bold</item>
+</style>         
+
+
+Which produces this:
+
+
+
+I won't be happy until I've managed to implement this in the same way as the System Keyboard does!
+    

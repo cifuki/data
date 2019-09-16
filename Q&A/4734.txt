@@ -1,0 +1,100 @@
+51
+Q:I have a Service in my application which is designed to run every 10 minutes. It basically checks up on our servers to see if everything is running properly and notifies the user of any problems. I created this application for internal use at our company.
+
+My co-worker used the application over the long weekend and noticed that no checks were performed when the device went to sleep. I was under the impression that the Service was supposed to keep running in the background until I explicitly call stopService() in my code.
+
+So ultimately, my goal is to have the service running until the user hits the off button in the application or kills the process.
+
+I heard about something called WakeLock which is meant to keep the screen from turning off, which is not what I want. I then heard of another thing called a partial WakeLock, which keeps the CPU running even when the device is asleep. The latter sounds closer to what I need.
+
+How do I acquire this WakeLock and when should I release it and are there other ways around this?
+    
+===============================================================================================
+61
+A:Note: This post has been updated to include the JobScheduler API of the Android Lollipop release. The following is still a viable way, but can be considered deprecated if you're targeting Android Lollipop and beyond. See the second half for the JobScheduler alternative.
+
+One way to do recurrent tasks is this:
+
+
+Create a class AlarmReceiver
+
+public class AlarmReceiver extends BroadcastReceiver 
+{
+    @Override
+    public void onReceive(Context context, Intent intent) 
+    {
+        Intent myService = new Intent(context, YourService.class);
+        context.startService(myService);
+    }
+}
+
+
+with YourService being your service ;-)
+
+
+If you require a wake lock for your Task, it is advisable to extend from WakefulBroadcastReceiver. Don't forget to add the WAKE_LOCK permission in your Manifest in this case!
+
+
+Create a Pending Intent
+
+
+To start your recurrent polling, execute this code in your activity:
+
+Intent myAlarm = new Intent(getApplicationContext(), AlarmReceiver.class);
+//myAlarm.putExtra("project_id", project_id); //Put Extra if needed
+PendingIntent recurringAlarm = PendingIntent.getBroadcast(getApplicationContext(), 0, myAlarm, PendingIntent.FLAG_CANCEL_CURRENT);
+AlarmManager alarms = (AlarmManager) this.getSystemService(Context.ALARM_SERVICE);
+Calendar updateTime = Calendar.getInstance();
+//updateTime.setWhatever(0);    //set time to start first occurence of alarm 
+alarms.setInexactRepeating(AlarmManager.RTC_WAKEUP, updateTime.getTimeInMillis(), AlarmManager.INTERVAL_DAY, recurringAlarm); //you can modify the interval of course
+
+
+This code sets up an alarm and a canceable pendingIntent. The alarmManager gets the job to repeat the recurringAlarm every day (third argument), but inexact so the CPU does wake up approximately after the interval but not exactly (It lets the OS choose the optimal time, which reduces battery drain). The first time the alarm (and thus the service) is started will be the time you choose to be updateTime.
+
+
+last but not least: here is how to kill the recurring alarm
+
+Intent myAlarm = new Intent(getApplicationContext(), AlarmReceiver.class);
+//myAlarm.putExtra("project_id",project_id); //put the SAME extras
+PendingIntent recurringAlarm = PendingIntent.getBroadcast(getApplicationContext(), 0, myAlarm, PendingIntent.FLAG_CANCEL_CURRENT);
+AlarmManager alarms = (AlarmManager) getApplicationContext().getSystemService(Context.ALARM_SERVICE);
+alarms.cancel(recurringAlarm);
+
+
+
+This code creates a copy of your (probably) existing alarm and tells the alarmManager to cancel all alarms of that kind.
+
+
+of course there is also something to do in the Manifest:
+
+
+include these two lines
+
+  < receiver android:name=".AlarmReceiver"></receiver>
+  < service android:name=".YourService"></service>
+
+
+inside the < application>-tag. Without it, the system does not accept the start of recurrent alarm of a service.
+
+
+
+Starting with the Android Lollipop release, there's a new way of solving this task elegantly.
+This also makes it easier to only perform an action if certain criteria such as network state are met.
+
+// wrap your stuff in a componentName
+ComponentName mServiceComponent = new ComponentName(context, MyJobService.class);
+// set up conditions for the job
+JobInfo task = JobInfo.Builder(mJobId, mServiceComponent)
+   .setPeriodic(mIntervalMillis)
+   .setRequiresCharging(true) // default is "false"
+   .setRequiredNetworkCapabilities(JobInfo.NetworkType.UNMETERED) // Parameter may be "ANY", "NONE" (=default) or "UNMETERED"
+   .build();
+// inform the system of the job
+JobScheduler jobScheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+jobScheduler.schedule(task);
+
+
+You may also provide a deadline with setOverrideDeadline(maxExecutionDelayMillis).
+
+To get rid of such a task, just call jobScheduler.cancel(mJobId); or jobScheduler.cancelAll();.
+    

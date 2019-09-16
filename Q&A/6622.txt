@@ -1,0 +1,518 @@
+39
+Q:Where should I call close() on the code?
+
+The LogCat returns this error:
+
+
+  close() was never explicitly called on database
+  android.database.sqlite.DatabaseObjectNotClosedException: Application did not close the cursor or database object that was opened here
+
+
+The error is this:
+
+> 12-16 17:24:50.886: ERROR/Database(10982): close() was never explicitly called on database '/data/data/com.psyhclo/databases/calls.db' 
+12-16 17:24:50.886: ERROR/Database(10982): android.database.sqlite.DatabaseObjectNotClosedException: Application did not close the cursor or database object that was opened here
+12-16 17:24:50.886: ERROR/Database(10982):     at android.database.sqlite.SQLiteDatabase.<init>(SQLiteDatabase.java:1827)
+12-16 17:24:50.886: ERROR/Database(10982):     at android.database.sqlite.SQLiteDatabase.openDatabase(SQLiteDatabase.java:820)
+12-16 17:24:50.886: ERROR/Database(10982):     at android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(SQLiteDatabase.java:854)
+12-16 17:24:50.886: ERROR/Database(10982):     at android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(SQLiteDatabase.java:847)
+12-16 17:24:50.886: ERROR/Database(10982):     at android.app.ContextImpl.openOrCreateDatabase(ContextImpl.java:541)
+12-16 17:24:50.886: ERROR/Database(10982):     at android.content.ContextWrapper.openOrCreateDatabase(ContextWrapper.java:203)
+12-16 17:24:50.886: ERROR/Database(10982):     at android.database.sqlite.SQLiteOpenHelper.getWritableDatabase(SQLiteOpenHelper.java:118)
+12-16 17:24:50.886: ERROR/Database(10982):     at com.psyhclo.CallDataHelper.<init>(CallDataHelper.java:27)
+12-16 17:24:50.886: ERROR/Database(10982):     at com.psyhclo.RatedCalls.fillList(RatedCalls.java:66)
+12-16 17:24:50.886: ERROR/Database(10982):     at com.psyhclo.RatedCalls.access$0(RatedCalls.java:63)
+12-16 17:24:50.886: ERROR/Database(10982):     at com.psyhclo.RatedCalls$RatedCallsContentObserver.onChange(RatedCalls.java:58)
+12-16 17:24:50.886: ERROR/Database(10982):     at android.database.ContentObserver$NotificationRunnable.run(ContentObserver.java:43)
+12-16 17:24:50.886: ERROR/Database(10982):     at android.os.Handler.handleCallback(Handler.java:587)
+12-16 17:24:50.886: ERROR/Database(10982):     at android.os.Handler.dispatchMessage(Handler.java:92)
+12-16 17:24:50.886: ERROR/Database(10982):     at android.os.Looper.loop(Looper.java:123)
+12-16 17:24:50.886: ERROR/Database(10982):     at android.app.ActivityThread.main(ActivityThread.java:3647)
+12-16 17:24:50.886: ERROR/Database(10982):     at java.lang.reflect.Method.invokeNative(Native Method)
+12-16 17:24:50.886: ERROR/Database(10982):     at java.lang.reflect.Method.invoke(Method.java:507)
+12-16 17:24:50.886: ERROR/Database(10982):     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:839)
+12-16 17:24:50.886: ERROR/Database(10982):     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:597)
+12-16 17:24:50.886: ERROR/Database(10982):     at dalvik.system.NativeStart.main(Native Method)
+
+
+here is my code.
+
+The Activity:
+
+public class RatedCalls extends ListActivity {
+
+private static final String LOG_TAG = "RATEDCALLSOBSERVER";
+private Handler handler = new Handler();
+private SQLiteDatabase db;
+private CallDataHelper cdh; 
+StringBuilder sb = new StringBuilder();
+OpenHelper openHelper = new OpenHelper(RatedCalls.this);
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    registerContentObservers();
+    Log.d("FILLLIST", "calling from onCreate()");
+
+}
+
+class RatedCallsContentObserver extends ContentObserver {
+    public RatedCallsContentObserver(Handler h) {
+        super(h);
+    }
+
+    @Override
+    public boolean deliverSelfNotifications() {
+        return true;
+
+    }
+
+    @Override
+    public void onChange(boolean selfChange) {
+        Log.d(LOG_TAG, "RatedCallsContentObserver.onChange( " + selfChange
+                + ")");
+        super.onChange(selfChange);
+        fillList();
+        onStop();
+    }
+}
+
+private void fillList() {
+
+    db = openHelper.getWritableDatabase();
+    cdh = new CallDataHelper(this);
+    String lastDate = cdh.selectDate();
+
+    Cursor cursor = getContentResolver().query(
+            android.provider.CallLog.Calls.CONTENT_URI, null,
+            android.provider.CallLog.Calls.DATE + " < ?",
+            new String[] { lastDate },
+            android.provider.CallLog.Calls.DATE + " DESC ");
+
+    Log.d("FILLLIST", "Calling from filllist");
+
+    startManagingCursor(cursor);
+    int numberColumnId = cursor
+            .getColumnIndex(android.provider.CallLog.Calls.NUMBER);
+    int durationId = cursor
+            .getColumnIndex(android.provider.CallLog.Calls.DURATION);
+    int contactNameId = cursor
+            .getColumnIndex(android.provider.CallLog.Calls.CACHED_NAME);        
+    int numTypeId = cursor
+            .getColumnIndex(android.provider.CallLog.Calls.CACHED_NUMBER_TYPE);
+
+    Date dt = new Date();
+    int hours = dt.getHours();
+    int minutes = dt.getMinutes();
+    int seconds = dt.getSeconds();
+    String currTime = hours + ":" + minutes + ":" + seconds;
+
+    SimpleDateFormat dateFormat = new SimpleDateFormat("MM-dd-yyyy");
+    Date date = new Date();
+
+    ArrayList<String> callList = new ArrayList<String>();
+    cursor.moveToFirst();
+
+    String contactNumber = cursor.getString(numberColumnId);
+    String contactName = cursor.getString(contactNameId);
+    String duration = cursor.getString(durationId);
+    // String callDate = DateFormat.getDateInstance().format(dateId);
+    String numType = cursor.getString(numTypeId);
+
+    ContentValues values = new ContentValues();
+
+    values.put("contact_id", 1);
+    values.put("contact_name", contactName);
+    values.put("number_type", numType);
+    values.put("contact_number", contactNumber);
+    values.put("duration", duration);
+    values.put("date", dateFormat.format(date));
+    values.put("current_time", currTime);
+    values.put("cont", 1);
+    getBaseContext().getContentResolver().notifyChange(
+            android.provider.CallLog.Calls.CONTENT_URI,
+            new RatedCallsContentObserver(handler));
+    db.insert(CallDataHelper.TABLE_NAME, null, values);
+    Toast.makeText(getBaseContext(), "Inserted!", Toast.LENGTH_LONG);
+    callList.add("Contact Number: " + contactNumber + "\
+Contact Name: "
+            + contactName + "\
+Duration: " + duration + "\
+Date: "
+            + dateFormat.format(date));
+
+    setListAdapter(new ArrayAdapter<String>(this, R.layout.listitem,
+            callList));
+    ListView lv = getListView();
+    lv.setTextFilterEnabled(true);
+
+    lv.setOnItemClickListener(new android.widget.AdapterView.OnItemClickListener() {
+
+        @Override
+        public void onItemClick(AdapterView<?> parent, View view,
+                int position, long id) {
+
+            Toast.makeText(getApplicationContext(),
+                    ((TextView) view).getText(), Toast.LENGTH_SHORT).show();
+
+        }
+    });
+}
+
+public void registerContentObservers() {
+
+    this.getApplicationContext()
+            .getContentResolver()
+            .registerContentObserver(
+                    android.provider.CallLog.Calls.CONTENT_URI, true,
+                    new RatedCallsContentObserver(handler));
+
+}
+
+public void unregisterContentObservers() {
+
+    this.getApplicationContext()
+            .getContentResolver()
+            .unregisterContentObserver(
+                    new RatedCallsContentObserver(handler));
+
+}
+    }
+
+
+And the DatabaseHelper
+
+public class CallDataHelper {
+
+private static final String DATABASE_NAME = "calls.db";
+private static final int DATABASE_VERSION = 1;
+protected static final String TABLE_NAME = "contact_data";
+
+private Context context;
+private SQLiteDatabase db;
+
+public CallDataHelper(Context context) {
+    this.context = context;
+    OpenHelper openHelper = new OpenHelper(this.context);
+    this.db = openHelper.getWritableDatabase();
+}
+
+public boolean insert(Integer cId, String cName, String numType,
+        String cNum, String dur, String date, String currTime) {
+    this.db.execSQL("insert into "
+            + TABLE_NAME
+            + " (contact_id, contact_name, number_type, contact_number, duration, date, current_time, cont) "
+            + " values( " + cId + ", " + cName + ", " + numType + ", "
+            + cNum + ", " + dur + ", " + date + ", " + currTime + ", 1)");
+    return true;        
+}   
+
+public void update(String word) {
+    this.db.execSQL("UPDATE words SET cont = cont + 1 WHERE (word= ?)",
+            new String[] { word });
+}
+
+public void deleteAll() {
+    this.db.delete(TABLE_NAME, null, null);
+}
+
+public String selectDate() {
+
+    String date = "";
+    Cursor cursor = this.db.query(TABLE_NAME, new String[] { "date" },
+            "id = ?", new String[] { "max(id)" }, null, null, null);
+    if (cursor.moveToFirst()) {
+        do {
+            date = cursor.getString(0);
+        } while (cursor.moveToNext());
+    }
+    if (cursor != null && !cursor.isClosed()) {
+        cursor.close();
+        return date;
+    } else {
+        return "";
+    }
+}
+
+public List<String> selectAll() {
+    List<String> list = new ArrayList<String>();
+    Cursor cursor = this.db.query(TABLE_NAME, new String[] { "word" },
+            null, null, null, null, "cont desc");
+    if (cursor.moveToFirst()) {
+        do {
+            list.add(cursor.getString(0).toUpperCase());
+        } while (cursor.moveToNext());
+    }
+    if (cursor != null && !cursor.isClosed()) {
+        cursor.close();
+    }
+    return list;
+}
+
+public static class OpenHelper extends SQLiteOpenHelper {
+
+    OpenHelper(Context context) {
+        super(context, DATABASE_NAME, null, DATABASE_VERSION);
+    }
+
+    @Override
+    public void onCreate(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE "
+                + TABLE_NAME
+                + "(id INTEGER PRIMARY KEY AUTOINCREMENT, contact_id INTEGER, contact_name VARCHAR(50), number_type VARCHAR(50), contact_number VARCHAR(50), duration TIME, date DATE, current_time TIME, cont INTEGER)");
+
+    }
+
+    @Override
+    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        Log.w("RatedCalls Database",
+                "Upgrading database, this will drop tables and recreate.");
+        db.execSQL("DROP TABLE IF EXISTS " + TABLE_NAME);
+        onCreate(db);
+    }
+}
+    }
+
+
+____(Edited)_______
+
+This is what I get now. When I make a new call, the Logcat returns this.
+
+12-16 18:55:27.365: ERROR/AndroidRuntime(767): FATAL EXCEPTION: main
+12-16 18:55:27.365: ERROR/AndroidRuntime(767): java.lang.IllegalStateException: database not open
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at android.database.sqlite.SQLiteDatabase.queryWithFactory(SQLiteDatabase.java:1230)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at android.database.sqlite.SQLiteDatabase.query(SQLiteDatabase.java:1189)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at android.database.sqlite.SQLiteDatabase.query(SQLiteDatabase.java:1271)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at com.psyhclo.CallDataHelper.selectDate(CallDataHelper.java:61)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at com.psyhclo.RatedCalls.fillList(RatedCalls.java:98)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at com.psyhclo.RatedCalls.access$0(RatedCalls.java:96)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at com.psyhclo.RatedCalls$RatedCallsContentObserver.onChange(RatedCalls.java:91)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at android.database.ContentObserver$NotificationRunnable.run(ContentObserver.java:43)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at android.os.Handler.handleCallback(Handler.java:587)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at android.os.Handler.dispatchMessage(Handler.java:92)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at android.os.Looper.loop(Looper.java:123)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at android.app.ActivityThread.main(ActivityThread.java:3647)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at java.lang.reflect.Method.invokeNative(Native Method)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at java.lang.reflect.Method.invoke(Method.java:507)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:839)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:597)
+12-16 18:55:27.365: ERROR/AndroidRuntime(767):     at dalvik.system.NativeStart.main(Native Method)
+
+
+And this is my activity:
+
+    public class RatedCalls extends ListActivity {
+
+private static final String LOG_TAG = "RATEDCALLSOBSERVER";
+private Handler handler = new Handler();
+private SQLiteDatabase db;
+private CallDataHelper cdh;
+StringBuilder sb = new StringBuilder();
+OpenHelper openHelper = new OpenHelper(RatedCalls.this);
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    registerContentObservers();
+    Log.d("FILLLIST", "calling from onCreate()");
+    cdh = new CallDataHelper(this);
+    db = openHelper.getWritableDatabase();
+
+}
+
+@Override
+protected void onDestroy() {
+    super.onDestroy();
+    if (openHelper != null) {
+        openHelper.close();
+    }
+    if (cdh != null) {
+        cdh.close();
+    }
+}
+
+@Override
+protected void onPause() {
+    super.onPause();
+    if (openHelper != null) {
+        openHelper.close();
+    }
+    if (cdh != null) {
+        cdh.close();
+    }
+}
+
+@Override
+public void onResume() {
+
+    super.onResume();
+    openOrCreateDatabase("calls.db", SQLiteDatabase.CREATE_IF_NECESSARY,
+            null);
+
+}
+
+class RatedCallsContentObserver extends ContentObserver {
+    public RatedCallsContentObserver(Handler h) {
+        super(h);
+    }
+
+    @Override
+    public boolean deliverSelfNotifications() {
+        return true;
+
+    }
+
+    @Override
+    public void onChange(boolean selfChange) {
+        Log.d(LOG_TAG, "RatedCallsContentObserver.onChange( " + selfChange
+                + ")");
+        super.onChange(selfChange);
+        fillList();
+
+    }
+}
+
+private void fillList() {
+
+    String lastDate = cdh.selectDate();
+
+    Cursor cursor = getContentResolver().query(
+            android.provider.CallLog.Calls.CONTENT_URI, null,
+            android.provider.CallLog.Calls.DATE + " < ?",
+            new String[] { lastDate },
+            android.provider.CallLog.Calls.DATE + " DESC ");
+
+    Log.d("FILLLIST", "Calling from filllist");
+
+    startManagingCursor(cursor);
+    int numberColumnId = cursor
+            .getColumnIndex(android.provider.CallLog.Calls.NUMBER);
+    int durationId = cursor
+            .getColumnIndex(android.provider.CallLog.Calls.DURATION);
+    int contactNameId = cursor
+            .getColumnIndex(android.provider.CallLog.Calls.CACHED_NAME);
+    int numTypeId = cursor
+            .getColumnIndex(android.provider.CallLog.Calls.CACHED_NUMBER_TYPE);
+
+    Date dt = new Date();
+    int hours = dt.getHours();
+    int minutes = dt.getMinutes();
+    int seconds = dt.getSeconds();
+    String currTime = hours + ":" + minutes + ":" + seconds;
+
+    SimpleDateFormat dateFormat = new SimpleDateFormat("MM-dd-yyyy");
+    Date date = new Date();
+
+    ArrayList<String> callList = new ArrayList<String>();
+    cursor.moveToFirst();
+
+    String contactNumber = cursor.getString(numberColumnId);
+    String contactName = cursor.getString(contactNameId);
+    String duration = cursor.getString(durationId);
+    // String callDate = DateFormat.getDateInstance().format(dateId);
+    String numType = cursor.getString(numTypeId);
+    stopManagingCursor(cursor);
+    ContentValues values = new ContentValues();
+
+    values.put("contact_id", 1);
+    values.put("contact_name", contactName);
+    values.put("number_type", numType);
+    values.put("contact_number", contactNumber);
+    values.put("duration", duration);
+    values.put("date", dateFormat.format(date));
+    values.put("current_time", currTime);
+    values.put("cont", 1);
+    getBaseContext().getContentResolver().notifyChange(
+            android.provider.CallLog.Calls.CONTENT_URI,
+            new RatedCallsContentObserver(handler));
+    db.insert(CallDataHelper.TABLE_NAME, null, values);
+    Toast.makeText(getBaseContext(), "Inserted!", Toast.LENGTH_LONG);
+    callList.add("Contact Number: " + contactNumber + "\
+Contact Name: "
+            + contactName + "\
+Duration: " + duration + "\
+Date: "
+            + dateFormat.format(date));
+
+    setListAdapter(new ArrayAdapter<String>(this, R.layout.listitem,
+            callList));
+    ListView lv = getListView();
+    lv.setTextFilterEnabled(true);
+
+    lv.setOnItemClickListener(new android.widget.AdapterView.OnItemClickListener() {
+
+        @Override
+        public void onItemClick(AdapterView<?> parent, View view,
+                int position, long id) {
+
+            Toast.makeText(getApplicationContext(),
+                    ((TextView) view).getText(), Toast.LENGTH_SHORT).show();
+
+        }
+    });
+}
+
+public void registerContentObservers() {
+
+    this.getApplicationContext()
+            .getContentResolver()
+            .registerContentObserver(
+                    android.provider.CallLog.Calls.CONTENT_URI, true,
+                    new RatedCallsContentObserver(handler));
+
+}
+
+public void unregisterContentObservers() {
+
+    this.getApplicationContext()
+            .getContentResolver()
+            .unregisterContentObserver(
+                    new RatedCallsContentObserver(handler));
+
+}
+ }
+
+    
+===============================================================================================
+47
+A:I think the problem is that you need to close the db when your activity is destroyed. Try adding this to your activity:
+
+@Override
+protected void onDestroy() {
+    super.onDestroy();
+    if (openHelper != null) {
+        openHelper.close();
+    }
+    if (cdh != null) {
+        cdh.close();
+    }
+}
+
+
+and add this to your CallDataHelper class:
+
+public void close() {
+    // NOTE: openHelper must now be a member of CallDataHelper;
+    // you currently have it as a local in your constructor
+    if (openHelper != null) {
+        openHelper.close();
+    }
+}
+
+
+EDIT 2: Also change the CallDataHelper constructor to:
+
+// Declare openHelper as a member variable
+OpenHelper openHelper = null;
+
+public CallDataHelper(Context context) {
+    this.context = context;
+    openHelper = new OpenHelper(this.context);
+    this.db = openHelper.getWritableDatabase();
+}
+
+
+This should successfully close the database connection that was created by both of your OpenHelper instances.
+
+( EDITED to reflect the fact that you use two OpenHelper instances.)
+    

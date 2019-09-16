@@ -1,0 +1,72 @@
+93
+Q:I have a simple android project that I created with Android Studio 0.4.0. 
+I use Gradle 1.9 and Gradle Android Plugin 0.7. Yesterday I've added Jake Wharton's ButterKnife library in my gradle build script:
+
+dependencies {
+            compile 'com.android.support:support-v4:19.0.0'
+            compile 'com.android.support:appcompat-v7:19.0.0'
+
+            // Butterknife
+            compile 'com.jakewharton:butterknife:4.0.1'
+}
+
+
+When I run the application from Android Studio, the build runs fine and executes correctly on my devices. But when I try (from the command line) gradle build the build fails. Here is a part from my lint report:
+
+InvalidPackage: Package not included in Android
+
+/home/yami/.gradle/caches/modules-2/files-2.1/com.jakewharton/butterknife/4.0.1/f43b36925363701633d01adb8e54df7150397a78/butterknife-4.0.1.jar: Invalid package reference in library; not included in Android: javax.annotation.processing. Referenced from butterknife.internal.InjectViewProcessor.
+/home/yami/.gradle/caches/modules-2/files-2.1/com.jakewharton/butterknife/4.0.1/f43b36925363701633d01adb8e54df7150397a78/butterknife-4.0.1.jar: Invalid package reference in library; not included in Android: javax.annotation.processing. Referenced from butterknife.internal.InjectViewProcessor.
+/home/yami/.gradle/caches/modules-2/files-2.1/com.jakewharton/butterknife/4.0.1/f43b36925363701633d01adb8e54df7150397a78/butterknife-4.0.1.jar: Invalid package reference in library; not included in Android: javax.annotation.processing. Referenced from butterknife.internal.InjectViewProcessor.
+/home/yami/.gradle/caches/modules-2/files-2.1/com.jakewharton/butterknife/4.0.1/f43b36925363701633d01adb8e54df7150397a78/butterknife-4.0.1.jar: Invalid package reference in library; not included in Android: javax.annotation.processing. Referenced from butterknife.internal.InjectViewProcessor.
+/home/yami/.gradle/caches/modules-2/files-2.1/com.jakewharton/butterknife/4.0.1/f43b36925363701633d01adb8e54df7150397a78/butterknife-4.0.1.jar: Invalid package reference in library; not included in Android: javax.annotation.processing. Referenced from butterknife.internal.InjectViewProcessor.
+
+
+Maybe I'm missing something, but not to be able to build the project in the terminal blocks the possibility of CI for Android projects.
+
+Any help would be great.
+    
+===============================================================================================
+142
+A:With 0.7.0 there comes extended support for Lint, however, it does not work always properly. (Eg. the butterknife library)
+
+Solution is to disable aborting build on found lint errors
+
+I took the inspiration from 
+https://android.googlesource.com/platform/tools/base/+/e6a5b9c7c1bca4da402de442315b5ff1ada819c7  
+
+(implementation:
+https://android.googlesource.com/platform/tools/base/+/e6a5b9c7c1bca4da402de442315b5ff1ada819c7/build-system/gradle/src/main/groovy/com/android/build/gradle/internal/model/DefaultAndroidProject.java )
+
+(discussion: https://plus.google.com/+AndroidDevelopers/posts/ersS6fMLxw1 )
+
+android {
+  // your build config
+  defaultConfig { ... }
+  signingConfigs { ... }
+  compileOptions { ... }
+  buildTypes { ... }
+  // This is important, it will run lint checks but won't abort build
+  lintOptions {
+      abortOnError false
+  }
+}
+
+
+
+
+And if you need to disable just particular Lint rule and keep the build failing on others, use this:
+
+/*
+ * Use only 'disable' or only 'enable', those configurations exclude each other
+ */
+android {
+  lintOptions {
+    // use this line to check all rules except those listed
+    disable 'RuleToDisable', 'SecondRuleToDisable'
+    // use this line to check just listed rules
+    enable 'FirstRuleToCheck', 'LastRuleToCheck'
+  }
+}
+
+    

@@ -1,0 +1,112 @@
+74
+Q:So i found something that is not very clear for me about GoogleApiClient.
+GoogleApiClient has a function called onConnected which is ran when the client is connected (for sure)
+
+I got my own function called: startLocationListening which is eventually getting called on GoogleApiClient's onConnected function.
+
+So my startLocationListening function couldnt ran without a GoogleApiClient connection.
+
+Code and log:
+
+@Override
+public void onConnected(Bundle bundle) {
+    log("Google_Api_Client:connected.");
+    initLocationRequest();
+    startLocationListening(); //Exception caught inside this function
+}
+
+
+...
+
+private void startLocationListening() {
+    log("Starting_location_listening:now");
+
+    //Exception caught here below:
+    LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
+   }
+
+
+The exception is:
+
+03-30 12:23:28.947: E/AndroidRuntime(4936):     java.lang.IllegalStateException: GoogleApiClient is not connected yet.
+03-30 12:23:28.947: E/AndroidRuntime(4936):     at com.google.android.gms.internal.jx.a(Unknown Source)
+03-30 12:23:28.947: E/AndroidRuntime(4936):     at com.google.android.gms.common.api.c.b(Unknown Source)
+03-30 12:23:28.947: E/AndroidRuntime(4936):     at com.google.android.gms.internal.nf.requestLocationUpdates(Unknown Source)
+03-30 12:23:28.947: E/AndroidRuntime(4936):     at hu.company.testproject.service.GpsService.startLocationListening(GpsService.java:169)
+03-30 12:23:28.947: E/AndroidRuntime(4936):     at hu.company.testproject.service.GpsService.onConnected(GpsService.java:259)
+
+
+...
+
+My debug log also says the onConnected function got called:
+
+03-30 12:23:28.847: I/Locationing_GpsService(4936): Google_Api_Client:connected.
+03-30 12:23:28.857: I/Locationing_GpsService(4936): initLocationRequest:initing_now
+03-30 12:23:28.877: I/Locationing_GpsService(4936): initLocationRequest:interval_5000
+03-30 12:23:28.897: I/Locationing_GpsService(4936): initLocationRequest:priority_100
+03-30 12:23:28.917: I/Locationing_GpsService(4936): Starting_location_listening:now
+
+
+After this i got the exception.
+
+Am I missing something here? I got a response for "connected" i ran my func, and i got the error "not connected" whats this? Plus one annoying thing is: I used this location service for weeks now and never got this error.
+
+E D I T :
+
+I added a more specific log output, just blown my mind, check this out:
+
+@Override
+    public void onConnected(Bundle bundle) {
+
+        if(mGoogleApiClient.isConnected()){
+            log("Google_Api_Client: It was connected on (onConnected) function, working as it should.");
+        }
+        else{
+            log("Google_Api_Client: It was NOT connected on (onConnected) function, It is definetly bugged.");
+        }
+
+        initLocationRequest();
+        startLocationListening();
+    }
+
+
+log output in this case:
+
+03-30 16:20:00.950: I/Locationing_GpsService(16608): Google_Api_Client:connected.
+03-30 16:20:00.960: I/Locationing_GpsService(16608): Google_Api_Client: It was NOT connected on (onConnected) function, It is definetly bugged.
+
+
+Yes, i just got mGoogleApiClient.isConnected() == false inside onConnected() how is it possible? 
+
+E D I T:
+
+Since nobody could answer this even with reputation bounty, i decided to report this as a bug to Google. What next came was really surprised me.
+Google's official answer for my report:
+
+
+  "This website is for developer issues with the AOSP Android source
+  code and the developer toolset, not Google apps or services such as
+  Play services, GMS or Google APIs. Unfortunately there doesn't seem to
+  be an appropriate place to report bugs with Play Services. All I can
+  say is that this website isn't it, sorry. Try posting on the Google
+  Product Forums instead. "
+
+
+Full issue report here. (I hope they wont remove it just because its silly)
+
+So yeah i took a look at Google Product Forums and just coudnt find any topic to post this thing, so at the moment Iam puzzled and stuck.
+
+Does anyobody in planet earth could help me with this?
+
+E D I T:
+
+Full code in pastebin
+    
+===============================================================================================
+85
+A:I just noticed that you are creating the googleApiClient in onStartCommand(). This seems like a bad idea. 
+
+Let's say that your service gets triggered twice. Two googleApiClient objects will get created, but you'll only have reference to one. If the one whose reference you don't have executes its callback to onConnected(), you will be connected in that client but the client whose reference you actually do have could still be unconnected.
+
+I suspect that's what's going on. Try moving your googleApiClient creation to onCreate and see if you get the same behavior.
+    

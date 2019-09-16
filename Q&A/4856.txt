@@ -1,0 +1,112 @@
+50
+Q:I have an Android app that uses Dagger 2 for dependency injection. I am also using the latest gradle build tools that allow a build variant for unit testing and one for instrumentation tests. I am using java.util.Random in my app, and I want to mock this for testing. The classes I'm testing don't use any Android stuff, so they're just regular java classes.
+
+In my main code I define a Component in a class that extends the Application class, but in the unit tests I'm not using an Application. I tried defining a test Module and Component, but Dagger won't generate the Component. I have also tried using the Component that I defined in my application and swapping the Module when I build it, but the application's Component doesn't have inject methods for my test classes. How can I provide a mock implementation of Random for testing?
+
+Here's some sample code:
+
+Application:
+
+public class PipeGameApplication extends Application {
+
+    private PipeGame pipeGame;
+
+    @Singleton
+    @Component(modules = PipeGameModule.class)
+    public interface PipeGame {
+        void inject(BoardFragment boardFragment);
+        void inject(ConveyorFragment conveyorFragment);
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        pipeGame = DaggerPipeGameApplication_PipeGame.create();
+    }
+
+    public PipeGame component() {
+        return pipeGame;
+    }
+}
+
+
+Module:
+
+@Module
+public class PipeGameModule {
+
+    @Provides
+    @Singleton
+    Random provideRandom() {
+        return new Random();
+    }
+}
+
+
+Base class for tests:
+
+public class BaseModelTest {
+
+    PipeGameTest pipeGameTest;
+
+    @Singleton
+    @Component(modules = PipeGameTestModule.class)
+    public interface PipeGameTest {
+        void inject(BoardModelTest boardModelTest);
+        void inject(ConveyorModelTest conveyorModelTest);
+    }
+
+    @Before
+    public void setUp() {
+        pipeGameTest = DaggerBaseModelTest_PipeGameTest.create(); // Doesn't work
+    }
+
+    public PipeGameTest component() {
+        return pipeGameTest;
+    }
+}
+
+
+or:
+
+public class BaseModelTest {
+
+    PipeGameApplication.PipeGame pipeGameTest;
+
+    // This works if I make the test module extend
+    // the prod module, but it can't inject my test classes
+    @Before
+    public void setUp() {
+        pipeGameTest = DaggerPipeGameApplication_PipeGame.builder().pipeGameModule(new PipeGameModuleTest()).build();
+    }
+
+    public PipeGameApplication.PipeGame component() {
+        return pipeGameTest;
+    }
+}
+
+
+Test Module:
+
+@Module
+public class PipeGameTestModule {
+
+    @Provides
+    @Singleton
+    Random provideRandom() {
+        return mock(Random.class);
+    }
+}
+
+    
+===============================================================================================
+25
+A:This is currently impossible with Dagger 2 (as of v2.0.0) without some workarounds. You can read about it here.
+
+More about possible workarounds:
+
+
+How do you override a module/dependency in a unit test with Dagger 2.0?
+Creating test dependencies when using Dagger2
+
+    

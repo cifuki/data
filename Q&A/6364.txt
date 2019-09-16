@@ -1,0 +1,96 @@
+40
+Q:Job Scheduler is working as expected on Android Marshmallow and Lollipop devices, but it is not running and Nexus 5x (Android N Preview). 
+
+Code for scheduling the job
+
+        ComponentName componentName = new ComponentName(MainActivity.this, TestJobService.class.getName());
+        JobInfo.Builder builder;
+        builder = new JobInfo.Builder(JOB_ID, componentName);
+        builder.setPeriodic(5000);
+        JobInfo jobInfo;
+        jobScheduler = (JobScheduler) getSystemService(Context.JOB_SCHEDULER_SERVICE);
+        jobInfo = builder.build();
+        int jobId = jobScheduler.schedule(jobInfo);
+
+
+Service is defined in manifest as:
+
+<service android:name=".TestJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+
+Is any one having this issue on Android N (Preview)?
+    
+===============================================================================================
+59
+A:In Android Nougat the setPeriodic(long intervalMillis) method call makes use of setPeriodic (long intervalMillis, long flexMillis) to schedule periodic jobs.
+
+As per the documentation:
+
+
+  JobInfo.Builder setPeriodic (long intervalMillis, long flexMillis)
+  
+  Specify that this job should recur with the provided interval and
+  flex. The job can execute at any time in a window of flex length at
+  the end of the period.
+  
+  intervalMillis  long: 
+      Millisecond interval for which this job will repeat. A minimum value of getMinPeriodMillis() is enforced.
+  
+  flexMillis  long: 
+      Millisecond flex for this job. Flex is clamped to be at least getMinFlexMillis() or 5 percent of the period, whichever is higher.
+
+
+Sample periodic job scheduled for 5 seconds:
+
+private static final int JOB_ID = 1001;
+private static final long REFRESH_INTERVAL  = 5 * 1000; // 5 seconds
+
+JobInfo jobInfo = new JobInfo.Builder(JOB_ID, serviceName)
+        .setPeriodic(REFRESH_INTERVAL)
+        .setExtras(bundle).build();
+
+
+The above code works well in Lollipop & Marshmallow but when you run in Nougat you will notice the following log:
+
+W/JobInfo: Specified interval for 1001 is +5s0ms. Clamped to +15m0s0ms
+W/JobInfo: Specified flex for 1001 is +5s0ms. Clamped to +5m0s0ms
+
+
+Since we have set the periodic refresh interval to 5 seconds which is less than the thresholdgetMinPeriodMillis(). Android Nougat enforces the getMinPeriodMillis(). 
+
+As a workaround, I'm using following code to schedule jobs at periodic intervals if job interval is less than 15minutes.
+
+JobInfo jobInfo;
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+  jobInfo = new JobInfo.Builder(JOB_ID, serviceName)
+      .setMinimumLatency(REFRESH_INTERVAL)
+      .setExtras(bundle).build();
+} else {
+  jobInfo = new JobInfo.Builder(JOB_ID, serviceName)
+      .setPeriodic(REFRESH_INTERVAL)
+      .setExtras(bundle).build();
+}
+
+
+Sample JobService example:
+
+public class SampleService extends JobService {
+    @Override public boolean onStartJob(JobParameters params) {
+        doSampleJob(params); 
+        return true;
+    }
+
+    @Override public boolean onStopJob(JobParameters params) {
+        return false;
+    }
+
+    public void doSampleJob(JobParameters params) {
+        // Do some heavy operation
+        ...... 
+        // At the end inform job manager the status of the job.
+        jobFinished(params, false);
+    }
+}
+
+    

@@ -1,0 +1,175 @@
+60
+Q:Consider the following scheme below (for sake of better understanding of my problem).
+
+
+As you can see, I am considering a list view surrounded by padding. Now, If a user presses a listview item, as the action I have provided it light blue background color. Now, My application is dealing with onTouch Events itself to determine actions like
+
+
+Click 
+Left to Right Swipe
+Right to Left Swipe
+
+
+Here is my code.
+
+public boolean onTouch(View v, MotionEvent event) {
+        if(v == null)
+        {
+            mSwipeDetected = Action.None;
+            return false;
+        }
+        switch (event.getActionMasked()) {
+        case MotionEvent.ACTION_DOWN: {
+            downX = event.getRawX();
+            downY = event.getRawY();
+            mSwipeDetected = Action.Start;
+
+         // Find the child view that was touched (perform a hit test)
+            Rect rect = new Rect();
+            int childCount = listView.getChildCount();
+            int[] listViewCoords = new int[2];
+            listView.getLocationOnScreen(listViewCoords);
+            int x = (int) event.getRawX() - listViewCoords[0];
+            int y = (int) event.getRawY() - listViewCoords[1];
+            View child;
+            for (int i = 0; i < childCount; i++) {
+                child = listView.getChildAt(i);
+                child.getHitRect(rect);
+                if (rect.contains(x, y)) {
+                    mDownView = child;
+                    break;
+                }
+            }
+
+
+            return false; // allow other events like Click to be processed
+        }
+        case MotionEvent.ACTION_MOVE: {
+            upX = event.getRawX();
+            upY = event.getRawY();
+            float deltaX=0,deltaY=0;
+             deltaX = downX - upX;
+             deltaY = downY - upY;
+
+                if(deltaY < VERTICAL_MIN_DISTANCE)
+                {
+                            setTranslationX(mDownView, -(deltaX));
+                            setAlpha(mDownView, Math.max(0f, Math.min(1f, 1f - 2f * Math.abs(deltaX) / listView.getWidth())));
+                            return false;
+                }
+                else
+                {
+                    forceBringBack(v);
+                }
+
+                          return false;              
+
+        }
+        case MotionEvent.ACTION_UP:
+        {
+
+             stopX = event.getX();
+             float stopValueY = event.getRawY() - downY;             
+             float stopValue = stopX - downX;
+
+             if(!mDownView.isPressed())
+             {
+                 forceBringBack(mDownView);
+                 return false;
+             }             
+
+             boolean dismiss = false;
+             boolean dismissRight = false;
+
+
+             if(Math.abs(stopValue)<10)
+             {
+                 mSwipeDetected = Action.Start;
+             }
+             else
+             {
+                 mSwipeDetected = Action.None;
+
+             }
+             String log = "";
+             Log.d(log, "Here is Y" + Math.abs(stopValueY));
+             Log.d(log, "First Comparison of Stop Value > with/4" + (Math.abs(stopValue) > (listView.getWidth() /4)));
+             Log.d(log, "Second Comparison " + (Math.abs(stopValueY)<VERTICAL_MIN_DISTANCE));
+             Log.d(log, "Action Detected is " + mSwipeDetected + " with Stop Value  " + stopValue);
+
+             if((Math.abs(stopValue) > (listView.getWidth() /4))&&(Math.abs(stopValueY)<VERTICAL_MIN_DISTANCE))
+             {
+                 dismiss = true;
+                 dismissRight = stopValue > 0;
+
+                 if(stopValue>0)
+                 {
+                 mSwipeDetected = Action.LR;
+
+                 }
+                 else
+                     mSwipeDetected = Action.RL;
+             }
+             Log.d(log, "Action Detected is " + mSwipeDetected + " with Stop Value after dissmiss" + stopValue);
+
+             if(dismiss)
+             {
+                 if(dismissRight)
+                     mSwipeDetected = Action.LR;
+                 else
+                     mSwipeDetected = Action.RL;
+                 animate(mDownView)
+                 .translationX(dismissRight ? listView.getWidth() : - listView.getWidth())
+                 .alpha(0)
+                 .setDuration(mAnimationTime)
+                 .setListener(new AnimatorListenerAdapter() {
+                     public void onAnimationEnd(Animator animation)
+                     {
+
+                     }
+                });
+             }
+             else
+             {
+                 animate(mDownView)
+                 .translationX(0)
+                 .alpha(1)
+                 .setDuration(mAnimationTime)
+                 .setListener(null);
+             }
+
+
+             break;           
+
+        }
+        }
+        return false;
+    }
+
+
+As you can see, I determine the performed action in MotionEvent.ACTION_UP and set the value of Enum Action accordingly. This logic works like a charm if the user does not crosses the list view boundary. 
+
+Now, if the user, while sliding (or specifically), moving his finger along the list item moves from blue to orange, the MotionEvent.ACTION_UP would not be given to listview, which causes my code not to make a decision and due to translationX() method and setAlpha(), since no Action is ever determined in this case, that particular list item gets blank. 
+
+The problem does not stops here, since, I am not inflating view each time, same translatedX() row gets inflated each time leading to multiple occurance of a blank/white list item. 
+
+Is there anything possible to do so that even if I didn't encounter MotionEvent.ACTION_UP, I could still make some decison ?
+    
+===============================================================================================
+198
+A:You should return true; in case MotionEvent.ACTION_DOWN:, so the MotionEvent.ACTION_UP will be handled.
+
+
+
+As explained on View.OnTouchListener:
+
+
+  Returns:
+  
+  True if the listener has consumed the event, false otherwise.
+
+
+MotionEvent.ACTION_UP Won't get called until the MotionEvent.ACTION_DOWN occurred, a logical explanation for this is that it's impossible for an ACTION_UP to occur if an ACTION_DOWN never occurred before it.
+
+This logic enables the developer to block further events after ACTION_DOWN.
+    

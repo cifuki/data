@@ -1,0 +1,83 @@
+31
+Q:I'm trying to upload image to Google Drive from my android app,
+
+based on this tutorial.
+
+When I debug their sample project I see a typical fileUri = 
+
+file:///storage/sdcard0/Pictures/IMG_20131117_090231.jpg
+
+In my app I want to upload an existing photo.
+
+I retrieve its path like that
+
+     private void GetAnyImage()
+        {
+            File dir = new File(Environment.getExternalStorageDirectory()
+            .getAbsolutePath() + "/Pictures/Screenshots"); 
+                              // --> /storage/sdcard0/Pictures/Screenshots
+
+            Log.d("File path ", dir.getPath());
+            String dirPath=dir.getAbsolutePath();
+            if(dir.exists() && dir.isDirectory()) {
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT, null);
+                intent.setType("image/*");
+                startActivityForResult(intent,REQUEST_ID);
+            }  
+        }
+
+
+and eventually get this typical fileUri =content://media/external/images/media/74275
+
+however when running this line of code 
+
+  private void saveFileToDrive() {
+
+    //  progressDialog = ProgressDialog.show(this, "", "Loading...");
+
+    Thread t = new Thread(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          // File's binary content
+          java.io.File fileContent = new java.io.File(fileUri.getPath());
+          FileContent mediaContent = new FileContent("image/jpeg", fileContent);
+
+      // File's metadata.
+      File body = new File();
+      body.setTitle(fileContent.getName());
+      body.setMimeType("image/jpeg");
+
+      File file = service.files().insert(body, mediaContent).execute();
+
+
+I get an error:
+
+java.io.FileNotFoundException: /external/images/media/74275: open failed: ENOENT (No such file or directory)
+
+how can I solve this?
+
+how to convert content://media/external/images/media/Y to file:///storage/sdcard0/Pictures/X.jpg ?
+    
+===============================================================================================
+71
+A:Will something like this work for you? What this does is query the content resolver to find the file path data that is stored for that content entry
+
+public static String getRealPathFromUri(Context context, Uri contentUri) {
+    Cursor cursor = null;
+    try {
+        String[] proj = { MediaStore.Images.Media.DATA };
+        cursor = context.getContentResolver().query(contentUri, proj, null, null, null);
+        int column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+        cursor.moveToFirst();
+        return cursor.getString(column_index);
+    } finally {
+        if (cursor != null) {
+            cursor.close();
+        }
+    }
+}
+
+
+This will end up giving you an absolute file path that you can construct a file uri from
+    

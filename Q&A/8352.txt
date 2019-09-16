@@ -1,0 +1,48 @@
+32
+Q:Background: I am writing a camera app for a messenger program.  I cannot save the captured image to persistent disk at any time.  The camera must support all orientations.  My implementation is that of the familiar Surfaceview examples.  I use the Display class to detect orientation and rotate the camera accordingly.  In the takePicture jpeg callback, I construct a bitmap from the byte[] in order to get around some aspect ratio issues I was having: Camera API: Cross device issues
+
+Problem Description: On some devices, the constructed Bitmap taken at ROTATION_270 (device rotated 90 degrees clockwise) comes in upside down.  So far, it seems to be Samsung.  I can only assume that maybe the camera is soldered on the other way or something to that affect but that's neither here nor there.  While I can check if a Bitmap is sideways I can't logically check if it is upside down by dimensions so I need access to the EXIF data.
+
+Android provides a parser for this http://developer.android.com/reference/android/media/ExifInterface.html but unfortunately it has a single constructor which accepts a file... which I don't have and don't want.  Intuitively I could write a constructor for a byte array but that seems really painful given their calls into native code http://grepcode.com/file/repository.grepcode.com/java/ext/com.google.android/android/2.2.1_r1/android/media/ExifInterface.java
+
+My question then has two parts:
+
+
+Does anyone know if the byte[] array contains full EXIF jpeg header
+data as is or is the path through the BitmapFactory.decode(...) /
+BitmapFactory.compress(...) adding that somehow?
+If this EXIF data exits in the byte array how can I parse out the
+    orientation information in a dependable manner?
+
+
+Edit 10/18/12
+
+pcans' answer below involves part 2 of my question.  As I pointed to in the comments below his answer, if you want to use that parser you'll have to incorporate the source into your project.  The changes mentioned in that linked SO post have already been made and reposted here: https://github.com/strangecargo/metadata-extractor
+
+
+  NOTE newer versions of metadata-extractor work directly on Android without modification, and are available via Maven.
+
+
+However, as to part 1, I'm getting 0 tags back from the parser when I run it with the byte array I get from takePicture.  I'm becoming concerned that the byte array doesn't have the data I need.  I will continue to look into this but welcome any further insight.
+    
+===============================================================================================
+17
+A:The bad news:
+
+Android Api sadly won't allow you to read exif data from a Stream, only from a File.
+ExifInterface don't have a constructor with an InputStream.
+So you must parse jpeg content by yourself.
+
+The good news:
+
+API exists in pure Java for this. You can use this one: https://drewnoakes.com/code/exif/
+It's Open Source, published under Apache Licence 2 and available as a Maven package.
+
+There is a constructor with an InputStream:
+public ExifReader(java.io.InputStream is)
+
+You can build an InputStream backed by your byte[] using a ByteArrayInputStream like this:  
+
+InputStream is = new ByteArrayInputStream(decodedBytes);
+
+    

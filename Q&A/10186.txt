@@ -1,0 +1,30 @@
+27
+Q:I am using a texture view to show the preview of the camera in my android app. What I noticed, however, is that every time my app gets paused, I am getting this error:
+
+03-18 18:23:44.315: W/BufferQueue(19582): [unnamed-19582-20] cancelBuffer: BufferQueue has been abandoned!
+
+
+Can someone tell me what's going on here? When my app pauses all I do is deinitialize everything like this from onSurfaceTextureDestroyed()
+
+ public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+    mCamera.setPreviewCallback(null);
+    mCamera.stopPreview();
+    mCamera.release();
+    return true;
+}
+
+    
+===============================================================================================
+44
+A:What you're doing is essentially what's written in the TextureView docs, so it should work.
+
+The error message means that the "producer" side of the BufferQueue (the camera) grabbed a buffer, and is now trying to un-grab it (via cancelBuffer()).  However, the "consumer" side (the SurfaceTexture) has gone away.  Because the "consumer" side owns the queue, the BufferQueue is considered abandoned, and no further operations are possible.
+
+This sounds like it's just a timing issue -- the producer is trying to do operations after the SurfaceTexture has been destroyed.  Which doesn't make sense, because you're shutting the producer down in onSurfaceTextureDestroyed(), and the ST doesn't get released unless and until that callback returns true.  (It might be interesting to add log messages at the start and end of the callback method, and see if the "abandoned" complaint happens before or after them.  Use logcat -v threadtime to see the thread IDs.)
+
+So I'm not really sure why this is happening.  The good news is that it should not adversely affect your application -- the producer will correctly determine that the consumer has gone away, and will complain but not crash.  So it's noisy but not explody.
+
+Out of curiosity, do you see messages like this from your device if you run "Live camera (TextureView)" in Grafika?  That activity is straight out of the TextureView docs, and I don't see any complaints when I run it on my device.
+
+(Additional information about SurfaceTexture and BufferQueue can be found here.)
+    

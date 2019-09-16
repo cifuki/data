@@ -1,0 +1,156 @@
+43
+Q:I've started using Dagger 2 and faced strange issue that looks like a bug to me.
+
+I have 3 modules, that are composed into one subcomponent, which in turn extends/pluses higher level component.
+
+Subcomponent is pretty simple: just combination of modules and a single injection point:
+
+@Singleton
+@Subcomponent(
+        modules = {
+                NavigationDrawerModule.class,
+                NavigationListModule.class,
+                SwitcherModule.class
+        }
+)
+public interface NavigationDrawerComponent {
+
+
+    NavigationDrawerFragment inject(NavigationDrawerFragment object);
+
+}
+
+
+First modules looks like this - it provides general fragment-level dependencies:
+
+@Module
+public class NavigationDrawerModule {
+
+    private final Activity activity;
+    private final View rootView;
+    private final LoaderManager loaderManager;
+
+    public NavigationDrawerModule(Activity activity, View rootView, LoaderManager loaderManager) {
+        this.activity = activity;
+        this.rootView = rootView;
+        this.loaderManager = loaderManager;
+    }
+
+    @Provides @Singleton EventBus provideLocalBus() {
+        return EventBus.builder().build();
+    }
+
+    @Provides @Singleton View provideViewRoot() {
+        return rootView;
+    }
+
+    @Provides @Singleton LoaderManager provideLoaderManager() {
+        return loaderManager;
+    }
+
+    @Provides @Singleton Context provideContext() {
+        return activity;
+    }
+}
+
+
+Second module looks like this - it provides presenter/controller and their dependencies for a subset of UI on screen: 
+
+@Module
+public class SwitcherModule {
+
+    @Provides SwitchController provideSwitcherController(SwitchControllerImpl impl) {
+        return impl;
+    }
+
+    @Provides SwitcherView provideSwitcherView(SwitcherViewImpl impl) {
+        return impl;
+    }
+
+}
+
+
+Third module - another presenter/controller for a subset of UI:
+
+@Module
+public class NavigationListModule {
+
+    @Provides @Singleton NavigationListController provideNavigationListController(NavigationListControllerImpl impl) {
+        return impl;
+    }
+
+    @Provides @Singleton NavigationListView provideNavigationListView(NavigationListViewImpl impl) {
+        return impl;
+    }
+}
+
+
+Relevant part of the fragment that is being injected:
+
+@Inject SwitchController identitySwitchController;
+@Inject SwitcherView identitySwitcherView;
+@Inject NavigationListController navigationListController;
+@Inject NavigationListView navigationListView;
+
+
+NavigationListControllerImpl implements the following constructor:
+
+@Inject
+public NavigationListControllerImpl(Context ctx, EventBus bus) {
+    this.ctx = ctx;
+    this.bus = bus;
+}
+
+
+Error I'm getting from the Dagger 2 compiler is the following:
+
+error: ...sidenavigation.navigationlist.NavigationListControllerImpl cannot be provided without an @Inject constructor or from an @Provides-annotated method.
+...sidenavigation.NavigationDrawerFragment.navigationListController
+[injected field of type: ...sidenavigation.navigationlist.NavigationListController navigationListController]
+...sidenavigation.navigationlist.NavigationListModule.provideNavigationListController(...sidenavigation.navigationlist.NavigationListControllerImpl impl)
+[parameter: ...sidenavigation.navigationlist.NavigationListControllerImpl impl]
+
+
+Error complains about missing @Inject-annotated constructor, but it exists! If I replace implicit NavigationListControllerImpl instance creation (passing via @Provides-method parameter) with explicit (with new), dagger starts complaining about the same error but now for the presenter object which is the second entry in the same module, and so on.
+
+All this situation looks very strange, and I'd like to hear some input from more experienced Dagger 2 users (and developers?).
+
+Thank you in advance!
+    
+===============================================================================================
+48
+A:I got this same error because I forgot to expose the objects provided by the modules in the parent component to the other components that are depend on it.
+
+Parent component example:
+
+@Singleton
+@Component(modules = {AppModule.class})
+public interface AppComponent {
+    AppPref exposeAppPref(); /* my issue was caused by forgot this line,
+the method name doesn't matter, what matters is the object type AppPref provided in the AppModule 
+that you want it to be available in the component that declares this component as one of its dependencies*/
+}
+
+
+Sample component that makes the above component as a dependency
+
+@UserScope
+@Component (dependencies = {AppComponent.class})
+public interface ActivityComponent {
+    void inject(MainActivity activity);
+}
+
+
+Update:  
+
+AppModule:  
+
+...
+    @Provides
+    @Singleton
+    AppPref provideAppPref() {
+        return appPref;
+    }
+...
+
+    

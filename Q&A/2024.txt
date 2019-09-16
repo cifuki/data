@@ -1,0 +1,89 @@
+97
+Q:Using the new GridLayoutManager: https://developer.android.com/reference/android/support/v7/widget/GridLayoutManager.html
+
+It takes an explicit span count, so the problem now becomes: how do you know how many "spans" fit per row? This is a grid, after all. There should be as many spans as the RecyclerView can fit, based on measured width.
+
+Using the old GridView, you would just set the "columnWidth" property and it would automatically detect how many columns fit. This is basically what I want to replicate for the RecyclerView:
+
+
+add OnLayoutChangeListener on the RecyclerView
+in this callback, inflate a single 'grid item' and measure it
+spanCount = recyclerViewWidth / singleItemWidth;
+
+
+This seems like pretty common behavior, so is there a simpler way that I'm not seeing?
+    
+===============================================================================================
+113
+A:Personaly I don't like to subclass RecyclerView for this, because for me it seems that there is GridLayoutManager's responsibility to detect span count. So after some android source code digging for RecyclerView and GridLayoutManager I wrote my own class extended GridLayoutManager that do the job:
+
+public class GridAutofitLayoutManager extends GridLayoutManager
+{
+    private int columnWidth;
+    private boolean isColumnWidthChanged = true;
+    private int lastWidth;
+    private int lastHeight;
+
+    public GridAutofitLayoutManager(@NonNull final Context context, final int columnWidth) {
+        /* Initially set spanCount to 1, will be changed automatically later. */
+        super(context, 1);
+        setColumnWidth(checkedColumnWidth(context, columnWidth));
+    }
+
+    public GridAutofitLayoutManager(
+        @NonNull final Context context,
+        final int columnWidth,
+        final int orientation,
+        final boolean reverseLayout) {
+
+        /* Initially set spanCount to 1, will be changed automatically later. */
+        super(context, 1, orientation, reverseLayout);
+        setColumnWidth(checkedColumnWidth(context, columnWidth));
+    }
+
+    private int checkedColumnWidth(@NonNull final Context context, final int columnWidth) {
+        if (columnWidth <= 0) {
+            /* Set default columnWidth value (48dp here). It is better to move this constant
+            to static constant on top, but we need context to convert it to dp, so can't really
+            do so. */
+            columnWidth = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 48,
+                    context.getResources().getDisplayMetrics());
+        }
+        return columnWidth;
+    }
+
+    public void setColumnWidth(final int newColumnWidth) {
+        if (newColumnWidth > 0 && newColumnWidth != columnWidth) {
+            columnWidth = newColumnWidth;
+            isColumnWidthChanged = true;
+        }
+    }
+
+    @Override
+    public void onLayoutChildren(@NonNull final RecyclerView.Recycler recycler, @NonNull final RecyclerView.State state) {
+        final int width = getWidth();
+        final int height = getHeight();
+        if (columnWidth > 0 && width > 0 && height > 0 && (isColumnWidthChanged || lastWidth != width || lastHeight != height)) {
+            final int totalSpace;
+            if (getOrientation() == VERTICAL) {
+                totalSpace = width - getPaddingRight() - getPaddingLeft();
+            } else {
+                totalSpace = height - getPaddingTop() - getPaddingBottom();
+            }
+            final int spanCount = Math.max(1, totalSpace / columnWidth);
+            setSpanCount(spanCount);
+            isColumnWidthChanged = false;
+        }
+        lastWidth = width;
+        lastHeight = height;
+        super.onLayoutChildren(recycler, state);
+    }
+}
+
+
+I don't actually remember why I choosed to set span count in onLayoutChildren, I wrote this class some time ago. But the point is we need to do so after view get measured. so we can get it's height and width.
+
+EDIT 1: Fix error in code caused to incorrectly setting span count. Thanks user @Elyees Abouda for reporting and suggesting solution.
+
+EDIT 2: Some small refactoring and fix edge case with manual orientation changes handling. Thanks user @tatarize for reporting and suggesting solution.
+    

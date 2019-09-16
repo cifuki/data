@@ -1,0 +1,104 @@
+32
+Q:In my module, in my base Application class 
+
+component = DaggerCompClassComponent.builder()
+                .classModule(new ModuleClass()).build();
+
+
+it can not find DaggerCompClassComponent. 
+
+I have on module build.gradle
+
+apply plugin: 'com.neenbedankt.android-apt'
+.........................
+apt 'com.google.dagger:dagger-compiler:2.8'
+compile 'com.google.dagger:dagger:2.8'
+provided 'javax.annotation:jsr250-api:1.0'
+
+
+and in Project build.gradle, 
+
+ classpath 'com.neenbedankt.gradle.plugins:android-apt:1.8'
+
+
+I have done build / rebuild / clean / restart project. I have a Component class where I inject objects and a ModuleClass where I provide objects to inject.
+
+What can be the cause for not generating Dagger Component . class ?
+
+EDIT:
+
+This is my ModuleClass, adnotated with @Module:
+
+@Provides
+@Singleton
+public Interceptor provideInterceptor() {
+    return new Interceptor() {
+        @Override
+        public Response intercept(Chain chain) throws IOException {
+            Request.Builder builder = chain.request().newBuilder();
+
+            builder.addHeader("AppName-Android", BuildConfig.VERSION_NAME + "-" + BuildConfig.VERSION_CODE)
+                    .addHeader("Content-Type", "application/json");
+
+            return chain.proceed(builder.build());
+        }
+    };
+}
+
+@Provides
+@Singleton
+OkHttpClient provideOkHttpClient(Interceptor interceptor) {
+    OkHttpClient.Builder builder = new OkHttpClient.Builder();
+    builder.interceptors().add(interceptor);
+    return builder.build();
+}
+
+@Provides
+@Singleton
+Retrofit provideRetrofit(OkHttpClient client) {
+    return new Retrofit.Builder()
+            .baseUrl(BaseApplication.getRes().getString(R.string.api_base_url))
+            .addConverterFactory(GsonConverterFactory.create())
+            .client(client)
+            .build();
+}
+
+@Provides
+@Singleton
+WebServiceCall provideWebService(Retrofit retrofit) {
+    return retrofit.create(WebServiceCall.class);
+}
+
+
+And this is my Component Class:
+
+@Component(modules = ModuleClass.class)
+@Singleton
+public interface ComponentClass {
+
+    void inject(Interceptor o);
+    void inject(OkHttpClient o);
+    void inject(Retrofit o);
+    void inject(WebServiceCall o);
+
+}
+
+    
+===============================================================================================
+67
+A:When developing on Kotlin, you should add the following lines next to their annotationProcessor counterparts:
+
+kapt 'com.google.dagger:dagger-android-processor:2.15'
+kapt 'com.google.dagger:dagger-compiler:2.15'
+
+
+and add apply plugin: 'kotlin-kapt' at the start of the same file.
+
+That section looks like this for me:
+
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-kapt' // <- Add this line
+apply plugin: 'io.fabric'
+
+    

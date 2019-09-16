@@ -1,0 +1,114 @@
+31
+Q:Good day, I am trying to show an alert dialog after a system reboot in a broadcast receiver. I have added the receiver in my manifest and called the required permission, but am getting an error in showing the dialog. Please How can i implement this correctly?.. Thank you
+
+my code:
+
+public void onReceive(final Context context, Intent intent) {
+    Log.d(TAG, "received boot completed broadcast receiver... starting settings");
+
+
+    String settings = context.getResources().getString(R.string.restart_setting);
+        String yes = context.getResources().getString(R.string.Settings);
+        String no = context.getResources().getString(R.string.Cancel);
+
+              final AlertDialog.Builder builder = new AlertDialog.Builder(context);
+                builder.setMessage(settings)
+                       .setCancelable(false)
+                       .setPositiveButton(yes, new DialogInterface.OnClickListener() {
+    public void onClick(@SuppressWarnings("unused") final DialogInterface dialog, @SuppressWarnings("unused") final int id) 
+   Intent config = new Intent(context, WeatherConfigure.class)
+     context.startActivity(config);
+
+    }
+ })
+    .setNegativeButton(no, new DialogInterface.OnClickListener() {
+        public void onClick(final DialogInterface dialog, @SuppressWarnings("unused") final int id) {
+             dialog.cancel();
+        }
+    });
+  final AlertDialog alert = builder.create();
+  alert.show();
+
+    }
+
+
+am getting this log error:
+
+01-07 01:42:01.559: ERROR/AndroidRuntime(2004): Caused by: android.view.WindowManager$BadTokenException: Unable to add window -- token null is not for an application
+
+01-07 01:42:01.559: ERROR/AndroidRuntime(2004): at android.view.ViewRoot.setView(ViewRoot.java:548)
+
+01-07 01:42:01.559: ERROR/AndroidRuntime(2004):at android.view.WindowManagerImpl.addView(WindowManagerImpl.java:177)
+
+01-07 01:42:01.559: ERROR/AndroidRuntime(2004): at android.view.WindowManagerImpl.addView(WindowManagerImpl.java:91)
+
+01-07 01:42:01.559: ERROR/AndroidRuntime(2004):at android.app.Dialog.show(Dialog.java:288)
+
+01-07 01:42:01.559: ERROR/AndroidRuntime(2004):at com.MuaaApps.MyWeatherUpdate.myWeatherBroadcastReceiver.onReceive(MyWeatherBroadcastReceiver.java:59)
+
+01-07 01:42:01.559: ERROR/AndroidRuntime(2004): at android.app.ActivityThread.handleReceiver(ActivityThread.java:1994)
+
+    
+===============================================================================================
+46
+A:The problem is you are trying to show an AlertDialog from a BroadcastReceiver, which isn't allowed. You can't show an AlertDialog from a BroadcastReceiver. Only activities can display dialogs.
+
+You should do something else, have the BroadcastReceiver start on boot as you do and start an activity to show the dialog.
+
+Here is a blog post more on this.
+
+EDIT:
+
+Here is how I would recommend doing it. From your BroadcastReceiver start an Activity with an AlertDialog as such..
+
+public class NotifySMSReceived extends Activity 
+{
+    private static final String LOG_TAG = "SMSReceiver";
+    public static final int NOTIFICATION_ID_RECEIVED = 0x1221;
+    static final String ACTION = "android.provider.Telephony.SMS_RECEIVED";
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        IntentFilter filter = new IntentFilter(ACTION);
+        this.registerReceiver(mReceivedSMSReceiver, filter);
+    }
+
+    private void displayAlert()
+    {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setMessage("Are you sure you want to exit?").setCancelable(
+            false).setPositiveButton("Yes",
+            new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface dialog, int id) {
+                    dialog.cancel();
+                }
+            }).setNegativeButton("No",
+            new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface dialog, int id) {
+                    dialog.cancel();
+                }
+            });
+        AlertDialog alert = builder.create();
+        alert.show();
+    }
+
+    private final BroadcastReceiver mReceivedSMSReceiver = new BroadcastReceiver() {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+
+            if (ACTION.equals(action)) 
+            {
+                //your SMS processing code
+                displayAlert();
+            }
+        }
+    }
+}
+
+
+As you see here I NEVER called setContentView(). This is because the activity will have a transparent view and only the alert dialog will show.
+    

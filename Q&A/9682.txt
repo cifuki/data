@@ -1,0 +1,107 @@
+28
+Q:I am trying to use NanoHTTP to serve up an HTML file. However, NanoHTTP is relatively un-documented, and I am new to Android. My question is, where do I store the html file, and how specifically can I serve it up using NanoHTTP.
+    
+===============================================================================================
+39
+A:A late answer but may be useful to others. 
+
+Here is a simple hello Web Server, not exactly what you ask, but you can continue from here. The following program supposes you have a www directory in the root of the SD Card and a file index.html inside.
+
+Main activity Httpd.java:
+
+package com.inforscience.web;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.os.Environment;
+import android.util.Log;
+import java.io.*;
+import java.util.*;
+
+
+public class Httpd extends Activity
+{
+    private WebServer server;
+    /** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        server = new WebServer();
+        try {
+            server.start();
+        } catch(IOException ioe) {
+            Log.w("Httpd", "The server could not start.");
+        }
+        Log.w("Httpd", "Web server initialized.");
+    }
+
+
+    // DON'T FORGET to stop the server
+    @Override
+    public void onDestroy()
+    {
+        super.onDestroy();
+        if (server != null)
+            server.stop();
+    }
+
+    private class WebServer extends NanoHTTPD {
+
+        public WebServer()
+        {
+            super(8080);
+        }
+
+        @Override
+        public Response serve(String uri, Method method, 
+                              Map<String, String> header,
+                              Map<String, String> parameters,
+                              Map<String, String> files) {
+            String answer = "";
+            try {
+                // Open file from SD Card
+                File root = Environment.getExternalStorageDirectory();
+                FileReader index = new FileReader(root.getAbsolutePath() +
+                        "/www/index.html");
+                BufferedReader reader = new BufferedReader(index);
+                String line = "";
+                while ((line = reader.readLine()) != null) {
+                    answer += line;
+                }
+                reader.close();
+
+            } catch(IOException ioe) {
+                Log.w("Httpd", ioe.toString());
+            }
+
+
+            return new NanoHTTPD.Response(answer);
+        }
+    }
+
+}
+
+
+Obviously the NanoHTTPD class must be in the same package.
+
+You need to grant internet permission in AndroidManifest.xml.
+
+<uses-permission android:name="android.permission.INTERNET" />
+
+
+and read external storage permission.
+
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+
+
+EDIT: To access the server open you web browser with the IP of your device, e.g. 192.168.1.20:8080.
+
+NOTES:
+
+
+Tested in Android 2.3
+The use of port 80 is restricted to the root user(http://www.mail-archive.com/android-developers@googlegroups.com/msg47377.html).
+
+    

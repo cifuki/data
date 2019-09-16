@@ -1,0 +1,51 @@
+39
+Q:I am using the Retrofit library to do REST calls to a service I am using.  
+
+If I make an API call to my service and have a failure, the service returns a bit of JSON along with the standard HTTP error stuff.  Using the RetrofitError object included in the failure callback I am able to find the HTTP status code and several other things, however I am not able to retrieve the JSON that the service sends back.
+
+For example, let's say I make a call to the API where I am trying to create a user.  If the username already exists the service will return a 400 error code along with some JSON like this:
+
+{"error":"Username already in use"}
+
+
+Because a simple 400 error code isn't specific enough I really need access to the JSON that is returned.  
+
+Does anyone know how I can get at this JSON data? I have tried looking at every field in the RetrofitError object and can't find it anywhere.  Is there something additional I need to be doing?
+    
+===============================================================================================
+103
+A:You can use the getBodyAs method of the RetrofitError object. It converts the response to a Java object similarly to other Retrofit conversions. First define a class that describes your JSON error response:
+
+class RestError {
+    @SerializedName("code")
+    public int code;
+    @SerializedName("error")
+    public String errorDetails;
+}
+
+
+Then use the previously mentioned method to get the object that describes the error in more detail.
+
+catch(RetrofitError error) {
+    if (error.getResponse() != null) {
+        RestError body = (RestError) error.getBodyAs(RestError.class);
+        log(body.errorDetails);
+        switch (body.code) {
+            case 101:
+                ...
+            case 102:
+                ...
+        }
+    }
+}
+
+
+
+
+Retrofit 2.0 changed the way error responses are converter. You will need to get the right converter with the responseBodyConverter method and use it to convert the error body of the response. Barring exception handling this would be:
+
+Converter<ResponseBody, RestError> converter 
+    = retrofit.responseBodyConverter(RestError.class, new Annotation[0]);
+RestError errorResponse = converter.convert(response.errorBody());
+
+    

@@ -1,0 +1,280 @@
+48
+Q:I have a Recycler View with the Images loaded from the Internal Storage.
+I want to Highlight the selected item when clicked.
+I tried a lot of thing but it was not working.
+Actually what I need is when I click any item in Recycler View that Item must go in My ArrayList and it should also get highlighted and again when I click or say unselect it must again become normal.
+Here is my Code:
+
+public class Images extends Fragment {
+    private List<ImageHolder> imageList;
+    Cursor imageCursor;
+
+    RecyclerView recyclerView;
+    MyImageAdapter adapter;
+    ActionButton clickButton;
+    List<String> listofImages;
+    List<Integer> pos;
+    int columnIndex;
+    StringBuilder stringBuilder;
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,   Bundle savedInstanceState) {
+        View rootlayout = inflater.inflate(R.layout.image, container, false);
+        listofImages=new ArrayList<String>();
+        pos=new ArrayList<Integer>();
+        stringBuilder=new StringBuilder();
+        ContentResolver imageResolver = getActivity().getContentResolver();
+        Uri imageUri = android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+        String projection[]={MediaStore.Images.Thumbnails._ID,MediaStore.Images.Media.TITLE};
+        imageCursor = getActivity().managedQuery(imageUri, projection, null, null, null);
+
+        clickButton= (ActionButton) rootlayout.findViewById(R.id.action_button);
+
+        recyclerView = (RecyclerView) rootlayout.findViewById(R.id.recycler_view_image);
+        adapter = new MyImageAdapter(getActivity(), getImageList());
+
+        recyclerView.setAdapter(adapter);
+        recyclerView.setLayoutManager(new LinearLayoutManager(getActivity()));
+
+        recyclerView.addOnItemTouchListener(new RecyclerTouchListener(getActivity(),recyclerView,new RecyclerTouchListener.ClickListener() {
+            @Override
+            public void onClick(View view, int position) {
+               TextView tv= (TextView) view.findViewById(R.id.list_text_all);
+                    int flag=0;
+
+                    String[] projection = {MediaStore.Images.Media.DATA};
+                    imageCursor = getActivity().managedQuery(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                            projection, 
+                            null,       
+                            null,
+                            null);
+                    columnIndex = imageCursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+                    imageCursor.moveToPosition(position);
+                    // Get image filename
+                    String imagePath = imageCursor.getString(columnIndex);
+                    if (listofImages.contains(imagePath)){
+                        Log.d("Contains Test","Yes");
+                        listofImages.remove(imagePath);
+                        pos.remove(position);
+                    } else {
+                        listofImages.add(imagePath);
+                        pos.add(position);
+                        Log.d("Contains Test","No");
+                    }
+
+                String s=listofImages.size()+" "+imagePath;
+                Log.d("Inserted",s);
+            }
+
+            @Override
+            public void onLongClick(View view, int position) {}
+        }));
+
+        clickButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                for (int i=0;i<listofImages.size();i++){
+                    stringBuilder.append(listofImages.get(i)+"\
+");
+                }
+                Toast.makeText(getActivity(),stringBuilder,Toast.LENGTH_LONG).show();
+            }
+        });
+
+        return rootlayout;
+    }
+
+    public List<ImageHolder> getImageList() {
+        imageList=new ArrayList<ImageHolder>();
+
+        if(imageCursor!=null && imageCursor.moveToFirst()){
+
+           int titleColumn = imageCursor.getColumnIndex
+                    (android.provider.MediaStore.Images.Media.TITLE);
+            int idColumn = imageCursor.getColumnIndex
+                    (android.provider.MediaStore.Images.Media._ID);
+
+            do {
+                ImageHolder img=new ImageHolder();
+                img.id=imageCursor.getLong(idColumn);
+                img.title=imageCursor.getString(titleColumn);
+
+                img.iconid= imageCursor.getInt(idColumn);
+
+
+                imageList.add(img);
+            }
+            while (imageCursor.moveToNext());
+        }
+
+        return  imageList;
+    }
+}
+
+
+This is my Adapter Class:
+
+public class MyImageAdapter extends RecyclerView.Adapter<MyImageAdapter.MyViewHolder> {
+    Context context;
+    private LayoutInflater inflater;
+    List<ImageHolder> data= Collections.emptyList();
+    private ClickListener clickListener;
+    int width,height;
+
+    public MyImageAdapter(Context context, List<ImageHolder> data1) {
+        inflater = LayoutInflater.from(context);
+        this.data=data1;
+        this.context=context;
+    }
+
+    @Override
+    public MyViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+        View view = inflater.inflate(R.layout.all_row, parent, false);
+        MyViewHolder holder=new MyViewHolder(view);
+        return holder;
+    }
+
+    @Override
+    public void onBindViewHolder(MyViewHolder holder, int position) {
+        try{
+            ImageHolder current=data.get(position);
+            holder.title.setText(current.title);
+
+            Log.d("Imageid:"+current.iconid,"");
+            Uri IMAGE_URI = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "" + current.iconid);
+
+            Bitmap bitmap = Bitmap.createScaledBitmap(decodeUri(IMAGE_URI), 200, 200, true);
+            holder.img.setImageBitmap(bitmap);
+        }
+        catch(Exception e){}
+    }
+    public void deleteRecyclerData(int position){
+        data.remove(position);
+        notifyItemRemoved(position);
+    }
+
+
+    private Bitmap decodeUri(Uri selectedImage) throws FileNotFoundException {
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+        BitmapFactory.decodeStream(
+               context.getContentResolver().openInputStream(selectedImage), null, o);
+
+        final int REQUIRED_SIZE = 100;
+
+        int width_tmp = o.outWidth, height_tmp = o.outHeight;
+        int scale = 1;
+        while (true) {
+            if (width_tmp / 2 < REQUIRED_SIZE || height_tmp / 2 < REQUIRED_SIZE) {
+                break;
+            }
+            width_tmp /= 2;
+            height_tmp /= 2;
+            scale *= 2;
+        }
+
+        BitmapFactory.Options o2 = new BitmapFactory.Options();
+        o2.inSampleSize = scale;
+        return BitmapFactory.decodeStream(
+                context.getContentResolver().openInputStream(selectedImage), null, o2);
+    }
+    @Override
+    public int getItemCount() {
+        return data.size();
+    }
+
+    public class MyViewHolder extends RecyclerView.ViewHolder implements View.OnClickListener{
+        TextView title;
+      // TextView artist;
+        ImageView img;
+        CheckBox checkBox;
+
+        public MyViewHolder(View itemView) {
+            super(itemView);
+            title= (TextView) itemView.findViewById(R.id.list_text_all);
+            img= (ImageView) itemView.findViewById(R.id.list_image_all);
+            img.setOnClickListener(this);
+        }
+
+        @Override
+        public void onClick(View v) {}
+    }
+    public interface ClickListener{
+        public void itemClicked(View view, int position);
+    }
+}
+
+    
+===============================================================================================
+86
+A:You can use a StateListDrawable to achieve the desired effect.
+
+Example
+
+Create a new Drawable resource file in your drawable directory with the following content:
+
+selector_row.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Color when the row is selected -->
+    <item android:drawable="@android:color/darker_gray" android:state_pressed="false" android:state_selected="true" />
+    <!-- Standard background color -->
+    <item android:drawable="@android:color/white" android:state_selected="false" />
+</selector>
+
+
+Now simply use this StateListDrawable as the background in the row-layout of your RecyclerView
+
+row_recyclerview.xml
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/selector_row">
+
+    <!-- row content -->
+
+</RelativeLayout>
+
+
+Now as soon as the onClick() method in your adapter is called you simply need to do the following:
+
+// myBackground is the RelativeLayout root of your row
+myBackground.setSelected(true);
+
+
+The rows' background will have the color (in this case darker_gray) as long as you call myBackground.setSelected(false). Of course you should create a SparseBooleanArray for example in order to know which row is selected and which isn't since the rows will be reused when scrolling.
+
+Edit: Remember selected items
+The idea behind the SparseBooleanArray is to remember the items which are selected. Following a sample on how to use it:
+
+public class MyImageAdapter extends RecyclerView.Adapter<MyImageAdapter.MyViewHolder> {
+
+    private SparseBooleanArray selectedItems;
+
+    // Other stuff [...]
+
+    @Override
+    public void onBindViewHolder(MyViewHolder holder, int position) {
+        // Set the selected state of the row depending on the position
+        holder.myBackground.setSelected(selectedItems.get(position, false));
+    }
+
+    public class MyViewHolder extends RecyclerView.ViewHolder implements View.OnClickListener{
+
+        @Override
+        public void onClick(View v) {
+              // Save the selected positions to the SparseBooleanArray 
+              if (selectedItems.get(getAdapterPosition(), false)) {
+                  selectedItems.delete(getAdapterPosition());
+                  myBackground.setSelected(false);
+              }
+              else {
+                  selectedItems.put(getAdapterPosition(), true);
+                  myBackground.setSelected(true);
+              }
+        }
+    }
+}
+
+    

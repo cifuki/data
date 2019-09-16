@@ -1,0 +1,65 @@
+38
+Q:I am currently trying to implement some code using Android to detect when a number of specific audio frequency ranges are played through the phone's microphone. I have set up the class using the AudioRecord class:
+
+int channel_config = AudioFormat.CHANNEL_CONFIGURATION_MONO;
+int format = AudioFormat.ENCODING_PCM_16BIT;
+int sampleSize = 8000;
+int bufferSize = AudioRecord.getMinBufferSize(sampleSize, channel_config, format);
+AudioRecord audioInput = new AudioRecord(AudioSource.MIC, sampleSize, channel_config, format, bufferSize);
+
+
+The audio is then read in:
+
+short[] audioBuffer = new short[bufferSize];
+audioInput.startRecording();
+audioInput.read(audioBuffer, 0, bufferSize);
+
+
+Performing an FFT is where I become stuck, as I have very little experience in this area. I have been trying to use this class:
+
+FFT in Java and Complex class to go with it
+
+I am then sending the following values:
+
+Complex[] fftTempArray = new Complex[bufferSize];
+for (int i=0; i<bufferSize; i++)
+{
+    fftTempArray[i] = new Complex(audio[i], 0);
+}
+Complex[] fftArray = fft(fftTempArray);
+
+
+This could easily be me misunderstanding how this class is meant to work, but the values returned jump all over the place and aren't representative of a consistent frequency even in silence. Is anyone aware of a way to perform this task, or am I overcomplicating matters to try and grab only a small number of frequency ranges rather than to draw it as a graphical representation?
+    
+===============================================================================================
+33
+A:First you need to ensure that the result you are getting is correctly converted to a float/double. I'm not sure how the short[] version works, but the byte[] version only returns the raw byte version. This byte array then needs to be properly converted to a floating point number. The code for the conversion should look something like this:
+
+    double[] micBufferData = new double[<insert-proper-size>];
+    final int bytesPerSample = 2; // As it is 16bit PCM
+    final double amplification = 100.0; // choose a number as you like
+    for (int index = 0, floatIndex = 0; index < bytesRecorded - bytesPerSample + 1; index += bytesPerSample, floatIndex++) {
+        double sample = 0;
+        for (int b = 0; b < bytesPerSample; b++) {
+            int v = bufferData[index + b];
+            if (b < bytesPerSample - 1 || bytesPerSample == 1) {
+                v &= 0xFF;
+            }
+            sample += v << (b * 8);
+        }
+        double sample32 = amplification * (sample / 32768.0);
+        micBufferData[floatIndex] = sample32;
+    }
+
+
+Then you use micBufferData[] to create your input complex array.
+
+Once you get the results, use the magnitudes of the complex numbers in the results. Most of the magnitudes should be close to zero except the frequencies that have actual values.
+
+You need the sampling frequency to convert the array indices to such magnitudes to frequencies:
+
+private double ComputeFrequency(int arrayIndex) {
+    return ((1.0 * sampleRate) / (1.0 * fftOutWindowSize)) * arrayIndex;
+}
+
+    

@@ -1,0 +1,79 @@
+36
+Q:I'm using ACRA (arca.ch) to generate automatic error reports.
+
+I just released a new version of my app using Google Maps Android API v2.  I'm getting an error reported by EEEPad and Transformer Pad users when trying to show the dialog returned by GooglePlayServicesUtil.getErrorDialog.  Does anyone know why this might happen?
+
+Here is the relevant code and Logcat as reported by acra:
+
+While calling this line:
+
+int resultCode = GooglePlayServicesUtil.isGooglePlayServicesAvailable(this);
+if(resultCode != ConnectionResult.SUCCESS)
+{
+        //The dialog that comes back is null (probably due to the logcat message)
+        Dialog dialog = GooglePlayServicesUtil.getErrorDialog(resultCode, this, 69);
+        //So when I call the next line, the app crashes with a NullPointerException
+        dialog.show();
+}
+...
+
+
+Logcat:
+
+12-18 04:21:04.531 W/GooglePlayServicesUtil( 3977): Google Play Store signature invalid.
+12-18 04:21:04.551 E/GooglePlayServicesUtil( 3977): Google Play services is invalid. Cannot recover.
+
+
+Thanks in advance for any help you can provide.
+
+Update
+
+The issue has not been resolved by google yet and I will update this question once I hear anything (see CommonsWare's answer for the Google Bug report link).  In the mean time if you come across this issue and don't want your app to crash, here's what I'm doing for the time being:
+
+public void checkGooglePlayServicesAvailability()
+{
+    int resultCode = GooglePlayServicesUtil.isGooglePlayServicesAvailable(this);
+    if(resultCode != ConnectionResult.SUCCESS)
+    {
+        Dialog dialog = GooglePlayServicesUtil.getErrorDialog(resultCode, this, 69);
+        if(dialog != null)
+        {
+            dialog.show();                
+        }
+        else
+        {
+            showOkDialogWithText(this, "Something went wrong. Please make sure that you have the Play Store installed and that you are connected to the internet. Contact developer with details if this persists.");
+        }
+    }
+
+    Log.d("GooglePlayServicesUtil Check", "Result is: " + resultCode);
+}
+
+public static void showOkDialogWithText(Context context, String messageText)
+{
+    Builder builder = new AlertDialog.Builder(context);
+    builder.setMessage(messageText);
+    builder.setCancelable(true);
+    builder.setPositiveButton("OK", null);
+    AlertDialog dialog = builder.create();
+    dialog.show();
+}
+
+    
+===============================================================================================
+37
+A:Google suggests (also in docs) calling getErrorDialog() if the result code is SERVICE_MISSING, SERVICE_VERSION_UPDATE_REQUIRED or SERVICE_DISABLED. So it may be that the last possible status code (SERVICE_INVALID) is what's causing trouble.
+
+I'm using the following code and so far it seems to work ok (testing in emulator, platform 2.3.3):
+
+int resultCode = GooglePlayServicesUtil.isGooglePlayServicesAvailable(activity.getApplicationContext());
+if (resultCode == ConnectionResult.SUCCESS) {
+    activity.selectMap();
+} else if (resultCode == ConnectionResult.SERVICE_MISSING ||
+           resultCode == ConnectionResult.SERVICE_VERSION_UPDATE_REQUIRED ||
+           resultCode == ConnectionResult.SERVICE_DISABLED) {
+    Dialog dialog = GooglePlayServicesUtil.getErrorDialog(resultCode, activity, 1);
+    dialog.show();
+}
+
+    

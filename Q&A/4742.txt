@@ -1,0 +1,211 @@
+51
+Q:I am trying to send sms amd mail together. There are no issues with sending mail, but when i send sms I receive this Exception:
+
+End has leaked IntentReceiver
+Are you missing a call to unregisterReceiver()? 
+
+
+Here is my code for sms method:
+
+public class End extends Activity {
+
+    Button btnSendSMS;
+    EditText txtPhoneNo;
+    EditText txtMessage;
+    public EditText Details;
+    public String user;
+
+    /** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState) 
+    {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.end);
+        Details = (EditText)findViewById(R.id.details);
+        btnSendSMS = (Button) findViewById(R.id.btnSend);
+        Bundle b=this.getIntent().getExtras();
+        final String email=b.getString("keym");
+        final String pno=b.getString("keys");
+
+        btnSendSMS.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {           
+                String detail=Details.getText().toString();
+                Mail m = new Mail("abc@gmail.com", "sdfsa"); 
+                String[] toArr = {email}; 
+                m.setTo(toArr); 
+                m.setFrom("asdasd11@gmail.com"); 
+                m.setSubject("EMERGENCY");
+                m.setBody(detail);
+
+                try { 
+                    // m.addAttachment("/sdcard/filelocation"); 
+                    if(m.send()) { 
+                    Toast.makeText(End.this, "Email was sent successfully.", Toast.LENGTH_LONG).show(); 
+                    } else { 
+                  Toast.makeText(End.this, "Email was not sent.", Toast.LENGTH_LONG).show(); 
+                    } 
+                } catch(Exception e) { 
+                //Toast.makeText(MailApp.this, "There was a problem sending the email.", Toast.LENGTH_LONG).show(); 
+                Log.e("MailApp", "Could not send email", e); 
+                } 
+
+                sendSMS(pno, detail);
+                finish();
+                Intent intent = new Intent(End.this,Service.class);
+                startActivity(intent);
+               }   
+            }
+        );        
+
+    } 
+
+    private void sendSMS(String phoneNumber, String message)
+    {        
+         String SENT = "SMS_SENT";
+         String DELIVERED = "SMS_DELIVERED";
+
+         PendingIntent sentPI = PendingIntent.getBroadcast(this, 0,
+             new Intent(SENT), 0);
+
+         PendingIntent deliveredPI = PendingIntent.getBroadcast(this, 0,
+             new Intent(DELIVERED), 0);
+
+         //---when the SMS has been sent---
+         registerReceiver(new BroadcastReceiver()
+         {
+             Context context;
+             @Override
+             public void onReceive(Context arg0, Intent arg1) {
+                 switch (getResultCode())
+                 {
+                     case Activity.RESULT_OK:
+                         Toast.makeText(getBaseContext(), "SMS sent", 
+                                 Toast.LENGTH_SHORT).show();
+                         break;
+                     case SmsManager.RESULT_ERROR_GENERIC_FAILURE:
+                         Toast.makeText(getBaseContext(), "Generic failure", 
+                                 Toast.LENGTH_SHORT).show();
+                         break;
+                     case SmsManager.RESULT_ERROR_NO_SERVICE:
+                         Toast.makeText(getBaseContext(), "No service", 
+                                 Toast.LENGTH_SHORT).show();
+                         break;
+                     case SmsManager.RESULT_ERROR_NULL_PDU:
+                         Toast.makeText(getBaseContext(), "Null PDU", 
+                                 Toast.LENGTH_SHORT).show();
+                         break;
+                     case SmsManager.RESULT_ERROR_RADIO_OFF:
+                         Toast.makeText(getBaseContext(), "Radio off", 
+                                 Toast.LENGTH_SHORT).show();
+                         break;
+                 }
+
+
+             }
+         }, new IntentFilter(SENT));
+
+         //---when the SMS has been delivered---
+         registerReceiver(new BroadcastReceiver(){
+             Context context;
+             @Override
+
+             public void onReceive(Context arg0, Intent arg1) 
+             {
+                 switch (getResultCode())
+                 {
+                     case Activity.RESULT_OK:
+                         Toast.makeText(getBaseContext(), "SMS delivered", 
+                                 Toast.LENGTH_SHORT).show();
+                         break;
+                     case Activity.RESULT_CANCELED:
+                         Toast.makeText(getBaseContext(), "SMS not delivered", 
+                                 Toast.LENGTH_SHORT).show();
+                         break;                        
+                 }
+
+             }
+         }, new IntentFilter(DELIVERED));        
+
+         SmsManager sms = SmsManager.getDefault();
+         sms.sendTextMessage(phoneNumber, null, message, sentPI, deliveredPI);    
+
+}
+
+}
+
+
+    
+===============================================================================================
+32
+A:Create a custom receiver like this
+
+class deliverReceiver extends BroadcastReceiver {     
+@Override
+ public void onReceive(Context context, Intent arg1) {
+             switch (getResultCode())
+             {
+                 case Activity.RESULT_OK:
+                     Toast.makeText(getBaseContext(), "SMS delivered", 
+                             Toast.LENGTH_SHORT).show();
+                     break;
+                 case Activity.RESULT_CANCELED:
+                     Toast.makeText(getBaseContext(), "SMS not delivered", 
+                             Toast.LENGTH_SHORT).show();
+                     break;                        
+             }
+
+         }
+}
+
+
+and a sent reciever like this..
+
+class sentReceiver extends BroadcastReceiver {     
+@Override
+ public void onReceive(Context context, Intent arg1) {
+             switch (getResultCode())
+             {
+                 case Activity.RESULT_OK:
+                     Toast.makeText(getBaseContext(), "SMS sent", 
+                             Toast.LENGTH_SHORT).show();
+                     break;
+                 case SmsManager.RESULT_ERROR_GENERIC_FAILURE:
+                     Toast.makeText(getBaseContext(), "Generic failure", 
+                             Toast.LENGTH_SHORT).show();
+                     break;
+                 case SmsManager.RESULT_ERROR_NO_SERVICE:
+                     Toast.makeText(getBaseContext(), "No service", 
+                             Toast.LENGTH_SHORT).show();
+                     break;
+                 case SmsManager.RESULT_ERROR_NULL_PDU:
+                     Toast.makeText(getBaseContext(), "Null PDU", 
+                             Toast.LENGTH_SHORT).show();
+                     break;
+                 case SmsManager.RESULT_ERROR_RADIO_OFF:
+                     Toast.makeText(getBaseContext(), "Radio off", 
+                             Toast.LENGTH_SHORT).show();
+                     break;
+             }
+
+
+         }
+
+
+now in sendSMS method after this
+
+ PendingIntent deliveredPI = PendingIntent.getBroadcast(this, 0,
+         new Intent(DELIVERED), 0);
+
+
+put 
+
+registerReceiver(sentReceiver,SENT);
+registerReceiver(deliverReceiver,DELIVERED);
+
+
+Now override onpause and unregister for the receivers like this..
+
+unregisterReceiver(sentReceiver);
+unregisterReceiver(deliverReceiver);
+
+    

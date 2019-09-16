@@ -1,0 +1,80 @@
+30
+Q:I am using sockets to connect my Android application (client) and a Java backend Server. From the client I would like to send two variables of data each time I communicate with the server.
+
+1) Some kind of message (Defined by the user through the interface)
+
+2) The language of the message (Defined by the user through the interface)
+
+How could I send these so that the server interprets each as a separate entity?
+
+Having read the data on the server side and made an appropriate conclusion, I would like to return a single message to the client. (I think I will be okay with this)
+
+So my two questions are how can I establish that the two Strings being sent (client to server) are unique on the client side and how can I separate these two Strings on the server side. (I was thinking an array of Strings, but could not establish if this was possible or appropriate.)
+
+I was going to post some code but I'm not sure how that would help.
+    
+===============================================================================================
+61
+A:I assume you are using TCP sockets for the client-server interaction? One way to send different types of data to the server and have it be able to differentiate between the two is to dedicate the first byte (or more if you have more than 256 types of messages) as some kind of identifier. If the first byte is one, then it is message A, if its 2, then its message B. One easy way to send this over the socket is to use DataOutputStream/DataInputStream:
+
+Client:
+
+Socket socket = ...; // Create and connect the socket
+DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
+
+// Send first message
+dOut.writeByte(1);
+dOut.writeUTF("This is the first type of message.");
+dOut.flush(); // Send off the data
+
+// Send the second message
+dOut.writeByte(2);
+dOut.writeUTF("This is the second type of message.");
+dOut.flush(); // Send off the data
+
+// Send the third message
+dOut.writeByte(3);
+dOut.writeUTF("This is the third type of message (Part 1).");
+dOut.writeUTF("This is the third type of message (Part 2).");
+dOut.flush(); // Send off the data
+
+// Send the exit message
+dOut.writeByte(-1);
+dOut.flush();
+
+dOut.close();
+
+
+Server:
+
+Socket socket = ... // Set up receive socket
+DataInputStream dIn = new DataInputStream(socket.getInputStream());
+
+boolean done = false;
+while(!done) {
+  byte messageType = dIn.readByte();
+
+  switch(messageType)
+  {
+  case 1: // Type A
+    System.out.println("Message A: " + dIn.readUTF());
+    break;
+  case 2: // Type B
+    System.out.println("Message B: " + dIn.readUTF());
+    break;
+  case 3: // Type C
+    System.out.println("Message C [1]: " + dIn.readUTF());
+    System.out.println("Message C [2]: " + dIn.readUTF());
+    break;
+  default:
+    done = true;
+  }
+}
+
+dIn.close();
+
+
+Obviously, you can send all kinds of data, not just bytes and strings (UTF).
+
+Note that writeUTF writes a modified UTF-8 format, preceded by a length indicator of an unsigned two byte encoded integer giving you 2^16 - 1 = 65535 bytes to send. This makes it possible for readUTF to find the end of the encoded string. If you decide on your own record structure then you should make sure that the end and type of the record is either known or detectable.
+    

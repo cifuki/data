@@ -1,0 +1,88 @@
+78
+Q:So I've got what seems to be a common problem, which is that the EditText in my dialog box doesn't show up when it gets focus. I've seen several workarounds, such as in this thread, this one and this one (and many more), but I have never seen a satisfactory explanation for why this is happening in the first place. 
+
+I would much prefer to have android use its own default behavior for EditTexts than to build my own, but it seems like everyone (in those threads) has accepted that the default behavior for EditTexts in Dialogs is to just give a cursor and no keyboard. Why would that be?
+
+For the record, none of these workarounds seem to be working for me - the closest I've been able to come is forcing a keyboard to appear underneath the dialog box (using InputMethodManager.toggleSoftKeyboard(*)). My particular configuration is API15, the EditText shows up in a footer on a ListView within an AlertDialog. The EditText android:focusable="true" is set, and onFocusChangeListener is receiving focus events.
+
+Edit:
+
+As requested, here is the specific code snippet that I'm working with. I won't bother with the whole layout, but in this specific application, the EditText appears in response to pressing a button on the dialog (similar to an action view). It is contained in a RelativeLayout which by default has visibility "gone":
+
+ <RelativeLayout 
+       android:id="@+id/relLay"
+       android:layout_width="match_parent"
+       android:layout_height="wrap_content"
+       android:layout_centerVertical="true"
+       android:visibility="gone"
+       android:layout_marginTop="5dp"
+       android:layout_marginBottom="5dp">
+
+        <ImageButton
+            android:id="@+id/cancelBut"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentRight="true"
+            android:background="@color/transparent"
+            android:src="@drawable/cancelButton" 
+            android:layout_margin="5dp"/>
+
+        <ImageButton
+            android:id="@+id/okBut"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_toLeftOf="@id/cancelBut"
+            android:background="@color/transparent"
+            android:src="@drawable/okButton"
+            android:layout_margin="5dp" />
+
+        <EditText 
+            android:id="@+id/editText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            android:focusable="true"
+            android:layout_toLeftOf="@id/okBut"/>
+   </RelativeLayout>
+
+
+The code which builds this sets the visibility of the relativeLayout to "Visible" (and hides the other UI elements). This should be enough to pull up the keyboard when the EditText gets focused, based on my experience with EditText. However, for some reason this is not the case.  I can set the following onFocusChangeListener:
+
+    edit_text.setOnFocusChangeListener(new OnFocusChangeListener() {
+
+            @Override
+            public void onFocusChange(View v, boolean hasFocus) {
+                // For whatever reason we need to request a soft keyboard.
+                    InputMethodManager imm = (InputMethodManager)dlg.getWindow().getContext().getSystemService(_Context.INPUT_METHOD_SERVICE);
+                    if(hasFocus)
+                        imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0);
+                    Log.v("DialogProblem", "Focus requested, " + (hasFocus?"has focus.":"doesn't have focus."));
+                }
+            }
+        });
+
+
+Using this configuration, when I first enter the EditText, the onFocusChangedListener triggers, and generates a log that invariably looks like this:
+
+Focus requested, has focus.
+Focus requested, doesn't have focus.
+Focus requested, has focus.
+
+
+The keyboard shows up and then disappears, probably because I toggle it twice, but even when I make sure it stays up, it's behind the dialog window (in a greyed out area), and there's no way to get to it without closing the dialog.
+
+That said, I'd like to emphasize that even though I may be able to get this work-around to work, I'm primarily interested in finding a simple reason why the EditText isn't triggering in the first place, and why this seems to be so commonplace!
+    
+===============================================================================================
+171
+A:OK, so after reading a lot, I have figured out why this is a problem, and I do not need to use any workarounds.
+
+The problem seems to be (at least in my case), that since the place where you enter text is hidden initially (or nested or something), AlertDialog is automatically setting the flag WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM (or some combination of that and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) so that things don't trigger a soft input to show up.
+
+The way that I've found to fix this is to add the following line after the dialog has been created:
+
+dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+
+
+Once this is done, the EditText acts like a normal EditText, no kludges or workarounds necessary.
+    

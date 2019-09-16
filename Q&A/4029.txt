@@ -1,0 +1,61 @@
+58
+Q:I am trying to get an image from the gallery app from one of the folders from the Google+ synced photos. After selecting the image, the Uri is being passed back correctly. But when I try to get the actual path of that image on the storage device, so that I can use it, it crashes. The problem seems to be specifically with the picasa content provider.
+
+Tested on Nexus S and Nexus 7, and other devices as well.
+
+
+E/AndroidRuntime(14572): java.lang.RuntimeException: Failure delivering result ResultInfo{who=null, request=1, result=-1, data=Intent { dat=content://com.google.android.gallery3d.provider/picasa/item/5427003652908228690 }}
+
+
+Here, the dat field seems to be correctly passing the Uri, but when I try to fetch the image's location, it crashes with the following error.
+
+
+W/GalleryProvider(14381): unsupported column: _data
+
+
+Seems that the content provider for Picasa albums doesn't have a _data field.
+
+The code for getting the location is:
+
+
+// imageUri is the Uri from above.
+String[] proj = { MediaStore.Images.Media.DATA };
+Cursor cursor = context.getContentResolver().query(imageUri, proj,null, null, null);
+int column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+cursor.moveToFirst();
+
+String filePath = cursor.getString(column_index);
+cursor.close();
+
+
+The only columns that seem to be supported for this image are:
+[user_account, picasa_id, _display_name, _size, mime_type, datetaken, latitude, longitude, orientation]
+
+How do we get the actual location of this image. And if we are not supposed to work with this image, these images shouldn't be shown to the user in the first place.
+
+The Intent to launch the gallery app is:
+
+
+Intent intent = new Intent();
+intent.setType("image/*");
+intent.setAction(Intent.ACTION_GET_CONTENT);
+
+    
+===============================================================================================
+15
+A:I wasted now lots of hours and now i found a solution which works in all cases without any magic downloading in special threads or something. The following method returns a stream from the content which the user selected and this works with everything in the wild.
+
+FileInputStream getSourceStream(Uri u) throws FileNotFoundException {
+    FileInputStream out = null;
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+        ParcelFileDescriptor parcelFileDescriptor =
+                mContext.getContentResolver().openFileDescriptor(u, "r");
+        FileDescriptor fileDescriptor = parcelFileDescriptor.getFileDescriptor();
+        out = new FileInputStream(fileDescriptor);
+    } else {
+        out = (FileInputStream) mContext.getContentResolver().openInputStream(u);
+    }
+    return out;
+}
+
+    

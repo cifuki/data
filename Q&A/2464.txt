@@ -1,0 +1,82 @@
+84
+Q:I'm having issues with BitmapFactory.decodeStream(inputStream). When using it without options, it will return an image. But when I use it with options as in .decodeStream(inputStream, null, options) it never returns Bitmaps.
+
+What I'm trying to do is to downsample a Bitmap before I actually load it to save memory.
+I've read some good guides, but none using .decodeStream.
+
+
+Handling large Bitmaps
+And here
+Image Processing in Android
+
+
+WORKS JUST FINE
+
+URL url = new URL(sUrl);
+HttpURLConnection connection  = (HttpURLConnection) url.openConnection();
+
+InputStream is = connection.getInputStream();
+Bitmap img = BitmapFactory.decodeStream(is, null, options);
+
+
+DOESN'T WORK
+
+InputStream is = connection.getInputStream();
+Bitmap img = BitmapFactory.decodeStream(is, null, options);
+
+InputStream is = connection.getInputStream();
+
+Options options = new BitmapFactory.Options();
+options.inJustDecodeBounds = true;
+
+BitmapFactory.decodeStream(is, null, options);
+
+Boolean scaleByHeight = Math.abs(options.outHeight - TARGET_HEIGHT) >= Math.abs(options.outWidth - TARGET_WIDTH);
+
+if (options.outHeight * options.outWidth * 2 >= 200*100*2){
+    // Load, scaling to smallest power of 2 that'll get it <= desired dimensions
+    double sampleSize = scaleByHeight
+    ? options.outHeight / TARGET_HEIGHT
+    : options.outWidth / TARGET_WIDTH;
+    options.inSampleSize =
+        (int)Math.pow(2d, Math.floor(
+        Math.log(sampleSize)/Math.log(2d)));
+}
+
+// Do the actual decoding
+options.inJustDecodeBounds = false;
+Bitmap img = BitmapFactory.decodeStream(is, null, options);
+
+    
+===============================================================================================
+109
+A:The problem was that once you've used an InputStream from a HttpUrlConnection to fetch image metadata, you can't rewind and use the same InputStream again.
+
+Therefore you have to create a new InputStream for the actual sampling of the image.
+
+  Options options = new BitmapFactory.Options();
+  options.inJustDecodeBounds = true;
+
+  BitmapFactory.decodeStream(is, null, options);
+
+  Boolean scaleByHeight = Math.abs(options.outHeight - TARGET_HEIGHT) >= Math.abs(options.outWidth - TARGET_WIDTH);
+
+  if(options.outHeight * options.outWidth * 2 >= 200*200*2){
+         // Load, scaling to smallest power of 2 that'll get it <= desired dimensions
+        double sampleSize = scaleByHeight
+              ? options.outHeight / TARGET_HEIGHT
+              : options.outWidth / TARGET_WIDTH;
+        options.inSampleSize = 
+              (int)Math.pow(2d, Math.floor(
+              Math.log(sampleSize)/Math.log(2d)));
+     }
+
+        // Do the actual decoding
+        options.inJustDecodeBounds = false;
+
+        is.close();
+        is = getHTTPConnectionInputStream(sUrl);
+        Bitmap img = BitmapFactory.decodeStream(is, null, options);
+        is.close();
+
+    

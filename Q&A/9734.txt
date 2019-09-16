@@ -1,0 +1,142 @@
+28
+Q:I have an application that uses an externally referenced library (that is, the directory of the library is in the same level as the application - it is not copied inside the application's folder). The library is referenced by the application and both the library and the application include proguard files. Everything works fine until I build the application. When I built the app, all referenced to the classes defined in the library are not found - I get 'cannot find symbol class ...) errors on all imports of library classes. As I found, this is because when rebuilding the application, proguard obfuscates all classes and variables and therefore the application cannot reference them. I have added the following to my build.gradle file,
+
+buildTypes {
+    release {
+        minifyEnabled true
+        proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-project.txt'
+    }
+    debug {
+        minifyEnabled false
+    }
+}
+
+
+but it seems like when building the application, the above is not taken into consideration (or the building is done in release mode). If I change the above to the following (i.e., disable proguard in release mode),
+
+buildTypes {
+    release {
+        **minifyEnabled false**
+        proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-project.txt'
+    }
+    debug {
+        minifyEnabled false
+    }
+}
+
+
+the application compiles fine. 
+
+Is there a solution to this? Can I only enable proguard when creating a signed application? 
+
+Here is the library proguard file:
+
+-optimizationpasses 5
+-dontusemixedcaseclassnames
+-dontskipnonpubliclibraryclasses
+-dontpreverify
+-verbose
+-optimizations !code/simplification/arithmetic,!field/*,!class/merging/*
+
+-optimizations !method/marking/static
+
+-keep public class * extends android.app.Activity
+-keep public class * extends android.app.Application
+-keep public class * extends android.app.Service
+-keep public class * extends android.content.BroadcastReceiver
+-keep public class * extends android.content.ContentProvider
+-keep public class * extends android.app.backup.BackupAgentHelper
+-keep public class * extends android.preference.Preference
+-keep public class com.android.vending.licensing.ILicensingService
+
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+-keepclasseswithmembers class * {
+    public <init>(android.content.Context, android.util.AttributeSet);
+}
+
+-keepclasseswithmembers class * {
+    public <init>(android.content.Context, android.util.AttributeSet, int);
+}
+
+-keepclassmembers class * extends android.app.Activity {
+   public void *(android.view.View);
+}
+
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+-keep class * implements android.os.Parcelable {
+  public static final android.os.Parcelable$Creator *;
+}
+
+-dontwarn **CompatHoneycomb
+-keep class android.support.v4.** { *; }
+
+-keep class * extends java.util.ListResourceBundle {
+    protected Object[][] getContents();
+}
+
+-keep public class com.google.android.gms.common.internal.safeparcel.SafeParcelable {
+    public static final *** NULL;
+}
+
+-keepnames @com.google.android.gms.common.annotation.KeepName class *
+-keepclassmembernames class * {
+    @com.google.android.gms.common.annotation.KeepName *;
+}
+
+-keepnames class * implements android.os.Parcelable {
+    public static final ** CREATOR;
+}
+
+-keep class com.google.android.gms.** { *; }
+
+-keep public class com.google.ads.** { public *; }
+-keep public class com.google.gson.** { public protected *; }
+-keep public class com.google.ads.internal.** {*;} 
+-keep public class com.google.ads.internal.AdWebView.** {*;} 
+-keep public class com.google.ads.internal.state.AdState {*;} 
+-keep public class com.google.ads.mediation.** { public *; }
+
+-keep public class com.google.ads.searchads.** {*;} 
+-keep public class com.google.ads.util.** {*;} 
+
+-keep class com.google.ads.**
+-dontwarn com.google.ads.**
+
+-keepattributes *Annotation*
+
+
+Is it a problem that I am using proguard in both the library and the application?
+    
+===============================================================================================
+53
+A:After some searching I found the answer. If you are using external/separate source libraries with your main project/application, you should not use a proguard on the library modules. Instead, you replace the following, 
+
+buildTypes {
+    release {
+        minifyEnabled true
+        proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-project.txt'
+    }
+    debug {
+        minifyEnabled false
+    }
+}
+
+
+with the following (in the build.gradle of the library/libraries):
+
+buildTypes {
+    release {
+        consumerProguardFiles 'proguard-project.txt'
+    }
+}
+
+
+where proguard-project.txt is the file that contains the proguard rules for your library project. When building the application (either in debug or release mode), the compiler will take care of all the rules (in the library and in the application). 
+    

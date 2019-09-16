@@ -1,0 +1,22 @@
+43
+Q:I've been wondering if it was possible to use OpenCL for Android, find out that it wasn't possible, and dropped the subject altogether.
+But thanks to the blog post from january 14th on the official Android Developer blog (http://android-developers.blogspot.fr/2013/01/evolution-of-renderscript-performance.html), I discovered that parallel programming was possible since Android 4.0, thanks to RenderScript ! An API that has quite a few common features with OpenCL.
+
+What I'm wondering now is : why did Google choose to implement this new solution, instead of pushing OpenCL forward (an open specification now handled by the Khronos group).
+
+I mean, I know, it's not really hard to convert from one to the other, but still...
+
+Anyway, if anyone as the real explanation, please let me know !
+    
+===============================================================================================
+32
+A:The answer is that Android's needs are very different than what OpenCL tries to provide.
+
+OpenCL uses the execution model first introduced in CUDA. In this model, a kernel is made up of one or many groups of workers, and each group has fast shared memory and synchronization primitives within that group. What this does is cause the description of an algorithm to be intermingled with how that algorithm should be scheduled on a particular architecture (because you're deciding the size of a group and when to synchronize within that group). 
+
+That's great when you're writing for one architecture and you want absolute peak performance, but it gets peak performance at the expense of performance portability. Maybe on your architecture, you have enough registers and shared memory to run 256 workers per group for best performance, but on another architecture, you'd end up with massive register spills with anything above 128 workers per group, causing an 80% performance regression. Meanwhile, because your code is written explicitly for 256 workers per group, the runtime can't do anything to try to improve the situation on another architecture--it has to obey what you've written. This sort of situation is common when moving from architecture to architecture on the desktop/HPC side of GPU compute.
+
+On mobile, Android needs performance portability between many different GPU and CPU vendors with very different architectures. If Android were to rely on a CUDA-style execution model, it would be almost impossible to write a single kernel and have it run acceptably on a range of devices. 
+
+RenderScript abstracts control over scheduling away from the developer at the cost of some peak performance; however, we're constantly closing the gap in terms of what's possible with RenderScript. For example, ScriptGroup, an API introduced in Android 4.2, is a big part of our plans to further improve GPU code generation. There are plenty of new improvements coming that make writing fast code even easier, too.
+    

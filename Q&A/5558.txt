@@ -1,0 +1,208 @@
+44
+Q:I've the Custom CustomerAdapter
+
+public class CustomerAdapter extends ArrayAdapter<Customer> {
+    private final String MY_DEBUG_TAG = "CustomerAdapter";
+    private ArrayList<Customer> items;
+    private int viewResourceId;
+
+    public CustomerAdapter(Context context, int viewResourceId, ArrayList<Customer> items) {
+        super(context, viewResourceId, items);
+        this.items = items;
+        this.viewResourceId = viewResourceId;
+    }
+
+    public View getView(int position, View convertView, ViewGroup parent) {
+        View v = convertView;
+        if (v == null) {
+            LayoutInflater vi = (LayoutInflater) getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+            v = vi.inflate(viewResourceId, null);
+        }
+        Customer customer = items.get(position);
+        if (customer != null) {
+            TextView customerNameLabel = (TextView) v.findViewById(R.id.customerNameLabel);
+            if (customerNameLabel != null) {
+                customerNameLabel.setText(String.valueOf(customer.getName()));
+            }
+        }
+        return v;
+    }
+}
+
+
+and customer_auto layout
+
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/customerNameLabel"
+    android:layout_width="fill_parent" android:layout_height="fill_parent"
+    android:padding="10dp" android:textSize="16sp" 
+    android:textColor="#000">
+</TextView>
+
+
+and on my public void onCreate
+
+AutoCompleteTextView customerAutoComplete = (AutoCompleteTextView) findViewById(R.id.autocomplete_customer);
+CustomerAdapter customerAdapter = new CustomerAdapter(this, R.layout.customer_auto, customerList);
+customerAutoComplete.setAdapter(customerAdapter);
+
+
+and Customer.java
+
+public class Customer implements Parcelable {
+
+    private int id;
+    private String name = "";
+
+    public Customer() {
+        // TODO Auto-generated constructor stub
+    }
+
+    /**
+     * This will be used only by the MyCreator
+     * 
+     * @param source
+     */
+    public Customer(Parcel source) {
+        /*
+         * Reconstruct from the Parcel
+         */
+        id = source.readInt();
+        name = source.readString();
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public int getId() {
+        return this.id;
+    }
+
+    public String getName() {
+        return this.name;
+    }
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        dest.writeInt(id);
+        dest.writeString(name);
+    }
+
+    public static final Parcelable.Creator CREATOR = new Parcelable.Creator() {
+
+        @Override
+        public Customer createFromParcel(Parcel source) {
+            return new Customer(source);
+        }
+
+        @Override
+        public Customer[] newArray(int size) {
+            return new Customer[size];
+            // TODO Auto-generated method stub
+        }
+
+    };
+
+    @Override
+    public String toString() {
+        return this.name;
+    }
+
+}
+
+
+But the auto suggest box does not filter correctly. for eg; if i type an in the test box customers starting with br are showing up!
+    
+===============================================================================================
+114
+A:I have to over-ride the getFilter() method of the Adapter
+
+Here is the code which worked for me, thanks to sacoskun
+
+public class CustomerAdapter extends ArrayAdapter<Customer> {
+    private final String MY_DEBUG_TAG = "CustomerAdapter";
+    private ArrayList<Customer> items;
+    private ArrayList<Customer> itemsAll;
+    private ArrayList<Customer> suggestions;
+    private int viewResourceId;
+
+    public CustomerAdapter(Context context, int viewResourceId, ArrayList<Customer> items) {
+        super(context, viewResourceId, items);
+        this.items = items;
+        this.itemsAll = (ArrayList<Customer>) items.clone();
+        this.suggestions = new ArrayList<Customer>();
+        this.viewResourceId = viewResourceId;
+    }
+
+    public View getView(int position, View convertView, ViewGroup parent) {
+        View v = convertView;
+        if (v == null) {
+            LayoutInflater vi = (LayoutInflater) getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+            v = vi.inflate(viewResourceId, null);
+        }
+        Customer customer = items.get(position);
+        if (customer != null) {
+            TextView customerNameLabel = (TextView) v.findViewById(R.id.customerNameLabel);
+            if (customerNameLabel != null) {
+//              Log.i(MY_DEBUG_TAG, "getView Customer Name:"+customer.getName());
+                customerNameLabel.setText(customer.getName());
+            }
+        }
+        return v;
+    }
+
+    @Override
+    public Filter getFilter() {
+        return nameFilter;
+    }
+
+    Filter nameFilter = new Filter() {
+        @Override
+        public String convertResultToString(Object resultValue) {
+            String str = ((Customer)(resultValue)).getName(); 
+            return str;
+        }
+        @Override
+        protected FilterResults performFiltering(CharSequence constraint) {
+            if(constraint != null) {
+                suggestions.clear();
+                for (Customer customer : itemsAll) {
+                    if(customer.getName().toLowerCase().startsWith(constraint.toString().toLowerCase())){
+                        suggestions.add(customer);
+                    }
+                }
+                FilterResults filterResults = new FilterResults();
+                filterResults.values = suggestions;
+                filterResults.count = suggestions.size();
+                return filterResults;
+            } else {
+                return new FilterResults();
+            }
+        }
+        @Override
+        protected void publishResults(CharSequence constraint, FilterResults results) {
+            ArrayList<Customer> filteredList = (ArrayList<Customer>) results.values;
+            if(results != null && results.count > 0) {
+                clear();
+                for (Customer c : filteredList) {
+                    add(c);
+                }
+                notifyDataSetChanged();
+            }
+        }
+    };
+
+}
+
+    

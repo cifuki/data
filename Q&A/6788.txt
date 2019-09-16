@@ -1,0 +1,68 @@
+38
+Q:I have an app that mutes the phone by using AudioManager and setting ringer mode to silent with this code:
+
+AudioManager audioManager = 
+    (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+try {
+    audioManager.setRingerMode(AudioManager.RINGER_MODE_SILENT)
+} catch (Exception e) {
+    e.printStackTrace();
+}
+
+
+This works with Android 6, but now with Android 7, I get the following error:
+
+System.err: java.lang.SecurityException: Not allowed to change Do Not Disturb state
+System.err: at android.os.Parcel.readException(Parcel.java:1683)
+System.err: at android.os.Parcel.readException(Parcel.java:1636)
+System.err: at android.media.IAudioService$Stub$Proxy.setRingerModeExternal(IAudioService.java:962)
+System.err: at android.media.AudioManager.setRingerMode(AudioManager.java:1022)
+System.err: at controllers.SearchResultController.mutePhone(SearchResultController.java:185)
+
+
+Are there any new permissions I need to ask for to make this work?
+
+I looked through the Android permissions list, but couldn't find any that seemed relevant.
+    
+===============================================================================================
+53
+A:Thanks for your answers, here is a little more detail.
+
+To be able to set ringer mode to silent, you must ask permission to access notification policy (like @ucsunil said).
+
+<uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+
+
+Then, check if you have this permission. If you do not, open the settings for "Do Not Disturb access" for your app:
+
+NotificationManager notificationManager = 
+    (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+    && !notificationManager.isNotificationPolicyAccessGranted()) {
+
+    Intent intent = new Intent(
+                        android.provider.Settings
+                        .ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
+
+    startActivity(intent);
+}
+
+
+When you run startActivity(), Android opens the Do Not Disturb access settings for your app.
+
+What confused me, was that the way to ask for this permission is completely different from other permissions.
+
+Just for reference, here is the way to ask for permission READ_CONTACTS:
+
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+    && ActivityCompat.checkSelfPermission(activity,
+        Manifest.permission.READ_CONTACTS)
+        == PackageManager.PERMISSION_DENIED) {
+
+    ActivityCompat.requestPermissions(activity,
+        new String[]{ Manifest.permission.READ_CONTACTS },
+            REQUEST_CODE_READ_CONTACTS);
+}
+
+    

@@ -1,0 +1,22 @@
+30
+Q:I tried to use snapshots and gpu support for emulator both. But emulator refused to start:
+
+
+  emulator: ERROR: Snapshots and gpu are mutually exclusive at this
+  point. Please turn one of them off, and restart the emulator.
+
+
+I wonder what is the reason for these limitations? It doesn't seems to me as logical collision.
+    
+===============================================================================================
+31
+A:The Android emulator is based on QEMU, which has to simulate various hardware devices as would be found by Android running on a real phone. Specifically it simulates a mythical phone called 'goldfish'.
+
+When you save a snapshot, the device RAM must be saved in the snapshot. But, that doesn't just mean the main RAM - it also refers to all the other fiddly bits of the phone hardware - for example the CPU registers, the state of the real-time clock hardware, and any/all registers in every other piece of hardware in this virtual phone.
+
+If you've not enabled GPU, then the graphics hardware state is fairly simple - it will be a framebuffer, and a few registers representing the x dimension, y dimension and pixel format.
+
+However, if you've enabled GPU passthrough, then saving the state of that hardware would be much more complex. QEMU would have to save the state of each texture, what cameras are set up, geometry, and a squillion other more things which are kept in a GPU. The pipeline of commands flowing to the GPU would also have to be interrupted at an arbitrary point, and the state of execution of those commands recorded (hard since there's a multi-stage pipeline and some instructions may have been partially executed).
+
+Moreover, it might be very hard for qemu actually to get to this information, since qemu is just passing it through to the host GPU. There's no way for qemu to ask the host GPU driver exactly what's been executed and what hasn't. At the very least, this would require support by the host operating system and GPU driver, and it might even require changes to the GPU pipeline to simplify things such that the pipeline can be stopped and restarted at arbitrary points.
+    

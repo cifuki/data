@@ -1,0 +1,165 @@
+50
+Q:I'm trying to replicate the functionality of the latest YouTube app in the Android marketplace.  When watching a video there's two separate layouts, one in portrait which provides additional info, and one in landscape which provides a full screen view of the video.
+
+
+YouTupe app in portrait mode  
+
+
+YouTube app in landscape mode
+
+(Sorry for the randomness of the photos, but they were the first pics I could find of the actual layout)
+
+This is pretty easy to do normally - just specify an alternate layout in layout-land and all will be good.  The thing that the YouTube app does really well (and what I'm trying to replicate) is that on orientation change, the video continues playing and doesn't have to re-buffer from the beginning.
+
+I've figured out that overriding onConfigurationChange() and setting new LayoutParameters will allow me to resize the video without forcing a rebuffer - however the video will randomly scale to different widths/heights when rotating the screen multiple times.  I've tried doing all sorts of invalidate() calls on the VideoView, tried calling RequestLayout() on the parent RelativeLayout container and just trying as many different things as I can, but I can't seem to get it to work properly.  Any advice would be greatly appreciated!
+
+Here's my code:
+
+@Override
+public void onConfigurationChanged(Configuration newConfig) {
+    super.onConfigurationChanged(newConfig);
+    if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        questionText.setVisibility(View.GONE);
+        respond.setVisibility(View.GONE);
+        questionVideo.setLayoutParams(new RelativeLayout.LayoutParams(LayoutParams.FILL_PARENT, LayoutParams.FILL_PARENT));
+    } else {
+        questionText.setVisibility(View.VISIBLE);
+        respond.setVisibility(View.VISIBLE);
+        Resources r = getResources();
+        int height = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 150.0f, r.getDisplayMetrics());
+        questionVideo.setLayoutParams(new RelativeLayout.LayoutParams(LayoutParams.FILL_PARENT, height));
+    }
+}
+
+
+EDIT:  I've discovered in logcat some interesting output that comes up when my video is rotated which seems to be the culprit - although I have no idea how to fix it:
+
+Logcat output when resizing properly (takes up entire window)  
+
+notice the h=726
+
+12-13 15:37:35.468  1262  1270 I ActivityManager: Config changed: { scale=1.0 imsi=310/4 loc=en_US touch=3 keys=1/1/2 nav=1/1 orien=2 layout=34 uiMode=17 seq=210}
+12-13 15:37:35.561  1262  1268 I TIOverlay: Position/X0/Y76/W480/H225
+12-13 15:37:35.561  1262  1268 I TIOverlay: Adjusted Position/X1/Y0/W403/H225
+12-13 15:37:35.561  1262  1268 I TIOverlay: Rotation/90
+12-13 15:37:35.561  1262  1268 I Overlay : v4l2_overlay_set_position:: w=480 h=224
+12-13 15:37:35.561  1262  1268 I Overlay : v4l2_overlay_set_position:: w=402 h=726
+12-13 15:37:35.561  1262  1268 I Overlay : dumping driver state:
+12-13 15:37:35.561  1262  1268 I Overlay : output pixfmt:
+12-13 15:37:35.561  1262  1268 I Overlay : w: 432
+12-13 15:37:35.561  1262  1268 I Overlay : h: 240
+12-13 15:37:35.561  1262  1268 I Overlay : color: 7
+12-13 15:37:35.561  1262  1268 I Overlay : UYVY
+12-13 15:37:35.561  1262  1268 I Overlay : v4l2_overlay window:
+12-13 15:37:35.561  1262  1268 I Overlay : window l: 1 
+12-13 15:37:35.561  1262  1268 I Overlay : window t: 0 
+12-13 15:37:35.561  1262  1268 I Overlay : window w: 402 
+12-13 15:37:35.561  1262  1268 I Overlay : window h: 726
+
+
+Logcat output when resizing incorrectly (takes up tiny portion of full screen)  
+
+notice the h=480
+
+12-13 15:43:00.085  1262  1270 I ActivityManager: Config changed: { scale=1.0 imsi=310/4 loc=en_US touch=3 keys=1/1/2 nav=1/1 orien=2 layout=34 uiMode=17 seq=216}
+12-13 15:43:00.171  1262  1268 I TIOverlay: Position/X0/Y76/W480/H225
+12-13 15:43:00.171  1262  1268 I TIOverlay: Adjusted Position/X138/Y0/W266/H225
+12-13 15:43:00.171  1262  1268 I TIOverlay: Rotation/90
+12-13 15:43:00.179  1262  1268 I Overlay : v4l2_overlay_set_position:: w=480 h=224
+12-13 15:43:00.179  1262  1268 I Overlay : v4l2_overlay_set_position:: w=266 h=480
+12-13 15:43:00.179  1262  1268 I Overlay : dumping driver state:
+12-13 15:43:00.179  1262  1268 I Overlay : output pixfmt:
+12-13 15:43:00.179  1262  1268 I Overlay : w: 432
+12-13 15:43:00.179  1262  1268 I Overlay : h: 240
+12-13 15:43:00.179  1262  1268 I Overlay : color: 7
+12-13 15:43:00.179  1262  1268 I Overlay : UYVY
+12-13 15:43:00.179  1262  1268 I Overlay : v4l2_overlay window:
+12-13 15:43:00.179  1262  1268 I Overlay : window l: 138 
+12-13 15:43:00.179  1262  1268 I Overlay : window t: 0 
+12-13 15:43:00.179  1262  1268 I Overlay : window w: 266 
+12-13 15:43:00.179  1262  1268 I Overlay : window h: 480
+
+
+Maybe someone knows what 'Overlay' is and why it's not getting the correct height value?
+    
+===============================================================================================
+57
+A:EDIT: (June 2016)
+
+This answer is very old (I think android 2.2/2.3) and probably is not as relevant as the other answers below!  Look to them first unless you're dev-ing on legacy Android :)
+
+
+
+I was able to narrow down the problem to the onMeasure function in the VideoView class.  By creating a child class and overriding the onMeasure function, I was able to get the desired functionality.
+
+public class VideoViewCustom extends VideoView {
+
+    private int mForceHeight = 0;
+    private int mForceWidth = 0;
+    public VideoViewCustom(Context context) {
+        super(context);
+    }
+
+    public VideoViewCustom(Context context, AttributeSet attrs) {
+        this(context, attrs, 0);
+    }
+
+    public VideoViewCustom(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+    }
+
+    public void setDimensions(int w, int h) {
+        this.mForceHeight = h;
+        this.mForceWidth = w;
+
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        Log.i("@@@@", "onMeasure");
+
+        setMeasuredDimension(mForceWidth, mForceHeight);
+    }
+}
+
+
+Then inside my Activity I just did the following:
+
+@Override
+public void onConfigurationChanged(Configuration newConfig) {
+    super.onConfigurationChanged(newConfig);
+
+    if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+
+        questionVideo.setDimensions(displayHeight, displayWidth);
+        questionVideo.getHolder().setFixedSize(displayHeight, displayWidth);
+
+    } else {
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN, WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+
+        questionVideo.setDimensions(displayWidth, smallHeight);
+        questionVideo.getHolder().setFixedSize(displayWidth, smallHeight);
+
+    }
+}
+
+
+The line: 
+
+questionVideo.getHolder().setFixedSize(displayWidth, smallHeight);
+
+
+is key in order to make this work.  If you do the setDimensions call without this guy, the video still will not resize.
+
+The only other thing you need to do is ensure that you call setDimensions() inside the onCreate() method as well or your video will not start buffering as the video won't be set to draw on a surface of any size.
+
+// onCreate()
+questionVideo.setDimensions(initialWidth, initialHeight); 
+
+
+One last key part - if you ever find yourself wondering why the VideoView isn't resizing on rotation, you need to ensure the dimensions you're resizing to are either exactly equal to the visible area or less than it.  I had a really big problem where I was setting the VideoView's width/height to the entire display size when I still had the notification bar/title bar on the screen and it was not resizing the VideoView at all.  Simply removing the notification bar and title bar fixed the problem.
+
+Hopefully this helps someone in the future!
+    

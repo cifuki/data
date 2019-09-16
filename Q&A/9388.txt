@@ -1,0 +1,54 @@
+29
+Q:I have a SyncAdapter running on its own process separately from the main app process.
+
+I'm using a static wrapper class around my SharedPreferences that creates a static object on process load (Application's onCreate) like so:
+
+myPrefs = context.getSharedPreferences(MY_FILE_NAME, Context.MODE_MULTI_PROCESS | Context.MODE_PRIVATE);
+
+
+The wrapper has get and set methods, like so:
+
+public static String getSomeString() {
+    return myPrefs.getString(SOME_KEY, null);
+}
+
+public static void setSomeString(String str) {
+    myPrefs.edit().putString(SOME_KEY, str).commit();
+}
+
+
+Both SyncAdapter and app uses this wrapper class to edit and get from the prefs, this works sometimes but a lot of times I see the SyncAdapter getting old/missing prefs on accesses to the prefs, while the main app sees the recent changes properly.
+
+According to the docs I think the MODE_MULTI_PROCESS flag should work as I expect it to, allowing both processes to see latest changes, but it doesn't work.
+
+Update:
+
+Per x90's suggestion, I've tried refraining from using a static SharedPreferences object and instead calling getSharedPreferences on each get/set method.
+This caused a new issue, where the prefs file gets deleted (!!!) on multi-process simultaneous access. 
+i.e. I see in the logcat:
+
+(process 1): getName => "Name"
+(process 2): getName => null
+(process 1): getName => null
+
+
+and from that point all the prefs saved on the SharedPreferences object were deleted.
+
+This is probably a result of another warning I see in the log:
+
+W/FileUtils(21552): Failed to chmod(/data/data/com.my_company/shared_prefs/prefs_filename.xml): libcore.io.ErrnoException: chmod failed: ENOENT (No such file or directory)
+
+
+P.S this is not a deterministic issue, I saw the above logs after a crash happened, but couldn't recreate yet on the same device, and until now it didn't seem to happen on other devices.
+
+ANOTHER UPDATE:
+
+I've filed a bug report on this, after writing a small testing method to confirm this is indeed an Android issue, star it at https://code.google.com/p/android/issues/detail?id=66625
+    
+===============================================================================================
+16
+A:Had exactly the same problem and my solution was to write a ContentProvider based replacement for the SharedPreferences. It works 100% multiprocess.
+
+I made it a library for all of us. Here is the result:
+https://github.com/grandcentrix/tray
+    

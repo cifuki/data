@@ -1,0 +1,97 @@
+33
+Q:I have this TextView:
+
+<TextView
+    android:id="@+id/issue_journal_item_notes"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_alignLeft="@+id/issue_journal_item_details"
+    android:layout_below="@+id/issue_journal_item_details"
+    android:background="@drawable/journal_item_notes_background"
+    android:padding="8dp"
+    android:text="issue_journal_item_notes"
+    android:textIsSelectable="true" />
+
+
+I'm filling this with:
+
+String html = "<p>Hi,<br/>Do you think you could get a logcat during the crash? That seems really strange, especially the fact that it makes Android reboot.<br/>You can get the SDK here: http://developer.android.com/sdk/index.html<br/>(needed for logcat)</p>";
+theTextView.setText(Html.fromHtml(html));
+
+
+This results in:
+
+
+
+"Assignee ..." is another TextView.
+My TextView is the one with the grey background. Its bounds are clearly seen with the very light grey. The left darker gray bar to the left is part of the background, so it's also the TextView
+
+We can clearly see the 8dp square padding. However, what's the empty space at the bottom? It's some kind of padding, but I havent set this in XML nor in code!
+
+In case somebody asks, I need HTML support, because unlike in the screenshot shown above, the contents may have some HTML content (<pre>, <i>, <b>, etc).
+    
+===============================================================================================
+55
+A:The extra 'padding' you're seeing, is in fact just a line break followed by another line break:
+
+
+
+When you dive into the Html.fromHtml(...) implementation, you'll come across the following method that handles paragraph tags:
+
+private static void handleP(SpannableStringBuilder text) {
+    int len = text.length();
+
+    if (len >= 1 && text.charAt(len - 1) == '\
+') {
+        if (len >= 2 && text.charAt(len - 2) == '\
+') {
+            return;
+        }
+
+        text.append("\
+");
+        return;
+    }
+
+    if (len != 0) {
+        text.append("\
+\
+");
+    }
+}
+
+
+Above snippet was takes from the Android 4.2.2 source. The logic is quite straightforward and basically ensures that every paragraph tag ends with \
+\
+, to give a visual gap between two element blocks. It means the framework will not into account whether the whole Html text consists of only a single paragraph (your case), or multiple, successive paragaps - there will always be two line breaks at the end of a transformed paragraph.
+
+That being said, if you know you're always dealing with a single paragraph, the easiest solution is to remove that wrapping paragraph before feeding it to Html.fromHtml(...). This is pretty much what was proposed in one of the other answers.
+
+Now, since you mentioned this isn't really an option, the alternative would be to 'trim' the result of Html.fromHtml(...), removing any trailing white spaces. Android returns a Spanned (usually this is a SpannableStringBuilder object), which, unfortunately, doesn't come with a built-in trim() method. It's not too tricky to come up with your own though, or borrow one of several implementations available out there.
+
+A basic implementation for a trim() method would like somewhat like this:
+
+public static CharSequence trim(CharSequence s, int start, int end) {
+    while (start < end && Character.isWhitespace(s.charAt(start))) {
+        start++;
+    }
+
+    while (end > start && Character.isWhitespace(s.charAt(end - 1))) {
+        end--;
+    }
+
+    return s.subSequence(start, end);
+}
+
+
+To use it, change your original code to:
+
+String html = "<p>Hi,<br/>Do you think you could get a logcat during the crash? That seems really strange, especially the fact that it makes Android reboot.<br/>You can get the SDK here: http://developer.android.com/sdk/index.html<br/>(needed for logcat)</p>";
+CharSequence trimmed = trim(Html.fromHtml(html));
+theTextView.setText(trimmed);
+
+
+And voil\xc3\xa0, before and after:
+
+
+    

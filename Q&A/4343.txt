@@ -1,0 +1,96 @@
+54
+Q:I have a fragment which contains a ViewPager.  The ViewPager is associated with an adapter that contains a set of fragments.
+
+Upon loading the parent fragment, I am met with an IllegalStateException with the message: java.lang.IllegalStateException: Recursive entry to executePendingTransactions.
+
+Some research has led me to the conclusion that the system is unable display fragments within another fragment, HOWEVER there seems to be some indication that it is possible to do exactly this with the use of a ViewPager (A bug in ViewPager using it with other fragment).
+
+In fact, if I add a button to my parent fragment which calls mPager.setAdapter(mAdapter) on my ViewPager when pressed, the ViewPager successfully loads.  This is not ideal.
+
+The issue then must be related to the fragment lifecycle.  My question therefore, is this:
+Has anybody else found a way around this issue, and if so, how?
+
+Is there some way to delay settings the adapter on the ViewPager until after the fragment transaction?
+
+Here is my parent fragment code:
+
+    @Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+
+    mView = inflater.inflate(R.layout.team_card_master, container, false);
+    mViewPager = (ViewPager)mView.findViewById(R.id.team_card_master_view_pager);
+
+    final Button button = (Button)mView.findViewById(R.id.load_viewpager_button);
+    button.setOnClickListener(new OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            mViewPager.setAdapter(mAdapter);
+            button.setVisibility(View.GONE);
+        }
+    });
+
+    mAdapter = new ViewPagerAdapter(getFragmentManager());
+ //     mViewPager.setAdapter(mAdapter);
+
+    return mView;
+}
+
+
+And the adapter:
+
+public class ViewPagerAdapter extends FragmentPagerAdapter {
+    public ViewPagerAdapter(FragmentManager fm) {
+        super(fm);
+    }
+
+    @Override
+    public int getCount() {
+        if (mCursor == null) return 0;
+        else return mCursor.getCount();
+    }
+
+    @Override
+    public Fragment getItem(int position) {
+        Bundle b = createBundle(position, mCursor);
+        return TeamCardFragment.newInstance(b);
+    }
+}
+
+    
+===============================================================================================
+60
+A:use AsyncTask to set the adapter for viewPager. It works for me. The asyncTask is to make the original fragment complete it's transition. and then we proceed with viewPager fragments, basically to avoid recursion.
+
+ @Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+
+    mView = inflater.inflate(R.layout.team_card_master, container, false);
+    mViewPager = (ViewPager)mView.findViewById(R.id.team_card_master_view_pager);
+
+    final Button button = (Button)mView.findViewById(R.id.load_viewpager_button);
+    button.setOnClickListener(new OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            mViewPager.setAdapter(mAdapter);
+            button.setVisibility(View.GONE);
+        }
+    });
+
+    mAdapter = new ViewPagerAdapter(getFragmentManager());
+    new setAdapterTask().execute();
+
+    return mView;
+}
+
+private class setAdapterTask extends AsyncTask<Void,Void,Void>{
+      protected Void doInBackground(Void... params) {
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void result) {
+                   mViewPager.setAdapter(mAdapter);
+        }
+}
+
+    

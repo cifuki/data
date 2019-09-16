@@ -1,0 +1,279 @@
+35
+Q:I'm using Camera API and invoking the camera. 
+
+I want to display a header (for branding) on the top of the camera preview. The header is  a jpeg image. 
+
+Is it possible?  Any help appreciated.
+
+Thanks in advance.
+
+My code goes as below.
+
+public class CameraActivity extends Activity {
+    @Override
+    protected void onPause() {
+
+        super.onPause();
+    }
+
+    private static final int CAMERA_PIC_REQUEST = 2500;
+    private Bitmap image2;
+    private Bitmap bm;
+    public static String imagepath;
+    public static int x=1;
+    private RdmsDbAdapter dbHelper;
+    @Override
+
+
+
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.header);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        //caling new incident
+        if(IncidentFormActivity.incident_id == null || IncidentFormActivity.isDisable==true){
+            //DBAdapter instance created and connection opened. 
+            dbHelper = new RdmsDbAdapter(CameraActivity.this);
+            dbHelper.open();
+
+            //setting up flags
+            NewIncidentHelper nih = new NewIncidentHelper();
+            nih.setUpNewIncident();
+
+            //setting up incident_id
+            String Date= IncidentIdGenerator.getDate();
+            String Time = IncidentIdGenerator.getTime();
+
+            IncidentFormActivity.incident_id = IncidentIdGenerator.now("ddMMyyyyHHmmss");
+            dbHelper.executeSQL("insert into incident values ('" + IncidentFormActivity.incident_id
+                    + "', ' ', ' ', ' ', ' ', '"+Date+"', '0','0','0','0','0','0','0','0','0','"+Time+"')");
+            dbHelper.close();
+        }
+
+        //calling camera
+        Intent cameraIntent = new Intent(
+                android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+        startActivityForResult(cameraIntent, CAMERA_PIC_REQUEST);
+
+
+    }
+    public String getPath(Uri uri) {
+        String[] projection = { MediaStore.Images.Media.DATA };
+        Cursor cursor = managedQuery(uri, projection, null, null, null);
+        int column_index = cursor
+                .getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+        cursor.moveToFirst();
+        return cursor.getString(column_index);
+    }
+
+    //back key on phone pressed
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        switch (keyCode) {
+        case KeyEvent.KEYCODE_BACK:
+            Intent i= new Intent(CameraActivity.this, IncidentFormActivity.class);
+            startActivity(i);
+            this.finish();
+
+            break;
+
+        default:
+            break;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    //handle response came from camera when the picture is taken.
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == CAMERA_PIC_REQUEST && resultCode == RESULT_OK) {
+                final ImageView img = new ImageView(this);
+                img.setLayoutParams(new LayoutParams(100, 100));
+                image2 = (Bitmap) data.getExtras().get("data");
+                img.setImageBitmap(image2);
+                String incident_ID = IncidentFormActivity.incident_id;
+                //l2.addView(img);
+                    imagepath="/sdcard/RDMS/"+incident_ID+ x + ".png";
+                File file = new File(imagepath);
+                try {
+                     bm = Bitmap.createScaledBitmap( image2,400, 300, true);
+                    file.createNewFile();
+                    FileOutputStream ostream = new FileOutputStream(file);
+                    bm.compress(CompressFormat.PNG, 90, ostream);
+                    ostream.close(); 
+                    //Initialising db class and inserting values
+                    dbHelper = new RdmsDbAdapter(CameraActivity.this);
+                    dbHelper.open();
+                    dbHelper.executeSQL("insert into files values ('"+imagepath+"', '"+IncidentFormActivity.incident_id+"')");
+                    dbHelper.close();
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    Toast.makeText(getApplicationContext(),"yourfirst  error message is "
+                                            + e.toString(), 1000).show();
+                }
+                x++;
+                final AlertDialog.Builder alert = new AlertDialog.Builder(
+                        CameraActivity.this);
+
+                alert.setTitle(getString(R.string.anotherimage));
+                alert.setCancelable(false);
+                //alert.setMessage("Play or Delete the Video selected");
+                //alert.setIcon(R.drawable.vid_red);
+                alert.setPositiveButton(getString(R.string.yes), new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int id) {
+                        Intent sendingpage = new Intent(CameraActivity.this, CameraActivity.class);
+                          startActivity(sendingpage);
+
+                    }
+                });
+                alert.setNegativeButton(getString(R.string.no),
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface dialog, int id) {
+                                Intent callback = new Intent (CameraActivity.this, IncidentFormActivity.class);
+                                startActivity(callback);
+                            }
+                        });
+
+                alert.show();
+
+
+            }
+            if(resultCode==RESULT_CANCELED)
+            {
+
+                AlertDialog.Builder builder = new AlertDialog.Builder(CameraActivity.this);
+
+                builder.setMessage(getString(R.string.areuexit)).setCancelable(
+                        false).setPositiveButton(getString(R.string.yes),
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface dialog, int id) {
+                                Intent i= new Intent(CameraActivity.this, IncidentFormActivity.class);
+                                startActivity(i);
+                                CameraActivity.this.finish();
+                            }
+                        }).setNegativeButton(getString(R.string.no),
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface dialog, int id) {
+                                dialog.cancel();
+                                Intent i= new Intent(CameraActivity.this, CameraActivity.class);                            startActivity(i);
+                                CameraActivity.this.finish();
+                            }
+                        });
+
+                builder.show();
+
+
+
+            }
+        }
+    }
+
+    
+===============================================================================================
+21
+A:You can use SurfaceView and create a CustomView that will open the camera and you can adjust its size in the xml accordingly. Below is a pseudo code.
+
+Create a class that extends SurfaceView and open camera inside that
+
+CapturePreview.java 
+
+public class CapturePreview extends SurfaceView implements SurfaceHolder.Callback{
+
+    public static Bitmap mBitmap;
+    SurfaceHolder holder;
+    static Camera mCamera;
+
+    public CapturePreview(Context context, AttributeSet attrs) {
+        super(context, attrs);
+
+        holder = getHolder();
+        holder.addCallback(this);
+        holder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width,int height) {
+
+        Camera.Parameters parameters = mCamera.getParameters();
+        parameters.getSupportedPreviewSizes();
+        mCamera.setParameters(parameters);
+        mCamera.startPreview();
+    }
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+
+        try {
+            mCamera = Camera.open();
+            mCamera.setPreviewDisplay(holder);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        mCamera.stopPreview();
+        mCamera.release();
+    }
+    /***
+     * 
+     *  Take a picture and and convert it from bytes[] to Bitmap.
+     *  
+     */
+    public static void takeAPicture(){  
+
+        Camera.PictureCallback mPictureCallback = new PictureCallback() {
+            @Override
+            public void onPictureTaken(byte[] data, Camera camera) {
+
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                mBitmap = BitmapFactory.decodeByteArray(data, 0, data.length, options);
+            }
+        };
+        mCamera.takePicture(null, null, mPictureCallback);
+    }
+}
+
+
+Now you have to include the view that you created using SurfaceView in your xml like this
+
+main.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  android:orientation="vertical"
+  android:layout_width="fill_parent"
+  android:layout_height="fill_parent">
+
+  <FrameLayout 
+  android:id="@+id/mySurfaceView"
+  android:layout_width="wrap_content"
+  android:layout_height="wrap_content">
+
+  <com.cam.CapturePreview 
+  android:layout_width="fill_parent"
+  android:layout_height="wrap_content">
+  </com.cam.CapturePreview>
+
+  </FrameLayout>
+
+  <LinearLayout 
+  android:layout_below="@id/mySurfaceView" 
+  android:layout_width="fill_parent"
+  android:layout_height="wrap_content"
+  android:layout_centerInParent="true"
+  android:gravity="center">
+
+  <ImageView android:id="@+id/myImageView" 
+  android:layout_width="wrap_content"
+  android:layout_height="wrap_content"
+  android:src="@drawable/icon"/>
+  </LinearLayout>  
+
+</RelativeLayout>
+
+
+Now you can use this main.xml in any Acitivty that will open a camera with a ImageView.
+Thanks....
+    

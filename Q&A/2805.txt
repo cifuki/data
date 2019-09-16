@@ -1,0 +1,231 @@
+76
+Q:Update: I have not found a true solution to the problem.  What I did come up with was a method of automatically reconnecting to a previous bluetooth device anytime the connection is lost.  It's not ideal, but it seems to work fairly well.  I'd love to hear any more suggestions regarding this though.
+
+I'm having much the same issue as in this question: Service being killed while holding wake lock and after calling startForeground including the device (Asus Transformer), the length of time before service is stopped (30-45 mins), the use of wake lock, the use of startForeground(), and the fact that the issue does not occur if the app is open when the screen goes off.
+
+My app maintains a bluetooth connection to another device and sends data between the two, so it must be active at all times to listen for data.  The user is able to start and stop the service at will, and in fact this is the only way I have implemented to start or stop the service.  Once the service restarts, the bluetooth connection to the other device is lost.
+
+According to the answer in the linked question, startForeground() "reduces the likelihood of a service being killed, but does not prevent it".  I understand that to be the case, however I have seen many examples of other apps which do not have this problem (Tasker, for instance).
+
+The usefulness of my app will be greatly reduced without the ability for the service to run until stopped by the user.  Is there any way to avoid this???
+
+I see this in my logcat whenever the service is stopped:
+
+ActivityManager: No longer want com.howettl.textab (pid 32321): hidden #16
+WindowManager: WIN DEATH: Window{40e2d968 com.howettl.textab/com.howettl.textab.TexTab paused=false
+ActivityManager: Scheduling restart of crashed service com.howettl.textab/.TexTabService in 5000ms
+
+
+EDIT: I should also note, this does not seem to occur on the other device which I am connected to: HTC Legend running Cyanogen
+
+EDIT: Here is the output of adb shell dumpsys activity services:
+
+* ServiceRecord{40f632e8 com.howettl.textab/.TexTabService}
+
+intent={cmp=com.howettl.textab/.TexTabService}
+
+packageName=com.howettl.textab
+
+processName=com.howettl.textab
+
+baseDir=/data/app/com.howettl.textab-1.apk
+
+resDir=/data/app/com.howettl.textab-1.apk
+
+dataDir=/data/data/com.howettl.textab
+
+app=ProcessRecord{40bb0098 2995:com.howettl.textab/10104}
+
+isForeground=true foregroundId=2 foregroundNoti=Notification(contentView=com.howettl.textab/0x1090087 vibrate=null,sound=null,defaults=0x0,flags=0x6a)
+
+createTime=-25m42s123ms lastActivity=-25m42s27ms
+
+ executingStart=-25m42s27ms restartTime=-25m42s124ms
+
+startRequested=true stopIfKilled=false callStart=true lastStartId=1
+
+Bindings:
+
+* IntentBindRecord{40a02618}:
+
+  intent={cmp=com.howettl.textab/.TexTabService}
+
+  binder=android.os.BinderProxy@40a9ff70
+
+  requested=true received=true hasBound=true doRebind=false
+
+  * Client AppBindRecord{40a3b780 ProcessRecord{40bb0098 2995:com.howettl.textab/10104}}
+
+    Per-process Connections:
+
+      ConnectionRecord{40a76920 com.howettl.textab/.TexTabService:@40b998b8}
+
+All Connections:
+
+  ConnectionRecord{40a76920 com.howettl.textab/.TexTabService:@40b998b8}
+
+
+And the output of adb shell dumpsys activity:
+
+* TaskRecord{40f5c050 #23 A com.howettl.textab}
+
+numActivities=1 rootWasReset=false
+
+affinity=com.howettl.textab
+
+intent={act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10000000 cmp=com.howettl.textab/.TexTab}
+
+realActivity=com.howettl.textab/.TexTab
+
+lastActiveTime=4877757 (inactive for 702s)
+
+* Hist #1: ActivityRecord{40a776c8 com.howettl.textab/.TexTab}
+
+    packageName=com.howettl.textab processName=com.howettl.textab
+
+    launchedFromUid=2000 app=ProcessRecord{40bb0098 2995:com.howettl.textab/10104}
+
+    Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10000000 cmp=com.howettl.textab/.TexTab }
+
+    frontOfTask=true task=TaskRecord{40f5c050 #23 A com.howettl.textab}
+
+    taskAffinity=com.howettl.textab
+
+    realActivity=com.howettl.textab/.TexTab
+
+    base=/data/app/com.howettl.textab-1.apk/data/app/com.howettl.textab-1.apk data=/data/data/com.howettl.textab
+
+    labelRes=0x7f060000 icon=0x7f020000 theme=0x0
+
+    stateNotNeeded=false componentSpecified=true isHomeActivity=false
+
+    configuration={ scale=1.0 imsi=0/0 loc=en_CA touch=3 keys=2/1/1 nav=1/2 orien=L layout=0x10000014 uiMode=0x11 seq=6}
+
+    launchFailed=false haveState=true icicle=Bundle[mParcelledData.dataSize=1644]
+
+    state=STOPPED stopped=true delayedResume=false finishing=false
+
+    keysPaused=false inHistory=true visible=false sleeping=true idle=true
+
+    fullscreen=true noDisplay=false immersive=false launchMode=2
+
+    frozenBeforeDestroy=false thumbnailNeeded=false
+
+    connections=[ConnectionRecord{40a76920 com.howettl.textab/.TexTabService:@40b998b8}]
+
+
+...
+
+Proc #15: adj=prcp /F 40e75070 959:android.process.acore/10006 (provider)
+
+          com.android.providers.contacts/.ContactsProvider2<=Proc{40bb0098 2995:com.howettl.textab/10104}
+
+Proc #16: adj=bak+2/F 40bb0098 2995:com.howettl.textab/10104 (foreground-service)
+
+
+These appear to show the service is running in the foreground.
+    
+===============================================================================================
+204
+A:Okey dokey. I've been through hell and back on this problem. Here's how to proceed. There are bugs. This posting describes how to analyze bugs in the implementation and work around issues. 
+
+Just to summarize, here's how things are supposed to work. Running services will be routinely scavenged and terminated every 30 minutes or so. Services that wish to remain alive for longer than this must call Service.startForeground, which places a notification on the notification bar, so that users know that your service is permanently running and potentially sucking battery life. Only 3 service processes can nominate themselves as foreground services at any given time. If there are more than three foreground services, Android will nominate the oldest service as a candidate for scavenging and termination. 
+
+Unfortunately, there are bugs in Android with respect to prioritizing foreground services, that are triggered by various combinations of service binding flags. Even though you have correctly nominated your service as a foreground service, Android may terminate your service anyway, if any connections to services in your process have ever been made with certain combinations of binding flags. Details are given below.
+
+Note that very few services need to be foreground services. Generally, you only need to be a foreground service if you have a constantly active or long-running internet connection of some kind that can be turned on and off, or cancelled by users. Examples of services that need foreground status: UPNP servers, long running downloads of very large files, syncing filesystems by wi-fi, and playing music. 
+
+If you're just polling occasionally, or waiting on system broadcast receivers, or system events, you would be better off waking your service on a timer, or in response to broadcast receivers, and then letting your service die once complete. That's the as-designed behavior for services. If you simply must stay alive, then read on. 
+
+Having checked the boxes on well known requirements (e.g. calling Service.startForeground), the next place to look is at the flags you use in Context.bindService calls. The flags used to bind affect the priority of the target service process in a variety of unexpected ways. Most particularly, use of certain binding flags can cause Android to incorrectly downgrade your foreground service to a regular service. The code used to assign process priority has been churned quite heavily. Notably, there are revisions in API 14+ that can cause bugs when using older binding flags; and there are definite bugs in 4.2.1.
+
+Your friend in all of this is the sysdump utility, which can be used to figure out what priority the Activity manager has assigned your service process, and spot cases where it has assigned an incorrect priority. Get your service up and running, and then issue the following command from a command prompt on your host computer:
+
+adb shell dumpsys activity processes > tmp.txt
+
+Use notepad (not wordpad/write) to examine the contents.
+
+First verify that you have successfully managed to run your service in foreground state. The first section of the dumpsys file contains a description of ActivityManager properties for each process. Look for a line like the following that corresponds to your application in the first section of the dumpsys file:
+
+APP UID 10068 ProcessRecord{41937d40 2205:tunein.service/u0a10068}
+
+Verify that foregroundServices=true in the following section. Don't worry about the hidden and empty settings; they describe the state of Activities in the process, and don't seem to be particularly relevant for  processes with services in them. If foregroundService isn't true, you need to call Service.startForeground to make it true.
+
+The next thing you need to look at is the section near the end of the file titled "Process LRU list (sorted by oom_adj):". Entries in this list allow you to determine whether Android has actually classified your application as a foreground service. If your process is at the bottom of this list, it's a prime candidate for summary extermination. If your process is near the top of the list, it's virtually indestructible. 
+
+Let's look at a line in this table:
+
+  Proc #31: adj=prcp /FS trm= 0 2205:tunein.service/u0a10068 (fg-service)
+
+
+This is an example of a foreground service that's done everything right. The key field here is the "adj=" field. That indicates the priority your process was assigned by the ActivityManagerService after everything was said done. You want it to be "adj=prcp" (visible foreground service); or "adj=vis" (visible process with an activity) or "fore" (process with a foreground activity). If it's "adj=svc" (service process), or "adj=svcb" (legacy service?), or "adj=bak" (empty background process), then your process is a likely candidate for termination, and will be terminated no less frequently than every 30 minutes even if there isn't any pressure to reclaim memory. The remaining flags on the line are mostly diagnostic debug information for Google engineers. Decisions on termination are made based on the adj fields. Briefly, /FS indicates a foreground service; /FA indicates a foreground process with an activity. /B indicates a background service. The label at the end indicates the general rule under which the process was assigned a priority. Usually it should match the adj= field; but the adj= value can be adjusted upward or downward in some cases due to binding flags on active bindings with other services or activities. 
+
+If you've tripped over a bug with binding flags, the dumpsys line will look like this:
+
+  Proc #31: adj=bak /FS trm= 0 2205:tunein.service/u0a10068 (fg-service)
+
+
+Note how the value of the adj field is incorrectly set to "adj=bak" (empty background process), which translates roughly to "please please terminate me now so that I can end this pointless existence" for the purposes of process scavenging. Also note the (fg-service) flag at the end of the line which indicate that "forground service rules were used to determine the "adj" setting. Despite the fact that fg-service rules were used, this process was assigned an adj setting "bak", and it won't live for long. Plainly put, this is a bug. 
+
+So the goal is to ensure that your process always gets "adj=prcp" (or better). And the method for achieving that goal is to tweak binding flags until you manage to avoid bugs in the priority assignment.
+
+Here are the bugs I know about. (1) If ANY service or activity has ever bound to the service using Context.BIND_ABOVE_CLIENT, you run the risk that the adj= setting will be downgraded to "bak" even if that binding isn't active any more. This is particularly true if you also have bindings between services. A clear bug in the 4.2.1 sources. (2) Definitely never use BIND_ABOVE_CLIENT for a service-to-service binding. Don't use it for activity-to-service connections either. The flag used to implement BIND_ABOVE_CLIENT behaviour seems to be set on a per-process basis, instead of a per-connection basis, so it triggers bugs with service-to-service bindings even if there isn't an active activity-to-service binding with the flag set. There also seem to be problems with establishing priority when there are multiple services in the process, with service-to-service bindings. Using Context.BIND_WAIVE_PRIORITY (API 14) on service-to-service bindings seems to help. Context.BIND_IMPORTANT seems to be a more-or-less good idea when binding from an Activity to a service. Doing so bumps your process priority one notch higher when the Activity is in the foreground, without doing any apparent harm when the Activity is paused or finished.
+
+But overall, the strategy is to adjust your bindService flags until sysdump indicates that your process has received correct priority.
+
+For my purposes, using Context.BIND_AUTO_CREATE | Context.BIND_IMPORTANT for Activity-to-service bindings, and Context.BIND_AUTO_CREATE | Context.BIND_WAIVE_PRIORITY for service-to-service bindings seems to do the right thing. Your mileage may differ. 
+
+My app is fairly complex: two background services, each of which may independently hold foreground service states, plus a third which can also take foreground service state; two of the services bind to each other conditionally; the third binds to the first, always. In addition, Activites run in a separate process (makes animation smoother). Running the Activities and Services in the same process didn't seem to make any difference.
+
+Implementation of the rules for scavenging processes, (and source code used to generate the contents of the sysdump files) can be found in the core android file 
+
+frameworks\\base\\services\\java\\com\\android\\server\\am\\ActivityManagerService.java.
+
+
+Bon chance.
+
+PS: Here's the interpretation of the sysdump strings for Android 5.0. I haven't worked with them, so make of them what you will. I believe you want 4 to be 'A' or 'S', and 5 to be "IF" or "IB", and 1 to be as low as possible (probably below 3, since only 3 three foreground service processes are kept active in default configuration).
+
+Example:
+   Proc # : prcp  F/S/IF trm: 0 31719: neirotech.cerebrum.attention:blePrcs/u0a77 (fg-service)
+
+Format:
+   Proc # {1}: {2}  {3}/{4}/{5} trm: {6} {7}: {8}/{9} ({10}
+
+1: Order in list: lower is less likely to get trimmed.
+
+2: Not sure.
+
+3:
+    B: Process.THREAD_GROUP_BG_NONINTERACTIVE
+    F: Process.THREAD_GROUP_DEFAULT
+
+4:
+    A: Foreground Activity
+    S: Foreground Service
+    ' ': Other.
+
+5:
+    -1: procState = "N ";
+        ActivityManager.PROCESS_STATE_PERSISTENT: procState = "P ";
+    ActivityManager.PROCESS_STATE_PERSISTENT_UI:procState = "PU";
+    ActivityManager.PROCESS_STATE_TOP: procState = "T ";
+    ActivityManager.PROCESS_STATE_IMPORTANT_FOREGROUND: procState = "IF";
+    ActivityManager.PROCESS_STATE_IMPORTANT_BACKGROUND: procState = "IB";
+    ActivityManager.PROCESS_STATE_BACKUP:procState = "BU";
+    ActivityManager.PROCESS_STATE_HEAVY_WEIGHT: procState = "HW";
+    ActivityManager.PROCESS_STATE_SERVICE: procState = "S ";
+    ActivityManager.PROCESS_STATE_RECEIVER: procState = "R ";
+    ActivityManager.PROCESS_STATE_HOME: procState = "HO";
+    ActivityManager.PROCESS_STATE_LAST_ACTIVITY: procState = "LA";
+    ActivityManager.PROCESS_STATE_CACHED_ACTIVITY: procState = "CA";
+    ActivityManager.PROCESS_STATE_CACHED_ACTIVITY_CLIENT: procState = "Ca";
+    ActivityManager.PROCESS_STATE_CACHED_EMPTY: procState = "CE";
+
+{6}: trimMemoryLevel
+
+{8} Process ID.
+{9} process name
+{10} appUid 
+
+    

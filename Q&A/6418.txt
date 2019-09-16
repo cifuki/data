@@ -1,0 +1,73 @@
+40
+Q:Couple Android O notification questions:
+
+1) I have created a Notification Channel (see below), am calling the builder with .setChannelId() (passing in the name of the channel I created, "wakey"; and yet, when I run the app, I get a message that I've failed to post a notification to channel "null". What might be causing this?
+
+2) I suspect the answer to #1 can be found in the "log" that it says to check, but I've checked logcat & don't see anything about notifications or channels. Where is the log that it says to look in?
+
+Here's the code I'm using to create the channel:
+
+NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+CharSequence name = context.getString(R.string.app_name);
+String description = "yadda yadda"
+int importance = NotificationManager.IMPORTANCE_DEFAULT;
+
+NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL, name, importance);
+channel.setDescription(description);
+
+notificationManager.createNotificationChannel(channel);
+
+
+Here's the code to generate the notification:
+
+Notification.Builder notificationBuilder;
+
+Intent notificationIntent = new Intent(context, BulbActivity.class);
+notificationIntent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND); // Fix for https://code.google.com/p/android/issues/detail?id=53313
+
+PendingIntent contentIntent = PendingIntent.getActivity(context, 0, notificationIntent, 0);
+
+Intent serviceIntent = new Intent(context, RemoteViewToggleService.class);
+serviceIntent.putExtra(WakeyService.KEY_REQUEST_SOURCE, WakeyService.REQUEST_SOURCE_NOTIFICATION);
+
+PendingIntent actionPendingIntent = PendingIntent.getService(context, 0, serviceIntent, PendingIntent.FLAG_CANCEL_CURRENT);
+_toggleAction = new Notification.Action(R.drawable.ic_power_settings_new_black_24dp, context.getString(R.string.toggle_wakey), actionPendingIntent);
+
+notificationBuilder= new Notification.Builder(context)
+    .setContentTitle(context.getString(R.string.app_name))
+    .setContentIntent(contentIntent)
+    .addAction(_toggleAction);
+
+if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+    notificationBuilder.setChannelId(NOTIFICATION_CHANNEL);
+}
+
+notificationBuilder.setSmallIcon(icon);
+notificationBuilder.setContentText(contentText);
+_toggleAction.title = actionText;
+
+int priority = getNotificationPriority(context);
+notificationBuilder.setPriority(priority);
+notificationBuilder.setOngoing(true);
+
+Notification notification = notificationBuilder.build();
+notificationManager.notify(NOTIFICATION_ID, notification);
+
+
+And here's the warning I'm getting:\xef\xbb\xbf
+
+    
+===============================================================================================
+35
+A:I think I have learned a couple things that all add up to an answer:
+
+
+I was using an emulator device, with an image that did not include the Play Store.
+The version of Google Play Services on the image was not the latest, so I should have been getting a notification telling me I needed to upgrade. Since that notification didn't get applied to a channel, it didn't appear.
+If I set logcat in Android Studio to "No Filters" instead of "Show only selected application", then I found the logs that pointed out that the notification in question was the Play Services "update needed" notification.
+
+
+So, I changed to a image with the Play Store included, and it showed the notification properly (maybe the channel for that notification was to be set by the Play Store?), let me update to the latest Google Play Services, and I haven't seen that warning since.
+
+So, long story short (too late) - with Android O, if you are using Google Play Services & testing on the emulator, choose an image with the Play Store included, or ignore the toast (good luck on that one!).
+    

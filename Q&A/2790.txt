@@ -1,0 +1,139 @@
+76
+Q:I'm using vector drawables in android prior to Lollipop and these are of some of my libraries and tool versions:
+
+
+Android Studio : 2.0 
+Android Gradle Plugin : 2.0.0 
+Build Tools : 23.0.2 
+Android Support Library : 23.3.0
+
+
+I added this property in my app level Build.Gradle
+
+android {  
+  defaultConfig {  
+    vectorDrawables.useSupportLibrary = true  
+   }  
+}
+
+
+It is also worth mentioning that I use an extra drawable such as LayerDrawable(layer_list) as stated in Android official Blog (link here) for setting drawables for vector drawables outside of app:srcCompat
+
+<level-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/search"/>
+</level-list>
+
+
+
+  You\xe2\x80\x99ll find directly referencing vector drawables outside of
+  app:srcCompat will fail prior to Lollipop. However, AppCompat does
+  support loading vector drawables when they are referenced in another
+  drawable container such as a StateListDrawable, InsetDrawable,
+  LayerDrawable, LevelListDrawable, and RotateDrawable. By using this
+  indirection, you can use vector drawables in cases such as TextView\xe2\x80\x99s
+  android:drawableLeft attribute, which wouldn\xe2\x80\x99t normally be able to
+  support vector drawables.
+
+
+When I'm using app:srcCompat everything works fine, but when I use:
+
+android:background
+android:drawableLeft
+android:drawableRight
+android:drawableTop
+android:drawableBottom
+
+
+on ImageView, ImageButton, TextView or EditText prior to Lollipop, it throws an expection: 
+
+Caused by: android.content.res.Resources$NotFoundException: File res/drawable/search_toggle.xml from drawable resource ID #0x7f0200a9
+
+    
+===============================================================================================
+76
+A:LATEST UPDATE - Jun/2019
+
+Support Library has changed a bit since the original answer. Now, even gradle is able to automatically generate the PNG at build time. So, below are two new approaches that should work these days. You can find more info here:
+
+Support Library
+
+Probably, this is the solution that will work for you. If you came here, it means your Android Studio is not generating the PNGs automatically for you.. So, your app is crashing.
+PNG Generation supports only a subset of XML elements. This solution, however,  supports all xml tags. So, you have full support to your vector drawable.
+
+You must first, update your build gradle to support it:
+
+android {
+  defaultConfig {
+    vectorDrawables.useSupportLibrary = true
+  }
+}
+
+dependencies {
+  compile 'com.android.support:appcompat-v7:23.2.0' // OR HIGHER
+}
+
+
+And then, use app:srcCompat instead of android:src for vector drawables. Don't forget this.
+
+For TextView, if you are using AndroidX, you can use app:drawableLeftCompat (or right, top, bottom) instead of app:drawableLeft
+
+If you are not using AndroidX or using a button, you may try to set dynamically via
+
+Drawable icon = AppCompatResources.getDrawable(context, <drawable_id>);
+textView.setCompoundDrawablesWithIntrinsicBounds(<leftIcon>,<topIcon>,<rightIcon>,<bottomIcon>);
+
+
+PNG Generation
+
+Gradle can automatically create the PNG images for you at build time. However, in this approach, not all xml elements are supported. This solution is convenient because you don't need to change anything in your code or in your build.gradle. Just make sure you are using Android Plugin 1.5.0 or higher and Android Studio 2.2 or higher.
+
+I'm using this solution in my app and works fine. No additional build.gradle flag necessary. No hacks is necessary. If you go to `/build/generated/res/pngs/..." you can see all generated PNGs.
+
+So, if you have some simple icon (since not all xml elements are supported), this solution may work for you. Just update your Android Studio and your Android gradle plugin.
+
+
+
+UPDATE - Jul/2016
+
+They re-enabled that VectorDrawable in
+Android Support Library 23.4.0
+
+
+  For AppCompat users, we\xe2\x80\x99ve added an opt-in API to re-enable support Vector Drawables from resources (the behavior found in 23.2) via AppCompatDelegate.setCompatVectorFromResourcesEnabled(true) - keep in mind that this still can cause issues with memory usage and problems updating Configuration instances, hence why it is disabled by default.
+
+
+Maybe, build.gradle setting is now obsolete and you just need to enable it in proper activities (however, need to test).
+
+Now, to enable it, you must do:
+
+public class MainActivity extends AppCompatActivity {
+    static {
+        AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
+    }
+
+    ...
+}
+
+
+
+
+Original Answer - Apr/2016
+
+I think this is happening because Support Vector was disabled in the latest library version: 23.3.0
+
+According to this POST:
+
+
+  For AppCompat users, we\xe2\x80\x99ve decided to remove the functionality which let you use vector drawables from resources on pre-Lollipop devices due to issues found in the implementation in version 23.2.0/23.2.1 (ISSUE 205236). Using app:srcCompat and setImageResource() continues to work.
+
+
+If you visit issue ISSUE 205236, it seems that they will enable in the future but the memory issue will not be fixed soon:
+
+
+  In the next release I've added an opt-in API where you can re-enable the VectorDrawable support which was removed. It comes with the same caveats as before though (memory usage and problems with Configuration updating).
+
+
+I had a similar issue. So, in my case, I reverted all icons which use vector drawable from resource to PNG images again (since the memory issue will keep happening even after they provide an option to enable it again).
+
+I'm not sure if this is the best option, but it fixes all the crashes in my opinion.
+    

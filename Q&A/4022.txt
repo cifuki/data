@@ -1,0 +1,74 @@
+58
+Q:I was just wondering if it is possible to register a broadcast receiver that detects Screen ON/OFF in the application manifest.
+The reason why I don't like the programmable method is that it requires the app to be running in order to detect such a thing, while:
+"Applications with Broadcast Receivers registered in the manifest don\xe2\x80\x99t have to be running when the Intent is broadcast for the receivers to execute" (source: Professional Android 2 Application Development book)
+
+My app is actually a lockscreen app which by using the programmable way needs to be running all the time :S
+
+Is there a way around it?
+
+I'm trying the following in the manifest:
+
+<receiver android:name=".MyBroadCastReciever">
+    <intent-filter>
+        <action android:name="android.intent.action.SCREEN_OFF"/>
+        <action android:name="android.intent.action.SCREEN_ON"/>
+    </intent-filter>
+</receiver>
+
+
+and simple MyBroadCastReciever class:
+
+public class MyBroadCastReciever extends BroadcastReceiver {
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        if (intent.getAction().equals(Intent.ACTION_SCREEN_OFF)) {
+            Log.i("Check","Screen went OFF");
+            Toast.makeText(context, "screen OFF",Toast.LENGTH_LONG).show();
+        } else if (intent.getAction().equals(Intent.ACTION_SCREEN_ON)) {
+            Log.i("Check","Screen went ON");
+            Toast.makeText(context, "screen ON",Toast.LENGTH_LONG).show();
+        }
+    }
+}
+
+    
+===============================================================================================
+78
+A:The two actions for screen on and off are: 
+
+android.intent.action.SCREEN_OFF
+android.intent.action.SCREEN_ON
+
+
+But if you register a receiver for these broadcasts in a manifest, then the receiver will not receive these broadcasts. 
+
+For this problem, you have to create a long running service, which is registering a local broadcast receiver for these intents. If you do this way, then your app will look for screen off only when your service is running which won't irritate user.
+
+PS: start the service in foreground to make it running longer.
+
+A simple code snippet will be something like this:
+
+IntentFilter screenStateFilter = new IntentFilter();
+screenStateFilter.addAction(Intent.ACTION_SCREEN_ON);
+screenStateFilter.addAction(Intent.ACTION_SCREEN_OFF);
+registerReceiver(mScreenStateReceiver, screenStateFilter);
+
+
+Don't forget to unregister the receiver in the Service's onDestroy:
+
+unregisterReceiver(mScreenStateReceiver);
+
+
+Just in case for people who are asking why the receiver does not work with the declare broadcasts in manifest for ACTION_SCREEN_ON and ACTION_SCREEN_OFF:
+
+https://developer.android.com/reference/android/content/Intent.html#ACTION_SCREEN_ON https://developer.android.com/reference/android/content/Intent.html#ACTION_SCREEN_OFF
+
+
+  You cannot receive this through components declared in manifests, only
+  by explicitly registering for it with Context.registerReceiver().
+  
+  This is a protected intent that can only be sent by the system.
+
+    

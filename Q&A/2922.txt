@@ -1,0 +1,93 @@
+74
+Q:I have following class which reads and writes an array of objects from/to a parcel:
+
+class ClassABC extends Parcelable {
+    MyClass[] mObjList;
+
+    private void readFromParcel(Parcel in) {
+        mObjList = (MyClass[]) in.readParcelableArray(
+                com.myApp.MyClass.class.getClassLoader()));
+    }
+
+    public void writeToParcel(Parcel out, int arg1) {
+        out.writeParcelableArray(mObjList, 0);
+    }
+
+    private ClassABC(Parcel in) {
+        readFromParcel(in);
+    }
+
+    public int describeContents() {
+        return 0;
+    }
+
+    public static final Parcelable.Creator<ClassABC> CREATOR =
+            new Parcelable.Creator<ClassABC>() {
+
+        public ClassABC createFromParcel(Parcel in) {
+            return new ClassABC(in);
+        }
+
+        public ClassABC[] newArray(int size) {
+            return new ClassABC[size];
+        }
+    };
+}
+
+
+In above code I get a ClassCastException when reading readParcelableArray:
+
+
+  ERROR/AndroidRuntime(5880): Caused by: java.lang.ClassCastException: [Landroid.os.Parcelable;
+
+
+What is wrong in above code? While writing the object array, should I first convert the array to an ArrayList?
+
+UPDATE:
+
+Is it OK to convert an Object array to an ArrayList and add it to parcel? For instance, when writing:
+
+    ArrayList<MyClass> tmpArrya = new ArrayList<MyClass>(mObjList.length);
+    for (int loopIndex=0;loopIndex != mObjList.length;loopIndex++) {
+        tmpArrya.add(mObjList[loopIndex]);
+    }
+    out.writeArray(tmpArrya.toArray());
+
+
+When reading:
+
+    final ArrayList<MyClass> tmpList = 
+            in.readArrayList(com.myApp.MyClass.class.getClassLoader());
+    mObjList= new MyClass[tmpList.size()];
+    for (int loopIndex=0;loopIndex != tmpList.size();loopIndex++) {
+        mObjList[loopIndex] = tmpList.get(loopIndex);
+    }
+
+
+But now I get a NullPointerException. Is above approach is correct? Why it is throwing an NPE?
+    
+===============================================================================================
+151
+A:You need to write the array using the Parcel.writeTypedArray() method and read it back with the Parcel.createTypedArray() method, like so:
+
+MyClass[] mObjList;
+
+public void writeToParcel(Parcel out) {
+    out.writeTypedArray(mObjList, 0);
+}
+
+private void readFromParcel(Parcel in) {
+    mObjList = in.createTypedArray(MyClass.CREATOR);
+}
+
+
+The reason why you shouldn't use the readParcelableArray()/writeParcelableArray() methods is that readParcelableArray() really creates a Parcelable[] as a result. This means you cannot cast the result of the method to MyClass[]. Instead you have to create a MyClass array of the same length as the result and copy every element from the result array to the MyClass array.
+
+Parcelable[] parcelableArray =
+        parcel.readParcelableArray(MyClass.class.getClassLoader());
+MyClass[] resultArray = null;
+if (parcelableArray != null) {
+    resultArray = Arrays.copyOf(parcelableArray, parcelableArray.length, MyClass[].class);
+}
+
+    

@@ -1,0 +1,520 @@
+73
+Q:I am trying to run the following code in android
+
+URLConnection l_connection = null;
+        // Create connection
+        uzip=new UnZipData(mContext);
+        l_url = new URL(serverurl);
+
+        if ("https".equals(l_url.getProtocol())) {
+            System.out.println("<<<<<<<<<<<<< Before TLS >>>>>>>>>>>>");
+            sslcontext = SSLContext.getInstance("TLS");
+            System.out.println("<<<<<<<<<<<<< After TLS >>>>>>>>>>>>");
+            sslcontext.init(null,
+                    new TrustManager[] { new CustomTrustManager()},
+                    new java.security.SecureRandom());
+            HttpsURLConnection
+                    .setDefaultHostnameVerifier(new CustomHostnameVerifier());
+            HttpsURLConnection.setDefaultSSLSocketFactory(sslcontext
+                    .getSocketFactory());
+
+            l_connection = (HttpsURLConnection) l_url.openConnection();
+            ((HttpsURLConnection) l_connection).setRequestMethod("POST");
+        } else {
+            l_connection = (HttpURLConnection) l_url.openConnection();
+            ((HttpURLConnection) l_connection).setRequestMethod("POST");
+        }
+        /*System.setProperty("http.agent", "Android_Phone");*/
+
+
+        l_connection.setConnectTimeout(10000);
+        l_connection.setRequestProperty("Content-Language", "en-US");
+        l_connection.setUseCaches(false);
+        l_connection.setDoInput(true);
+        l_connection.setDoOutput(true);
+        System.out.println("<<<<<<<<<<<<< Before Connection >>>>>>>>>>>>");
+        l_connection.connect();
+
+
+On l_connection.connect() , it is giving this SSLhandshakeException. Sometimes it works, but most of the time it gives the exception. It is only happening on Android 4.0 emulator. I tested it on Android 4.4 and 5.0, it works fine. What could be the cause of this ? Please help
+
+STACKTRACE
+
+    04-28 15:51:13.143: W/System.err(2915): javax.net.ssl.SSLHandshakeException: javax.net.ssl.SSLProtocolException: SSL handshake aborted: ssl=0x870c918: Failure in SSL library, usually a protocol error
+04-28 15:51:13.143: W/System.err(2915): error:14077410:SSL routines:SSL23_GET_SERVER_HELLO:sslv3 alert handshake failure (external/openssl/ssl/s23_clnt.c:658 0xb7c393a1:0x00000000)
+04-28 15:51:13.143: W/System.err(2915):     at org.apache.harmony.xnet.provider.jsse.OpenSSLSocketImpl.startHandshake(OpenSSLSocketImpl.java:460)
+04-28 15:51:13.143: W/System.err(2915):     at org.apache.harmony.xnet.provider.jsse.OpenSSLSocketImpl.startHandshake(OpenSSLSocketImpl.java:257)
+04-28 15:51:13.143: W/System.err(2915):     at libcore.net.http.HttpConnection.setupSecureSocket(HttpConnection.java:210)
+04-28 15:51:13.143: W/System.err(2915):     at libcore.net.http.HttpsURLConnectionImpl$HttpsEngine.makeSslConnection(HttpsURLConnectionImpl.java:477)
+04-28 15:51:13.153: W/System.err(2915):     at libcore.net.http.HttpsURLConnectionImpl$HttpsEngine.connect(HttpsURLConnectionImpl.java:441)
+04-28 15:51:13.153: W/System.err(2915):     at libcore.net.http.HttpEngine.sendSocketRequest(HttpEngine.java:282)
+04-28 15:51:13.153: W/System.err(2915):     at libcore.net.http.HttpEngine.sendRequest(HttpEngine.java:232)
+04-28 15:51:13.153: W/System.err(2915):     at libcore.net.http.HttpURLConnectionImpl.connect(HttpURLConnectionImpl.java:80)
+04-28 15:51:13.153: W/System.err(2915):     at libcore.net.http.HttpsURLConnectionImpl.connect(HttpsURLConnectionImpl.java:164)
+04-28 15:51:13.153: W/System.err(2915):     at com.ofss.fcdb.mobile.android.rms.helpers.NetworkConnector.getConnection(NetworkConnector.java:170)
+04-28 15:51:13.153: W/System.err(2915):     at com.ofss.fcdb.mobile.android.rms.util.InitiateRMS$2.run(InitiateRMS.java:221)
+04-28 15:51:13.153: W/System.err(2915):     at java.lang.Thread.run(Thread.java:856)
+04-28 15:51:13.153: W/System.err(2915): Caused by: javax.net.ssl.SSLProtocolException: SSL handshake aborted: ssl=0x870c918: Failure in SSL library, usually a protocol error
+04-28 15:51:13.153: W/System.err(2915): error:14077410:SSL routines:SSL23_GET_SERVER_HELLO:sslv3 alert handshake failure (external/openssl/ssl/s23_clnt.c:658 0xb7c393a1:0x00000000)
+04-28 15:51:13.153: W/System.err(2915):     at org.apache.harmony.xnet.provider.jsse.NativeCrypto.SSL_do_handshake(Native Method)
+04-28 15:51:13.153: W/System.err(2915):     at org.apache.harmony.xnet.provider.jsse.OpenSSLSocketImpl.startHandshake(OpenSSLSocketImpl.java:410)
+04-28 15:51:13.153: W/System.err(2915):     ... 11 more
+04-28 16:42:44.139: W/ResourceType(3140): No package identifier when getting value for resource number 0x00000000
+
+    
+===============================================================================================
+103
+A:I found the solution for it by analyzing the data packets using wireshark. What I found is that while making a secure connection, android was falling back to SSLv3 from TLSv1 . It is a bug in android versions < 4.4 , and it can be solved by removing the SSLv3 protocol from Enabled Protocols list. I made a custom socketFactory class called NoSSLv3SocketFactory.java. Use this to make a socketfactory.
+
+/*Copyright 2015 Bhavit Singh Sengar
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.*/
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.net.SocketAddress;
+import java.net.SocketException;
+import java.nio.channels.SocketChannel;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import javax.net.ssl.HandshakeCompletedListener;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+
+
+public class NoSSLv3SocketFactory extends SSLSocketFactory{
+    private final SSLSocketFactory delegate;
+
+public NoSSLv3SocketFactory() {
+    this.delegate = HttpsURLConnection.getDefaultSSLSocketFactory();
+}
+
+public NoSSLv3SocketFactory(SSLSocketFactory delegate) {
+    this.delegate = delegate;
+}
+
+@Override
+public String[] getDefaultCipherSuites() {
+    return delegate.getDefaultCipherSuites();
+}
+
+@Override
+public String[] getSupportedCipherSuites() {
+    return delegate.getSupportedCipherSuites();
+}
+
+private Socket makeSocketSafe(Socket socket) {
+    if (socket instanceof SSLSocket) {
+        socket = new NoSSLv3SSLSocket((SSLSocket) socket);
+    }
+    return socket;
+}
+
+@Override
+public Socket createSocket(Socket s, String host, int port, boolean autoClose) throws IOException {
+    return makeSocketSafe(delegate.createSocket(s, host, port, autoClose));
+}
+
+@Override
+public Socket createSocket(String host, int port) throws IOException {
+    return makeSocketSafe(delegate.createSocket(host, port));
+}
+
+@Override
+public Socket createSocket(String host, int port, InetAddress localHost, int localPort) throws IOException {
+    return makeSocketSafe(delegate.createSocket(host, port, localHost, localPort));
+}
+
+@Override
+public Socket createSocket(InetAddress host, int port) throws IOException {
+    return makeSocketSafe(delegate.createSocket(host, port));
+}
+
+@Override
+public Socket createSocket(InetAddress address, int port, InetAddress localAddress, int localPort) throws IOException {
+    return makeSocketSafe(delegate.createSocket(address, port, localAddress, localPort));
+}
+
+private class NoSSLv3SSLSocket extends DelegateSSLSocket {
+
+    private NoSSLv3SSLSocket(SSLSocket delegate) {
+        super(delegate);
+
+    }
+
+    @Override
+    public void setEnabledProtocols(String[] protocols) {
+        if (protocols != null && protocols.length == 1 && "SSLv3".equals(protocols[0])) {
+
+            List<String> enabledProtocols = new ArrayList<String>(Arrays.asList(delegate.getEnabledProtocols()));
+            if (enabledProtocols.size() > 1) {
+                enabledProtocols.remove("SSLv3");
+                System.out.println("Removed SSLv3 from enabled protocols");
+            } else {
+                System.out.println("SSL stuck with protocol available for " + String.valueOf(enabledProtocols));
+            }
+            protocols = enabledProtocols.toArray(new String[enabledProtocols.size()]);
+        }
+
+        super.setEnabledProtocols(protocols);
+    }
+}
+
+public class DelegateSSLSocket extends SSLSocket {
+
+    protected final SSLSocket delegate;
+
+    DelegateSSLSocket(SSLSocket delegate) {
+        this.delegate = delegate;
+    }
+
+    @Override
+    public String[] getSupportedCipherSuites() {
+        return delegate.getSupportedCipherSuites();
+    }
+
+    @Override
+    public String[] getEnabledCipherSuites() {
+        return delegate.getEnabledCipherSuites();
+    }
+
+    @Override
+    public void setEnabledCipherSuites(String[] suites) {
+        delegate.setEnabledCipherSuites(suites);
+    }
+
+    @Override
+    public String[] getSupportedProtocols() {
+        return delegate.getSupportedProtocols();
+    }
+
+    @Override
+    public String[] getEnabledProtocols() {
+        return delegate.getEnabledProtocols();
+    }
+
+    @Override
+    public void setEnabledProtocols(String[] protocols) {
+        delegate.setEnabledProtocols(protocols);
+    }
+
+    @Override
+    public SSLSession getSession() {
+        return delegate.getSession();
+    }
+
+    @Override
+    public void addHandshakeCompletedListener(HandshakeCompletedListener listener) {
+        delegate.addHandshakeCompletedListener(listener);
+    }
+
+    @Override
+    public void removeHandshakeCompletedListener(HandshakeCompletedListener listener) {
+        delegate.removeHandshakeCompletedListener(listener);
+    }
+
+    @Override
+    public void startHandshake() throws IOException {
+        delegate.startHandshake();
+    }
+
+    @Override
+    public void setUseClientMode(boolean mode) {
+        delegate.setUseClientMode(mode);
+    }
+
+    @Override
+    public boolean getUseClientMode() {
+        return delegate.getUseClientMode();
+    }
+
+    @Override
+    public void setNeedClientAuth(boolean need) {
+        delegate.setNeedClientAuth(need);
+    }
+
+    @Override
+    public void setWantClientAuth(boolean want) {
+        delegate.setWantClientAuth(want);
+    }
+
+    @Override
+    public boolean getNeedClientAuth() {
+        return delegate.getNeedClientAuth();
+    }
+
+    @Override
+    public boolean getWantClientAuth() {
+        return delegate.getWantClientAuth();
+    }
+
+    @Override
+    public void setEnableSessionCreation(boolean flag) {
+        delegate.setEnableSessionCreation(flag);
+    }
+
+    @Override
+    public boolean getEnableSessionCreation() {
+        return delegate.getEnableSessionCreation();
+    }
+
+    @Override
+    public void bind(SocketAddress localAddr) throws IOException {
+        delegate.bind(localAddr);
+    }
+
+    @Override
+    public synchronized void close() throws IOException {
+        delegate.close();
+    }
+
+    @Override
+    public void connect(SocketAddress remoteAddr) throws IOException {
+        delegate.connect(remoteAddr);
+    }
+
+    @Override
+    public void connect(SocketAddress remoteAddr, int timeout) throws IOException {
+        delegate.connect(remoteAddr, timeout);
+    }
+
+    @Override
+    public SocketChannel getChannel() {
+        return delegate.getChannel();
+    }
+
+    @Override
+    public InetAddress getInetAddress() {
+        return delegate.getInetAddress();
+    }
+
+    @Override
+    public InputStream getInputStream() throws IOException {
+        return delegate.getInputStream();
+    }
+
+    @Override
+    public boolean getKeepAlive() throws SocketException {
+        return delegate.getKeepAlive();
+    }
+
+    @Override
+    public InetAddress getLocalAddress() {
+        return delegate.getLocalAddress();
+    }
+
+    @Override
+    public int getLocalPort() {
+        return delegate.getLocalPort();
+    }
+
+    @Override
+    public SocketAddress getLocalSocketAddress() {
+        return delegate.getLocalSocketAddress();
+    }
+
+    @Override
+    public boolean getOOBInline() throws SocketException {
+        return delegate.getOOBInline();
+    }
+
+    @Override
+    public OutputStream getOutputStream() throws IOException {
+        return delegate.getOutputStream();
+    }
+
+    @Override
+    public int getPort() {
+        return delegate.getPort();
+    }
+
+    @Override
+    public synchronized int getReceiveBufferSize() throws SocketException {
+        return delegate.getReceiveBufferSize();
+    }
+
+    @Override
+    public SocketAddress getRemoteSocketAddress() {
+        return delegate.getRemoteSocketAddress();
+    }
+
+    @Override
+    public boolean getReuseAddress() throws SocketException {
+        return delegate.getReuseAddress();
+    }
+
+    @Override
+    public synchronized int getSendBufferSize() throws SocketException {
+        return delegate.getSendBufferSize();
+    }
+
+    @Override
+    public int getSoLinger() throws SocketException {
+        return delegate.getSoLinger();
+    }
+
+    @Override
+    public synchronized int getSoTimeout() throws SocketException {
+        return delegate.getSoTimeout();
+    }
+
+    @Override
+    public boolean getTcpNoDelay() throws SocketException {
+        return delegate.getTcpNoDelay();
+    }
+
+    @Override
+    public int getTrafficClass() throws SocketException {
+        return delegate.getTrafficClass();
+    }
+
+    @Override
+    public boolean isBound() {
+        return delegate.isBound();
+    }
+
+    @Override
+    public boolean isClosed() {
+        return delegate.isClosed();
+    }
+
+    @Override
+    public boolean isConnected() {
+        return delegate.isConnected();
+    }
+
+    @Override
+    public boolean isInputShutdown() {
+        return delegate.isInputShutdown();
+    }
+
+    @Override
+    public boolean isOutputShutdown() {
+        return delegate.isOutputShutdown();
+    }
+
+    @Override
+    public void sendUrgentData(int value) throws IOException {
+        delegate.sendUrgentData(value);
+    }
+
+    @Override
+    public void setKeepAlive(boolean keepAlive) throws SocketException {
+        delegate.setKeepAlive(keepAlive);
+    }
+
+    @Override
+    public void setOOBInline(boolean oobinline) throws SocketException {
+        delegate.setOOBInline(oobinline);
+    }
+
+    @Override
+    public void setPerformancePreferences(int connectionTime, int latency, int bandwidth) {
+        delegate.setPerformancePreferences(connectionTime, latency, bandwidth);
+    }
+
+    @Override
+    public synchronized void setReceiveBufferSize(int size) throws SocketException {
+        delegate.setReceiveBufferSize(size);
+    }
+
+    @Override
+    public void setReuseAddress(boolean reuse) throws SocketException {
+        delegate.setReuseAddress(reuse);
+    }
+
+    @Override
+    public synchronized void setSendBufferSize(int size) throws SocketException {
+        delegate.setSendBufferSize(size);
+    }
+
+    @Override
+    public void setSoLinger(boolean on, int timeout) throws SocketException {
+        delegate.setSoLinger(on, timeout);
+    }
+
+    @Override
+    public synchronized void setSoTimeout(int timeout) throws SocketException {
+        delegate.setSoTimeout(timeout);
+    }
+
+    @Override
+    public void setTcpNoDelay(boolean on) throws SocketException {
+        delegate.setTcpNoDelay(on);
+    }
+
+    @Override
+    public void setTrafficClass(int value) throws SocketException {
+        delegate.setTrafficClass(value);
+    }
+
+    @Override
+    public void shutdownInput() throws IOException {
+        delegate.shutdownInput();
+    }
+
+    @Override
+    public void shutdownOutput() throws IOException {
+        delegate.shutdownOutput();
+    }
+
+    @Override
+    public String toString() {
+        return delegate.toString();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        return delegate.equals(o);
+    }
+}
+}
+
+
+Use this class like this while connecting :
+
+SSLContext sslcontext = SSLContext.getInstance("TLSv1");
+sslcontext.init(null, null, null);
+SSLSocketFactory NoSSLv3Factory = new NoSSLv3SocketFactory(sslcontext.getSocketFactory());
+
+HttpsURLConnection.setDefaultSSLSocketFactory(NoSSLv3Factory);
+l_connection = (HttpsURLConnection) l_url.openConnection();
+l_connection.connect();
+
+
+UPDATE :
+
+Now, correct solution would be to install a newer security provider using Google Play Services:
+
+    ProviderInstaller.installIfNeeded(getApplicationContext());
+
+
+This effectively gives your app access to a newer version of OpenSSL and Java Security Provider, which includes support for TLSv1.2 in SSLEngine. Once the new provider is installed, you can create an SSLEngine which supports SSLv3, TLSv1, TLSv1.1 and TLSv1.2 the usual way: 
+
+    SSLContext sslContext = SSLContext.getInstance("TLSv1.2");
+    sslContext.init(null, null, null);
+    SSLEngine engine = sslContext.createSSLEngine();
+
+
+Or you can restrict the enabled protocols using engine.setEnabledProtocols.
+
+Don't forget to add the following dependency (latest version found here):
+
+compile 'com.google.android.gms:play-services-auth:11.8.0'
+
+
+For more info, checkout this link.
+    

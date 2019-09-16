@@ -1,0 +1,96 @@
+54
+Q:The design support library v. 23.2 introduced BottomSheetBehavior, which allows childs of a coordinator to act as bottom sheets (views draggable from the bottom of the screen).
+
+What I\xe2\x80\x99d like to do is to have, as a bottom sheet view, the following view (the typical coordinator + collapsing stuff):
+
+<CoordinatorLayout
+    app:layout_behavior=\xe2\x80\x9c@string/bottom_sheet_behavior\xe2\x80\x9d>
+
+   <AppBarLayout>
+        <CollapsingToolbarLayout>
+           <ImageView />
+        </CollapsingToolbarLayout>
+    </AppBarLayout>
+
+    <NestedScrollView>
+        <LinearLayout>
+            < Content ... />
+        </LinearLayout>
+    </NestedScrollView>
+
+</CoordinatorLayout>
+
+
+Unfortunately, bottom sheet views should implement nested scrolling, or they won\xe2\x80\x99t get scroll events. If you try with a main activity and then load this view as a bottom sheet, you\xe2\x80\x99ll see that scroll events only act on the \xe2\x80\x9csheet\xe2\x80\x9d of paper, with some strange behavior, as you can see if you keep reading.
+
+I am pretty sure that this can be handled by subclassing CoordinatorLayout, or even better by subclassing BottomSheetBehavior. Do you have any hint?
+
+Some thoughts
+
+
+requestDisallowInterceptTouchEvent() should be used, to steal events from the parent in some conditions:
+
+
+when the AppBarLayout offset is > 0
+when the AppBarLayout offset is == 0, but we are scrolling up (think about it for a second and you\xe2\x80\x99ll see)
+
+the first condition can be obtained by setting an OnOffsetChanged to the inner app bar;
+the second requires some event handling, for example:
+
+switch (MotionEventCompat.getActionMasked(event)) {
+    case MotionEvent.ACTION_DOWN:
+        startY = event.getY();
+        lastY = startY;
+        userIsScrollingUp = false;
+        break;
+    case MotionEvent.ACTION_CANCEL:
+    case MotionEvent.ACTION_UP:
+        userIsScrollingUp = false;
+        break;
+    case MotionEvent.ACTION_MOVE:
+        lastY = event.getY();
+        float yDeltaTotal = startY - lastY;
+        if (yDeltaTotal > touchSlop) { // Moving the finger up.
+            userIsScrollingUp = true;
+        }
+        break;
+}
+
+
+
+Issues
+
+Needless to say, I can\xe2\x80\x99t make this work right now. I am not able to catch the events when the conditions are met, and not catch them in other cases. In the image below you can see what happens with a standard CoordinatorLayout:
+
+
+The sheet is dismissed if you scroll down on the appbar, but not if you scroll down on the nested content. It seems that nested scroll events are not propagated to the Coordinator behavior;
+There is also a problem with the inner appbar: the nested scroll content does not follow the appbar when it is being collapsed..
+
+
+
+
+I have setup a sample project on github that shows these issues.
+
+Just to be clear, desired behavior is:
+
+
+Correct behavior of appbars/scroll views inside the sheet;
+When sheet is expanded, it can collapse on scroll down, but only if the inner appbar is fully expanded too. Right now it does collapse with no regards to the appbar state, and only if you drag the appbar;
+When sheet is collapsed, scroll up gestures will expand it (with no effect on the inner appbar).
+
+
+An example from the contacts app (which probably does not use BottomSheetBehavior, but this is what I want):
+
+
+    
+===============================================================================================
+5
+A:I have finally released my implementation. Find it on Github or directly from jcenter:
+
+compile 'com.otaliastudios:bottomsheetcoordinatorlayout:1.0.0\xe2\x80\x99
+
+
+All you have to do is using BottomSheetCoordinatorLayout as the root view for your bottom sheet. It will automatically inflate a working behavior for itself, so don\xe2\x80\x99t worry about it.
+
+I have been using this for a long time and it shouldn\xe2\x80\x99t have scroll issues, supports dragging on the ABL etc.
+    

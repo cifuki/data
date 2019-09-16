@@ -1,0 +1,24 @@
+35
+Q:I'm reviewing all kinds of Android sound API and I'd like to know which one I should use.
+My goal is to get low latency audio or, at least, deterministic behavior regarding delay of playback.
+
+We've had a lot of problems and it seems that Android sound API is crap, so I'm exploring possibilities.
+
+The problem we have is that there is significant delay between sound_out.write(sound_samples); and actual sound played from the speakers. Usually it is around 300 ms. The problem is that on all devices it's different; some don't have that problem, but most are crippled (however, CS call has zero latency). The biggest issue with this ridiculous delay is that on some devices this delay appears to be some random value (i.e. it's not always 300ms).
+
+I'm reading about OpenSL ES and I'd like to know if anybody had experience with it, or it's the same shit but wrapped in different package?
+
+I prefer to have native access, but I don't mind Java layer indirection as long as I can get deterministic behavior: either the delay has to be constant (for a given device), or I'd like to get access to current playback position instead of guessing it with a error range of \xc2\xb1300 ms...
+
+EDIT:1.5 years later I tried multiple android phones to see how I can get best possible latency for a real time voice communication. Using specialized tools I measured the delay of waveout path. Best results were over 100 ms, most phones were in 180ms range. Anybody have ideas?
+    
+===============================================================================================
+27
+A:SoundPool is the lowest-latency interface on most devices, because the pool is stored in the audio process. All of the other audio paths require inter-process communication. OpenSL is the best choice if SoundPool doesn't meet your needs.
+
+Why OpenSL? AudioTrack and OpenSL have similar latencies, with one important difference: AudioTrack buffer callbacks are serviced in Dalvik, while OpenSL callbacks are serviced in native threads. The current implementation of Dalvik isn't capable of servicing callbacks at extremely low latencies, because there is no way to suspend garbage collection during audio callbacks. This means that the minimum size for AudioTrack buffers has to be larger than the minimum size for OpenSL buffers to sustain glitch-free playback.
+
+On most Android releases this difference between AudioTrack and OpenSL made no difference at all. But with Jellybean, Android now has a low-latency audio path. The actual latency is still device dependent, but it can be considerably lower than previously. For instance, http://code.google.com/p/music-synthesizer-for-android/ uses 384-frame buffers on the Galaxy Nexus for a total output latency of under 30ms. This requires the audio thread to service buffers approximately once every 8ms, which was not feasible on previous Android releases. It is still not feasible in a Dalvik thread.
+
+This explanation assumes two things: first, that you are requesting the smallest possible buffers from OpenSL and doing your processing in the buffer callback rather than with a buffer queue. Second, that your device supports the low-latency path. On most current devices you will not see much difference between AudioTrack and OpenSL ES. But on devices that support Jellybean+ and low-latency audio, OpenSL ES will give you the lowest-latency path.
+    

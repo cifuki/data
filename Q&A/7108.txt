@@ -1,0 +1,158 @@
+36
+Q:Here is the code of the fragment in which I am setting a custom adapter to the list. 
+
+There no errors but the ListView is empty. I have implemented getCount() which returns right number of items in my ArrayList. I don't see ("Inside", "GetView") in the logcat
+
+Fragment
+
+public class ServiceCarListFragment extends Fragment {
+
+    private String url;
+    private ArrayList<CarDetail> carDetailList = new ArrayList<CarDetail>();
+    private CarListAdapter adapter;
+    private ListView mList;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        // TODO Auto-generated method stub
+        super.onCreate(savedInstanceState);
+        url = getActivity().getIntent().getStringExtra("url");
+        new DownloadCarDetail().execute(url);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState) {
+        // TODO Auto-generated method stub
+        View v = inflater.inflate(R.layout.fragment_service_car_list, container, false);
+        mList = (ListView) v.findViewById(R.id.list);
+        mList.setAdapter(adapter);
+
+        for (CarDetail car : carDetailList) {
+            // START LOADING IMAGES FOR EACH STUDENT
+            car.loadImage(adapter);
+        }
+        return v;
+    }
+
+    class DownloadCarDetail extends AsyncTask<String, String, ArrayList<CarDetail>> {
+
+        @Override
+        protected ArrayList<CarDetail> doInBackground(String... params) {
+            // TODO Auto-generated method stub
+            ArrayList<CarDetail> carDetailList = JsonParser.parseJson(params[0]);
+            return carDetailList;
+        }
+
+        @Override
+        protected void onPostExecute(ArrayList<CarDetail> carDetailList) {
+            // TODO Auto-generated method stub
+            ServiceCarListFragment.this.carDetailList = carDetailList;
+            Log.d("dccs", String.valueOf(ServiceCarListFragment.this.carDetailList.size()));
+            adapter = new CarListAdapter(getActivity(), ServiceCarListFragment.this.carDetailList);
+            Log.d("dccs", String.valueOf((adapter.getCount())));
+        }
+
+    }
+}
+
+
+CustomAdapter
+
+public class CarListAdapter extends BaseAdapter {
+
+    private ArrayList<CarDetail> items = new ArrayList<CarDetail>();
+    private Context context;
+
+    public CarListAdapter(Context context, ArrayList<CarDetail> items) {
+        this.context = context;
+        this.items = items;
+    }
+
+    @Override
+    public int getCount() {
+        // TODO Auto-generated method stub
+        return items.size();
+    }
+
+    @Override
+    public Object getItem(int position) {
+        // TODO Auto-generated method stub
+        return items.get(position);
+    }
+
+    @Override
+    public long getItemId(int position) {
+        // TODO Auto-generated method stub
+        return position;
+    }
+
+    @Override
+    public View getView(int position, View convertView, ViewGroup parent) {
+        // TODO Auto-generated method stub
+        Log.d("Inside", "GetView");
+        LayoutInflater mInflater = (LayoutInflater) context.getSystemService(Activity.LAYOUT_INFLATER_SERVICE);
+        ViewHolder holder = null;
+        CarDetail car = items.get(position);
+
+        if (convertView == null) {
+            convertView = mInflater.inflate(R.layout.car_list_row, null);
+            holder = new ViewHolder();
+            holder.tvCarName = (TextView) convertView.findViewById(R.id.tvCarName);
+            holder.tvDailyPriceValue = (TextView) convertView.findViewById(R.id.tvWeeklyPriceValue);
+            holder.tvWeeklyPriceValue = (TextView) convertView.findViewById(R.id.tvWeeklyPriceValue);
+            holder.imgCar = (ImageView) convertView.findViewById(R.id.imgCar);
+            convertView.setTag(holder);
+        } else {
+            holder = (ViewHolder) convertView.getTag();
+        }
+
+        holder.tvCarName.setText(car.getCarName());
+        if (car.getImage() != null) {
+            holder.imgCar.setImageBitmap(car.getImage());
+        } else {
+            // MY DEFAULT IMAGE
+            holder.imgCar.setImageResource(R.drawable.ic_action_call);
+        }
+
+        return convertView;
+    }
+
+    static class ViewHolder {
+        TextView tvCarName;
+        TextView tvDailyPriceValue;
+        TextView tvWeeklyPriceValue;
+        ImageView imgCar;
+    }
+
+}
+
+    
+===============================================================================================
+154
+A:The only reasons getView is not called are:
+
+
+getCount returns 0.
+you forget to call setAdapter on the ListView.
+If the ListView's visibility (or its container's visibility) is GONE. Thanks to @Tayn\xc3\xa3Bonaldo for the valuable input.
+ListView is not attached to any viewport layout. That is, mListView = new ListView(...) is used without myLayout.addView(mListView).
+
+
+In the onPostExcute, after you create a new instance of CarListAdapter I will suggest you to update the new instance to your ListView. Indeed you need to call again
+
+ mList.setAdapter(adapter);
+
+
+Edit: setAdapter should be always called on the ui thread, to avoid unexpected behaviours
+
+Edit2:
+
+The same applies to RecyclerView. Make sure that
+
+
+getItemCount is returning a value grater than 0 (usually the dataset size)
+both setLayoutManager and setAdapter have to be called on the UI Thread
+The visibility of the widget has to be set to VISIBLE
+
+    

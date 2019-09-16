@@ -1,0 +1,359 @@
+27
+Q:I am creating an Android application where I have a ListView that displays all of the applications that were installed in my mobile phone.
+
+My ListView is customized, it is contains a Icon, TextView and CheckBox, the use of the icon is to display the icon of the application, TextView is to display the name of the application, the use of the CheckBox is to determine what item in the ListView that I selected.
+
+How can I determine what is the CheckBox that I selected in the ListView rows when I click a button in my application? I'm new in Android so I don't know what is the approach that I should do.
+
+Here is my code:
+
+public class AppInfo {
+    public Drawable icon;
+    public String applicationName;
+
+    public AppInfo(){
+        super();
+    }
+
+    public AppInfo(Drawable icon, String applicationName){
+        super();
+        this.icon = icon;
+        this.applicationName = applicationName;
+    }
+
+
+}
+
+
+
+
+import android.content.Context;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+import android.widget.ImageView;
+import android.widget.TextView;
+import android.app.Activity;
+import android.widget.CheckBox;
+
+public class AppInfoAdapter extends ArrayAdapter<AppInfo> {
+
+    Context context;
+    int layoutResourceId;
+    AppInfo  data[] = null;
+
+    public AppInfoAdapter(Context context, int layoutResourceId, AppInfo[] data){
+        super(context, layoutResourceId,data);
+        this.layoutResourceId = layoutResourceId;
+        this.context = context;
+        this.data = data;
+    }
+
+    @Override
+    public View getView(int position, View convertView, ViewGroup parent){
+
+        View row = convertView;
+        AppInfoHolder holder= null;
+
+        if (row == null){
+
+            LayoutInflater inflater = ((Activity)context).getLayoutInflater();
+            row = inflater.inflate(layoutResourceId, parent, false);
+
+            holder = new AppInfoHolder();
+
+            holder.imgIcon = (ImageView) row.findViewById(R.id.imgPackageIcon);
+            holder.txtTitle = (TextView) row.findViewById(R.id.txtApplicationName);
+            holder.chkSelect = (CheckBox) row.findViewById(R.id.chkSelect);
+
+            row.setTag(holder);
+
+        }
+        else{
+            holder = (AppInfoHolder)row.getTag();
+        }
+
+
+        AppInfo appinfo = data[position];
+        holder.txtTitle.setText(appinfo.applicationName);
+        holder.imgIcon.setImageDrawable(appinfo.icon);
+        holder.chkSelect.setChecked(true);
+
+        return row;
+
+    }
+
+
+
+}
+
+
+
+
+import android.widget.ImageView;
+import android.widget.TextView;
+import android.widget.CheckBox;
+
+public class AppInfoHolder {
+
+    ImageView imgIcon;
+    TextView txtTitle;
+    CheckBox chkSelect;
+}
+
+
+
+
+import android.app.Activity;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.os.Bundle;
+import android.widget.ArrayAdapter;
+import android.widget.BaseAdapter; 
+import android.widget.ListView;
+import android.widget.TextView;
+
+import java.util.ArrayList;
+import java.util.List;
+import android.content.pm.PackageInfo;
+
+public class CacheActivity extends Activity {
+
+        @Override
+        protected void onCreate(Bundle savedInstanceState){
+            super.onCreate(savedInstanceState);
+            setContentView(R.layout.activity_cache);
+
+
+            final ListView listApplication = (ListView)findViewById(R.id.listApplication);
+
+            ApplicationInfo applicationInfo = getApplicationInfo();
+            PackageManager pm = getPackageManager();
+            List<PackageInfo> pInfo = new ArrayList<PackageInfo>();
+            pInfo.addAll(pm.getInstalledPackages(0));
+            AppInfo app_info[] = new AppInfo[pInfo.size()];
+
+            int counter = 0;
+            for(PackageInfo item: pInfo){
+                try{
+
+                    applicationInfo = pm.getApplicationInfo(item.packageName, 1);
+
+                    app_info[counter] = new AppInfo(pm.getApplicationIcon(applicationInfo), 
+                            String.valueOf(pm.getApplicationLabel(applicationInfo)));
+
+                    System.out.println(counter);
+
+                }
+                catch(Exception e){
+                     System.out.println(e.getMessage());
+                }
+
+                counter++;
+            }
+
+            AppInfoAdapter adapter = new AppInfoAdapter(this, R.layout.listview_item_row, app_info);
+            listApplication.setAdapter(adapter);
+
+        }
+
+
+}
+
+    
+===============================================================================================
+32
+A:Assuming you want to get items of row whose check boxes are checked at the click of a button. Assumption based on your title "Get Selected Item Using Checkbox in Listview when I click a Button".
+
+Try the below. Make only changes as below. Keep the rest the same.
+
+Explanation and discussion on the topic @
+
+https://groups.google.com/forum/?fromgroups#!topic/android-developers/No0LrgJ6q2M
+
+MainActivity.java
+
+public class MainActivity extends Activity {
+     AppInfoAdapter adapter ;
+     AppInfo app_info[] ;
+        @Override
+        protected void onCreate(Bundle savedInstanceState){
+            super.onCreate(savedInstanceState);
+            setContentView(R.layout.activity_main);
+
+
+            final ListView listApplication = (ListView)findViewById(R.id.listApplication);
+            Button b= (Button) findViewById(R.id.button1);
+            b.setOnClickListener(new OnClickListener()
+            {
+
+                @Override
+                public void onClick(View v) {
+                    // TODO Auto-generated method stub
+
+                    StringBuilder result = new StringBuilder();
+                    for(int i=0;i<adapter.mCheckStates.size();i++)
+                    {
+                        if(adapter.mCheckStates.get(i)==true)
+                        {
+
+                                           result.append(app_info[i].applicationName);
+                            result.append("\
+");
+                        }
+
+                    }
+                    Toast.makeText(MainActivity.this, result, 1000).show();
+                }
+
+            });
+
+            ApplicationInfo applicationInfo = getApplicationInfo();
+            PackageManager pm = getPackageManager();
+            List<PackageInfo> pInfo = new ArrayList<PackageInfo>();
+            pInfo.addAll(pm.getInstalledPackages(0));
+            app_info = new AppInfo[pInfo.size()];
+
+            int counter = 0;
+            for(PackageInfo item: pInfo){
+                try{
+
+                    applicationInfo = pm.getApplicationInfo(item.packageName, 1);
+
+                    app_info[counter] = new AppInfo(pm.getApplicationIcon(applicationInfo), 
+                            String.valueOf(pm.getApplicationLabel(applicationInfo)));
+
+                    System.out.println(counter);
+
+                }
+                catch(Exception e){
+                     System.out.println(e.getMessage());
+                }
+
+                counter++;
+            }
+
+           adapter = new AppInfoAdapter(this, R.layout.listview_item_row, app_info);
+            listApplication.setAdapter(adapter);
+
+        }
+}
+
+
+activity_main.xml ListView with button at the buton
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingBottom="@dimen/activity_vertical_margin"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="@dimen/activity_vertical_margin"
+    tools:context=".MainActivity" >
+
+    <ListView
+        android:layout_width="fill_parent"
+        android:id="@+id/listApplication"
+        android:layout_height="fill_parent"
+        android:layout_above="@+id/button1"
+        android:text="@string/hello_world" />
+
+    <Button
+        android:id="@+id/button1"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:text="Button" />
+
+</RelativeLayout>
+
+
+AppInfoAdapter
+
+public class AppInfoAdapter extends ArrayAdapter<AppInfo> implements CompoundButton.OnCheckedChangeListener
+{  SparseBooleanArray mCheckStates; 
+
+    Context context;
+    int layoutResourceId;
+    AppInfo  data[] = null;
+
+    public AppInfoAdapter(Context context, int layoutResourceId, AppInfo[] data){
+        super(context, layoutResourceId,data);
+        this.layoutResourceId = layoutResourceId;
+        this.context = context;
+        this.data = data;
+        mCheckStates = new SparseBooleanArray(data.length);
+    }
+
+    @Override
+    public View getView(int position, View convertView, ViewGroup parent){
+
+        View row = convertView;
+        AppInfoHolder holder= null;
+
+        if (row == null){
+
+            LayoutInflater inflater = ((Activity)context).getLayoutInflater();
+            row = inflater.inflate(layoutResourceId, parent, false);
+
+            holder = new AppInfoHolder();
+
+            holder.imgIcon = (ImageView) row.findViewById(R.id.imageView1);
+            holder.txtTitle = (TextView) row.findViewById(R.id.textView1);
+            holder.chkSelect = (CheckBox) row.findViewById(R.id.checkBox1);
+
+            row.setTag(holder);
+
+        }
+        else{
+            holder = (AppInfoHolder)row.getTag();
+        }
+
+
+        AppInfo appinfo = data[position];
+        holder.txtTitle.setText(appinfo.applicationName);
+        holder.imgIcon.setImageDrawable(appinfo.icon);
+       // holder.chkSelect.setChecked(true);
+        holder.chkSelect.setTag(position);
+        holder.chkSelect.setChecked(mCheckStates.get(position, false));
+        holder.chkSelect.setOnCheckedChangeListener(this);
+        return row;
+
+    }
+    public boolean isChecked(int position) {
+        return mCheckStates.get(position, false);
+    }
+
+    public void setChecked(int position, boolean isChecked) {
+        mCheckStates.put(position, isChecked);
+
+    }
+
+    public void toggle(int position) {
+        setChecked(position, !isChecked(position));
+
+    }
+@Override
+public void onCheckedChanged(CompoundButton buttonView,
+        boolean isChecked) {
+
+     mCheckStates.put((Integer) buttonView.getTag(), isChecked);    
+
+}
+static class AppInfoHolder
+{
+    ImageView imgIcon;
+    TextView txtTitle;
+    CheckBox chkSelect;
+
+}
+}
+
+
+Here's the snap shot
+
+
+    

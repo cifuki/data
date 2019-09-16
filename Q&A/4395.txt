@@ -1,0 +1,59 @@
+54
+Q:Today the Google Drive app asked if I wanted to install the new apps Sheets & Docs.
+
+I've accepted, expecting it to open Google Play Store so I could press install. 
+
+It didn't. It just showed me the popup with the permissions of each of the apps to confirm the installation, the same that appears when you press "Install" on any app on the Play Store.
+
+I was not aware this could be done. 
+
+How can we reproduce this behavior in an app: have a button "Install App XPTO" which doesn't need to open Google Play Store? Just shows the permissions dialog and proceeds to install it via Play Store? 
+
+
+
+UPDATE:
+
+For those downvoting because they think this is the same as other questions... It's not! 
+
+In this case, the APK is not downloaded by Google Drive app and then installed. Google Drive "tells" Play Store to download & install. 
+
+That's the API that I'm interested.
+
+To support my case: after pressing INSIDE Google Drive to install the apps without opening Play Store, the download starts. During the download I've opened the Play Store to check and:
+
+
+
+The screenshot proves that it isn't Google Drive downloading the APK and the installing it. It's the Play Store.
+    
+===============================================================================================
+53
+A:The logs for Google Drive shows that activity responsible for "telling" the Google Play Store to install apps is 
+
+com.google.android.apps.docs/com.google.android.apps.docs.app.PhoneskyApplicationInstallerActivity
+
+
+which, apparently, "tells" 
+
+com.android.vending/com.google.android.finsky.billing.lightpurchase.LightPurchaseFlowActivity
+
+
+to install required packages.
+
+So, theoretically, one could create an intent
+
+Intent intent = new Intent("com.android.vending.billing.PURCHASE");
+intent.setClassName("com.android.vending",
+        "com.google.android.finsky.billing.lightpurchase.LightPurchaseFlowActivity");
+intent.putExtra(EXTRA_NAME, EXTRA_VALUE);
+startActivityForResult(intent, 0);
+
+
+with correct extra values and voil\xc3\xa0!
+
+However, calling LightPurchaseFlowActivity from non-Google signed app is failing, because they are, again apparently (according to the logs), checking the calling package's signature:
+
+W/Finsky(13209): [1] LightPurchaseFlowActivity.setupFromExternalPurchaseIntent: Called from untrusted package.
+
+
+So, there, this can not be achieved at this moment.
+    

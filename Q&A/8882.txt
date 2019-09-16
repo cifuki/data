@@ -1,0 +1,87 @@
+30
+Q:After a lot of debugging I finally found what is causing this error! Garbage Collection!
+
+I have a video playing in media view and in the background I am looking for new videos from a Rest API.
+
+Every now and then I see the Garbage collection running:
+
+02-22 13:14:57.969: D/dalvikvm(16888): GC_EXPLICIT freed 152K, 4% free 6746K/6979K, paused 2ms+2ms
+
+
+And the straight after that:
+
+02-22 13:14:57.969: W/MediaPlayer-JNI(16888): MediaPlayer finalized without being released
+
+
+So I tested it by calling System.gc() every 5 seconds.
+
+As soon as the first GC is called it happens!
+
+02-22 13:19:47.813: D/dalvikvm(17060): GC_EXPLICIT freed 167K, 5% free 6745K/7047K, paused 2ms+2ms ---- I call GC
+02-22 13:19:47.813: W/MediaPlayer-JNI(17060): MediaPlayer finalized without being released ---- VIDEO PLAY INTERRUPTED
+
+
+Why does this happen? Can I prevent it?
+
+Playing the video:
+
+private void playMedia(int playListIndex) throws IOException {
+        File mediadir = getDir("tvr", Context.MODE_PRIVATE);
+        filelist = mediadir.listFiles();
+        Log.i("media player", "play media!");
+        String path = filelist[playListIndex].getAbsolutePath();
+        FileInputStream fileInputStream = new FileInputStream(path);
+        final Uri uri = Uri.parse(path);
+        String filename = filelist[playListIndex].getName();
+        if (filename.contains("image")) {
+            imageView = (ImageView)findViewById(R.id.imageView);
+            imageView.setVisibility(View.VISIBLE);
+            imageView.setImageURI(uri);
+            mHandler.postDelayed(new Runnable() {
+                public void run() {
+                    imageView.setVisibility(View.GONE);
+                    imageView.setImageURI(uri);
+                    onCompletion(null);
+                }
+            }, 4000);
+        } else if (filename.contains("video")) {
+
+            MediaPlayer pl = new MediaPlayer();
+            pl.setOnCompletionListener(this);
+            pl.setDisplay(holder);
+            pl.setDataSource(fileInputStream.getFD());
+            pl.prepare();
+            pl.start();
+        }
+    }
+
+
+And when it is done:
+
+@Override
+    public void onCompletion(MediaPlayer mp) {
+        Log.i("media player", "play next please!");
+        if (mp != null) {
+            mp.release();
+        }
+//      play next video
+        currentMedia++;
+        if (currentMedia > playList.size() - 1) {
+            currentMedia = 0;
+        }
+        try {
+            playMedia(currentMedia);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+    }
+
+    
+===============================================================================================
+70
+A:I think this is because you create the media player within the scope of the method, therefore, when the method completes, it goes out of scope. This means there are no references, so is ok for garbage collection. 
+
+This means, it can be free'd by the GC before it has even called onCompletion, hence won't release before cleared. Instead, you need to store a reference to the media player as a member variable in your class.
+    

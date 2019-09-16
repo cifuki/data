@@ -1,0 +1,68 @@
+41
+Q:I have an Android project which uses Gradle for build process. Now I want to add two extra build types staging and production, so my build.gradle contains:
+
+android {
+    buildTypes {
+        release {
+            runProguard false
+            proguardFile getDefaultProguardFile('proguard-android.txt')
+        }
+
+        staging {
+            signingConfig signingConfigs.staging
+
+            applicationVariants.all { variant ->
+                appendVersionNameVersionCode(variant, defaultConfig)
+            }
+        }
+
+        production {
+            signingConfig signingConfigs.production
+        }
+    }
+}
+
+
+and my appndVersionNameVersionCode looks like:
+
+def appendVersionNameVersionCode(variant, defaultConfig) {
+    if(variant.zipAlign) {
+        def file = variant.outputFile
+        def fileName = file.name.replace(".apk", "-" + defaultConfig.versionName + "-" + defaultConfig.versionCode + ".apk")
+        variant.outputFile = new File(file.parent, fileName)
+    }
+
+    def file = variant.packageApplication.outputFile
+    def fileName = file.name.replace(".apk", "-" + defaultConfig.versionName + "-" + defaultConfig.versionCode + ".apk")
+    variant.packageApplication.outputFile = new File(file.parent, fileName)
+}
+
+
+If I execute task assembleStaging then I get proper name of my apk, but when I execute assembleProduction then I get changed names of my apk (like in staging case). For example:
+
+MyApp-defaultFlavor-production-9.9.9-999.apk
+MyApp-defaultFlavor-production-9.9.9-999.apk
+
+
+It looks like in production build type is executed appendVersionNameVersionCode. How can I avoid it?
+    
+===============================================================================================
+37
+A:As CommonsWare wrote in his comment, you should call appendVersionNameVersionCode only for staging variants. You can easily do that, just slightly modify your appendVersionNameVersionCode method, for example:
+
+def appendVersionNameVersionCode(variant, defaultConfig) {
+    //check if staging variant
+    if(variant.name == android.buildTypes.staging.name){
+        if(variant.zipAlign) {
+            def file = variant.outputFile
+            def fileName = file.name.replace(".apk", "-" + defaultConfig.versionName + "-" + defaultConfig.versionCode + ".apk")
+            variant.outputFile = new File(file.parent, fileName)
+        }
+
+    def file = variant.packageApplication.outputFile
+    def fileName = file.name.replace(".apk", "-" + defaultConfig.versionName + "-" + defaultConfig.versionCode + ".apk")
+    variant.packageApplication.outputFile = new File(file.parent, fileName)
+    }
+}
+
+    

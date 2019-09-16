@@ -1,0 +1,107 @@
+40
+Q:What I want to achieve:
+Have a RecyclerView with GridLayoutManager that supports drag'n'drop and that rearranges the items while dragging.
+
+Side note: First time developing anything with drag and drop.
+
+There are a lot of topics on how to achieve this feature using a ListView, for example: https://raw.githubusercontent.com/btownrippleman/FurthestProgress/master/FurthestProgress/src/com/anappforthat/android/languagelineup/DynamicListView.java
+
+However the examples are usually a lot of code with, creating bitmaps of the dragged view and it feels like it should be possible to achieve the same result using View.startDrag(...) and RecyclerView with notifyItemAdded(), notifyItemMoved() and notifyItemRemoved() since they provide rearrange animations.
+
+So I played around some and came up with this:
+
+final CardAdapter adapter = new CardAdapter(list);
+adapter.setHasStableIds(true);
+adapter.setListener(new CardAdapter.OnLongClickListener() {
+    @Override
+    public void onLongClick(View view) {
+        ClipData data = ClipData.newPlainText("","");
+        View.DragShadowBuilder builder = new View.DragShadowBuilder(view);
+        final int pos = mRecyclerView.getChildAdapterPosition(view);
+        final Goal item = list.remove(pos);
+
+        mRecyclerView.setOnDragListener(new View.OnDragListener() {
+            int prevPos = pos;
+
+            @Override
+            public boolean onDrag(View view, DragEvent dragEvent) {
+                final int action = dragEvent.getAction();
+                switch(action) {
+                    case DragEvent.ACTION_DRAG_LOCATION:
+                        View onTopOf = mRecyclerView.findChildViewUnder(dragEvent.getX(), dragEvent.getY());
+                        int i = mRecyclerView.getChildAdapterPosition(onTopOf);
+
+                        list.add(i, list.remove(prevPos));
+                        adapter.notifyItemMoved(prevPos, i);
+                        prevPos = i;
+                        break;
+
+                    case DragEvent.ACTION_DROP:
+                        View underView = mRecyclerView.findChildViewUnder(dragEvent.getX(), dragEvent.getY());
+                        int underPos = mRecyclerView.getChildAdapterPosition(underView);
+
+                        list.add(underPos, item);
+                        adapter.notifyItemInserted(underPos);
+                        adapter.notifyDataSetChanged();
+                        break;
+                }
+
+                return true;
+            }
+        });
+
+        view.startDrag(data, builder, view, 0);
+    }
+});
+mRecyclerView.setAdapter(adapter);
+
+
+This piece of code sort of work, I get the swapping, but very unstable/shaky and sometimes when it's refreshing the whole grid is rearranged back to original order or to something random. Anyway the code above is just my first quick attempt, what I'm really more interested in knowing is if there's some standard/best practice way of doing the drag and drop with ReyclerView's or if the correct way of solving it is still the same that's been used for ListViews for years?
+    
+===============================================================================================
+108
+A:There is actually a better way to achieve this. You can use some of the RecyclerView's "companion" classes:
+
+ItemTouchHelper, which is
+
+
+  a utility class to add swipe to dismiss and drag & drop support to RecyclerView.
+
+
+and its ItemTouchHelper.Callback, which is
+
+
+  the contract between ItemTouchHelper and your application
+
+
+// Create an `ItemTouchHelper` and attach it to the `RecyclerView`
+ItemTouchHelper ith = new ItemTouchHelper(_ithCallback);
+ith.attachToRecyclerView(rv);
+
+// Extend the Callback class
+ItemTouchHelper.Callback _ithCallback = new ItemTouchHelper.Callback() {
+    //and in your imlpementaion of
+    public boolean onMove(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, RecyclerView.ViewHolder target) {
+        // get the viewHolder's and target's positions in your adapter data, swap them
+        Collections.swap(/*RecyclerView.Adapter's data collection*/, viewHolder.getAdapterPosition(), target.getAdapterPosition());
+        // and notify the adapter that its dataset has changed
+        _adapter.notifyItemMoved(viewHolder.getAdapterPosition(), target.getAdapterPosition());
+        return true;
+    }
+
+    @Override
+    public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
+        //TODO    
+    }
+
+    //defines the enabled move directions in each state (idle, swiping, dragging). 
+    @Override
+    public int getMovementFlags(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
+        return makeFlag(ItemTouchHelper.ACTION_STATE_DRAG,
+                ItemTouchHelper.DOWN | ItemTouchHelper.UP | ItemTouchHelper.START | ItemTouchHelper.END);
+    }
+};
+
+
+For more details check their documentation.
+    

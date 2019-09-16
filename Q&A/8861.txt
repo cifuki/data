@@ -1,0 +1,144 @@
+30
+Q:I am trying to do a application-wide font change and creating a style file to do so. In this file (below) I just want to change typeface value of TextAppearance style of Android. 
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="NightRiderFont" parent="@android:style/TextAppearance">
+        <item name="android:typeface"> /***help need here***/ </item>
+    </style>
+</resources>
+
+
+However font is in "assets/fonts/".  How can I access this font, so I can use that style as a theme to get rid of changing all TextViews by hand programatically. 
+
+As summary: How can I access 'a file from assets folder' in XML?
+    
+===============================================================================================
+74
+A:In my research, there is no way to add external font to the xml file. Only the 3 default font is available in xml
+
+But you can use in java using this code.
+
+Typeface tf = Typeface.createFromAsset(getAssets(),"fonts/verdana.ttf");  
+textfield.setTypeface(tf,Typeface.BOLD);
+
+
+Update:
+
+Now I find a way to do this by creating a custom class extending the TextView and use that in the xml file. 
+
+public class TextViewWithFont extends TextView {
+    private int defaultDimension = 0;
+    private int TYPE_BOLD = 1;
+    private int TYPE_ITALIC = 2;
+    private int FONT_ARIAL = 1;
+    private int FONT_OPEN_SANS = 2;
+    private int fontType;
+    private int fontName;
+
+    public TextViewWithFont(Context context) {
+        super(context);
+        init(null, 0);
+    }
+    public TextViewWithFont(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        init(attrs, 0);
+    }
+    public TextViewWithFont(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+        init(attrs, defStyle);
+    }
+    private void init(AttributeSet attrs, int defStyle) {
+        // Load attributes
+        final TypedArray a = getContext().obtainStyledAttributes(
+                attrs, R.styleable.font, defStyle, 0);
+        fontName = a.getInt(R.styleable.font_name, defaultDimension);
+        fontType = a.getInt(R.styleable.font_type, defaultDimension);
+        a.recycle();
+        MyApplication application = (MyApplication ) getContext().getApplicationContext();
+        if (fontName == FONT_ARIAL) {
+            setFontType(application .getArialFont());
+        } else if (fontName == FONT_OPEN_SANS) {
+            setFontType(application .getOpenSans());
+        }
+    }
+    private void setFontType(Typeface font) {
+        if (fontType == TYPE_BOLD) {
+            setTypeface(font, Typeface.BOLD);
+        } else if (fontType == TYPE_ITALIC) {
+            setTypeface(font, Typeface.ITALIC);
+        } else {
+            setTypeface(font);
+        }
+    }
+}
+
+
+and in xml
+
+<com.example.customwidgets.TextViewWithFont
+        font:name="Arial"
+        font:type="bold"
+        android:layout_width="wrap_content"
+        android:text="Hello world "
+        android:padding="5dp"
+        android:layout_height="wrap_content"/>
+
+
+dont forget to add the schema in root of your xml
+
+xmlns:font="http://schemas.android.com/apk/res-auto"
+
+
+And create an attrs.xml file inside values directory, which is holding our custom attribues:
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="font">
+        <attr name="type">
+        <enum name="bold" value="1"/>
+            <enum name="italic" value="2"/>
+        </attr>
+        <attr name="name">
+            <enum name="Arial" value="1"/>
+            <enum name="OpenSans" value="2"/>
+        </attr>
+    </declare-styleable>
+</resources>
+
+
+Update:
+
+
+  Found some performance issue when this custom view is used in
+  listview, that is because the font Object is creating every time the
+  view is loaded. Solution I found is to initialize the font in Application
+  Class and refer that font object by
+
+MyApplication application = (MyApplication) getContext().getApplicationContext();
+
+
+
+Application class will look like this
+
+public class MyApplication extends Application {
+
+    private Typeface arialFont, openSans;
+
+    public void onCreate() {
+        super.onCreate();
+
+        arialFont = Typeface.createFromAsset(getAssets(), QRUtils.FONT_ARIAL);
+        openSans = Typeface.createFromAsset(getAssets(), QRUtils.FONT_OPEN_SANS);
+    }
+
+    public Typeface getArialFont() {
+        return arialFont;
+    }
+
+    public Typeface getOpenSans() {
+        return openSans;
+    }
+}
+
+    

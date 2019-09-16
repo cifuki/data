@@ -1,0 +1,43 @@
+29
+Q:I'm using the MediaScannerConnection example code from the API Demos 
+
+The snippet I'm using is:
+
+    MediaScannerConnection.scanFile(context,
+            new String[] { permFile.getAbsolutePath() }, null,
+            new MediaScannerConnection.OnScanCompletedListener() {
+        public void onScanCompleted(String path, Uri uri) {
+
+            android.util.Log.i("ExternalStorage", "Scanned " + path + ":");
+            android.util.Log.i("ExternalStorage", "-> uri=" + uri);
+        }
+    });
+
+
+When I run this code I get a FC dialog with the following from the LogCat:
+
+4-20 23:17:45.988: ERROR/ActivityThread(3015): Activity com.my.package.name has leaked ServiceConnection android.media.MediaScannerConnection@40715c70 that was originally bound here
+04-20 23:17:45.988: ERROR/ActivityThread(3015): android.app.ServiceConnectionLeaked: Activity com.my.package.name has leaked ServiceConnection android.media.MediaScannerConnection@40715c70 that was originally bound here
+
+
+What am I doing wrong?
+FYI I'm running this from a background thread using AsyncTask.
+    
+===============================================================================================
+29
+A:I noticed the same kind of error message using the code snippet provided with the documentation of Environment.getExternalStoragePublicDirectory.
+
+The code works fine as expected and makes a new file visible in the device gallery, but at the same time prints the error about the leaked ServiceConnection.
+
+Looking at the internal android code of the MediaScannerConnection it seems some kind of mechanism exists to stop the service after the last file. Maybe it doesn't work when given only one file?
+
+I ended up to use an entire different solution by informing the MediaScanner via Intent. This works fine too and in is not producing any warnings:
+
+Intent mediaScannerIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+Uri fileContentUri = Uri.fromFile(permFile); // With 'permFile' being the File object
+mediaScannerIntent.setData(fileContentUri);
+this.sendBroadcast(mediaScannerIntent); // With 'this' being the context, e.g. the activity
+
+
+It seems this is the preferred way, for it is mentioned in the Android Training about Taking Photos too.
+    

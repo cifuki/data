@@ -1,0 +1,82 @@
+115
+Q:I'm designing an app that has a recurring task of sending presence to a dedicated server as long as the app is in foreground.
+
+In my searches across the web I saw a few different approaches and wanted to know what is the best way of doing this.
+
+What is the best way to schedule a server call?
+
+The options I saw were:
+
+
+Timer .
+ScheduledThreadPoolExecutor.
+Service.
+BroadcastReciever with AlarmManager.
+
+
+What's your opinion?
+
+EDIT:  The reason I need this is for a chat based app that sends all the user actions to a remote server. i.e. user is typing a message, user is reading a message, user is online, user is offline etc.
+
+This means that once every interval, I need to send the server what I'm doing, since I open a chat room with other people, they need to know what I'm doing.
+
+Similar to the whatsapp message feedback mechanism:
+
+
+EDIT #2:  
+Recurring tasks should now be scheduled almost always via the JobScheduler API (or FirebaseJobDispatcher for lower APIs) in order to prevent battery draining issues as can be read in the vitals section of the Android training
+    
+===============================================================================================
+160
+A:I am not sure but as per my knowledge I share my views. I always accept best answer if I am wrong .
+
+Alarm Manager
+
+The Alarm Manager holds a CPU wake lock as long as the alarm receiver's onReceive() method is executing. This guarantees that the phone will not sleep until you have finished handling the broadcast. Once onReceive() returns, the Alarm Manager releases this wake lock. This means that the phone will in some cases sleep as soon as your onReceive() method completes. If your alarm receiver called Context.startService(), it is possible that the phone will sleep before the requested service is launched. To prevent this, your BroadcastReceiver and Service will need to implement a separate wake lock policy to ensure that the phone continues running until the service becomes available.
+
+Note: The Alarm Manager is intended for cases where you want to have your application code run at a specific time, even if your application is not currently running. For normal timing operations (ticks, timeouts, etc) it is easier and much more efficient to use Handler.
+
+Timer 
+
+timer = new Timer();
+
+    timer.scheduleAtFixedRate(new TimerTask() {
+
+        synchronized public void run() {
+
+            \\\\ here your todo;
+            }
+
+        }}, TimeUnit.MINUTES.toMillis(1), TimeUnit.MINUTES.toMillis(1));
+
+
+Timer has some drawbacks that are solved by ScheduledThreadPoolExecutor. So it's not the best choice 
+
+ScheduledThreadPoolExecutor.
+
+You can use java.util.Timer or ScheduledThreadPoolExecutor (preferred) to schedule an action to occur at regular intervals on a background thread.
+
+Here is a sample using the latter:
+
+ScheduledExecutorService scheduler =
+    Executors.newSingleThreadScheduledExecutor();
+
+scheduler.scheduleAtFixedRate
+      (new Runnable() {
+         public void run() {
+            // call service
+         }
+      }, 0, 10, TimeUnit.MINUTES);
+
+
+So I preferred ScheduledExecutorService
+
+But Also think about that if the updates will occur while your application is running, you can use a Timer, as suggested in other answers, or the newer ScheduledThreadPoolExecutor.
+If your application will update even when it is not running, you should go with the AlarmManager.
+
+
+  The Alarm Manager is intended for cases where you want to have your application code run at a specific time, even if your application is not currently running.
+
+
+Take note that if you plan on updating when your application is turned off, once every ten minutes is quite frequent, and thus possibly a bit too power consuming.
+    

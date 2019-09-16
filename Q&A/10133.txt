@@ -1,0 +1,106 @@
+27
+Q:I have a RecyclerView and want to allow my users to use a swipe gesture to remove items from the list. But as known from other apps (e.g. Gmail), I want to show a delete icon behind it, so that my users know that swiping results in a remove. However, I can't find an obvious way to do that. The ItemTouchHelper uses the viewHolder.itemView, so it takes the whole row.
+
+My code:
+
+    ItemTouchHelper.SimpleCallback simpleItemTouchCallback = new
+            ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT) {
+                @Override
+                public boolean onMove(
+                        final RecyclerView recyclerView,
+                        final RecyclerView.ViewHolder viewHolder,
+                        final RecyclerView.ViewHolder target) {
+                    return false;
+                }
+
+                @Override
+                public void onSwiped(
+                        final RecyclerView.ViewHolder viewHolder,
+                        final int swipeDir) {
+                    adapter.remove(viewHolder.getAdapterPosition());
+                }
+            };
+
+    ItemTouchHelper itemTouchHelper = new ItemTouchHelper(
+            simpleItemTouchCallback
+    );
+    itemTouchHelper.attachToRecyclerView(itemsRecyclerView);
+
+    itemsRecyclerView.setLayoutManager(
+            new LinearLayoutManager(getContext())
+    );
+    itemsRecyclerView.setAdapter(adapter);
+
+
+Has anyone a glue if this is possible at all? The only thing I can imagine right now is to extend the ItemTouchHelper / copy the code, and instead of using viewHolder.itemView I take a view identified by an ID.
+    
+===============================================================================================
+37
+A:I have done it with having the following layout structure for the recycler view item:
+
+<FrameLayout
+    background = dark>
+    <AnyLayout with content
+       android:id="@+id/removable">
+    </AnyLayout>
+<FrameLayout>
+
+
+Then I use this view holder as base view holder in my adapter:
+
+public class RemovableViewHolder extends RecyclerView.ViewHolder {
+    private View mRemoveableView;
+
+    public RemovableViewHolder(final View itemView) {
+        super(itemView);
+
+        mRemoveableView = itemView.findViewById(R.id.removable);
+    }
+
+    public View getSwipableView() {
+        return mRemoveableView;
+    }
+}
+
+
+In my ItemTouchHelper.Callback class I extend the following methods like that:
+
+@Override
+public int getMovementFlags(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
+    if (viewHolder instanceof RemovableViewHolder) {
+        int swipeFlags = ItemTouchHelper.START | ItemTouchHelper.END;
+        return makeMovementFlags(0, swipeFlags);
+    } else
+        return 0;
+}
+
+@Override
+public void clearView(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
+    getDefaultUIUtil().clearView(((RemovableViewHolder) viewHolder).getSwipableView());
+}
+
+@Override
+public void onSelectedChanged(RecyclerView.ViewHolder viewHolder, int actionState) {
+    if (viewHolder != null) {
+        getDefaultUIUtil().onSelected(((RemovableViewHolder) viewHolder).getSwipableView());
+    }
+}
+
+public void onChildDraw(Canvas c, RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, float dX, float dY, int actionState, boolean isCurrentlyActive) {
+    getDefaultUIUtil().onDraw(c, recyclerView, ((RemovableViewHolder) viewHolder).getSwipableView(), dX, dY,    actionState, isCurrentlyActive);
+}
+
+public void onChildDrawOver(Canvas c, RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, float dX, float dY, int actionState, boolean isCurrentlyActive) {
+    getDefaultUIUtil().onDrawOver(c, recyclerView, ((RemovableViewHolder) viewHolder).getSwipableView(), dX, dY,    actionState, isCurrentlyActive);
+}
+
+
+With this approach you use one level in layouts more, but saves yourself troubles with drawing on Canvas. Also you may select other views inside the item, for example save one that was touched and return it and have children of an item also swipeable.
+
+Attaching to the recycler view:
+
+final ItemTouchHelper.Callback callback = new RemovableItemTouchHelperCallback(mAdapter);
+final ItemTouchHelper touchHelper = new ItemTouchHelper(callback);
+touchHelper.attachToRecyclerView(recyclerView)
+
+    

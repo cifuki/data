@@ -1,0 +1,95 @@
+136
+Q:I'm using android studio 0.9.3 with gradle 'com.android.tools.build:gradle:0.14.+'
+
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion '20.0.0'
+
+    defaultConfig {
+        applicationId "xxx.xxx.xxx"
+        minSdkVersion 16
+        targetSdkVersion 19
+        versionCode 1
+        versionName "1.0.11"
+    }
+
+    signingConfigs{
+        releaseConfig{
+            storeFile file("xxxxxxx")
+            storePassword = "xxxx"
+            keyAlias = "xxxx"
+            keyPassword = "xxxx"
+        }
+    }
+
+    buildTypes {
+        release {
+            runProguard false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.releaseConfig
+
+            // adds version to file name
+            applicationVariants.all { variant ->
+                def file = variant.outputFile
+                variant.outputFile = new File(file.parent, file.name.replace(".apk", "-" + defaultConfig.versionName + ".apk"))
+            }
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    // You must install or update the Support Repository through the SDK manager to use this dependency.
+    // You must install or update the Support Repository through the SDK manager to use this dependency.
+    // You must install or update the Google Repository through the SDK manager to use this dependency.
+    // You must install or update the Support Repository through the SDK manager to use this dependency.
+    compile 'com.android.support:support-v4:19.+'
+    compile 'com.android.support:appcompat-v7:19.+'
+    compile 'com.mcxiaoke.volley:library:1.0.6'
+    compile 'com.google.code.gson:gson:2.2.+'
+}
+
+
+The project compiled before without any changes in that file,
+I'm getting:
+Error:(26, 0) Gradle DSL method not found: 'runProguard()'
+
+How to fix that?
+    
+===============================================================================================
+97
+A:As far as I know runProguard was replaced with minifyEnabled. I am still not sure how to define the config for proguard but a Google search should help you to find out.
+
+Edit:
+
+For the outFile read here: https://groups.google.com/forum/#!topic/adt-dev/4_-5NvxuFB0 how they do it.
+
+In short: they used a more complex version:
+
+applicationVariants.all { variant ->
+
+    variant.outputs.each { output ->
+
+        def apk = output.outputFile;
+        def newName;
+
+        // newName = apk.name.replace(".apk", "-v" + defaultConfig.versionName + "-" + variant.buildType.name.toUpperCase() + ".apk");
+        if (variant.buildType.name == "release") {
+            newName = apk.name.replace(".apk", "-v" + defaultConfig.versionName + "-release.apk");
+        } else {
+            newName = apk.name.replace(".apk", "-v" + defaultConfig.versionName + "-beta.apk");
+        }
+
+        output.outputFile = new File(apk.parentFile, newName);
+
+        if (output.zipAlign) {
+            output.outputFile = new File(apk.parentFile, newName.replace("-unaligned", ""));
+        }
+
+        logger.info('INFO: Set outputFile to ' + output.outputFile + " for [" + output.name + "]");
+    }
+}
+
+    

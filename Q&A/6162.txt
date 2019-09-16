@@ -1,0 +1,82 @@
+41
+Q:I am building a React Native application and I need to save some sensitive data like a token and a refresh token. The obvious solution is to save that information using AsyncStorage. The problem is the security level of the AsyncStorage. 
+
+
+  AsyncStorage provides a way to locally store tokens and data. It can
+  be, in some ways, compared to a LocalStorage option. In full
+  production applications, it is recommended to not access AsyncStorage
+  directly, but instead, to use an abstraction layer, as AsyncStorage is
+  shared with other apps using the same browser, and thus an
+  ill-conceieved removal of all items from storage could impair the
+  functioning of neighboring apps.
+
+
+https://auth0.com/blog/adding-authentication-to-react-native-using-jwt/
+
+In a native app, I would go for Keychain in iOS and Shared Preferences in private mode in Android. 
+
+For what I read in the documentation provided by React Native:
+
+
+  On iOS, AsyncStorage is backed by native code that stores small values
+  in a serialized dictionary and larger values in separate files. On
+  Android, AsyncStorage will use either RocksDB or SQLite based on what
+  is available.
+
+
+https://facebook.github.io/react-native/docs/asyncstorage.html
+
+They never talk about the security of that data. 
+
+It is the best solution create a module for Android (that uses Shared Preferences in private mode) and another for iOS (that uses Keychain) to save the sensible data? Or it is safe to use the AsyncStorage methods provided?
+    
+===============================================================================================
+75
+A:Just digging into the React Native code, I found the answer.
+
+Android
+
+The React Native AsyncStoragemodule implementation is based on SQLiteOpenHelper.
+The package where all the data classes are handled: https://github.com/facebook/react-native/tree/master/ReactAndroid/src/main/java/com/facebook/react/modules/storage
+
+The class with the instructions to create the database: https://github.com/facebook/react-native/blob/master/ReactAndroid/src/main/java/com/facebook/react/modules/storage/ReactDatabaseSupplier.java
+
+By the Android documentation, the databases created by the application are saved in private disk space that's associated application, so it is secure.
+
+
+  Just like files that you save on the device's internal storage,
+  Android stores your database in private disk space that's associated
+  application. Your data is secure, because by default this area is not
+  accessible to other applications.
+
+
+Source
+
+iOS
+
+In iOS the AsyncStorage values are saved in serialized dictionary files. Those files are saved in the application NSDocumentDirectory. In iOS all applications live in their own sandbox, so all files of one application are secured, they cannot be accessed by the other applications.
+
+The code in iOS that handles the AsyncStorage module can be found here: https://github.com/facebook/react-native/blob/master/React/Modules/RCTAsyncLocalStorage.m
+
+And as we can see here the files used to store the values saved by the AsyncStorage are saved under the NSDocumentDirectory (inside the application sandbox environment).  
+
+
+  Every App Is an Island An iOS app\xe2\x80\x99s interactions with the file system
+  are limited mostly to the directories inside the app\xe2\x80\x99s sandbox. During
+  installation of a new app, the installer creates a number of
+  containers for the app. Each container has a specific role. The bundle
+  container holds the app\xe2\x80\x99s bundle, whereas the data container holds
+  data for both the application and the user. The data container is
+  further divided into a number of directories that the app can use to
+  sort and organize its data. The app may also request access to
+  additional containers\xe2\x80\x94for example, the iCloud container\xe2\x80\x94at runtime.
+
+
+Source
+
+Conclusion
+
+It is safe to use AsyncStorage to save user tokens, since they are saved under a secure context.
+
+Please note that this is only true for Android devices without root and for iOS devices without jailbreak. Please also note that if the attacker has physical access to the device and the device is not protected. He can connect the device to the mac laptop and extract the documents directory and see all the contents saved under the documents directory.
+    

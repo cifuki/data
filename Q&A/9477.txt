@@ -1,0 +1,339 @@
+29
+Q:I'm trying to do a shared element transition between two activities.
+
+The first activity has a circle imageview and the second activity has a rectangular imageview. I just want the circle to transition from the first activity to the second activity where it becomes a square and back to the circle when I press back.
+
+I find that the transition is not so neat - in the animation below, you can see that the rectangular imageview seem to reduce in size until it matches the size of the circle. The square imageview appears for a split second and and then the circle appears. I want to get rid of the square imageview so that the circle becomes the end point of the transition. 
+
+Anyone know how this is done?
+
+
+I have create a small test repo that you can download here: https://github.com/Winghin2517/TransitionTest
+
+The code for my first activity - the imageview sits within the MainFragment of my first activity:
+
+public class MainFragment extends android.support.v4.app.Fragment {
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.fragment_view, container,false);
+        final ImageView dot = (ImageView) view.findViewById(R.id.image_circle);
+        Picasso.with(getContext()).load(R.drawable.snow).transform(new PureCircleTransformation()).into(dot);
+        dot.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Intent i = new Intent(getContext(), SecondActivity.class);
+                View sharedView = dot;
+                String transitionName = getString(R.string.blue_name);
+                ActivityOptionsCompat transitionActivityOptions = ActivityOptionsCompat.makeSceneTransitionAnimation(getActivity(), sharedView, transitionName);
+                startActivity(i, transitionActivityOptions.toBundle());
+            }
+        });
+        return view;
+    }
+}
+
+
+This is my second activity which contains the rectangular imageview:
+
+public class SecondActivity extends AppCompatActivity {
+
+    ImageView backdrop;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_second);
+        backdrop = (ImageView) findViewById(R.id.picture);
+        backdrop.setBackground(ContextCompat.getDrawable(this, R.drawable.snow));
+    }
+
+    @Override
+    public void onBackPressed() {
+        supportFinishAfterTransition();
+        super.onBackPressed();
+
+    }
+}
+
+
+This is the PureCircleTransformation class that I pass into Picasso to generate the circle:
+
+package test.com.transitiontest;
+
+import android.graphics.Bitmap;
+import android.graphics.BitmapShader;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+
+import com.squareup.picasso.Transformation;
+
+public class PureCircleTransformation implements Transformation {
+
+    private static final int STROKE_WIDTH = 6;
+
+    @Override
+    public Bitmap transform(Bitmap source) {
+        int size = Math.min(source.getWidth(), source.getHeight());
+
+        int x = (source.getWidth() - size) / 2;
+        int y = (source.getHeight() - size) / 2;
+
+        Bitmap squaredBitmap = Bitmap.createBitmap(source, x, y, size, size);
+        if (squaredBitmap != source) {
+            source.recycle();
+        }
+
+        Bitmap bitmap = Bitmap.createBitmap(size, size, source.getConfig());
+
+        Canvas canvas = new Canvas(bitmap);
+
+        Paint avatarPaint = new Paint();
+        BitmapShader shader = new BitmapShader(squaredBitmap, BitmapShader.TileMode.CLAMP, BitmapShader.TileMode.CLAMP);
+        avatarPaint.setShader(shader);
+
+        float r = size / 2f;
+        canvas.drawCircle(r, r, r, avatarPaint);
+
+        squaredBitmap.recycle();
+        return bitmap;
+    }
+
+    @Override
+    public String key() {
+        return "circleTransformation()";
+    }
+}
+
+
+I do understand that in my first activity, the circle is just 'cut' out by applying the Picasso transformation class and that the imageview is just a square layout cut out so that it appears as a circle. Maybe this is the reason why the animation looks like this as I'm transitioning from a rectangular to a square, but I really want the the transition to go from the rectangular to a circle.
+
+I think there is a way to do this. In the whatsapp app, I can see the effect but I just cannot seem to figure out how they managed to do it - If you click on the profile picture of your friends on whatsapp, the app expands the circle imageview to a square. Clicking back will return the square to the circle.
+
+
+    
+===============================================================================================
+27
+A:I offer to create a custom view, which can animate itself from circle to rect and back and then wrap custom transition around it with adding moving animation.
+
+How it is looks like:
+
+
+Code is below (valuable part).  
+For full sample, check my github.
+
+CircleRectView.java:
+
+public class CircleRectView extends ImageView {
+
+private int circleRadius;
+private float cornerRadius;
+
+private RectF bitmapRect;
+private Path clipPath;
+
+private void init(TypedArray a) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2
+            && Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+        setLayerType(LAYER_TYPE_SOFTWARE, null);
+    }
+
+    if (a.hasValue(R.styleable.CircleRectView_circleRadius)) {
+        circleRadius = a.getDimensionPixelSize(R.styleable.CircleRectView_circleRadius, 0);
+        cornerRadius = circleRadius;
+    }
+    clipPath = new Path();
+    a.recycle();
+}
+
+public Animator animator(int startHeight, int startWidth, int endHeight, int endWidth) {
+    AnimatorSet animatorSet = new AnimatorSet();
+
+    ValueAnimator heightAnimator = ValueAnimator.ofInt(startHeight, endHeight);
+    ValueAnimator widthAnimator = ValueAnimator.ofInt(startWidth, endWidth);
+
+    heightAnimator.addUpdateListener(valueAnimator -> {
+        int val = (Integer) valueAnimator.getAnimatedValue();
+        ViewGroup.LayoutParams layoutParams = getLayoutParams();
+        layoutParams.height = val;
+
+        setLayoutParams(layoutParams);
+        requestLayoutSupport();
+    });
+
+    widthAnimator.addUpdateListener(valueAnimator -> {
+        int val = (Integer) valueAnimator.getAnimatedValue();
+        ViewGroup.LayoutParams layoutParams = getLayoutParams();
+        layoutParams.width = val;
+
+        setLayoutParams(layoutParams);
+        requestLayoutSupport();
+    });
+
+    ValueAnimator radiusAnimator;
+    if (startWidth < endWidth) {
+        radiusAnimator = ValueAnimator.ofFloat(circleRadius, 0);
+    } else {
+        radiusAnimator = ValueAnimator.ofFloat(cornerRadius, circleRadius);
+    }
+
+    radiusAnimator.setInterpolator(new AccelerateInterpolator());
+    radiusAnimator.addUpdateListener(animator -> cornerRadius = (float) (Float) animator.getAnimatedValue());
+
+    animatorSet.playTogether(heightAnimator, widthAnimator, radiusAnimator);
+
+    return animatorSet;
+}
+
+/**
+ * this needed because of that somehow {@link #onSizeChanged} NOT CALLED when requestLayout while activity transition end is running
+ */
+private void requestLayoutSupport() {
+    View parent = (View) getParent();
+    int widthSpec = View.MeasureSpec.makeMeasureSpec(parent.getWidth(), View.MeasureSpec.EXACTLY);
+    int heightSpec = View.MeasureSpec.makeMeasureSpec(parent.getHeight(), View.MeasureSpec.EXACTLY);
+    parent.measure(widthSpec, heightSpec);
+    parent.layout(parent.getLeft(), parent.getTop(), parent.getRight(), parent.getBottom());
+}
+
+@Override
+public void onSizeChanged(int w, int h, int oldw, int oldh) {
+    super.onSizeChanged(w, h, oldw, oldh);
+    //This event-method provides the real dimensions of this custom view.
+
+    Log.d("size changed", "w = " + w + " h = " + h);
+
+    bitmapRect = new RectF(0, 0, w, h);
+}
+
+@Override
+protected void onDraw(Canvas canvas) {
+
+    Drawable drawable = getDrawable();
+
+    if (drawable == null) {
+        return;
+    }
+
+    if (getWidth() == 0 || getHeight() == 0) {
+        return;
+    }
+
+    clipPath.reset();
+    clipPath.addRoundRect(bitmapRect, cornerRadius, cornerRadius, Path.Direction.CW);
+    canvas.clipPath(clipPath);
+    super.onDraw(canvas);
+}
+
+
+}
+
+@TargetApi(Build.VERSION_CODES.KITKAT)
+public class CircleToRectTransition extends Transition {
+private static final String TAG = CircleToRectTransition.class.getSimpleName();
+private static final String BOUNDS = "viewBounds";
+private static final String[] PROPS = {BOUNDS};
+
+@Override
+public String[] getTransitionProperties() {
+    return PROPS;
+}
+
+private void captureValues(TransitionValues transitionValues) {
+    View view = transitionValues.view;
+    Rect bounds = new Rect();
+    bounds.left = view.getLeft();
+    bounds.right = view.getRight();
+    bounds.top = view.getTop();
+    bounds.bottom = view.getBottom();
+    transitionValues.values.put(BOUNDS, bounds);
+}
+
+@Override
+public void captureStartValues(TransitionValues transitionValues) {
+    captureValues(transitionValues);
+}
+
+@Override
+public void captureEndValues(TransitionValues transitionValues) {
+    captureValues(transitionValues);
+}
+
+@Override
+public Animator createAnimator(ViewGroup sceneRoot, TransitionValues startValues, TransitionValues endValues) {
+    if (startValues == null || endValues == null) {
+        return null;
+    }
+
+    if (!(startValues.view instanceof CircleRectView)) {
+        Log.w(CircleToRectTransition.class.getSimpleName(), "transition view should be CircleRectView");
+        return null;
+    }
+
+    CircleRectView view = (CircleRectView) (startValues.view);
+
+    Rect startRect = (Rect) startValues.values.get(BOUNDS);
+    final Rect endRect = (Rect) endValues.values.get(BOUNDS);
+
+    Animator animator;
+
+    //scale animator
+    animator = view.animator(startRect.height(), startRect.width(), endRect.height(), endRect.width());
+
+    //movement animators below
+    //if some translation not performed fully, use it instead of start coordinate
+    float startX = startRect.left + view.getTranslationX();
+    float startY = startRect.top + view.getTranslationY();
+
+    //somehow end rect returns needed value minus translation in case not finished transition available
+    float moveXTo = endRect.left + Math.round(view.getTranslationX());
+    float moveYTo = endRect.top + Math.round(view.getTranslationY());
+
+    Animator moveXAnimator = ObjectAnimator.ofFloat(view, "x", startX, moveXTo);
+    Animator moveYAnimator = ObjectAnimator.ofFloat(view, "y", startY, moveYTo);
+
+    AnimatorSet animatorSet = new AnimatorSet();
+    animatorSet.playTogether(animator, moveXAnimator, moveYAnimator);
+
+    //prevent blinking when interrupt animation
+    return new NoPauseAnimator(animatorSet);
+}
+
+
+MainActivity.java :
+
+ view.setOnClickListener(v -> {
+        Intent intent = new Intent(this, SecondActivity.class);
+        ActivityOptionsCompat transitionActivityOptions = ActivityOptionsCompat.makeSceneTransitionAnimation(MainActivity.this, view, getString(R.string.circle));
+
+        ActivityCompat.startActivity(MainActivity.this, intent , transitionActivityOptions.toBundle());
+    });
+
+
+SecondActivity.java :
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        getWindow().setSharedElementEnterTransition(new CircleToRectTransition().setDuration(1500));
+        getWindow().setSharedElementExitTransition(new CircleToRectTransition().setDuration(1500));
+    }
+
+    super.onCreate(savedInstanceState);
+    ...
+ }
+@Override
+public void onBackPressed() {
+    supportFinishAfterTransition();
+}
+
+
+EDITED: Previous variant of CircleToRectTransition wasn't general and worked only in specific case. Check modified example without that disadvantage
+
+EDITED2: It turns out that you don't need custom transition at all, just remove setup logic from SecondActivity and it will be working via default way. With this approach you could set transition duration this way.
+
+EDITED3: Provided backport for api < 18
+
+By the way, you can backport this stuff onto pre-lollipop devices with using such technique. Where you can use animators have been already created
+    

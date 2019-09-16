@@ -1,0 +1,154 @@
+127
+Q:I've been working on making my custom camera activity on Android, but when rotating the camera, the aspect ratio of the surface view gets messed up.
+
+In my oncreate for the activity, I set the framelayout which holds the surface view that displays the camera's parameters.
+
+//FrameLayout that will hold the camera preview
+        FrameLayout previewHolder = (FrameLayout) findViewById(R.id.camerapreview);
+
+        //Setting camera's preview size to the best preview size
+        Size optimalSize = null;
+        camera = getCameraInstance();
+        double aspectRatio = 0;
+        if(camera != null){
+            //Setting the camera's aspect ratio
+            Camera.Parameters parameters = camera.getParameters();
+            List<Size> sizes = parameters.getSupportedPreviewSizes();
+            optimalSize = CameraPreview.getOptimalPreviewSize(sizes, getResources().getDisplayMetrics().widthPixels, getResources().getDisplayMetrics().heightPixels);
+            aspectRatio = (float)optimalSize.width/optimalSize.height;
+        }
+
+        if(optimalSize!= null){
+            RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(LayoutParams.MATCH_PARENT, (int)(getResources().getDisplayMetrics().widthPixels*aspectRatio));
+            previewHolder.setLayoutParams(params);
+            LayoutParams surfaceParams = new LayoutParams(LayoutParams.MATCH_PARENT, (int)(getResources().getDisplayMetrics().widthPixels*aspectRatio));
+            cameraPreview.setLayoutParams(surfaceParams);
+
+        }
+
+        cameraPreview.setCamera(camera);
+
+        //Adding the preview to the holder
+        previewHolder.addView(cameraPreview);
+
+
+Then, in the Surface view I set the camera's parameters to be displayed
+
+public void setCamera(Camera camera) {
+        if (mCamera == camera) { return; }
+
+        mCamera = camera;
+
+        if (mCamera != null) {
+            requestLayout();
+
+            try {
+                mCamera.setPreviewDisplay(mHolder);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+
+            if(mCamera != null){
+                //Setting the camera's aspect ratio
+                Camera.Parameters parameters = mCamera.getParameters();
+                List<Size> sizes = parameters.getSupportedPreviewSizes();
+                Size optimalSize = getOptimalPreviewSize(sizes, getResources().getDisplayMetrics().widthPixels, getResources().getDisplayMetrics().heightPixels);
+
+                parameters.setPreviewSize(optimalSize.width, optimalSize.height);
+                mCamera.setParameters(parameters);
+            }
+
+            /*
+              Important: Call startPreview() to start updating the preview surface. Preview must 
+              be started before you can take a picture.
+              */
+            mCamera.startPreview();
+        }
+
+    }
+
+
+
+
+You can see that the LEGO man grows taller and skinnier when the phone is rotated:
+
+
+
+How can I ensure that the aspect ratio for my camera view is correct?
+    
+===============================================================================================
+159
+A:I'm using this method -> based on API Demos to get my Preview Size:
+
+private Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
+        final double ASPECT_TOLERANCE = 0.1;
+        double targetRatio=(double)h / w;
+
+        if (sizes == null) return null;
+
+        Camera.Size optimalSize = null;
+        double minDiff = Double.MAX_VALUE;
+
+        int targetHeight = h;
+
+        for (Camera.Size size : sizes) {
+            double ratio = (double) size.width / size.height;
+            if (Math.abs(ratio - targetRatio) > ASPECT_TOLERANCE) continue;
+            if (Math.abs(size.height - targetHeight) < minDiff) {
+                optimalSize = size;
+                minDiff = Math.abs(size.height - targetHeight);
+            }
+        }
+
+        if (optimalSize == null) {
+            minDiff = Double.MAX_VALUE;
+            for (Camera.Size size : sizes) {
+                if (Math.abs(size.height - targetHeight) < minDiff) {
+                    optimalSize = size;
+                    minDiff = Math.abs(size.height - targetHeight);
+                }
+            }
+        }
+        return optimalSize;
+    }
+
+
+As you can see you have to input width and height of your screen. This method will calculate screen ratio based on those values and then from the list of supportedPreviewSizes it will choose the best for you from avaliable ones. Get your supportedPreviewSize list in place where Camera object isn't null by using  
+
+mSupportedPreviewSizes = mCamera.getParameters().getSupportedPreviewSizes();
+
+
+And then on in onMeasure you can get your optimal previewSize like that:
+
+@Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        final int width = resolveSize(getSuggestedMinimumWidth(), widthMeasureSpec);
+        final int height = resolveSize(getSuggestedMinimumHeight(), heightMeasureSpec);
+        setMeasuredDimension(width, height);
+
+        if (mSupportedPreviewSizes != null) {
+           mPreviewSize = getOptimalPreviewSize(mSupportedPreviewSizes, width, height);
+        }
+    }
+
+
+And then (in my code in surfaceChanged method, like I said I'm using API Demos structure of CameraActivity code, you can generate it in Eclipse):
+
+Camera.Parameters parameters = mCamera.getParameters();
+parameters.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
+mCamera.setParameters(parameters);
+mCamera.startPreview();
+
+
+And one hint for you, because I did almost the same app like you. Good practice for Camera Activity is to hide StatusBar. Applications like Instagram are doing it. It reduces your screen height value and change your ratio value. It is possible to get strange Preview Sizes on some devices (your SurfaceView will be cut a little)
+
+
+
+And to answer your question, how to check if your preview ratio is correct? Then get height and width of parameters that you set in:
+
+mCamera.setParameters(parameters);
+
+
+your set ratio is equal to height/width. If you want camera to look good on your screen then height/width ratio of parameters that you set to camera must be the same as height(minus status bar)/width ratio of your screen.
+    

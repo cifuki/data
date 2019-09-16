@@ -1,0 +1,67 @@
+27
+Q:I have a suite of projects that use the same module, which contains nearly all the actual code. The project is setup like:
+
+project/
+  - app/
+    - build.gradle
+  - libraries/
+    - module/
+      - build.gradle
+  - build.gradle
+  - settings.gradle
+
+
+The dependencies are all setup correctly, and I can build and run apps great, however I can only add flavors to the project, which is not the ideal solution. settings.gradle contains the following:
+
+include ':app', ':libraries:module'
+
+
+In the app directory's build.gradle file, I added the following block:
+
+productFlavors {
+    alpha
+    production
+}
+
+
+Using gradle 0.11, this syncs and creates assembleAlphaDebug, assembleAlphaRelease, assembleProductionDebug, assembleProductionRelease tasks. When I attempt to do this in the module instead, I get the error:
+
+
+  No resource found that matches the given name (at 'theme' with value '@style/MyCustomTheme')
+
+
+in the built app/src/main/AndroidManifest.xml. For some reason, the module is not being built, so the custom theme is not working. What am I doing wrong?
+    
+===============================================================================================
+67
+A:In the library module's build.gradle, you need a couple extra lines to tell it to export the flavors and which build variant to use by default if not specified when being included from another module:
+
+android {
+    defaultPublishConfig "productionRelease"
+    publishNonDefault true
+
+    productFlavors {
+        alpha {
+        }
+        production {
+        }
+    }
+}
+
+
+That publishNonDefault bit is only necessary if someone would want to depend on something other than the productionRelease variant. Presumably this is the case if you set up multi-flavors in your library in the first place.
+
+Now if you add a dependency from another module via this in its build.gradle:
+
+dependencies {
+    compile project(':module')
+}
+
+
+it will depend on the productionRelease variant by default. If you'd like to depend on a non-default variant:
+
+dependencies {
+    compile project(path: ':module', configuration:'alphaDebug')
+}
+
+    

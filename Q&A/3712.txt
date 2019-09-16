@@ -1,0 +1,77 @@
+61
+Q:I have created RecyclerView example basing on Creating Lists and Cards guide. My adapter have a pattern implementation only for inflate the layout. 
+
+The problem is the poor scrolling performance. This in a RecycleView with only 8 items.
+
+In some tests I verified that in Android L this problem does not occurs. But in the KitKat version the decreasing of performance is evident.
+    
+===============================================================================================
+177
+A:I've recently faced the same issue, so this is what I've done with the latest RecyclerView support library:
+
+
+Replace a complex layout (nested views, RelativeLayout) with the new optimized ConstraintLayout. Activate it in Android Studio: Go to SDK Manager -> SDK Tools tab -> Support Repository -> check ConstraintLayout for Android & Solver for ConstraintLayout. Add to the dependencies:
+
+compile 'com.android.support.constraint:constraint-layout:1.0.2'
+
+If possible, make all elements of the RecyclerView with the same height. And add:
+
+recyclerView.setHasFixedSize(true);
+
+Use the default RecyclerView drawing cache methods and tweak them according to your case. You don't need third party library to do so:
+
+recyclerView.setItemViewCacheSize(20);
+recyclerView.setDrawingCacheEnabled(true);
+recyclerView.setDrawingCacheQuality(View.DRAWING_CACHE_QUALITY_HIGH);
+
+If you use many images, make sure their size and compression are optimal. Scaling images may also affect the performance. There are two sides of the problem - the source image used and the decoded Bitmap. The following example gives you a hint how to decode \xd0\xb0n image, downloaded from the web:
+
+InputStream is = (InputStream) url.getContent();
+BitmapFactory.Options options = new BitmapFactory.Options();
+options.inPreferredConfig = Bitmap.Config.RGB_565;
+Bitmap image = BitmapFactory.decodeStream(is, null, options);
+
+
+
+The most important part is specifying inPreferredConfig - it defines how many bytes will be used for each pixel of the image. Keep in mind that this is a preferred option. If the source image has more colors, it will still be decoded with a different config.
+
+
+Make sure onBindViewHolder() is as cheap as possible. You can set OnClickListener once in onCreateViewHolder() and call through an interface a listener outside of the Adapter, passing the clicked item. This way you don't create extra objects all the time. Also check flags and states, before making any changes to the view here.
+
+viewHolder.itemView.setOnClickListener(new View.OnClickListener() {
+      @Override
+      public void onClick(View view) {
+          Item item = getItem(getAdapterPosition());
+          outsideClickListener.onItemClicked(item);
+      }
+});
+
+When data gets changed, try to update only the affected items. For example instead of invalidating the whole data set with notifyDataSetChanged(), when adding / loading more items, just use:
+
+adapter.notifyItemRangeInserted(rangeStart, rangeEnd);
+adapter.notifyItemRemoved(position);
+adapter.notifyItemChanged(position);
+adapter.notifyItemInserted(position);
+
+From Android Developer Web Site :
+
+
+
+  Rely on notifyDataSetChanged() as a last resort.
+
+
+But if you need to use it, maintain your items with unique ids:
+
+    adapter.setHasStableIds(true);
+
+
+
+  RecyclerView will attempt to synthesize visible structural change
+  events for adapters that report that they have stable IDs when this
+  method is used. This can help for the purposes of animation and visual
+  object persistence but individual item views will still need to be
+  rebound and relaid out.
+
+
+Even if you do everything right, chances are that the RecyclerView is still not performing as smoothly as you would like.
+    

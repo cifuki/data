@@ -1,0 +1,95 @@
+92
+Q:For testing purposes, I'm trying to add a socket factory to my okHttp client that trusts everything while a proxy is set. This has been done many times over, but my implementation of a trusting socket factory seems to be missing something:
+
+class TrustEveryoneManager implements X509TrustManager {
+    @Override
+    public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException { }
+
+    @Override
+    public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException { }
+
+    @Override
+    public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+        return null;
+    }
+}
+OkHttpClient client = new OkHttpClient();
+
+final InetAddress ipAddress = InetAddress.getByName("XX.XXX.XXX.XXX"); // some IP
+client.setProxy(new Proxy(Proxy.Type.HTTP, new InetSocketAddress(ipAddress, 8888)));
+
+SSLContext sslContext = SSLContext.getInstance("TLS");
+TrustManager[] trustManagers = new TrustManager[]{new TrustEveryoneManager()};
+sslContext.init(null, trustManagers, null);
+client.setSslSocketFactory(sslContext.getSocketFactory);
+
+
+No requests are being sent out of my app and no exceptions are getting logged so it seems that it's failing silently within okHttp. Upon further investigation, it seems that there is an Exception being swallowed up in okHttp's Connection.upgradeToTls() when the handshake is being forced. The exception I'm being given is: javax.net.ssl.SSLException: SSL handshake terminated: ssl=0x74b522b0: SSL_ERROR_ZERO_RETURN occurred. You should never see this.
+
+The following code produces an SSLContext which works like a charm in creating an SSLSocketFactory that doesn't throw any exceptions:
+
+protected SSLContext getTrustingSslContext() throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+    final SSLContextBuilder trustingSSLContextBuilder = SSLContexts.custom()
+            .loadTrustMaterial(null, new TrustStrategy() {
+                @Override
+                public boolean isTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                    return true; // Accepts any ssl cert whether valid or not.
+                }
+            });
+    return trustingSSLContextBuilder.build();
+}
+
+
+The issue is that I'm trying to remove all Apache HttpClient dependencies from my app completely. The underlying code with Apache HttpClient to produce the SSLContext seems straightforward enough, but I'm obviously missing something as I cannot configure my SSLContext to match this.
+
+Would anyone be able to produce an SSLContext implementation which does what I'd like without using Apache HttpClient?
+    
+===============================================================================================
+212
+A:Just in case anyone falls here, the (only) solution that worked for me is creating the OkHttpClient like explained here.
+
+Here is the code:
+
+private static OkHttpClient getUnsafeOkHttpClient() {
+  try {
+    // Create a trust manager that does not validate certificate chains
+    final TrustManager[] trustAllCerts = new TrustManager[] {
+        new X509TrustManager() {
+          @Override
+          public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {
+          }
+
+          @Override
+          public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {
+          }
+
+          @Override
+          public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+            return new java.security.cert.X509Certificate[]{};
+          }
+        }
+    };
+
+    // Install the all-trusting trust manager
+    final SSLContext sslContext = SSLContext.getInstance("SSL");
+    sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
+    // Create an ssl socket factory with our all-trusting manager
+    final SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
+
+    OkHttpClient.Builder builder = new OkHttpClient.Builder();
+    builder.sslSocketFactory(sslSocketFactory, (X509TrustManager)trustAllCerts[0]);
+    builder.hostnameVerifier(new HostnameVerifier() {
+      @Override
+      public boolean verify(String hostname, SSLSession session) {
+        return true;
+      }
+    });
+
+    OkHttpClient okHttpClient = builder.build();
+    return okHttpClient;
+  } catch (Exception e) {
+    throw new RuntimeException(e);
+  }
+}
+
+    

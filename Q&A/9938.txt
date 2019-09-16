@@ -1,0 +1,40 @@
+27
+Q:Ive got this strange issue, ViewPager's setCurrentItem(position, false) works perfectly fine, then im switching to another activity, and after im back to the first activity, the ViewPager always ends up on the first item. Even though ive added setCurrentItem to onResume method it still ignores it.
+Its not even throwing any exception when im trying to set item to out of bounds index. 
+Though later on when i call this method, when the button "next" is clicked, it works like expected.
+Checked my code 10 times for any possible calls to setCurrentItem(0) or smth but its just not there at all.
+    
+===============================================================================================
+60
+A:i can't really answer WHY exactly this happens, but if you delay the setCurrentItem call for a few milliseconds it should work. My guess is that because during onResume there hasn't been a rendering pass yet, and the ViewPager needs one or something like that.
+
+private ViewPager viewPager;
+
+@Override
+public void onResume() {
+    final int pos = 3;
+    viewPager.postDelayed(new Runnable() {
+
+        @Override
+        public void run() {
+            viewPager.setCurrentItem(pos);
+        }
+    }, 100);
+}
+
+
+UPDATE: story time
+
+so today i had the problem that the viewpager ignored my setCurrentItem action, and i searched stackoverflow for a solution. i found someone with the same problem and a fix; i implemented the fix and it didn't work. whoa! back to stackoverflow to downvote that faux-fix-provider, and ...
+
+it was me. i implemented my own faulty non-fix, which i came up with the first time i stumbled over the problem (and which was later forgotten). i'll now have to downvote myself for providing bad information.
+
+
+
+the reason my initial "fix" worked was not because of of a "rendering pass"; the problem was that the pager's content was controlled by a spinner. both the spinners and the pagers state were restored onResume, and because of this the spinners onItemSelected listener was called during the next event propagation cycle, which did repopulate the viewpager - this time using a different default value.
+removing and resetting the listener during the initial state restoration fixed the issue.
+
+the fix above kind-of worked the first time, because it set the pagers current position after the onItemSelected event fired. later, it ceased to work for some reason (probably the app became too slow - in my implementation i didn't use 100ms, but 10ms). i then removed the postDelayed in a cleanup cycle, because it didn't change the already faulty behaviour.
+
+update 2: i can't downvote my own post. i assume, honorable seppuku is the only option left.
+    

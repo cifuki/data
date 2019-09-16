@@ -1,0 +1,56 @@
+31
+Q:I have implemented server-side verification Google IAP purchase tokens. My mobile app send me this token as get it from Google. 
+
+A regular token looks like
+
+minodojglppganfbiedlabed.AO-J1OyNtpooSraUdtKlZ_9gYs0o20ZF_0ryTNACmvaaaG5EwPX0hPruUdGbE3XejoXYCYzJA2xjjAxrDLFhmu9WC4fvTDNL-RDXCWjlHKpzLOigxCr1QhScXR8uXtX8R94iV6MmMHqD
+
+but sometimes I get a short token like this
+
+korpimulxmslxissnschtkdb
+
+When I verify this token via Google Play Developer API: https://www.googleapis.com/androidpublisher/v2/applications/packageName/purchases/subscriptions/subscriptionId/tokens/token, for the short token I get a 404 error. 
+
+Where is the problem? Is it possible that this short token represents real transactions?
+    
+===============================================================================================
+40
+A:I have been receiving these same invalid tokens in our app with no idea of the reason for a while. The tokens have come in various formats, including 24 alpha characters (eg. glvnqnpjqslcagyimgxeuybk), 15 digits (eg. 781871156762279, see this question), and even tokens of proper length that have a slightly different format from valid ones (eg. xdavcuvdnniwwrhwemleqjdz.rSQozm... see this question). 
+
+These are the error messages I have received from the in-app billing API for these various tokens at one time or another:
+
+
+"code": 404, "message": "The purchase token was not found."
+"code": 400, "message": "Invalid Value"
+"code": 400, "message": "Your request is invalid for this subscription purchase."
+
+
+The answer given by Marc Greenstock gave me an idea to try to reproduce the issue.
+
+Making a fraudulent purchase
+
+I tested two apps that claim to hack in-app purchases: Freedom, and Lucky Patcher, on a rooted device. The former did not work: though it detected that our app can make purchases, when I tried to make a fake one it told me that "this app's purchases cannot be faked". The latter one did work after some fiddling, however, and generated a short purchase token exactly as in the question. When I tried to verify the token via the in-app billing API, I received the same exact "invalid token" message as before. 
+
+I also started logging the root status of devices generating invalid tokens using this method. While this is not proof of anything, the fact that nearly all invalid tokens originated from rooted devices made me suspect foul play.
+
+The attack
+
+I believe the attack works as follows. Anyone who knows more about this please chime in!
+
+
+User installs one of the hacking apps that claims to make free in-app purchases onto a rooted device
+The hacking app either patches the legitimate In-App Billing Service on the device, or emulates it
+During a purchase flow the hacking app intercepts the purchase Intent which is meant for the legitimate service
+The hacking app processes the purchase request and generates a response the same way the legitimate service would, but the purchase request never reaches Google's servers
+An app that relies on local token validation will request purchases from the In-App Billing Service. This request is also intercepted by the hacking app, which claims that the purchase is valid
+An app that relies on server token validation sends the purchase token to a server, which makes a call to the in-app billing API, which has never seen the token, and therefore returns an "invalid token" response
+
+
+Mitigation
+
+
+Apps that rely purely on the In-App Billing Service are vulnerable! The purchase and the purchase validation requests are both intercepted by the same fraudulent app. There is no defense.
+Apps that rely on a server backend should send the purchase token to the backend to be verified through the publisher API. These apps must not credit the user with the purchase until the backend verifies it and returns a positive result to the app. The backend should probably follow the security recommendations for In-App Billing. These apps are probably safer from fraudulent purchases, though they generate a lot of invalid purchases.
+I don't think that it is safe to rely on the length or format of the token, order id, or other data for determining validity of the purchase. These tokens are probably only malformed because they were emulating a previous format. Presumably the authors of the hacking app will eventually release a version to emulate any format that Google cares to devise. The only safe means is to verify the purchase via the in-app billing API on a device that you control, ie. a server.
+
+    

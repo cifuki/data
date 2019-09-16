@@ -1,0 +1,59 @@
+35
+Q:Consider this code:
+
+public synchronized void onSignalsTimeout(List<SignalSpec> specs) {
+    if (specs != null && specs.size() > 0) {
+        for (SignalSpec spec : specs) {
+            ParsedCANSignal timeoutedSignal = new ParsedCANSignal();
+            SignalsProvider.getInstance().setSignal(spec.name, spec.parent.parent.channel, timeoutedSignal);
+        }
+    }
+}
+
+
+I've got simple question:
+When Thread 1 calls onSignalsTimeout method, can Thread 2 access objects that are accessed in that method?
+
+Can't find anywhere if 'synchronized' locks only access to this method or access to all objects used in this method.
+    
+===============================================================================================
+92
+A:First of all, forget about synchronized methods.  A so-called synchronized method...
+
+synchronized AnyType foobar(...) {
+    doSomething();
+}
+
+
+Is nothing but a shortcut way of writing this:
+
+AnyType foobar(...) {
+    synchronized(this) {
+        doSomething();
+    }
+}
+
+
+There is nothing special about the method in either case.  What is special is the synchronized block, and what a synchronized block does is very simple.  When the JVM executes this:
+
+synchronized(foo) {
+    doSomething();
+}
+
+
+It first evaluates the expression foo.  The result must be an object reference.  Then it locks the object, performs the body of the synchronized block, and then it unlocks the object.
+
+But what does locked mean?  It may mean less than you think.  It does not prevent other threads from using the object.  It doesn't prevent them from accessing the object's fields or, from updating its fields.  The only thing that locking an object prevents is, it prevents other threads from locking the same object at the same time.
+
+If thread A tries to enter synchronized(foo) {...} while thread B already has foo locked (either in the same synchronized block, or in a different one), then thread A will be forced to wait until thread B releases the lock.
+
+
+
+You use synchronized blocks to protect data.
+
+Suppose your program has some collection of objects that can be in different states.  Suppose that some states make sense, but there are other states that don't make sense\xe2\x80\x94invalid states.
+
+Suppose that it is not possible for a thread to change the data from one valid state to another valid state without temporarily creating an invalid state.
+
+If you put the code that changes the state in a synchronized(foo) block, and you put every block of code that can see the state into a synchronized block that locks the same object, foo, then you will prevent other threads from seeing the temporary invalid state.
+    

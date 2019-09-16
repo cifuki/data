@@ -1,0 +1,172 @@
+247
+Q:I have a Fragment with a constructor that takes multiple arguments. My app worked fine during development, but in production my users sometimes see this crash:
+
+android.support.v4.app.Fragment$InstantiationException: Unable to instantiate fragment 
+make sure class name exists, is public, and has an empty constructor that is public
+
+
+I could make an empty constructor as this error message suggests, but that doesn't make sense to me since then I would have to call a separate method to finish setting up the Fragment.
+
+I'm curious as to why this crash only happens occasionally. Maybe I'm using the ViewPager incorrectly? I instantiate all the Fragments myself and save them in a list inside the Activity. I don't use FragmentManager transactions, since the ViewPager examples I have seen did not require it and everything seemed to be working during development.
+    
+===============================================================================================
+335
+A:Yes they do.
+
+You shouldn't really be overriding the constructor anyway. You should have a newInstance() static method defined and pass any parameters via arguments (bundle)
+
+For example:
+
+public static final MyFragment newInstance(int title, String message) {
+    MyFragment f = new MyFragment();
+    Bundle bdl = new Bundle(2);
+    bdl.putInt(EXTRA_TITLE, title);
+    bdl.putString(EXTRA_MESSAGE, message);
+    f.setArguments(bdl);
+    return f;
+}
+
+
+And of course grabbing the args this way:
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    title = getArguments().getInt(EXTRA_TITLE);
+    message = getArguments().getString(EXTRA_MESSAGE);
+
+    //...
+    //etc
+    //...
+}
+
+
+Then you would instantiate from your fragment manager like so:
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    if (savedInstanceState == null){
+        getSupportFragmentManager()
+            .beginTransaction()
+            .replace(R.id.content, MyFragment.newInstance(
+                R.string.alert_title,
+                "Oh no, an error occurred!")
+            )
+            .commit();
+    }
+}
+
+
+This way if detached and re-attached the object state can be stored through the arguments. Much like bundles attached to Intents.
+
+Reason - Extra reading
+
+I thought I would explain why for people wondering why.
+
+If you check: https://android.googlesource.com/platform/frameworks/base/+/master/core/java/android/app/Fragment.java
+
+You will see the instantiate(..) method in the Fragment class calls the newInstance method:
+
+public static Fragment instantiate(Context context, String fname, @Nullable Bundle args) {
+    try {
+        Class<?> clazz = sClassMap.get(fname);
+        if (clazz == null) {
+            // Class not found in the cache, see if it's real, and try to add it
+            clazz = context.getClassLoader().loadClass(fname);
+            if (!Fragment.class.isAssignableFrom(clazz)) {
+                throw new InstantiationException("Trying to instantiate a class " + fname
+                        + " that is not a Fragment", new ClassCastException());
+            }
+            sClassMap.put(fname, clazz);
+        }
+        Fragment f = (Fragment) clazz.getConstructor().newInstance();
+        if (args != null) {
+            args.setClassLoader(f.getClass().getClassLoader());
+            f.setArguments(args);
+        }
+        return f;
+    } catch (ClassNotFoundException e) {
+        throw new InstantiationException("Unable to instantiate fragment " + fname
+                + ": make sure class name exists, is public, and has an"
+                + " empty constructor that is public", e);
+    } catch (java.lang.InstantiationException e) {
+        throw new InstantiationException("Unable to instantiate fragment " + fname
+                + ": make sure class name exists, is public, and has an"
+                + " empty constructor that is public", e);
+    } catch (IllegalAccessException e) {
+        throw new InstantiationException("Unable to instantiate fragment " + fname
+                + ": make sure class name exists, is public, and has an"
+                + " empty constructor that is public", e);
+    } catch (NoSuchMethodException e) {
+        throw new InstantiationException("Unable to instantiate fragment " + fname
+                + ": could not find Fragment constructor", e);
+    } catch (InvocationTargetException e) {
+        throw new InstantiationException("Unable to instantiate fragment " + fname
+                + ": calling Fragment constructor caused an exception", e);
+    }
+}
+
+
+http://docs.oracle.com/javase/6/docs/api/java/lang/Class.html#newInstance() Explains why, upon instantiation it checks that the accessor is public and that that class loader allows access to it.
+
+It's a pretty nasty method all in all, but it allows the FragmentManger to kill and recreate Fragments with states. (The Android subsystem does similar things with Activities).
+
+Example Class
+
+I get asked a lot about calling newInstance. Do not confuse this with the class method.  This whole class example should show the usage.
+
+/**
+ * Created by chris on 21/11/2013
+ */
+public class StationInfoAccessibilityFragment extends BaseFragment implements JourneyProviderListener {
+
+    public static final StationInfoAccessibilityFragment newInstance(String crsCode) {
+        StationInfoAccessibilityFragment fragment = new StationInfoAccessibilityFragment();
+
+        final Bundle args = new Bundle(1);
+        args.putString(EXTRA_CRS_CODE, crsCode);
+        fragment.setArguments(args);
+
+        return fragment;
+    }
+
+    // Views
+    LinearLayout mLinearLayout;
+
+    /**
+     * Layout Inflater
+     */
+    private LayoutInflater mInflater;
+    /**
+     * Station Crs Code
+     */
+    private String mCrsCode;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        mCrsCode = getArguments().getString(EXTRA_CRS_CODE);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        mInflater = inflater;
+        return inflater.inflate(R.layout.fragment_station_accessibility, container, false);
+    }
+
+    @Override
+    public void onViewCreated(View view, Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        mLinearLayout = (LinearLayout)view.findViewBy(R.id.station_info_accessibility_linear);
+        //Do stuff
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        getActivity().getSupportActionBar().setTitle(R.string.station_info_access_mobility_title);
+    }
+
+    // Other methods etc...
+}
+
+    

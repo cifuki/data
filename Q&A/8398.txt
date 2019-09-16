@@ -1,0 +1,133 @@
+32
+Q:I was reviewing the Google I/O Session 2012 app and came across this TODO
+
+// TODO: use <meta-data> element instead
+private static final Class[] sPhoneActivities = new Class[]{
+        MapActivity.class,
+        SessionDetailActivity.class,
+        SessionsActivity.class,
+        TrackDetailActivity.class,
+        VendorDetailActivity.class,
+};
+
+// TODO: use <meta-data> element instead
+private static final Class[] sTabletActivities = new Class[]{
+        MapMultiPaneActivity.class,
+        SessionsVendorsMultiPaneActivity.class,
+};
+
+public static void enableDisableActivities(final Context context) {
+    boolean isHoneycombTablet = isHoneycombTablet(context);
+    PackageManager pm = context.getPackageManager();
+
+    // Enable/disable phone activities
+    for (Class a : sPhoneActivities) {
+        pm.setComponentEnabledSetting(new ComponentName(context, a),
+                isHoneycombTablet
+                        ? PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                        : PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP);
+    }
+
+    // Enable/disable tablet activities
+    for (Class a : sTabletActivities) {
+        pm.setComponentEnabledSetting(new ComponentName(context, a),
+                isHoneycombTablet
+                        ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                        : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP);
+    }
+}
+
+
+Which made me wonder how would one execute that TODO.
+    
+===============================================================================================
+45
+A:I came up with this approach (Note: this is modelled after the Google I/O Session 2012 app UIUtilis.java):
+
+In the AndroidManifest.xml define Activitys to include the <meta-data>:
+
+<!-- Note: specify the target device for Activities with target_device meta-data of "universal|phone|tablet"
+           see UIUtils.java (configureDeviceSpecificActivities) for more details. -->
+
+<!-- Activities for both phones and tablets -->
+<activity android:name=".ui.AccountActivity" 
+          android:configChanges="orientation|keyboardHidden" 
+          android:label="@string/app_name"
+          android:theme="@style/Theme.Accounts">
+          <meta-data android:name="target_device" android:value="universal"/>
+</activity>
+
+<!-- Activities for tablets -->
+<activity android:name=".ui.CoolMultipaneActivity"
+          android:label="@string/app_name">
+          <meta-data android:name="target_device" android:value="tablet"/>
+
+
+The hard work is put in the method configureDeviceSpecificActivities(Context context)
+
+/**
+ * Enables and disables {@linkplain android.app.Activity activities} based on their "target_device" meta-data and
+ * the current device. Add <meta-data name="target_device" value="tablet|phone|universal" /> to an activity to
+ * specify its target device.
+ * @param context the current context of the device
+ * @see #isHoneycombTablet(android.content.Context)
+ */
+public static void configureDeviceSpecificActivities(Context context) {
+    final PackageManager package_manager = context.getPackageManager();
+    final boolean is_honeycomb_tablet = isHoneycombTablet(context);
+    try {
+        final ActivityInfo[] activity_info = package_manager.getPackageInfo(context.getPackageName(),
+                PackageManager.GET_ACTIVITIES | PackageManager.GET_META_DATA).activities;
+        for (ActivityInfo info : activity_info) {
+            final String target_device = info.metaData.getString("target_device");
+            if (target_device == null) break;
+            target_device = target_device.toLowerCase(Locale.US);
+            final boolean is_for_tablet = target_device.equals("tablet");
+            final boolean is_for_phone = target_device.equals("phone");
+            final String class_name = info.name;
+            package_manager.setComponentEnabledSetting(new ComponentName(context, Class.forName(class_name)),
+                    is_honeycomb_tablet && is_for_phone
+                            ? PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                            : !is_honeycomb_tablet && is_for_tablet
+                            ? PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                            : PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP);
+        }
+    } catch (PackageManager.NameNotFoundException error) {
+        Ln.w(error.getCause());
+    } catch (ClassNotFoundException error) {
+        Ln.w(error.getCause());
+    }
+}
+
+
+fun fact: it doesn't work without the GET_META_DATA flag, as the metaData will always return as null if you don't include that tag.
+
+The last touch is to call this method, likely in the onCreate of your initial Activity
+
+@Override
+protected void onCreate(Bundle icicle) {
+    super.onCreate(icicle);
+
+    // Anything else you want to do in the onCreate callback
+
+    // Set up to use the appropriate Activities for the given device
+    UIUtils.configureDeviceSpecificActivities(this);
+}
+
+
+Now you can have Activitys that are specially designed for phones and tablets for the times when just changing the layout and maybe including more Fragments isn't sufficient.
+
+NOTE: final String class_name = info.packageName + info.name; might have to be final String class_name = info.name; if you see a warning.
+
+NOTE(2): final String target_device = info.metaData.getString("target_device", "").toLowerCase(); should be for backward compatibility past API 12.
+
+String target_device = info.metaData.getString("target_device");
+if (target_device == null) break;
+target_device = target_device.toLowerCase();
+
+
+NOTE(3): target_device.toLowerCase(); uses the default locale implicitly. Use target_device.toLowerCase(Locale.US) instead. And made all changes in the code above.
+    

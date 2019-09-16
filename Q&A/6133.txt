@@ -1,0 +1,60 @@
+41
+Q:I am using an IntentService to handle network communications with a server via JSON.  The JSON/server part is working fine, but I'm having trouble getting the results back where they are needed.  The following code shows how I am starting the intent service from inside onClick(), and then having the service update a global variable to relay the results back to the main activity.
+
+public class GXActivity extends Activity {
+
+    private static final String TAG = "GXActivity";
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        // === called when the activity is first created
+
+        Log.i(TAG, "GXActivity Created");
+
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.start);
+
+        View.OnClickListener handler = new View.OnClickListener() {
+            public void onClick(View v) {
+
+                // === set up an application context to hold a global variable
+                // === called user, to contain results from the intent service
+                GXApp appState = ((GXApp) getApplicationContext());
+                User user = new User(-1); // initialize user id to -1
+                appState.setUser(user);
+
+                // === next start an intent service to get JSON from the server;
+                // === this service updates the user global variable with
+                // === results from the JSON transaction
+                Intent intent = new Intent(this, GXIntentService.class);
+                startService(intent);
+
+                // === check app context for results from intent service
+                appState = ((GXApp) getApplicationContext());
+                if (appState.getUser().getId() != -1)...
+
+            }
+        }
+    }
+}
+
+
+The problem I'm having is that the intent service that parses the JSON doesn't get invoked until after onCreate() completes, so my code that's looking for the results is stuck looking at uninitialized results.
+
+What should I do differently so the intent service gets called before I check the results?  Would it work if I pulled the click listener out of the onCreate() function?  Is there a another/better to structure this code?  Many thanks.
+    
+===============================================================================================
+82
+A:You should look at creating your own ResultReceiver subclass in your activity. ResultReceiver implements Parcelable so can be passed from your Activity to your Service as an extra on the Intent.
+
+You'll need to do something like this:
+
+
+Implement a subclass of ResultReceiver within your activity class. The key method to implement is onReceiveResult(). This method provides you a with Bundle of result data which can be used to pass whatever information you are retrieving in your Service. Simply unpack the data you need and use it to update your activity. 
+In your activity, create a new instance of your custom ResultReceiver and add it to the Intent you use to start your service.
+In your Service's onStartCommand() method, retrieve the ResultReceiver passed in on the Intent and store it in a local member variable.
+Once your Service completes its work, have it call send() on the ResultReceiver passing whatever data you want to send back to the activity in a Bundle. 
+
+
+This is a pretty effective pattern and means you're not storing data in nasty static variables. 
+    

@@ -1,0 +1,107 @@
+30
+Q:I would like to wait until an animation is finished* in an Android ImageView before continuing program execution, what is the proper way to do this?
+
+
+(in this context "finished" means that it runs through all of its frames exactly one time and stops on the last one. I am unclear whether this animation will be an android:oneshot="true" animation because I will be using it multiple times, but it will not be run continuously but intermittently)
+
+
+Research/Guesses:
+
+A. At heart my question seems to be a Java thread question because the Android AnimationDrawable implements Java.lang.Runnable. So maybe threads are the solution. Perhaps the answer will include join?
+
+B. The approach of others seems to have been to use AnimationListener, this seems difficult and needlessly complex for my simple needs. Plus I'm not exactly sure how to do it.
+
+C. The AnimationDrawable class has a (boolean) isRunning method which could probably be used in a while loop (i.e. while(anim.isRunning()){wait(100ms)}). But I have a gut feeling that this is the wrong approach. Although something similar seems to be mentioned in the concurrency tutorial
+
+Code Snippet
+
+   this.q_pic_view.setImageResource(0);
+    this.q_pic_view.setBackgroundResource(R.drawable.animation_test);
+    AnimationDrawable correct_animation = (AnimationDrawable) this.q_pic_view.getBackground();
+    correct_animation.start();
+
+    //here I tried to implement option C but it didn't work
+    while(correct_animation.isRunning()){
+        try {
+           Thread.sleep(20);
+        } catch (InterruptedException e) {
+           // TODO Auto-generated catch block
+           e.printStackTrace();
+        }
+    }
+
+
+Animation
+
+<?xml version="1.0" encoding="utf-8"?>
+<animation-list android:id="@+id/AnimTest" android:oneshot="true" xmlns:android="http://schemas.android.com/apk/res/android">
+  <item android:drawable="@drawable/animtest001" android:duration="33"/>
+  <item android:drawable="@drawable/animtest002" android:duration="100"/>
+  <item android:drawable="@drawable/animtest003" android:duration="66"/>
+  <item android:drawable="@drawable/animtest004" android:duration="66"/>
+  <item android:drawable="@drawable/animtest005" android:duration="33"/>
+  <item android:drawable="@drawable/animtest006" android:duration="66"/>
+  <item android:drawable="@drawable/animtest007" android:duration="33"/>
+  <item android:drawable="@drawable/animtest008" android:duration="66"/>
+  <item android:drawable="@drawable/animtest009" android:duration="100"/>
+  <item android:drawable="@drawable/animtest010" android:duration="100"/>
+</animation-list>
+
+
+One Possible way to achieve the desired effect, though not an answer to my question, is to delay the execution of further code by doing something like this:
+
+int duration = 0;
+//Add all of the frames together
+for (int i=0; i<my_animation.getNumberOfFrames(); i++){
+    duration = duration + correct_animation.getDuration(i);
+    }
+//delay the execution 
+Handler handler = new Handler();
+handler.postDelayed(new Runnable(){
+    public void run() {
+       DoYourNextStuff();
+        }
+}, duration); //delay is here
+
+
+Edit: There are many ways to solve this problem, the answer given probably does solve the problem I didn't test it, but I ended up just waiting the correct amount of time (at first), then I changed to using an async task (which has a handler method for completion) and ran my animation in the updateProgress call of the async task directly. In the last iteration I am using a threaded surface view to run the animation. This last way is by far the fastest and best (for reasons other then those asked about in this post). I hope it helps someone.
+    
+===============================================================================================
+9
+A:Suggest you 
+
+
+Create an object to encapsulate the "animation" lifetime
+In the object, you'll have a thread OR a Timer
+Provide methods to start() the animation and awaitCompletion()
+Use a private final Object completionMonitor field to track completion, synchronize on it, and use wait() and notifyAll() to coordinate the awaitCompletion()
+
+
+Code snippet:
+
+final class Animation {
+
+    final Thread animator;
+
+    public Animation()
+    {
+      animator = new Thread(new Runnable() {
+        // logic to make animation happen
+       });
+
+    }
+
+    public void startAnimation()
+    {
+      animator.start();
+    }
+
+    public void awaitCompletion() throws InterruptedException
+    {
+      animator.join();
+    }
+}
+
+
+You could also use a ThreadPoolExecutor with a single thread or ScheduledThreadPoolExecutor, and capture each frame of the animation as a Callable.  Submitting the sequence of Callables and using invokeAll() or a CompletionService to block your interested thread until the animation is complete.
+    

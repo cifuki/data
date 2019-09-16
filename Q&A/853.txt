@@ -1,0 +1,122 @@
+172
+Q:I am still new in the React Native world, and generally in the mobile/native world as well, and I am finding the documentation a bit lacking when it comes to data persistence.
+
+What are my options for storing data in React Native and the implications of each type? For instance, I see that there is local storage and async storage, but then I also see things like Realm, and I'm confused how all of this would work with an outside database.
+
+I specifically want to know:
+
+
+What are the different options for data persistence?
+For each, what are the limits of that persistence (i.e., when is the data no longer available)? For example: when closing the application, restarting the phone, etc. 
+For each, are there differences (other than general setup) between implementing in iOS vs Android?
+How do the options compare for accessing data offline? (or how is offline access typically handled?)
+Are there any other considerations I should keep in mind?
+
+
+Thanks for your help!
+    
+===============================================================================================
+220
+A:Here's what I've learned as I determine the best way to move forward with a couple of my current app projects.
+
+Async Storage ("built-in" to React Native)
+
+I use AsyncStorage for an in-production app. Storage stays local to the device, is unencrypted (as mentioned in another answer), goes away if you delete the app, but should be saved as part of your device's backups and persists during upgrades (both native upgrades ala TestFlight and code upgrades via CodePush).
+
+Conclusion: Local storage; you provide your own sync/backup solution.
+
+SQLite
+
+Other projects I have worked on have used sqlite3 for app storage. This gives you an SQL-like experience, with compressible databases that can also be transmitted to and from the device.  I have not had any experience with syncing them to a back end, but I imagine various libraries exist.  There are RN libraries for connecting to SQLite. 
+
+Data is stored in your traditional database format with databases, tables, keys, indices, etc. all saved to disk in a binary format. Direct access to the data is available via command line or apps that have SQLite drivers.
+
+Conclusion: Local storage; you supply the sync and backup.
+
+Firebase
+
+Firebase offers, among other things, a real time noSQL database along with a JSON document store (like MongoDB) meant for keeping from 1 to n number of clients synchronized. The docs talk about offline persistence, but only for native code (Swift/Obj-C, Java). Google's own JavaScript option ("Web") which is used by React Native does not provide a cached storage option (see 2/18 update below). The library is written with the assumption that a web browser is going to be connecting, and so there will be a semi-persistent connection.  You could probably write a local caching mechanism to supplement the Firebase storage calls, or you could write a bridge between the native libraries and React Native.
+
+[Update 2/2018] I have since found React Native Firebase which provides a compatible JavaScript interface to the native iOS and Android libraries (doing what Google probably could/should have done), giving you all the goodies of the native libraries with the bonus of React Native support. With Google's introduction of a JSON document store beside the real-time database, I'm giving Firebase a good second look for some real-time apps I plan to build. 
+
+The real-time database is stored as a JSON-like tree that you can edit on the website and import/export pretty simply.
+
+Conclusion: With react-native-firebase, RN gets same benefits as Swift and Java. [/update] Scales well for network-connected devices. Low cost for low utilization. Combines nicely with other Google cloud offerings. Data readily visible and editable from their interface.
+
+Realm
+
+Also a real time object store with automagic network synchronization.  They tout themselves as "device first" and the demo video shows how the devices handle sporadic or lossy network connectivity.
+
+They offer a free version of the object store that you host on your own servers or in a cloud solution like AWS or Azure.  You can also create in-memory stores that do not persist with the device, device-only stores that do not sync up with the server, read-only server stores, and the full read-write option for synchronization across one or more devices.  They have professional and enterprise options that cost more up front per month than Firebase.  
+
+Unlike Firebase, all Realm capabilities are supported in React Native and Xamarin, just as they are in Swift/ObjC/Java (native) apps.
+
+Your data is tied to objects in your code. Because they are defined objects, you do have a schema, and version control is a must for code sanity. Direct access is available via GUI tools Realm provides.  On-device data files are cross-platform compatible.
+
+Conclusion: Device first, optional synchronization with free and paid plans. All features supported in React Native.  Horizontal scaling more expensive than Firebase.
+
+iCloud
+
+I honestly haven't done a lot of playing with this one, but will be doing so in the near future.
+
+If you have a native app that uses CloudKit, you can use CloudKit JS to connect to your app's containers from a web app (or, in our case, React Native).  In this scenario, you would probably have a native iOS app and a React Native Android app.
+
+Like Realm, this stores data locally and syncs it to iCloud when possible.  There are public stores for your app and private stores for each customer.  Customers can even chose to share some of their stores or objects with other users.
+
+I do not know how easy it is to access the raw data; the schemas can be set up on Apple's site.
+
+Conclusion: Great for Apple-targeted apps.
+
+Couchbase
+
+Big name, lots of big companies behind it.  There's a Community Edition and Enterprise Edition with the standard support costs.
+
+They've got a tutorial on their site for hooking things up to React Native.  I also haven't spent much time on this one, but it looks to be a viable alternative to Realm in terms of functionality.  I don't know how easy it is to get to your data outside of your app or any APIs you build.
+
+[Edit: Found an older link that talks about Couchbase and CouchDB, and CouchDB may be yet another option to consider. The two are historically related but presently completely different products.  See this comparison.]
+
+Conclusion: Looks to have similar capabilities as Realm. Can be device-only or synced. I need to try it out.
+
+MongoDB
+
+I'm using this server side for a piece of the app that uses AsyncStorage locally.  I like that everything is stored as JSON objects, making transmission to the client devices very straightforward.  In my use case, it's used as a cache between an upstream provider of TV guide data and my client devices. 
+
+There is no hard structure to the data, like a schema, so every object is stored as a "document" that is easily searchable, filterable, etc. Similar JSON objects could have additional (but different) attributes or child objects, allowing for a lot of flexibility in how you structure your objects/data.
+
+I have not tried any client to server synchronization features, nor have I used it embedded. React Native code for MongoDB does exist.
+
+Conclusion: Local only NoSQL solution, no obvious sync option like Realm or Firebase.
+
+[Update 2/2019]
+
+MongoDB has a "product" (or service) called Stitch. Since clients (in the sense of web browsers and phones) shouldn't be talking to MongoDB directly (that's done by code on your server), they created a serverless front-end that your apps can interface with, should you choose to use their hosted solution (Atlas).  Their documentation makes it appear that there is a possible sync option.
+
+This writeup from Dec 2018 discusses using React Native, Stitch, and MongoDB in a sample app, with other samples linked in the document (https://www.mongodb.com/blog/post/building-ios-and-android-apps-with-the-mongodb-stitch-react-native-sdk).
+
+Twilio Sync
+
+Another NoSQL option for synchronization is Twilio's Sync. From their site:
+"Sync lets you manage state across any number of devices in real time at scale without having to handle any backend infrastructure."
+
+I looked at this as an alternative to Firebase for one of the aforementioned projects, especially after talking to both teams. I also like their other communications tools, and have used them for texting updates from a simple web app.
+
+[/Update]
+
+
+
+[Edit] I've spent some time with Realm since I originally wrote this. I like how I don't have to write an API to sync the data between the app and the server, similar to Firebase. Serverless functions also look to be really helpful with these two, limiting the amount of backend code I have to write.
+
+I love the flexibility of the MongoDB data store, so that is becoming my choice for the server side of web-based and other connection-required apps.  
+
+I found RESTHeart, which creates a very simple, scalable RESTful API to MongoDB.  It shouldn't be too hard to build a React (Native) component that reads and writes JSON objects to RESTHeart, which in turn passes them to/from MongoDB.
+
+
+
+[Edit] I added info about how the data is stored. Sometimes it's important to know how much work you might be in for during development and testing if you've got to tweak and test the data.
+
+
+
+[Update 2/2019] I experimented with several of these options when designing a high-concurrency project this past year (2018). Some of them mention hard and soft concurrency limits in their documentation (Firebase had a hard one at 10,000 connections, I believe, while Twilio's was a soft limit that could be bumped, according to discussions with both teams at AltConf).
+
+If you are designing an app for tens to hundreds of thousands of users, be prepared to scale the data backend accordingly.
+    

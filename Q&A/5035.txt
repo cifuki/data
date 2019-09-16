@@ -1,0 +1,149 @@
+48
+Q:Can I test real response from retrofit2beta4? Do i need Mockito or Robolectic?
+
+I don't have activities in my project, it will be a library and I need to test is server responding correctly.
+Now I have such code and stuck...
+
+@Mock
+ApiManager apiManager;
+
+@Captor
+private ArgumentCaptor<ApiCallback<Void>> cb;
+
+@Before
+public void setUp() throws Exception {
+    apiManager = ApiManager.getInstance();
+    MockitoAnnotations.initMocks(this);
+}
+
+@Test
+public void test_login() {
+    Mockito.verify(apiManager)
+           .loginUser(Mockito.eq(login), Mockito.eq(pass), cb.capture());
+    // cb.getValue();
+    // assertEquals(cb.getValue().isError(), false);
+}
+
+
+I can make fake response, but I need to test real. Is it success? Is it's body correct?
+Can you help me with code?
+    
+===============================================================================================
+105
+A:It is generally not a good idea to test real server requests. See this blog post for an interesting discussion on the topic. According to the author, using your real server is a problem because:
+
+
+  
+  Another moving piece that can intermittently fail
+  Requires some expertise outside of the Android domain to deploy the server and keep it updated
+  Difficult to trigger error/edge cases
+  Slow test execution (still making HTTP calls)
+  
+
+
+You can avoid all the issues above by using a mock server such as OkHttp's MockWebServer to simulate real response results. For example:
+
+@Test
+public void test() throws IOException {
+    MockWebServer mockWebServer = new MockWebServer();
+
+    Retrofit retrofit = new Retrofit.Builder()
+            .baseUrl(mockWebServer.url("").toString())
+            //TODO Add your Retrofit parameters here
+            .build();
+
+    //Set a response for retrofit to handle. You can copy a sample
+    //response from your server to simulate a correct result or an error.
+    //MockResponse can also be customized with different parameters
+    //to match your test needs
+    mockWebServer.enqueue(new MockResponse().setBody("your json body"));
+
+    YourRetrofitService service = retrofit.create(YourRetrofitService.class);
+
+    //With your service created you can now call its method that should 
+    //consume the MockResponse above. You can then use the desired
+    //assertion to check if the result is as expected. For example:
+    Call<YourObject> call = service.getYourObject();
+    assertTrue(call.execute() != null);
+
+    //Finish web server
+    mockWebServer.shutdown();
+}
+
+
+If you need to simulate network delays, you can customize your response as follows:
+
+MockResponse response = new MockResponse()
+    .addHeader("Content-Type", "application/json; charset=utf-8")
+    .addHeader("Cache-Control", "no-cache")
+    .setBody("{}");
+response.throttleBody(1024, 1, TimeUnit.SECONDS);
+
+
+Alternatively, you can use MockRetrofit and NetworkBehavior to simulate API responses. See here an example of how to use it.
+
+Finally, if you just want to test your Retrofit Service, the easiest would be to create a mock version of it that emits mock results for your tests. For example, if you have the following GitHub service interface:
+
+public interface GitHub {
+    @GET("/repos/{owner}/{repo}/contributors")
+    Call<List<Contributor>> contributors(
+        @Path("owner") String owner,
+        @Path("repo") String repo);
+}
+
+
+You can then create the following MockGitHub for your tests:
+
+public class MockGitHub implements GitHub {
+    private final BehaviorDelegate<GitHub> delegate;
+    private final Map<String, Map<String, List<Contributor>>> ownerRepoContributors;
+
+    public MockGitHub(BehaviorDelegate<GitHub> delegate) {
+        this.delegate = delegate;
+        ownerRepoContributors = new LinkedHashMap<>();
+
+        // Seed some mock data.
+        addContributor("square", "retrofit", "John Doe", 12);
+        addContributor("square", "retrofit", "Bob Smith", 2);
+        addContributor("square", "retrofit", "Big Bird", 40);
+        addContributor("square", "picasso", "Proposition Joe", 39);
+        addContributor("square", "picasso", "Keiser Soze", 152);
+    }
+
+    @Override public Call<List<Contributor>> contributors(String owner, String repo) {
+        List<Contributor> response = Collections.emptyList();
+        Map<String, List<Contributor>> repoContributors = ownerRepoContributors.get(owner);
+        if (repoContributors != null) {
+            List<Contributor> contributors = repoContributors.get(repo);
+            if (contributors != null) {
+                response = contributors;
+            }
+        }
+        return delegate.returningResponse(response).contributors(owner, repo);
+    }
+}
+
+
+You can then use the MockGitHub on your tests to simulate the kinds of responses you are looking for. For the full example, see the implementations of the SimpleService and SimpleMockService for this Retrofit example.
+
+Having said all this, if you absolutely must connect to the actual server, you can set Retrofit to work synchronously with a custom ImmediateExecutor:
+
+public class ImmediateExecutor implements Executor {
+    @Override public void execute(Runnable command) {
+        command.run();
+    }
+}
+
+
+Then apply it to the OkHttpClient you use when building the Retrofit:
+
+OkHttpClient client = OkHttpClient.Builder()
+        .dispatcher(new Dispatcher(new ImmediateExecutor()))
+        .build();
+
+Retrofit retrofit = new Retrofit.Builder()
+        .client(client)
+        //Your params
+        .build();
+
+    

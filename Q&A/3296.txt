@@ -1,0 +1,63 @@
+68
+Q:I'm familiar with using AsyncTask in Android: create a subclass, call execute on an instance of the subclass and onPostExecute is called on the UI thread or main thread. What's the equivalent in iOS?
+    
+===============================================================================================
+101
+A:Answer to Original Question:
+
+Grand Central Dispatch (GCD) offers a mechanism to perform tasks in the background, though it works in a structurally different way than AsyncTask. To perform something asynchronously, you just need to create a queue (like a thread) and then pass a block to dispatch_async() to be performed in the background. I find it neater than AsyncTask, as there is no subclassing involved; it is more or less plug-and-play wherever you have code you'd like to execute in the background. An example:
+
+dispatch_queue_t queue = dispatch_queue_create("com.yourdomain.yourappname", NULL);
+dispatch_async(queue, ^{
+    //code to be executed in the background
+});
+
+
+Other Points:
+
+1) Callbacks
+
+If you want to perform a task in the background and update the UI (or do something on another thread) when the background task is done, you can simply nest the dispatch calls:
+
+dispatch_queue_t queue = dispatch_queue_create("com.yourdomain.yourappname", NULL);
+dispatch_async(queue, ^{
+    //code to be executed in the background
+    dispatch_async(dispatch_get_main_queue(), ^{
+        //code to be executed on the main thread when background task is finished
+    });
+});
+
+
+2) Global Queues
+
+When creating a queue, you can also use the dispatch_get_global_queue() function to get a global dispatch queue with a certain priority (such as DISPATCH_QUEUE_PRIORITY_HIGH). These queues are universally accessible and are useful when you want to assign multiple tasks to the same thread/queue. Note that memory is managed for you completely by iOS.
+
+3) Memory
+
+There is sometimes some confusion regarding memory management and dispatch queues because they have their own dispatch_retain/dispatch_release functions. However, rest assured that they are treated as Objective-C objects by ARC, so you don't need to worry about calling these functions. Referencing rob mayoff's great answer regarding GCD and ARC, you can see the documentation describe GCD queues' equivalence with Objective-C objects:
+
+* By default, libSystem objects such as GCD and XPC objects are declared as
+* Objective-C types when building with an Objective-C compiler. This allows
+* them to participate in ARC, in RR management by the Blocks runtime and in
+* leaks checking by the static analyzer, and enables them to be added to Cocoa
+* collections.
+*
+* NOTE: this requires explicit cancellation of dispatch sources and xpc
+*       connections whose handler blocks capture the source/connection object,
+*       resp. ensuring that such captures do not form retain cycles (e.g. by
+*       declaring the source as __weak).
+*
+* To opt-out of this default behavior, add -DOS_OBJECT_USE_OBJC=0 to your
+* compiler flags.
+*
+* This mode requires a platform with the modern Objective-C runtime, the
+* Objective-C GC compiler option to be disabled, and at least a Mac OS X 10.8
+* or iOS 6.0 deployment target.
+
+
+4) Multiple Tasks/Blocks 
+
+I'll add that GCD has a grouping interface supports synchronizing multiple asynchronous blocks if a task cannot continue until multiple asynchronous activities have completed. J\xc3\xb6rn Eyrich and \xc9\xb2eurobur\xc9\xb3 provide a generous explanation of this topic here. If you need this functionality, I would highly recommend taking a few minutes to read both of their answers closely and understand the differences between them.
+
+The documentation has a wealth of information on the topic if you are so inclined.
+    

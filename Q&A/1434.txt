@@ -1,0 +1,124 @@
+123
+Q:TL;DR: I am looking for a complete working sample of what I'll refer to as "the Gmail three-fragment animation" scenario. Specifically, we want to start with two fragments, like this:
+
+
+
+Upon some UI event (e.g., tapping on something in Fragment B), we want:
+
+
+Fragment A to slide off the screen to the left
+Fragment B to slide to the left edge of the screen and shrink to take up the spot vacated by Fragment A
+Fragment C to slide in from the right side of the screen and to take up the spot vacated by Fragment B
+
+
+And, on a BACK button press, we want that set of operations to be reversed.
+
+Now, I have seen lots of partial implementations; I'll review four of them below. Beyond being incomplete, they all have their issues.
+
+
+
+@Reto Meier contributed this popular answer to the same basic question, indicating that you would use setCustomAnimations() with a FragmentTransaction. For a two-fragment scenario (e.g., you only see Fragment A initially, and want to replace it with a new Fragment B using animated effects), I am in complete agreement. However:
+
+
+Since you can only specify one "in" and one "out" animation, I can't see how you would handle all the different animations required for the three-fragment scenario
+The <objectAnimator> in his sample code uses hard-wired positions in pixels, and that would seem to be impractical given varying screen sizes, yet setCustomAnimations() requires animation resources, precluding the possibility of defining these things in Java
+I am at a loss as to how the object animators for scale tie in with things like android:layout_weight in a LinearLayout for allocating space on a percentage basis
+I am at a loss as to how Fragment C is handled at the outset (GONE? android:layout_weight of 0? pre-animated to a scale of 0? something else?)
+
+
+
+
+@Roman Nurik points out that you can animate any property, including ones that you define yourself. That can help solve the issue of the hard-wired positions, at the cost of inventing your own custom layout manager subclass. That helps some, but I'm still baffled by the rest of Reto's solution.
+
+
+
+The author of this pastebin entry shows some tantalizing pseudocode, basically saying that all three fragments would reside in the container initially, with Fragment C hidden at the outset via a hide() transaction operation. We then show() C and hide() A when the UI event occurs. However, I don't see how that handles the fact that B changes size. It also relies on the fact that you apparently can add multiple fragments to the same container, and I am not sure whether or not that is reliable behavior over the long term (not to mention it should break findFragmentById(), though I can live with that).
+
+
+
+The author of this blog post indicates that Gmail is not using setCustomAnimations() at all, but instead directly uses object animators ("you just change left margin of the root view + change width of the right view"). However, this is still a two-fragment solution AFAICT, and the implementation shown once again hard-wires dimensions in pixels.
+
+
+
+I will continue plugging away at this, so I may wind up answering this myself someday, but I am really hoping that somebody has worked out the three-fragment solution for this animation scenario and can post the code (or a link thereto). Animations in Android make me want to pull my hair out, and those of you who have seen me know that this is a largely fruitless endeavor.
+    
+===============================================================================================
+66
+A:Uploaded my proposal at github 
+(Is working with all android versions though view hardware acceleration is strongly recommended for this kind of animations. For non hardware accelerated devices a bitmap caching implementation should fit better)
+
+Demo video with the animation is Here (Slow frame rate cause of the screen cast. Actual performance is very fast)
+
+
+
+Usage:
+
+layout = new ThreeLayout(this, 3);
+layout.setAnimationDuration(1000);
+setContentView(layout);
+layout.getLeftView();   //<---inflate FragmentA here
+layout.getMiddleView(); //<---inflate FragmentB here
+layout.getRightView();  //<---inflate FragmentC here
+
+//Left Animation set
+layout.startLeftAnimation();
+
+//Right Animation set
+layout.startRightAnimation();
+
+//You can even set interpolators
+
+
+
+
+Explaination:
+
+Created a new custom RelativeLayout(ThreeLayout) and 2 custom Animations(MyScalAnimation, MyTranslateAnimation)
+
+ThreeLayout gets the weight of the left pane as param ,assuming the other visible view has weight=1.
+
+So new ThreeLayout(context,3) creates a new view with 3 children and the left pane with have 1/3 of the total screen. The other view occupies the all available space.
+
+
+  It calculates width at runtime,a safer implementation is that the dimentions are be calculated first time in draw(). instead of in post()
+
+
+Scale and Translate animations actually resize and move the view and not pseudo-[scale,move]. Notice that fillAfter(true) is not used anywhere.
+
+View2 is right_of View1 
+
+and 
+
+View3 is right_of View2 
+
+Having set these rules RelativeLayout takes care of everything else. Animations alter the margins (on move) and [width,height] on scale
+
+To access each child (so that you can inflate it with your Fragment you can call 
+
+public FrameLayout getLeftLayout() {}
+
+public FrameLayout getMiddleLayout() {}
+
+public FrameLayout getRightLayout() {}
+
+
+Below are demonstrated the 2 animations
+
+
+
+Stage1
+
+
+  ---IN Screen----------!-----OUT----
+  
+  [View1][_____View2_____][_____View3_____]
+
+
+Stage2
+
+
+  --OUT-!--------IN Screen------ 
+  
+  [View1][View2][_____View3_____]
+
+    

@@ -1,0 +1,53 @@
+50
+Q:I'm the lead author of ORMLite which uses Java annotations on classes to build database schemas.  A big startup performance problem for our package turns out to be the calling of annotation methods under Android 1.6.  I see the same behavior up through 3.0.
+
+We are seeing that the following simple annotation code is incredibly GC intensive and a real performance problem.  1000 calls to an annotation method takes almost a second on a fast Android device.  The same code running on my Macbook Pro can do 28 million (sic) calls in the same time.  We have an annotation that has 25 methods in it and we'd like to do more than 50 of these a second.
+
+Does anyone know why this is happening and if there is any work around?  There are certainly things that ORMLite can do in terms of caching this information but is there anything that we can do to "fix" annotations under Android?  Thanks.
+
+public void testAndroidAnnotations() throws Exception {
+    Field field = Foo.class.getDeclaredField("field");
+    MyAnnotation myAnnotation = field.getAnnotation(MyAnnotation.class);
+    long before = System.currentTimeMillis();
+    for (int i = 0; i < 1000; i++)
+        myAnnotation.foo();
+    Log.i("test", "in " + (System.currentTimeMillis() - before) + "ms");
+}
+@Target(FIELD) @Retention(RUNTIME)
+private static @interface MyAnnotation {
+    String foo();
+}
+private static class Foo {
+    @MyAnnotation(foo = "bar")
+    String field;
+}
+
+
+This results in the following log output:
+
+I/TestRunner(  895): started: testAndroidAnnotations
+D/dalvikvm(  895): GC freed 6567 objects / 476320 bytes in 85ms
+D/dalvikvm(  895): GC freed 8951 objects / 599944 bytes in 71ms
+D/dalvikvm(  895): GC freed 7721 objects / 524576 bytes in 68ms
+D/dalvikvm(  895): GC freed 7709 objects / 523448 bytes in 73ms
+I/test    (  895): in 854ms
+
+
+EDIT:
+
+After @candrews pointed me in the right direction, I did some poking around the code.  The performance problem looks to be caused by some terrible, gross code in Method.equals().  It is calling the toString() of both methods and then comparing them.  Each toString() use StringBuilder with a bunch of append methods without a good initializing size. Doing the .equals by comparing fields would be significantly faster.
+
+EDIT:
+
+An interesting reflection performance improvement was given to me.  We are now using reflection to peek inside the AnnotationFactory class to read the list of fields directly.  This makes the reflection class 20 times faster for us since it bypasses the invoke which is using the method.equals() call.  It is not a generic solution but here's the Java code from ORMLite SVN repository.  For a generic solution, see yanchenko's answer below.
+    
+===============================================================================================
+22
+A:Google has acknowledged the issue and fixed it "post-Honeycomb" 
+
+
+  https://code.google.com/p/android/issues/detail?id=7811
+
+
+So at least they know about it and have supposedly fixed it for some future version.
+    

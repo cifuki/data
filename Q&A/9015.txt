@@ -1,0 +1,69 @@
+30
+Q:I installed Titanium from appcelerator and built the "KitchenSink" example application.
+
+All works well, I'm just wondering where does the javascript code ends up in a built app.
+
+I grep-ed the Xcode project and also the result application as I found it in Library/Application Support/iPhone Simulator/....KitchenSink.app, but I can't find any function names from .js files, not even string texts used within the application.
+
+Nearest information I found is an answer here : How Does Appcelerator Titanium Mobile Work? but I  do not understand clearly how the process works.
+
+Is the javascript code being compiled into a binary code (what compiler is used then?), or is it just transformed in some special data-format and interpreted in a running application ?
+
+Update:
+
+This is what I can see in a build/android directory of KitchenSink:
+
+michal:bin mac$ find . -name table_view_layout\\*
+./assets/Resources/examples/table_view_layout.js
+./assets/Resources/examples/table_view_layout_2.js
+./assets/Resources/examples/table_view_layout_3.js
+./assets/Resources/examples/table_view_layout_4.js
+./assets/Resources/examples/table_view_layout_5.js
+./classes/org/appcelerator/generated/examples/table_view_layout.class
+./classes/org/appcelerator/generated/examples/table_view_layout_2.class
+./classes/org/appcelerator/generated/examples/table_view_layout_3.class
+./classes/org/appcelerator/generated/examples/table_view_layout_4.class
+./classes/org/appcelerator/generated/examples/table_view_layout_5.class
+michal:bin mac$ unzip -t app.apk | grep table_view_layout
+    testing: assets/Resources/examples/table_view_layout.js   OK
+    testing: assets/Resources/examples/table_view_layout_2.js   OK
+    testing: assets/Resources/examples/table_view_layout_3.js   OK
+    testing: assets/Resources/examples/table_view_layout_4.js   OK
+    testing: assets/Resources/examples/table_view_layout_5.js   OK
+
+
+I didn't look into app.apk before, all I could see were these class files corresponding to each of the javascript files. Therefore I assumed that on Android javascript is being compiled for JVM. Why can't these be found in app.apk ?
+    
+===============================================================================================
+47
+A:Titanium is not a wrapper around a web view as stated before (though that accurately explains how Phonegap works).  Jeff's answer, linked in the question, is a technically correct explanation of how Titanium works, but here's the best version I've heard so far, from Marshall Culpepper:
+
+It's true that Titanium Mobile used the WebView (in both Android and iOS) in the pre-1.0 days. However, this is no longer true and hasn't been since our 1.0 release is March 2010.
+
+Since 1.0, we've shipped two separate Javascript runtimes with our apps, and we are running the Javascript code directly without a WebView. Your entire app from start to finish is now controlled by JS, and we provide a comprehensive set of Native APIs that enable this. Everything from UI widgets (yes, including WebView), Core APIs like Networking, Filesystem, Database, all the way to OS-specific things like JS Activities in Android. On the JS runtime front, we're shipping a forked version of WebKit's JavaScriptCore in iOS and a snapshot of Rhino 1.7 R3 CVS for Android. What we actually do with your javascript source is dependent on the platform, but generally it breaks up like this:
+
+
+Source is statically analyzed to find references to Titanium modules
+Localization strings (strings.xml), App metadata (tiapp.xml), and density specific images all generate platform specific analogs.
+In iOS:
+
+
+An XCode project / configuration is generated
+JS Source is base64'd and inlined as a variable into a generated C file
+xcodebuild is used to generate the final binaries
+provisioning profiles, signing keys etc are applied
+iTunes and some other glue are used to send the IPA to your iOS device
+
+In Android:
+
+
+An Android / Eclipse project is generated
+In "Development" mode, JS source is packaged as APK assets
+In "Distribution" (production) mode, when you're ready to ship the app, we compile the JS to Java bytecode using the Rhino JSC compiler. You can also enable this during development mode by setting "ti.android.compilejs" to "true" in tiapp.xml, see: http://developer.appcelerator.com/question/100201/enable-android-byte-code-compile
+dex, aapt, and other Android SDK tools are used to build and generate the final APK
+adb and keytool are used for pushing the APK out to the emulator and/or device
+
+
+
+There are many more details that I could dive into specifically on each of these points, but the point I wanted to drive home is that we no longer use the WebView as our Javascript engine. You can however still embed WebViews, and we provide some simple integration that allows you to call Titanium APIs from an embedded WebView.
+    

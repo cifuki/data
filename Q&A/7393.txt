@@ -1,0 +1,221 @@
+35
+Q:What I want to do: A list with messages like this:
+
+
+  <UserName> and here is the mnessage the user writes, that will wrap nicely to the next line. exactly like this.
+
+
+What I have:
+
+ListView R.layout.list_item:
+
+<TextView
+        xmlns:android="http://schemas.android.com/apk/res/android"
+        android:id="@+id/text_message"
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent"
+        android:text="(Message Text)" />
+
+
+Adapter that inflates the above layout and does:
+
+SpannableStringBuilder f = new SpannableStringBuilder(check.getContent());
+f.append(username);
+f.setSpan(new InternalURLSpan(new OnClickListener() {
+    @Override
+    public void onClick(View v) {
+        Toast.makeText(context, "Clicked User", Toast.LENGTH_SHORT).show();
+    }
+}), f.length() - username.length(), f.length(),
+        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+f.append(" " + message);
+
+messageTextView.setText(f);
+messageTextView.setMovementMethod(LinkMovementMethod.getInstance());
+meesageTextView.setFocusable(false);
+
+
+The InternalURLSpan class
+
+public class InternalURLSpan extends ClickableSpan {
+    OnClickListener mListener;
+
+    public InternalURLSpan(OnClickListener listener) {
+        mListener = listener;
+    }
+
+    @Override
+    public void onClick(View widget) {
+        mListener.onClick(widget);
+    }
+
+    @Override
+    public void updateDrawState(TextPaint ds) {
+        super.updateDrawState(ds);
+        ds.setUnderlineText(false);
+    }
+}
+
+
+In the activity I have in onCreate(...):
+
+listView.setOnItemClickListener(ProgramChecksActivity.this);
+
+
+and the implementation of the above
+
+@Override
+public void onItemClick(AdapterView<?> adapterView, View view, int position, long id) {
+    Toast.makeText(context, "Clicked Item", Toast.LENGTH_SHORT).show();
+}
+
+
+The problem:
+
+Clicking on the item, does not show the toast. Only clicking on the username does show the toast.
+
+I am guessing, that setMovementMethod(LinkMovementMethod.getInstance()); makes the TextView clickable. So the items themselves do never get clicked anymore.
+
+How can I make the items clickable again? Having the same functionality as I want.
+    
+===============================================================================================
+57
+A:There are THREE show-stoppers in this situation. The root reason is that when you call setMovementMethod or setKeyListener, TextView "fixes" it's settings:
+
+setFocusable(true);
+setClickable(true);
+setLongClickable(true);
+
+
+The first problem is that when a View is clickable - it always consumes ACTION_UP event (it returns true in onTouchEvent(MotionEvent event)).
+To fix that you should return true in that method only if the user actually clicks the URL.
+
+But the LinkMovementMethod doesn't tell us, if the user actually clicked a link. It returns "true" in it's onTouch if the user clicks the link, but also in many other cases.
+
+So, actually I did a trick here:
+
+public class TextViewFixTouchConsume extends TextView {
+
+    boolean dontConsumeNonUrlClicks = true;
+    boolean linkHit;
+
+    public TextViewFixTouchConsume(Context context) {
+        super(context);
+    }
+
+    public TextViewFixTouchConsume(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public TextViewFixTouchConsume(
+        Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        linkHit = false;
+        boolean res = super.onTouchEvent(event);
+
+        if (dontConsumeNonUrlClicks)
+            return linkHit;
+        return res;
+
+    }
+
+    public void setTextViewHTML(String html)
+    {
+        CharSequence sequence = Html.fromHtml(html);
+        SpannableStringBuilder strBuilder = 
+            new SpannableStringBuilder(sequence);
+        setText(strBuilder);
+    }
+
+    public static class LocalLinkMovementMethod extends LinkMovementMethod{
+        static LocalLinkMovementMethod sInstance;
+
+
+        public static LocalLinkMovementMethod getInstance() {
+            if (sInstance == null)
+                sInstance = new LocalLinkMovementMethod();
+
+            return sInstance;
+        }
+
+        @Override
+        public boolean onTouchEvent(TextView widget, 
+            Spannable buffer, MotionEvent event) {
+            int action = event.getAction();
+
+            if (action == MotionEvent.ACTION_UP ||
+                    action == MotionEvent.ACTION_DOWN) {
+                int x = (int) event.getX();
+                int y = (int) event.getY();
+
+                x -= widget.getTotalPaddingLeft();
+                y -= widget.getTotalPaddingTop();
+
+                x += widget.getScrollX();
+                y += widget.getScrollY();
+
+                Layout layout = widget.getLayout();
+                int line = layout.getLineForVertical(y);
+                int off = layout.getOffsetForHorizontal(line, x);
+
+                ClickableSpan[] link = buffer.getSpans(
+                    off, off, ClickableSpan.class);
+
+                if (link.length != 0) {
+                    if (action == MotionEvent.ACTION_UP) {
+                        link[0].onClick(widget);
+                    } else if (action == MotionEvent.ACTION_DOWN) {
+                        Selection.setSelection(buffer,
+                                buffer.getSpanStart(link[0]),
+                                buffer.getSpanEnd(link[0]));
+                    }
+
+                    if (widget instanceof TextViewFixTouchConsume){
+                        ((TextViewFixTouchConsume) widget).linkHit = true;
+                    }
+                    return true;
+                } else {
+                    Selection.removeSelection(buffer);
+                    Touch.onTouchEvent(widget, buffer, event);
+                    return false;
+                }
+            }
+            return Touch.onTouchEvent(widget, buffer, event);
+        }
+    }
+}
+
+
+You should call somewhere
+
+textView.setMovementMethod(
+    TextViewFixTouchConsume.LocalLinkMovementMethod.getInstance()
+);
+
+
+to set this MovementMethod for the textView.
+
+This MovementMethod raises a flag in TextViewFixTouchConsume if user actually hits link.
+(only in ACTION_UP and ACTION_DOWN events) and TextViewFixTouchConsume.onTouchEvent returns true only if user actually hit link.
+
+But that's not all!!!!
+The third problem is that ListView (AbsListView) calls it's performClick method (that calls onItemClick event handler) ONLY if ListView's item view has no focusables.
+So, you need to override 
+
+@Override
+public boolean hasFocusable() {
+    return false;
+}
+
+
+in a view that you add to ListView. 
+(in my case that is a layout that contains textView)
+
+or you can use setOnClickLIstener for that view.
+The trick is not very good, but it works.
+    

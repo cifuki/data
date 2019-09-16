@@ -1,0 +1,107 @@
+31
+Q:Help,
+
+I am trying to make a class that handles facebook login in my application.
+My problem is it doesnt work on all activity.
+On that activity it doesnt call the callback. 
+After the login and authorize application webview is dismiss, the callback doesnt fire.
+the last state that printed in Logcat is OPENING
+
+Here is my code:
+
+public void doLogin() {
+
+
+        if ((Session.getActiveSession() == null || !Session.getActiveSession().isOpened())) {
+            List<String> permissions = new ArrayList<String>();
+            permissions.add("email");
+
+            // start Facebook Login
+            openActiveSession(activity, true, new Session.StatusCallback() {
+
+                // callback when session changes state
+                @Override
+                public void call(Session session, SessionState state,
+                        Exception exception) {
+
+                    Log.d("Sessionstate", state.toString());
+                    if (session.isOpened()) {
+                        // make request to the /me API
+                        Request.executeMeRequestAsync(session,
+                                new Request.GraphUserCallback() {
+
+                                    @Override
+                                    public void onCompleted(GraphUser user,
+                                            Response response) {
+                                        if (prgCheckFB.isShowing())
+                                            prgCheckFB.dismiss();
+                                        if (user != null) {
+
+                                            Log.e("facebookid", id);
+                                            doSomething(user);
+
+
+
+                                        }
+                                    }
+                                });
+
+                    } 
+                }, permissions); 
+        }
+    }
+
+
+
+private static Session openActiveSession(Activity activity,
+        boolean allowLoginUI, Session.StatusCallback callback,
+        List<String> permissions) {
+    Session.OpenRequest openRequest = new Session.OpenRequest(activity)
+            .setPermissions(permissions).setCallback(callback);
+    Session session = new Session.Builder(activity).build();
+    if (SessionState.CREATED_TOKEN_LOADED.equals(session.getState())
+            || allowLoginUI) {
+        Session.setActiveSession(session);
+        session.openForRead(openRequest);
+        return session;
+    }
+    return null;
+}
+
+
+doSomething is function that will save the user data in a shared preference.
+
+Is there anything wrong? The function works in some activity but not ALL activities.
+
+Thank you
+    
+===============================================================================================
+103
+A:maybe you forget to handle the results after login...
+
+check the override method onActivityResult..
+
+because it handle the results back to the MainActivity, 
+
+maybe this can help your problem..
+
+@Override
+public void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    Session.getActiveSession().onActivityResult(this, requestCode,
+            resultCode, data);
+}
+
+
+Update 1
+
+For newer SDK use: 
+
+@Override
+public void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    callbackManager.onActivityResult(requestCode,
+            resultCode, data);
+}
+
+    

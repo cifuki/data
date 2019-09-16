@@ -1,0 +1,213 @@
+32
+Q:I am currently building a file management app that allows the user to browse the file system of their device. The user starts off in the root directory / of their device, but can browse to any location they want such as the internal flash storage or SD card.
+
+One of the critical requirements of this app is to allow the user to create new folders anywhere. A feature like this would be immensely useful for the app. However, the File#mkdir() method does not work at all in the SD card directory.
+
+I added the appropriate permissions to the manifest file. I also wrote a test to see which directories (all of which exist on my Lollipop 5.0 device) allow the creation of a new folder. From my observations, File#mkdir() only works when inside the internal flash storage directory.
+
+Note: please don't confuse Environment#getExternalStorageDirectory() with the SD card location, as explained by this article. Also on Lollipop 5.0, I believe /storage/emulated/0/ and /storage/sdcard0/ refer to the internal flash storage while /storage/emulated/1/ and /storage/sdcard1/ refer to the SD card (which is at least true for the device I am testing with).
+
+How can I create new files and folders in areas outside the external storage path on non-rooted Android devices?
+
+
+
+Manifest:
+
+...
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+...
+
+
+Test:
+
+...
+public class MainActivity extends AppCompatActivity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        final String NEW_FOLDER_NAME = "TestFolder";
+        testPath(new File(Environment.getExternalStorageDirectory(), NEW_FOLDER_NAME));
+        testPath(new File("/storage/emulated/0/", NEW_FOLDER_NAME));
+        testPath(new File("/storage/emulated/1/", NEW_FOLDER_NAME));
+        testPath(new File("/storage/sdcard0/Download/", NEW_FOLDER_NAME));
+        testPath(new File("/storage/sdcard1/Pictures/", NEW_FOLDER_NAME));
+    }
+
+    private void testPath(File path) {
+        String TAG = "Debug.MainActivity.java";
+        String FOLDER_CREATION_SUCCESS = " mkdir() success: ";
+
+        boolean success = path.mkdir();
+        Log.d(TAG, path.getAbsolutePath() + FOLDER_CREATION_SUCCESS + success);
+        path.delete();
+    }
+}
+
+
+Output:
+
+/storage/emulated/0/TestFolder mkdir() success: true
+/storage/emulated/0/TestFolder mkdir() success: true
+/storage/emulated/1/TestFolder mkdir() success: false
+/storage/sdcard0/Download/TestFolder mkdir() success: true
+/storage/sdcard1/Pictures/TestFolder mkdir() success: false
+
+    
+===============================================================================================
+23
+A:First, you should note that file.mkdir() and file.mkdirs() returns false if the directory already existed. If you want to know whether the directory exists on return, either use (file.mkdir() || file.isDirectory()) or simply ignore the return value and call file.isDirectory() (see the documentation).
+
+That said, your real problem is that you need permission to create the directory on removable storage on Android 5.0+. Working with removable SD cards on Android is horrendous.
+
+On Android 4.4 (KitKat), Google restricted access to SD cards (see here, here, and here). See this StackOverflow answer which leads to this XDA post if you need to create a directory on a removable SD card on Android 4.4 (KitKat).
+
+On Android 5.0 (Lollipop), Google introduced new SD card access APIs. For sample usage please refer to this stackoverflow answer.
+
+Basically, you need to use DocumentFile#createDirectory(String displayName) to create your directory. You will need to ask the user to grant permissions to your app before creating this directory.
+
+
+
+NOTE: This is for removable storage. Using File#mkdirs() will work on internal storage (which is often confused with external storage on Android) if you have the permission android.permission.WRITE_EXTERNAL_STORAGE.
+
+
+
+I will post some example code below:
+
+Check if you need to ask for permission:
+
+File sdcard = ... // the removable SD card
+List<UriPermission> permissions = context.getContentResolver().getPersistedUriPermissions();
+DocumentFile documentFile = null;
+boolean needPermissions = true;
+
+for (UriPermission permission : permissions) {
+  if (permission.isWritePermission()) {
+    documentFile = DocumentFile.fromTreeUri(context, permission.getUri());
+    if (documentFile != null) {
+      if (documentFile.lastModified() == sdcard.lastModified()) {
+        needPermissions = false;
+        break;
+      }
+    }
+  }
+}
+
+
+Next (if needPermissions is true), you can display a dialog to explain to the user that they need to select the "SD Card" to give your app permissions to create files/directories and then start the following activity:
+
+if (needPermissions) {
+  // show a dialog explaining that you need permission to create the directory
+  // here, we will just launch to chooser (what you need to do after showing the dialog)
+  startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), STORAGE_REQUEST_CODE);
+} else {
+  // we already have permission to write to the removable SD card
+  // use DocumentFile#createDirectory
+}
+
+
+You will now need to check the resultCode and requestCode in onActivityResult:
+
+@Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+  if (requestCode == STORAGE_REQUEST_CODE && resultCode == RESULT_OK) {
+    File sdcard = ... // get the removable SD card
+
+    boolean needPermissions = true;
+    DocumentFile documentFile = DocumentFile.fromTreeUri(MainActivity.this, data.getData());
+    if (documentFile != null) {
+      if (documentFile.lastModified() == sdcard.lastModified()) {
+        needPermissions = false;
+      }
+    }
+
+    if (needPermissions) {
+      // The user didn't select the "SD Card".
+      // You should try the process over again or do something else.
+    } else {
+      // remember this permission grant so we don't need to ask again.
+      getContentResolver().takePersistableUriPermission(data.getData(),
+          Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+      // Now we can work with DocumentFile and create our directory
+      DocumentFile doc = DocumentFile.fromTreeUri(this, data.getData());
+      // do stuff...
+    }
+    return;
+  }
+  super.onActivityResult(requestCode, resultCode, data);
+}
+
+
+
+
+That should give you a good start on working with DocumentFile and removable SD cards on Android 5.0+. It can be a PITA.
+
+
+
+Also, there is no public API to get the path to a removable SD card (if one even exists). You should not rely on hardcoding "/storage/sdcard1"! There are quite a few posts about it on StackOverflow. Many of the solutions use the environment variable SECONDARY_STORAGE. Below is two methods you can use to find removable storage devices:
+
+public static List<File> getRemovabeStorages(Context context) throws Exception {
+  List<File> storages = new ArrayList<>();
+
+  Method getService = Class.forName("android.os.ServiceManager")
+      .getDeclaredMethod("getService", String.class);
+  if (!getService.isAccessible()) getService.setAccessible(true);
+  IBinder service = (IBinder) getService.invoke(null, "mount");
+
+  Method asInterface = Class.forName("android.os.storage.IMountService$Stub")
+      .getDeclaredMethod("asInterface", IBinder.class);
+  if (!asInterface.isAccessible()) asInterface.setAccessible(true);
+  Object mountService = asInterface.invoke(null, service);
+
+  Object[] storageVolumes;
+  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+    String packageName = context.getPackageName();
+    int uid = context.getPackageManager().getPackageInfo(packageName, 0).applicationInfo.uid;
+    Method getVolumeList = mountService.getClass().getDeclaredMethod(
+        "getVolumeList", int.class, String.class, int.class);
+    if (!getVolumeList.isAccessible()) getVolumeList.setAccessible(true);
+    storageVolumes = (Object[]) getVolumeList.invoke(mountService, uid, packageName, 0);
+  } else {
+    Method getVolumeList = mountService.getClass().getDeclaredMethod("getVolumeList");
+    if (!getVolumeList.isAccessible()) getVolumeList.setAccessible(true);
+    storageVolumes = (Object[]) getVolumeList.invoke(mountService, (Object[]) null);
+  }
+
+  for (Object storageVolume : storageVolumes) {
+    Class<?> cls = storageVolume.getClass();
+    Method isRemovable = cls.getDeclaredMethod("isRemovable");
+    if (!isRemovable.isAccessible()) isRemovable.setAccessible(true);
+    if ((boolean) isRemovable.invoke(storageVolume, (Object[]) null)) {
+      Method getState = cls.getDeclaredMethod("getState");
+      if (!getState.isAccessible()) getState.setAccessible(true);
+      String state = (String) getState.invoke(storageVolume, (Object[]) null);
+      if (state.equals("mounted")) {
+        Method getPath = cls.getDeclaredMethod("getPath");
+        if (!getPath.isAccessible()) getPath.setAccessible(true);
+        String path = (String) getPath.invoke(storageVolume, (Object[]) null);
+        storages.add(new File(path));
+      }
+    }
+  }
+
+  return storages;
+}
+
+public static File getRemovabeStorageDir(Context context) {
+  try {
+    List<File> storages = getRemovabeStorages(context);
+    if (!storages.isEmpty()) {
+      return storages.get(0);
+    }
+  } catch (Exception ignored) {
+  }
+  final String SECONDARY_STORAGE = System.getenv("SECONDARY_STORAGE");
+  if (SECONDARY_STORAGE != null) {
+    return new File(SECONDARY_STORAGE.split(":")[0]);
+  }
+  return null;
+}
+
+    

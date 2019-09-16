@@ -1,0 +1,213 @@
+307
+Q:I have been reading some articles on memory leaks in Android and watched this interesting video from Google I/O on the subject.
+
+Still, I don't fully understand the concept, and especially when it is safe or dangerous to user inner classes inside an Activity.
+
+This is what I understood:
+
+A memory leak will occur if an instance of an inner class survives longer than its outer class (an Activity).
+-> In which situations can this happen? 
+
+In this example, I suppose there is no risk of leak, because there is no way the anonymous class extending OnClickListener will live longer than the activity, right?
+
+    final Dialog dialog = new Dialog(this);
+    dialog.setContentView(R.layout.dialog_generic);
+    Button okButton = (Button) dialog.findViewById(R.id.dialog_button_ok);
+    TextView titleTv = (TextView) dialog.findViewById(R.id.dialog_generic_title);
+
+    // *** Handle button click
+    okButton.setOnClickListener(new OnClickListener() {
+        public void onClick(View v) {
+            dialog.dismiss();
+        }
+    });
+
+    titleTv.setText("dialog title");
+    dialog.show();
+
+
+Now, is this example dangerous, and why?
+
+// We are still inside an Activity
+_handlerToDelayDroidMove = new Handler();
+_handlerToDelayDroidMove.postDelayed(_droidPlayRunnable, 10000);
+
+private Runnable _droidPlayRunnable = new Runnable() { 
+    public void run() {
+        _someFieldOfTheActivity.performLongCalculation();
+    }
+};
+
+
+I have a doubt regarding the fact that understanding this topic has to do with understanding in detail what is kept when an activity is destroyed and re-created.
+
+Is it?
+
+Let say I just changed the orientation of the device (which is the most common cause of leaks). When super.onCreate(savedInstanceState) will be called in my onCreate(), will this restore the values of the fields (as they were before orientation change)? Will this also restore the states of inner classes?
+
+I realize my question is not very precise, but I'd really appreciate any explanation that could make things clearer.
+    
+===============================================================================================
+619
+A:What you are asking is a pretty tough question. While you may think it is just one question, you are actually asking several questions at once. I'll do my best with the knowledge that I have to cover it and, hopefully, some others will join in to cover what I may miss.
+
+Nested Classes: Introduction
+
+As I'm not sure how comfortable you are with OOP in Java, this will hit a couple of basics. A nested class is when a class definition is contained within another class. There are basically two types: Static Nested Classes and Inner Classes. The real difference between these are:
+
+
+Static Nested Classes: 
+
+
+Are considered "top-level". 
+Do not require an instance of the containing class to be constructed.
+May not reference the containing class members without an explicit reference.
+Have their own lifetime.
+
+Inner Nested Classes:
+
+
+Always require an instance of the containing class to be constructed.
+Automatically have an implicit reference to the containing instance.
+May access the container's class members without the reference.
+Lifetime is supposed to be no longer than that of the container.
+
+
+
+Garbage Collection and Inner Classes
+
+Garbage Collection is automatic but tries to remove objects based on whether it thinks they are being used. The Garbage Collector is pretty smart, but not flawless. It can only determine if something is being used by whether or not there is an active reference to the object. 
+
+The real issue here is when a inner class has been kept alive longer than its container. This is because of the implicit reference to the containing class. The only way this can occur is if an object outside of the containing class keeps a reference to the inner object, without regard to the containing object. 
+
+This can lead to a situation where the inner object is alive (via reference) but the references to the containing object has already been removed from all other objects. The inner object is, therefore, keeping the containing object alive because it will always have a reference to it. The problem with this is that unless it is programmed, there is no way to get back to the containing object to check if it is even alive. 
+
+The most important aspect to this realization is that it makes no difference whether it is in an Activity or is a drawable. You will always have to be methodical when using inner classes and make sure that they never outlive objects of the container. Luckily, if it isn't a core object of your code, the leaks may be small in comparison. Unfortunately, these are some of the hardest leaks to find, because they are likely to go unnoticed until many of them have leaked.
+
+Solutions: Inner Classes
+
+
+Gain temporary references from the containing object. 
+Allow the containing object to be the only one to keep long-lived references to the inner objects. 
+Use established patterns such as the Factory. 
+If the inner class does not require access to the containing class members, consider turning it into a static class.
+Use with caution, regardless of whether it is in an Activity or not.
+
+
+Activities and Views: Introduction
+
+Activities contain a lot of information to be able to run and display. Activities are defined by the characteristic that they must have a View. They also have certain automatic handlers. Whether you specify it or not, the Activity has an implicit reference to the View it contains. 
+
+In order for a View to be created, it must know where to create it and whether it has any children so that it can display. This means that every View has an reference to the Activity (via getContext()). Moreover, every View keeps references to its children (i.e. getChildAt()). Finally, each View keeps a reference to the rendered Bitmap that represents its display.
+
+Whenever you have a reference to an Activity (or Activity Context), this means that you can follow the ENTIRE chain down the layout hierarchy. This is why memory leaks regarding Activities or Views are such a huge deal. It can be a ton of memory being leaked all at once.
+
+Activities, Views and Inner Classes
+
+Given the information above about Inner Classes, these are the most common memory leaks, but also the most commonly avoided. While it is desirable to have an inner class have direct access to an Activities class members, many are willing to just make them static to avoid potential issues. The problem with Activities and Views goes much deeper than that.
+
+Leaked Activities, Views and Activity Contexts
+
+It all comes down to the Context and the LifeCycle. There are certain events (such as orientation) that will kill an Activity Context. Since so many classes and methods require a Context, developers will sometimes try to save some code by grabbing a reference to a Context and holding onto it. It just so happens that many of the objects we have to create to run our Activity have to exist outside of the Activity LifeCycle in order to allow the Activity to do what it needs to do. If any of your objects happen to have a reference to an Activity, its Context, or any of its Views when it is destroyed, you have just leaked that Activity and its entire View tree.
+
+Solutions: Activities and Views
+
+
+Avoid, at all costs, making a Static reference to a View or Activity. 
+All references to Activity Contexts should be short lived (the duration of the function)
+If you need a long-lived Context, use the Application Context (getBaseContext() or getApplicationContext()). These do not keep references implicitly.
+Alternatively, you may limit the destruction of an Activity by overriding Configuration Changes. However, this does not stop other potential events from destroying the Activity. While you can do this, you may still want to refer to the above practices.
+
+
+Runnables: Introduction
+
+Runnables are actually not that bad. I mean, they could be, but really we've already hit most of the danger zones. A Runnable is an asynchronous operation that performs a task independant from the thread it was created on. Most runnables are instantiated from the UI thread. In essence, using a Runnable is creating another thread, just slightly more managed. If you class a Runnable like a standard class and follow the guidelines above, you should run into few problem. The reality is that many developers do not do this.
+
+Out of ease, readability and logical program flow, many developers utilize Anonymous Inner Classes to define their Runnables, such as the example you create above. This results in an example like the one you typed above. An Anonymous Inner Class is basically a discrete Inner Class. You just don't have to create a whole new definition and simply override the appropriate methods. In all other respects it is a Inner Class, which means that it keeps an implicit reference to its container.
+
+Runnables and Activities/Views
+
+Yay! This section can be short! Due to the fact that Runnables run outside of the current thread, the danger with these comes to long running asynchronous operations. If the runnable is defined in an Activity or View as an Anonymous Inner Class OR nested Inner Class, there are some very serious dangers. This is because, as previously stated, it has to know who its container is. Enter the orientation change (or system kill). Now just refer back to the previous sections to understand what just happened. Yes, your example is quite dangerous.
+
+Solutions: Runnables
+
+
+Try and extend Runnable, if it doesn't break the logic of your code.
+Do your best to make extended Runnables static, if they must be nested classes.
+If you must use Anonymous Runnables, avoid creating them in any object that has a long-lived reference to an Activity or View that is in use.
+Many Runnables could just as easily have been AsyncTasks. Consider using AsyncTask as those are VM Managed by default.
+
+
+Answering the Final Question
+Now to answer the questions that were not directly addressed by the other sections of this post. You asked "When can an object of an inner class survive longer than its outer class?" Before we get to this, let me reemphasize: though you are right to worry about this in Activities, it can cause a leak anywhere. I shall provide a simple example (without using an Activity) just to demonstrate.
+
+Below is a common example of a basic factory (missing the code).
+
+public class LeakFactory
+{//Just so that we have some data to leak
+    int myID = 0;
+// Necessary because our Leak class is an Inner class
+    public Leak createLeak()
+    {
+        return new Leak();
+    }
+
+// Mass Manufactured Leak class
+    public class Leak
+    {//Again for a little data.
+       int size = 1;
+    }
+}
+
+
+This is a not as common example, but simple enough to demonstrate. The key here is the constructor...
+
+public class SwissCheese
+{//Can't have swiss cheese without some holes
+    public Leak[] myHoles;
+
+    public SwissCheese()
+    {//Gotta have a Factory to make my holes
+        LeakFactory _holeDriller = new LeakFactory()
+    // Now, let's get the holes and store them.
+        myHoles = new Leak[1000];
+
+        for (int i = 0; i++; i<1000)
+        {//Store them in the class member
+            myHoles[i] = _holeDriller.createLeak();
+        }
+
+    // Yay! We're done! 
+
+    // Buh-bye LeakFactory. I don't need you anymore...
+    }
+}
+
+
+Now, we have Leaks, but no Factory. Even though we released the Factory, it will remain in memory because every single Leak has a reference to it. It doesn't even matter that the outer class has no data. This happens far more often than one might think. We don't need the creator, just its creations. So we create one temporarily, but use the creations indefinitely. 
+
+Imagine what happens when we change the constructor just slightly. 
+
+public class SwissCheese
+{//Can't have swiss cheese without some holes
+    public Leak[] myHoles;
+
+    public SwissCheese()
+    {//Now, let's get the holes and store them.
+        myHoles = new Leak[1000];
+
+        for (int i = 0; i++; i<1000)
+        {//WOW! I don't even have to create a Factory... 
+        // This is SOOOO much prettier....
+            myHoles[i] = new LeakFactory().createLeak();
+        }
+    }
+}
+
+
+Now, every single one of those new LeakFactories has just been leaked. What do you think of that? Those are two very common examples of how a inner class can outlive an outer class of any type. If that outer class had been an Activity, imagine how much worse it would have been.
+
+Conclusion
+
+These list the primarily known dangers of using these objects inappropriately. In general, this post should have covered most of your questions, but I understand it was a loooong post, so if you need clarification, just let me know. As long as you follow the above practices, you will have very little worry of leakage. 
+    

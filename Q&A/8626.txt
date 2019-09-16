@@ -1,0 +1,81 @@
+31
+Q:I have implemented a sync adapter and I want to get a callback when it finishes in my activity. I have tried using ContentResolver.addStatusChangeListener, but I am only getting callbacks when the sync is pending / active. Here's some relevant code from my activity:
+
+@Override
+protected void onResume() {
+    super.onResume();
+    final int mask = ContentResolver.SYNC_OBSERVER_TYPE_ACTIVE | ContentResolver.SYNC_OBSERVER_TYPE_PENDING;
+    syncObserverHandle = ContentResolver.addStatusChangeListener(mask, syncStatusObserver);
+}
+
+@Override
+protected void onPause() {
+    super.onPause();
+    if (syncObserverHandle != null) {
+        ContentResolver.removeStatusChangeListener(syncObserverHandle);
+        syncObserverHandle = null;
+    }
+}
+
+private SyncStatusObserver syncStatusObserver = new SyncStatusObserver() {
+
+    @Override
+    public void onStatusChanged(int which) {
+        AccountManager am = AccountManager.get(TodosActivity.this);
+        Account a = am.getAccountsByType(Const.ACCOUNT_TYPE)[0];
+
+        Log.d(Const.TAG, "Sync status changed: " + which);
+
+        if (!ContentResolver.isSyncActive(a, DataProvider.AUTHORITY) &&
+                !ContentResolver.isSyncPending(a, DataProvider.AUTHORITY)) {
+            Log.d(Const.TAG, "Sync finished, should refresh nao!!");
+        }
+    }
+};
+
+
+However, the if in the onStatusChanged method is never valid. I have taken this example from the JumpNote demo where it works probably because it is also called manually in onResume(), so it's probably never called by the system when the sync is finished. Or is it, and I'm doing something wrong? Here's what I get in logcat:
+
+D/MYAPP (10903): Sync status changed: 2
+D/MYAPP (10903): Sync status changed: 2
+D/MYAPP (10903): Sync status changed: 4
+D/MYAPP (10981): --> DataSyncAdapter.onPerformSync()
+D/MYAPP (10981): <-- DataSyncAdapter.onPerformSync()
+D/MYAPP (10903): Sync status changed: 4
+
+
+So, it seems that I could rely on the second SYNC_OBSERVER_TYPE_ACTIVE (4) status change to refresh my data, but that seems really ugly. Any ideas?
+    
+===============================================================================================
+41
+A:One solution that I have found is to ditch the ContentResolver completely, and implement my own broadcast. Basically, add this in the sync adapter, at the end of onPerformSync:
+
+Intent i = new Intent(SYNC_FINISHED);
+sendBroadcast(i);
+
+
+And this in the activity:
+
+@Override
+protected void onResume() {
+    super.onResume();
+    registerReceiver(syncFinishedReceiver, new IntentFilter(DataSyncService.SYNC_FINISHED));
+}
+
+@Override
+protected void onPause() {
+    super.onPause();
+    unregisterReceiver(syncFinishedReceiver);
+}
+
+private BroadcastReceiver syncFinishedReceiver = new BroadcastReceiver() {
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        Log.d(Const.TAG, "Sync finished, should refresh nao!!");
+    }
+};
+
+
+This seems to work just fine, however I was hoping to find something in the SDK that directly notify me when a sync is finished.
+    

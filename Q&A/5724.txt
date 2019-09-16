@@ -1,0 +1,80 @@
+43
+Q:The problem occurs at 
+
+Element element = it.next();
+
+
+And this code which contains that line, is inside of an OnTouchEvent
+
+for (Iterator<Element> it = mElements.iterator(); it.hasNext();){
+    Element element = it.next();
+
+    if(touchX > element.mX  && touchX < element.mX + element.mBitmap.getWidth() && touchY > element.mY   
+            && touchY < element.mY + element.mBitmap.getHeight()) {  
+
+        //irrelevant stuff..
+
+        if(element.cFlag){
+            mElements.add(new Element("crack",getResources(), (int)touchX,(int)touchY));
+            element.cFlag = false;
+
+        }           
+    }
+}
+
+
+All of this is inside synchronized(mElements), where mElements is an ArrayList<Element> 
+
+When I touch an Element, it may activate cFlag, which will create another Element with different properties, which will fall off the screen and destroy itself in less than a second. It's my way of creating particle effects. We can call this "particle" crack, like the String parameter in the constructor.
+
+This all works fine until I add another main Element. Now I have two Elements on the screen at the same time, and if I touch the newest Element, it works fine, and launches the particles.
+
+However, if I touch and activate cFlag on the older Element, then it gives me the exception.
+
+ 07-28 15:36:59.815: ERROR/AndroidRuntime(4026): FATAL EXCEPTION: main
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026): java.util.ConcurrentModificationException
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at java.util.ArrayList$ArrayListIterator.next(ArrayList.java:573)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at com.Juggle2.Panel.onTouchEvent(Panel.java:823)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at android.view.View.dispatchTouchEvent(View.java:3766)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at android.view.ViewGroup.dispatchTouchEvent(ViewGroup.java:863)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at android.view.ViewGroup.dispatchTouchEvent(ViewGroup.java:863)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at com.android.internal.policy.impl.PhoneWindow$DecorView.superDispatchTouchEvent(PhoneWindow.java:1767)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at com.android.internal.policy.impl.PhoneWindow.superDispatchTouchEvent(PhoneWindow.java:1119)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at android.app.Activity.dispatchTouchEvent(Activity.java:2086)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at com.android.internal.policy.impl.PhoneWindow$DecorView.dispatchTouchEvent(PhoneWindow.java:1751)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at android.view.ViewRoot.handleMessage(ViewRoot.java:1785)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at android.os.Handler.dispatchMessage(Handler.java:99)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at android.os.Looper.loop(Looper.java:123)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at android.app.ActivityThread.main(ActivityThread.java:4627)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at java.lang.reflect.Method.invokeNative(Native Method)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at java.lang.reflect.Method.invoke(Method.java:521)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:893)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:651)
+07-28 15:36:59.815: ERROR/AndroidRuntime(4026):     at dalvik.system.NativeStart.main(Native Method)
+
+
+How can I make this work?
+    
+===============================================================================================
+64
+A:ConcurrentModificationException occurs when you modify the list (by adding or removing elements) while traversing a list with Iterator.
+
+Try 
+
+List<Element> thingsToBeAdd = new ArrayList<Element>();
+for(Iterator<Element> it = mElements.iterator(); it.hasNext();) {
+    Element element = it.next();
+    if(...) {  
+        //irrelevant stuff..
+        if(element.cFlag){
+            // mElements.add(new Element("crack",getResources(), (int)touchX,(int)touchY));
+            thingsToBeAdd.add(new Element("crack",getResources(), (int)touchX,(int)touchY));
+            element.cFlag = false;
+        }           
+    }
+}
+mElements.addAll(thingsToBeAdd );
+
+
+Also you should consider enhanced for each loop as Jon suggested.
+    

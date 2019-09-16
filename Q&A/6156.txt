@@ -1,0 +1,120 @@
+41
+Q:I'm trying to perform a login action using Retrofit 2.0 using Dagger 2
+
+Here's how I set up Retrofit dependency
+
+@Provides
+@Singleton
+Retrofit provideRetrofit(Gson gson, OkHttpClient client) {
+    Retrofit retrofit = new Retrofit.Builder()
+                            .addConverterFactory(GsonConverterFactory.create(gson)
+                            .client(client)
+                            .baseUrl(application.getUrl())
+                            .build();
+    return retrofit;     
+}
+
+
+Here's the API interface.
+
+interface LoginAPI {
+   @GET(relative_path)
+   Call<Boolean> logMe();
+}
+
+
+I have three different base urls users can log into. So I can't set a static url while setting up Retrofit dependency. I created a setUrl() and getUrl() methods on Application class. Upon user login, I set the url onto Application before invoking the API call. 
+
+I use lazy injection for retrofit like this
+
+Lazy<Retrofit> retrofit
+
+
+That way, Dagger injects dependency only when I can call
+
+retrofit.get()
+
+
+This part works well. I got the url set to retrofit dependency. However, the problem arises when the user types in a wrong base url (say, mywifi.domain.com), understands it's the wrong one and changes it(say to mydata.domain.com). Since Dagger already created the dependency for retrofit, it won't do again.
+So I have to reopen the app and type in the correct url.
+
+I read different posts for setting up dynamic urls on Retrofit using Dagger. Nothing really worked out well in my case. Do I miss anything? 
+    
+===============================================================================================
+43
+A:Support for this use-case was removed in Retrofit2. The recommendation is to use an OkHttp interceptor instead.
+
+HostSelectionInterceptor made by swankjesse
+
+import java.io.IOException;
+import okhttp3.HttpUrl;
+import okhttp3.Interceptor;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+
+/** An interceptor that allows runtime changes to the URL hostname. */
+public final class HostSelectionInterceptor implements Interceptor {
+  private volatile String host;
+
+  public void setHost(String host) {
+    this.host = host;
+  }
+
+  @Override public okhttp3.Response intercept(Chain chain) throws IOException {
+    Request request = chain.request();
+    String host = this.host;
+    if (host != null) {
+      //HttpUrl newUrl = request.url().newBuilder()
+      //    .host(host)
+      //    .build();
+      HttpUrl newUrl = HttpUrl.parse(host);
+      request = request.newBuilder()
+          .url(newUrl)
+          .build();
+    }
+    return chain.proceed(request);
+  }
+
+  public static void main(String[] args) throws Exception {
+    HostSelectionInterceptor interceptor = new HostSelectionInterceptor();
+
+    OkHttpClient okHttpClient = new OkHttpClient.Builder()
+        .addInterceptor(interceptor)
+        .build();
+
+    Request request = new Request.Builder()
+        .url("http://www.coca-cola.com/robots.txt")
+        .build();
+
+    okhttp3.Call call1 = okHttpClient.newCall(request);
+    okhttp3.Response response1 = call1.execute();
+    System.out.println("RESPONSE FROM: " + response1.request().url());
+    System.out.println(response1.body().string());
+
+    interceptor.setHost("www.pepsi.com");
+
+    okhttp3.Call call2 = okHttpClient.newCall(request);
+    okhttp3.Response response2 = call2.execute();
+    System.out.println("RESPONSE FROM: " + response2.request().url());
+    System.out.println(response2.body().string());
+  }
+}
+
+
+Or you can either replace your Retrofit instance (and possibly store the instance in a RetrofitHolder in which you can modify the instance itself, and provide the holder through Dagger)... 
+
+public class RetrofitHolder {
+   Retrofit retrofit;
+
+   //getter, setter
+}
+
+
+Or re-use your current Retrofit instance and hack the new URL in with reflection, because screw the rules. Retrofit has a baseUrl parameter which is private final, therefore you can access it only with reflection.
+
+Field field = Retrofit.class.getDeclaredField("baseUrl");
+field.setAccessible(true);
+okhttp3.HttpUrl newHttpUrl = HttpUrl.parse(newUrl);
+field.set(retrofit, newHttpUrl);
+
+    

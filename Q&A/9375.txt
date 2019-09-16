@@ -1,0 +1,138 @@
+29
+Q:I'm developing a small app that reads in specific html-pages, re-formats them and then shows them in a WebView. If I run my code in the GUI thread, the performance hit is close to negligible compared to simply letting the WebView show the original html-page. But if I'm a good boy and do like I'm told, I'm supposed to use an AsyncTask to run the code in the background so as not to freeze up the GUI during those 3-5 seconds my code does its job. Problem is... if I do so, the code takes more than 10 times as long to finish. A page takes 60+ seconds to show, which is unacceptable.
+
+Tracking down the problem, TraceView shows me that my AsyncTask is (at default priority) run in roughly 10 ms chunks, around 4 times per second. I need to set my thread priority to MAX_PRIORITY to get close to acceptable loading times, but even then it takes 3-4 times longer than when I run in the GUI thread.
+
+Am I doing something wrong, or is this just the way it works? And must it work this way...?
+
+Here's compilable code as requested:
+
+package my.ownpackage.athome;
+
+import android.app.Activity;
+import android.os.AsyncTask;
+import android.os.Bundle;
+import android.os.StrictMode;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+
+public class AndroidTestActivity extends Activity
+{   
+    WebView webview;
+    //...
+
+    private class HelloWebViewClient extends WebViewClient 
+    {
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, String url) 
+        {
+            AndroidTestActivity.this.fetch(view, url);
+            return true;
+        }
+    }
+
+    public void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        // To allow to connect to the web and pull down html-files, reset strict mode
+        // see http://stackoverflow.com/questions/8706464/defaulthttpclient-to-androidhttpclient
+        if (android.os.Build.VERSION.SDK_INT > 9) 
+        {
+            StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
+            StrictMode.setThreadPolicy(policy);
+        }
+
+        // webview init etc...
+
+        fetch(webview, "http://www.example.com");   
+    }
+
+    // This one calls either the AsyncTask or does it all manually in the GUI thread
+    public void fetch(WebView view, String url)
+    {
+        //** Use these when run as AsyncTask in background - SLOW! 
+        //** Takes 30+ seconds at default thread priority, with MAX_PRIORITY 15+ seconds
+        // AsyncTask<Void, String, String> fx = new FilterX(url, view, this);   
+        // fx.execute();    // running as AsyncTask takes roughly ten times longer than just plain load!    
+
+        //** Use these when not running as AsyncTask - FAST! takes ~5 seconds
+        FilterX fx = new FilterX(url, view, this);
+        fx.onPreExecute();
+        final String str = fx.doInBackground();
+        fx.onPostExecute(str);
+    }
+}
+
+class FilterX extends AsyncTask<Void, String, String>
+{
+    WebView the_view = null;
+    // other stuff...
+
+    FilterX(final String url, final WebView view, final Activity activity)
+    {
+        the_view = view;
+        // other initialization
+        // same code in both cases
+    }
+
+    protected void onPreExecute()
+    {
+        // same code in both cases
+    }
+
+    protected String doInBackground(Void... v)
+    {
+        // same in both cases...
+
+        return new String();    // just to make it compile
+    }
+
+    protected void onPostExecute(final String string)
+    {
+        the_view.loadUrl(string);
+        // same in both cases...
+    }
+}
+
+
+To run exactly the same code in my FilterX class when run as AsyncTask as when run on the GUI thread, I stripped all ProgressBar stuff, and then I get the following timings:
+
+
+30+ seconds to load a page at default thread priority 
+15+ seconds to load a page at MAX_PRIORITY 
+5+ seconds to load a page when run in the GUI thread
+
+    
+===============================================================================================
+37
+A:You're not the only one observing this behaviour. The slowdown by factor 10 is probably a result of Android using a Linux cgroup (scheduling class) for threads of priority BACKGROUND or below. All these threads have to live with 10% CPU time altogether.
+
+The good news is you don't have to live with the Thread priority settings from java.lang.Thread. You can assign your Thread a pthread (Linux thread) priority from the definitions in android.os.Process. There, you not only have Process.THREAD_PRIORITY_BACKGROUND, but also constants to adjust the priority a bit.
+
+Currently, Android uses the background thread cgroup for all threads with priority THREAD_PRIORITY_BACKGROUND or worse, and THREAD_PRIORITY_BACKGROUND is 10 while THREAD_PRIORITY_DEFAULT is 0 and THREAD_PRIORITY_FOREGROUND is -2.
+
+If you go for THREAD_PRIORITY_BACKGROUND + THREAD_PRIORITY_MORE_FAVORABLE (aka 9) your thread will be lifted out of the background cgroup with the 10% limitation, while not being important enough to interrupt your User Interface threads too often.
+
+I believe there are background tasks which need a bit of computational power but which are at the same time not important enough to de facto block the UI (by consuming too much CPU in a separate thread) and Android currently has no obvious priority to assign to these, so in my view, this is one of the best priorities you can assign to such a task.
+
+If you can use a HandlerThread it's easy to achieve:
+
+ht = new HandlerThread("thread name", THREAD_PRIORITY_BACKGROUND + THREAD_PRIORITY_MORE_FAVORABLE);
+ht.start();
+h  = new Handler(ht.getLooper()); 
+
+
+If you want to go with AsyncTask, you can still do
+
+protected final YourResult doInBackground(YourInputs... yis) {
+    Process.setThreadPriority(THREAD_PRIORITY_BACKGROUND + THREAD_PRIORITY_MORE_FAVORABLE);
+    ...
+}
+
+
+but be aware that the underlying implementation may reuse the same Thread object for different tasks, for the next AsyncTask, or whatever. It seems that Android simply resets the priority after doInBackground() returns, though.
+
+Of course, if your UI really consumes CPU and you want more power for your task at the same time, taking it away from the UI, you can set another priority, maybe up to Process.THREAD_PRIORITY_FOREGROUND.
+    

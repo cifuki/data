@@ -1,0 +1,76 @@
+56
+Q:I have a link which will open in webview. The problem is it cannot be open until I override onReceivedSslError like this:
+
+ @Override
+        public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+            handler.proceed();
+        }
+
+
+I am getting security alert from google play saying:
+
+
+  Security alert
+  Your application has an unsafe implementation of the WebViewClient.onReceivedSslError handler. Specifically, the implementation ignores all SSL certificate validation errors, making your app vulnerable to man-in-the-middle attacks. An attacker could change the affected WebView's content, read transmitted data (such as login credentials), and execute code inside the app using JavaScript.
+  
+  To properly handle SSL certificate validation, change your code to invoke SslErrorHandler.proceed() whenever the certificate presented by the server meets your expectations, and invoke SslErrorHandler.cancel() otherwise. An email alert containing the affected app(s) and class(es) has been sent to your developer account address.
+  
+  Please address this vulnerability as soon as possible and increment the version number of the upgraded APK. For more information about the SSL error handler, please see our documentation in the Developer Help Center. For other technical questions, you can post to https://www.stackoverflow.com/questions and use the tags \xe2\x80\x9candroid-security\xe2\x80\x9d and \xe2\x80\x9cSslErrorHandler.\xe2\x80\x9d If you are using a 3rd party library that\xe2\x80\x99s responsible for this, please notify the 3rd party and work with them to address the issue.
+  
+  To confirm that you've upgraded correctly, upload the updated version to the Developer Console and check back after five hours. If the app hasn't been correctly upgraded, we will display a warning.
+  
+  Please note, while these specific issues may not affect every app that uses WebView SSL, it's best to stay up to date on all security patches. Apps with vulnerabilities that expose users to risk of compromise may be considered dangerous products in violation of the Content Policy and section 4.4 of the Developer Distribution Agreement.
+  
+  Please ensure all apps published are compliant with the Developer Distribution Agreement and Content Policy. If you have questions or concerns, please contact our support team through the Google Play Developer Help Center.
+
+
+If I remove onReceivedSslError (handler.proceed()), then page won't open.
+
+Is there anyway I can open page in webview and avoid security alert.
+    
+===============================================================================================
+97
+A:To properly handle SSL certificate validation, change your code to
+  invoke SslErrorHandler.proceed() whenever the certificate presented by
+  the server meets your expectations, and invoke
+  SslErrorHandler.cancel() otherwise.
+
+
+As email said, onReceivedSslError should handle user is going to a page with invalid cert, such like a notify dialog. You should not proceed it directly.
+
+For example, I add an alert dialog to make user have confirmed and seems Google no longer shows warning. 
+
+
+
+@Override
+public void onReceivedSslError(WebView view, final SslErrorHandler handler, SslError error) {
+    final AlertDialog.Builder builder = new AlertDialog.Builder(this);
+    builder.setMessage(R.string.notification_error_ssl_cert_invalid);
+    builder.setPositiveButton("continue", new DialogInterface.OnClickListener() {
+        @Override
+        public void onClick(DialogInterface dialog, int which) {
+            handler.proceed();
+        }
+    });
+    builder.setNegativeButton("cancel", new DialogInterface.OnClickListener() {
+        @Override
+        public void onClick(DialogInterface dialog, int which) {
+            handler.cancel();
+        }
+    });
+    final AlertDialog dialog = builder.create();
+    dialog.show();
+}
+
+
+
+
+More explain about the email.
+
+
+  Specifically, the implementation ignores all SSL certificate validation
+  errors, making your app vulnerable to man-in-the-middle attacks.
+
+
+The email says the default implement ignored an important SSL security problem. So we need to handle it in our own app which used WebView. Notify user with a alert dialog is a simple way.
+    

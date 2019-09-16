@@ -1,0 +1,225 @@
+111
+Q:I am getting a weird scrolling behavior when I add a RecyclerView inside a NestedScrollView.
+
+What happens is that whenever the scrollview has more rows than can be shown in the screen, as soon as the activity is launched, the NestedScrollView starts with an offset from the top (image 1). If there are few items in the scroll view so that they can all be shown at once, this doesn't happen (image 2).
+
+I am using version 23.2.0 of the support library.
+
+Image 1: WRONG - starts with offset from the top
+
+
+
+Image 2: CORRECT - few items in the recycler view
+
+
+
+I am pasting below my layout code:
+
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.v4.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_gravity="fill_vertical"
+    android:paddingBottom="@dimen/activity_vertical_margin"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="@dimen/activity_vertical_margin">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+            <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="16dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Title:"
+                    style="@style/TextAppearance.AppCompat.Caption"/>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="@dimen/bodyPadding"
+                    style="@style/TextAppearance.AppCompat.Body1"
+                    android:text="Neque porro quisquam est qui dolorem ipsum"/>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Subtitle:"
+                    style="@style/TextAppearance.AppCompat.Caption"/>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    style="@style/TextAppearance.AppCompat.Body1"
+                    android:padding="@dimen/bodyPadding"
+                    android:text="Neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit..."/>
+
+            </LinearLayout>
+
+        <android.support.v7.widget.RecyclerView
+            android:id="@+id/rv"
+            android:focusable="false"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+    </LinearLayout>
+</android.support.v4.widget.NestedScrollView>
+
+
+Am I missing something? Does anyone have any idea how to fix this?
+
+Update 1
+
+It works correctly if I place the following code when initializing my Activity:
+
+sv.post(new Runnable() {
+        @Override
+        public void run() {
+            sv.scrollTo(0,0);
+        }
+});
+
+
+Where sv is a reference to the NestedScrollView, however it looks like quite a hack.
+
+Update 2
+
+As requested, here is my adapter code:
+
+public abstract class ArrayAdapter<T, VH extends RecyclerView.ViewHolder>
+        extends RecyclerView.Adapter<VH> {
+
+    private List<T> mObjects;
+
+    public ArrayAdapter(final List<T> objects) {
+        mObjects = objects;
+    }
+
+    /**
+     * Adds the specified object at the end of the array.
+     *
+     * @param object The object to add at the end of the array.
+     */
+    public void add(final T object) {
+        mObjects.add(object);
+        notifyItemInserted(getItemCount() - 1);
+    }
+
+    /**
+     * Remove all elements from the list.
+     */
+    public void clear() {
+        final int size = getItemCount();
+        mObjects.clear();
+        notifyItemRangeRemoved(0, size);
+    }
+
+    @Override
+    public int getItemCount() {
+        return mObjects.size();
+    }
+
+    public T getItem(final int position) {
+        return mObjects.get(position);
+    }
+
+    public long getItemId(final int position) {
+        return position;
+    }
+
+    /**
+     * Returns the position of the specified item in the array.
+     *
+     * @param item The item to retrieve the position of.
+     * @return The position of the specified item.
+     */
+    public int getPosition(final T item) {
+        return mObjects.indexOf(item);
+    }
+
+    /**
+     * Inserts the specified object at the specified index in the array.
+     *
+     * @param object The object to insert into the array.
+     * @param index  The index at which the object must be inserted.
+     */
+    public void insert(final T object, int index) {
+        mObjects.add(index, object);
+        notifyItemInserted(index);
+
+    }
+
+    /**
+     * Removes the specified object from the array.
+     *
+     * @param object The object to remove.
+     */
+    public void remove(T object) {
+        final int position = getPosition(object);
+        mObjects.remove(object);
+        notifyItemRemoved(position);
+    }
+
+    /**
+     * Sorts the content of this adapter using the specified comparator.
+     *
+     * @param comparator The comparator used to sort the objects contained in this adapter.
+     */
+    public void sort(Comparator<? super T> comparator) {
+        Collections.sort(mObjects, comparator);
+        notifyItemRangeChanged(0, getItemCount());
+    }
+}
+
+
+And here is my ViewHolder:
+
+public class ViewHolder extends RecyclerView.ViewHolder {
+    private TextView txt;
+    public ViewHolder(View itemView) {
+        super(itemView);
+        txt = (TextView) itemView;
+    }
+
+    public void render(String text) {
+        txt.setText(text);
+    }
+}
+
+
+And here is the layout of each item in the RecyclerView (it's just android.R.layout.simple_spinner_item - this screen is only for showing an example of this bug):
+
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android" 
+    android:id="@android:id/text1"
+    style="?android:attr/spinnerItemStyle"
+    android:singleLine="true"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:ellipsize="marquee"
+    android:textAlignment="inherit"/>
+
+    
+===============================================================================================
+223
+A:I solved such issue by setting:
+
+<ImageView ...
+android:focusableInTouchMode="true"/>
+
+
+to my view above RecyclerView (which was hidden after unwanted scroll). Try to set this property to your LinearLayout above RecyclerView or to LinearLayout which is container of RecyclerView (helped me in another case).  
+
+As I see in NestedScrollView source it tries to focus the first possible child in onRequestFocusInDescendants and if only RecyclerView is focusable it wins.
+
+Edit (thanks to Waran): and for smooth scroll don't forget to set yourRecyclerView.setNestedScrollingEnabled(false);
+    

@@ -1,0 +1,202 @@
+34
+Q:I'm using MediaSessionCompat from AppCompat Support Library Revision 22. And on Lollipop I'm getting notification & also the background of lockscreen is the album art. And everything works cool.
+
+While on Pre-Lollipop devices, the music controls on lockscreen are not at all shown. It's weird & I tried everything but it doesn't show up, not even the background changes. 
+
+I hope someone has solution to this issue. 
+
+Note: RemoteControlClient used to work on Lollipop & KitKat
+
+/**
+ * Initializes the remote control client
+ */
+private void setupMediaSession() {
+    /* Activate Audio Manager */
+    mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+    mAudioManager.requestAudioFocus(mAudioFocusListener, AudioManager.STREAM_MUSIC,
+            AudioManager.AUDIOFOCUS_GAIN);
+
+    ComponentName mRemoteControlResponder = new ComponentName(getPackageName(),
+            MediaButtonReceiver.class.getName());
+    final Intent mediaButtonIntent = new Intent(Intent.ACTION_MEDIA_BUTTON);
+    mediaButtonIntent.setComponent(mRemoteControlResponder);
+    mMediaSessionCompat = new MediaSessionCompat(getApplication(), "JairSession", mRemoteControlResponder, null);
+    mMediaSessionCompat.setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS);
+    PlaybackStateCompat playbackStateCompat = new PlaybackStateCompat.Builder()
+            .setActions(
+                    PlaybackStateCompat.ACTION_SEEK_TO |
+                    PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS |
+                    PlaybackStateCompat.ACTION_SKIP_TO_NEXT |
+                    PlaybackStateCompat.ACTION_PLAY |
+                    PlaybackStateCompat.ACTION_PAUSE |
+                    PlaybackStateCompat.ACTION_STOP
+            )
+            .setState(
+                    isPlaying() ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED,
+                    getCurrentPosition(),
+                    1.0f)
+            .build();
+    mMediaSessionCompat.setPlaybackState(playbackStateCompat);
+    mMediaSessionCompat.setCallback(mMediaSessionCallback);
+    mMediaSessionCompat.setSessionActivity(retrievePlaybackActions(5));
+    mMediaSessionCompat.setActive(true);
+    updateMediaSessionMetaData();
+    mTransportController = mMediaSessionCompat.getController().getTransportControls();
+
+
+
+
+Here's the updateMediaSessionMetaData() :
+
+/**
+ * Updates the lockscreen controls, if enabled.
+ */
+private void updateMediaSessionMetaData() {
+            MediaMetadataCompat.Builder builder = new MediaMetadataCompat.Builder();
+            builder.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, getArtistName());
+            builder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM, getAlbumName());
+            builder.putString(MediaMetadataCompat.METADATA_KEY_TITLE, getTrackName());
+            builder.putLong(MediaMetadataCompat.METADATA_KEY_DURATION, getDuration());
+            builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, MusicUtils.getArtwork(this, getAlbumID(), true));
+            mMediaSessionCompat.setMetadata(builder.build());
+
+
+}
+
+
+
+The Media Session Callback methods
+
+private final MediaSessionCompat.Callback mMediaSessionCallback = new MediaSessionCompat.Callback() {
+
+    @Override
+    public boolean onMediaButtonEvent(Intent mediaButtonEvent) {
+        final String intentAction = mediaButtonEvent.getAction();
+        if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intentAction)) {
+            if (PrefUtils.isHeadsetPause(getBaseContext())) {
+                Log.d(LOG_TAG, "Headset disconnected");
+                pause();
+            }
+        } else if (Intent.ACTION_MEDIA_BUTTON.equals(intentAction)) {
+            final KeyEvent event = mediaButtonEvent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+            if (event == null) return super.onMediaButtonEvent(mediaButtonEvent);
+            final int keycode = event.getKeyCode();
+            final int action = event.getAction();
+            final long eventTime = event.getEventTime();
+            if (event.getRepeatCount() == 0 && action == KeyEvent.ACTION_DOWN) {
+                switch (keycode) {
+                    case KeyEvent.KEYCODE_HEADSETHOOK:
+                        if (eventTime - mLastClickTime < DOUBLE_CLICK) {
+                            playNext(mSongNumber);
+                            mLastClickTime = 0;
+                        } else {
+                            if (isPlaying())
+                                pause();
+                            else resume();
+                            mLastClickTime = eventTime;
+                        }
+                        break;
+                    case KeyEvent.KEYCODE_MEDIA_STOP:
+                        mTransportController.stop();
+                        break;
+                    case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                        if (isMediaPlayerActive()) {
+                            if (isPlaying()) mTransportController.pause();
+                            else mTransportController.play();
+                        }
+                        break;
+                    case KeyEvent.KEYCODE_MEDIA_NEXT:
+                        mTransportController.skipToNext();
+                        break;
+                    case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+                        mTransportController.skipToPrevious();
+                        break;
+                    case KeyEvent.KEYCODE_MEDIA_PAUSE:
+                        mTransportController.pause();
+                        break;
+                    case KeyEvent.KEYCODE_MEDIA_PLAY:
+                        mTransportController.play();
+                        break;
+                }
+            }
+        }
+        return super.onMediaButtonEvent(mediaButtonEvent);
+    }
+
+    @Override
+    public void onPlay() {
+        super.onPlay();
+        resume();
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        pause();
+    }
+
+    @Override
+    public void onSkipToNext() {
+        super.onSkipToNext();
+        playNext(mSongNumber);
+    }
+
+    @Override
+    public void onSkipToPrevious() {
+        super.onSkipToPrevious();
+        playPrevious(mSongNumber);
+    }
+
+    @Override
+    public void onSeekTo(long pos) {
+        super.onSeekTo(pos);
+        seekTo(pos);
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        pause();
+        commitMusicData();
+        updatePlayingUI(STOP_ACTION);
+        stopSelf();
+    }
+};
+
+
+
+
+Media Button Receiver Manifest Entry
+
+<!-- Media button receiver -->
+    <receiver android:name=".receiver.MediaButtonReceiver" >
+        <intent-filter>
+            <action android:name="android.intent.action.MEDIA_BUTTON" />
+            <action android:name="android.media.AUDIO_BECOMING_NOISY" />
+        </intent-filter>
+    </receiver>
+
+
+
+
+I'm trying since couple of weeks to solve this issue with no success, and in desperate need of help.
+
+Edit: A tutorial or example of MediaSessionCompat would also be fine
+    
+===============================================================================================
+10
+A:While not strictly required for MediaSession, RemoteControlClient used on API14-19 devices, does require audio focus and it is 100% strongly recommended for all media playback.
+
+Adding lines such as:
+
+AudioManager audioManager = (AudioManager)
+    getSystemService(Context.AUDIO_SERVICE);
+int result = audioManager.requestAudioFocus(this,
+    AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+if (result != AudioManager.AUDIOFOCUS_GAIN) {
+    return; //Failed to gain audio focus
+}
+
+
+Before playing any media should gain audio focus and show controls.
+    

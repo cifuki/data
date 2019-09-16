@@ -1,0 +1,186 @@
+101
+Q:From my main activity, I need to call an inner class and in a method within the class, I need to show AlertDialog. After dismissing it, when the OK button is pressed, forward to Google Play for purchase.
+
+Things work perfectly for most of the times, but for few users it is crashing on builder.show() and I can see "android.view.WindowManager$BadTokenException: Unable to add window" from crash log. Please suggest.
+
+My code is pretty much like this:
+
+public class classname1 extends Activity{
+
+  public void onCreate(Bundle savedInstanceState) {
+    this.requestWindowFeature(Window.FEATURE_NO_TITLE);
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.<view>); 
+
+    //call the <className1> class to execute
+  }
+
+  private class classNamename2 extends AsyncTask<String, Void, String>{
+
+    protected String doInBackground(String... params) {}
+
+    protected void onPostExecute(String result){
+      if(page.contains("error")) 
+      {
+        AlertDialog.Builder builder = new AlertDialog.Builder(classname1.this);
+        builder.setCancelable(true);
+        builder.setMessage("");
+        builder.setInverseBackgroundForced(true);
+        builder.setNeutralButton("Ok",new DialogInterface.OnClickListener() {
+          public void onClick(DialogInterface dialog, int whichButton){
+            dialog.dismiss();
+            if(!<condition>)
+            {
+              try
+              {
+                String pl = ""; 
+
+                mHelper.<flow>(<class>.this, SKU, RC_REQUEST, 
+                  <listener>, pl);
+              }
+
+              catch(Exception e)
+              {
+                e.printStackTrace();
+              }
+            }  
+          }
+        });
+
+        builder.show();
+      }
+    }
+  }
+}
+
+
+I have also seen the error in another alert where I am not forwarding to any other activity. It's simple like this:                                                       
+
+AlertDialog.Builder builder = new AlertDialog.Builder(classname1.this);
+    builder.setCancelable(true);
+
+    //if successful
+    builder.setMessage(" ");
+    builder.setInverseBackgroundForced(true);
+    builder.setNeutralButton("Ok",new DialogInterface.OnClickListener() {
+        public void onClick(DialogInterface dialog, int whichButton){
+            // dialog.dismiss();
+                   }
+    });
+    builder.show();
+}
+
+    
+===============================================================================================
+241
+A:android.view.WindowManager$BadTokenException: Unable to add window"
+
+
+Problem :
+
+
+  This exception occurs when the app is trying to notify the user from
+  the background thread (AsyncTask) by opening a Dialog. 
+  
+  If you are trying to modify the UI from background thread (usually
+  from onPostExecute() of AsyncTask) and if the activity enters
+  finishing stage i.e.) explicitly calling finish(), user pressing home
+  or back button or activity clean up made by Android then you get this
+  error.
+
+
+Reason :
+
+
+  The reason for this exception is that, as the exception message says,
+  the activity has finished but you are trying to display a dialog with
+  a context of the finished activity. Since there is no window for the
+  dialog to display the android runtime throws this exception.
+
+
+Solution:
+
+
+  Use isFinishing() method which is called by Android to check whether
+  this activity is in the process of finishing: be it explicit finish()
+  call or activity clean up made by Android. By using this method it is
+  very easy to avoid opening dialog from background thread when activity
+  is finishing.
+  
+  Also maintain a weak reference for the activity (and not a strong
+  reference so that activity can be destroyed once not needed) and check
+  if the activity is not finishing before performing any UI using this
+  activity reference (i.e. showing a dialog).
+
+
+eg.
+
+private class chkSubscription extends AsyncTask<String, Void, String>{
+
+  private final WeakReference<login> loginActivityWeakRef;
+
+  public chkSubscription (login loginActivity) {
+    super();
+    this.loginActivityWeakRef= new WeakReference<login >(loginActivity)
+  }
+
+  protected String doInBackground(String... params) {
+    //web service call
+  }
+
+  protected void onPostExecute(String result) {
+    if(page.contains("error")) //when not subscribed
+    {
+      if (loginActivityWeakRef.get() != null && !loginActivityWeakRef.get().isFinishing()) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(login.this);
+        builder.setCancelable(true);
+        builder.setMessage(sucObject);
+        builder.setInverseBackgroundForced(true);
+
+        builder.setNeutralButton("Ok",new DialogInterface.OnClickListener() {
+          public void onClick(DialogInterface dialog, int whichButton){
+            dialog.dismiss();
+          }
+        });
+
+        builder.show();
+      }
+    }
+  }
+}
+
+
+Update :
+
+Window Tokens:
+
+
+  As its name implies, a window token is a special type of Binder token
+  that the window manager uses to uniquely identify a window in the
+  system. Window tokens are important for security because they make it
+  impossible for malicious applications to draw on top of the windows of
+  other applications. The window manager protects against this by
+  requiring applications to pass their application's window token as
+  part of each request to add or remove a window. If the tokens don't
+  match, the window manager rejects the request and throws a
+  BadTokenException. Without window tokens, this necessary
+  identification step wouldn't be possible and the window manager
+  wouldn't be able to protect itself from malicious applications.
+
+
+\xc2\xa0A real-world scenario:
+
+
+  When an application starts up for the first time,
+  the\xc2\xa0ActivityManagerService\xc2\xa0creates a special kind of window token
+  called an application window token, which uniquely identifies the
+  application's top-level container window.\xc2\xa0The activity manager gives
+  this token to both the application and the window manager, and the
+  application sends the token to the window manager each time it wants
+  to add a new window to the screen. This ensures secure interaction
+  between the application and the window manager (by making it
+  impossible to add windows on top of other applications), and also
+  makes it easy for the activity manager to make direct requests to the
+  window manager.
+
+    

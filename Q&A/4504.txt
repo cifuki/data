@@ -1,0 +1,346 @@
+53
+Q:I'm having some problems when I try to replace one Fragment with another one in a ViewPager.
+
+Current situation
+
+I have a ViewPager with 3 pages, each one is a Fragment. In first page, I have a ListView inside a ListFragment ("FacturasFragment"). When I click on an item of that list, I use onListItemClick method for handle that event.
+
+What I want
+
+
+When list item is clicked, I want to replace ListFragment (contains a list of invoices) with another Fragment ("DetallesFacturaFragment", contains details of invoice). 
+When I'm in "DetallesFacturaFragment" and press Back Button, should return to ListFragment.
+Scrolling between pages should not change Fragment displayed in first one. It is, if I'm in first page with "DetallesFacturaFragment" and scroll to second page, when return to first one should continue displaying "DetallesFacturaFragment".
+
+
+Code
+
+FragmentActivity
+
+public class TabsFacturasActivity extends SherlockFragmentActivity {
+
+    private MyAdapter mAdapter;
+    private ViewPager mPager;
+    private PageIndicator mIndicator;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.fragment_pager);
+        mAdapter = new MyAdapter(getSupportFragmentManager());
+
+        mPager = (ViewPager)findViewById(R.id.pager);
+        mPager.setAdapter(mAdapter);
+
+        mIndicator = (TitlePageIndicator)findViewById(R.id.indicator);
+        mIndicator.setViewPager(mPager);
+    }
+
+    private static class MyAdapter extends FragmentPagerAdapter {
+
+        private String[] titles = { "VER FACTURAS", "VER CONSUMO", "INTRODUCIR LECTURA" };
+        private final FragmentManager mFragmentManager;
+        private Fragment mFragmentAtPos0;
+        private Context context;
+
+        public MyAdapter(FragmentManager fragmentManager) {
+            super(fragmentManager);
+            mFragmentManager = fragmentManager;
+        }
+
+        @Override
+        public CharSequence getPageTitle(int position) {
+            return titles[position];
+        }
+
+        @Override
+        public Fragment getItem(int position) {
+            switch (position) {
+            case 0: // Fragment # 0
+                return new FacturasFragment();
+            case 1: // Fragment # 1
+                return new ConsumoFragment();
+            case 2:// Fragment # 2
+                return new LecturaFragment();
+            }
+            return null;
+        }
+
+        @Override
+        public int getCount() {
+            return titles.length;
+        }
+
+        @Override
+        public int getItemPosition(Object object)
+        {
+            if (object instanceof FacturasFragment && mFragmentAtPos0 instanceof DetallesFacturaFragment)
+                return POSITION_NONE;
+            return POSITION_UNCHANGED;
+        }
+    }
+
+}
+
+
+ListFragment
+
+public class FacturasFragment extends ListFragment {
+
+    private ListView lista;
+
+    private ArrayList<TuplaFacturaWS> facturas;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setRetainInstance(true);    
+    }
+
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState)
+    {
+        View view = inflater.inflate(R.layout.activity_facturas, container, false);
+        facturas = myApplication.getFacturas();
+
+        lista = (ListView) view.findViewById(id.list);
+
+        MyAdapter myAdaptador = new MyAdapter(this, facturas);
+        setListAdapter(myAdaptador);
+
+        return view;
+    }
+
+    public void onListItemClick (ListView l, View v, int position, long id) {
+        myApplication.setFacturaActual(position);
+        mostrarDatosFactura();
+    }
+
+
+    private void mostrarDatosFactura() {
+        final DetallesFacturaFragment fragment = new DetallesFacturaFragment();
+        FragmentTransaction transaction = null;
+        transaction = getFragmentManager().beginTransaction();
+        transaction.replace(R.id.pager, fragment); //id of ViewPager
+        transaction.addToBackStack(null);
+        transaction.commit();
+    }
+
+    private class MyAdapter extends BaseAdapter {
+        private final FacturasFragment actividad;
+        private final ArrayList<TuplaFacturaWS> facturas;
+
+        public MyAdapter(FacturasFragment facturasActivity, ArrayList<TuplaFacturaWS> facturas) {
+            super();
+            this.actividad = facturasActivity;
+            this.facturas = facturas;
+        }
+
+        @Override
+        public View getView(int position, View convertView, 
+                ViewGroup parent) {
+            LayoutInflater inflater = actividad.getLayoutInflater(null);
+            View view = inflater.inflate(R.layout.list_row, null, true);
+            //Set data to view
+            return view;
+        }
+
+        @Override
+        public int getCount() {
+            return facturas.size();
+        }
+
+        @Override
+        public Object getItem(int pos) {
+            return facturas.get(pos);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        private OnClickListener checkListener = new OnClickListener()
+        {
+
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                // TODO Auto-generated method stub
+
+            }
+
+        };
+    }
+}
+
+
+Fragment
+
+public class DetallesFacturaFragment extends SherlockFragment {
+
+@Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setRetainInstance(true);    
+    }
+
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState)
+    {
+        View view = inflater.inflate(R.layout.activity_factura, container, false);
+
+        //Set data to view
+
+        return view;
+    }
+}
+
+
+At the moment, when I click on list item, white view appears in first page. I've verified and onCreateView method of "DetallesFacturaFragment" is executed, but nothing appears on that page.
+
+And first time I click on list item, it shows that white screen. But after coming back to list, I have to click twice to a list item for showing white screen.
+
+I've been googling and looking at some many questions but couldn't find anyone solved with completed code.
+    
+===============================================================================================
+48
+A:After so many hours spent, I've found correct solution modifying code in that answer. 
+
+It replaces Fragment in first page of ViewPager with another one, and if you return back from second Fragment, first Fragment is correctly displayed. Doesn't matter Fragment displayed in first page, if you swipe from one page to another, it doesn't change its Fragment.
+
+Here is my code:
+
+FragmentActivity
+
+public class TabsFacturasActivity extends SherlockFragmentActivity {
+
+    public void onBackPressed() {
+        if(mPager.getCurrentItem() == 0) {
+            if (mAdapter.getItem(0) instanceof DetallesFacturaFragment) {
+                ((DetallesFacturaFragment) mAdapter.getItem(0)).backPressed();
+            }
+            else if (mAdapter.getItem(0) instanceof FacturasFragment) {
+                finish();
+            }
+        }
+    }
+
+    private static class MyAdapter extends FragmentPagerAdapter {
+
+        private final class FirstPageListener implements
+        FirstPageFragmentListener {
+            public void onSwitchToNextFragment() {
+                mFragmentManager.beginTransaction().remove(mFragmentAtPos0)
+                .commit();
+                if (mFragmentAtPos0 instanceof FacturasFragment){
+                    mFragmentAtPos0 = new DetallesFacturaFragment(listener);
+                }else{ // Instance of NextFragment
+                    mFragmentAtPos0 = new FacturasFragment(listener);
+                }
+                notifyDataSetChanged();
+            }
+        }
+
+        private String[] titles = { "VER FACTURAS", "VER CONSUMO", "INTRODUCIR LECTURA" };
+        private final FragmentManager mFragmentManager;
+        public Fragment mFragmentAtPos0;
+        private Context context;
+        FirstPageListener listener = new FirstPageListener();
+
+        public MyAdapter(FragmentManager fragmentManager) {
+            super(fragmentManager);
+            mFragmentManager = fragmentManager;
+        }
+
+        @Override
+        public CharSequence getPageTitle(int position) {
+            return titles[position];
+        }
+
+        @Override
+        public Fragment getItem(int position) {
+            switch (position) {
+            case 0: // Fragment # 0
+                if (mFragmentAtPos0 == null)
+                {
+                    mFragmentAtPos0 = new FacturasFragment(listener);
+                }
+                return mFragmentAtPos0;
+
+            case 1: // Fragment # 1
+                return new ConsumoFragment();
+            case 2:// Fragment # 2
+                return new LecturaFragment();
+            }
+            return null;
+        }
+
+        @Override
+        public int getCount() {
+            return titles.length;
+        }
+
+        @Override
+        public int getItemPosition(Object object)
+        {
+            if (object instanceof FacturasFragment && 
+                    mFragmentAtPos0 instanceof DetallesFacturaFragment) {
+                return POSITION_NONE;
+            }
+            if (object instanceof DetallesFacturaFragment && 
+                    mFragmentAtPos0 instanceof FacturasFragment) {
+                return POSITION_NONE;
+            }
+            return POSITION_UNCHANGED;
+        }
+
+    }
+
+}
+
+
+FirstPageFragmentListener
+
+public interface FirstPageFragmentListener {
+    void onSwitchToNextFragment();
+}
+
+
+FacturasFragment (FirstFragment)
+
+public class FacturasFragment extends ListFragment implements FirstPageFragmentListener {
+
+    static FirstPageFragmentListener firstPageListener;
+
+    public FacturasFragment() {
+    }
+
+    public FacturasFragment(FirstPageFragmentListener listener) {
+        firstPageListener = listener;
+    }
+
+    public void onListItemClick (ListView l, View v, int position, long id) {
+        firstPageListener.onSwitchToNextFragment();
+    }
+}
+
+
+DetallesFacturaFragment (SecondFragment)
+
+public class DetallesFacturaFragment extends SherlockFragment {
+
+    static FirstPageFragmentListener firstPageListener;
+
+    public DetallesFacturaFragment() {
+    }
+
+    public DetallesFacturaFragment(FirstPageFragmentListener listener) {
+        firstPageListener = listener;
+    }
+
+    public void backPressed() {
+        firstPageListener.onSwitchToNextFragment();
+    }
+}
+
+    

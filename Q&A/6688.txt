@@ -1,0 +1,87 @@
+38
+Q:Upon installation of my Android program I check for device locale:
+
+String deviceLocale=Locale.getDefault().getLanguage();
+
+
+If deviceLocale is inside my supported languages (english, french, german) I don't change locale.   
+
+But for instance say that if I don't support device's language: for example spanish.
+I set current locale to English, because most of the people can understand English partly.
+
+Locale locale = new Locale("en");
+Locale.setDefault(locale);
+Configuration config = new Configuration();
+config.locale = locale;
+pContext.getResources().updateConfiguration(config, null);
+
+
+But after that, in other methods, when I check device's locale like this:
+
+String deviceLocale=Locale.getDefault().getLanguage();
+
+
+I get result as "English". But device's locale is Spanish.  
+
+Does getLanguage() gives current app's locale ?
+How can I get device's locale ?
+
+Edit: In app's first run, it is an option to save device locale. But if user changes device locale after I save, I can't know new locale of the device. I can only know the locale that I saved in app install.
+    
+===============================================================================================
+68
+A:There's a much simpler and cleaner way to do this than using reflection or parsing some system property.
+
+As you noticed once you set the default Locale in your app you don't have access to the system default Locale any more. The default Locale you set in your app is valid only during the life cycle of your app. Whatever you set in your Locale.setDefault(Locale) is gone once the process is terminated . When the app is restarted you will again be able to read the system default Locale.
+
+So all you need to do is retrieve the system default Locale when the app starts, remember it as long as the app runs and update it should the user decide to change the language in the Android settings. Because we need that piece of information only as long as the app runs, we can simply store it in a static variable, which is accessible from anywhere in your app.
+
+And here's how we do it:
+
+public class MyApplication extends Application {
+
+    public static String sDefSystemLanguage;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+
+        sDefSystemLanguage = Locale.getDefault().getLanguage();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+
+        sDefSystemLanguage = newConfig.locale.getLanguage();
+    }
+
+}
+
+
+Using an Application (don't forget to define it in your manifest) we get the default locale when the app starts (onCreate()) and we update it when the user changes the language in the Android settings (onConfigurationChanged(Configuration)). That's all there is.
+Whenever you need to know what the system default language was before you used your setDefault call, sDefSystemLanguage will give you the answer.
+
+There's one issue I spotted in your code. When you set the new Locale you do:
+
+Configuration config = new Configuration();
+config.locale = locale;
+pContext.getResources().updateConfiguration(config, null);
+
+
+When you do that, you overwrite all Configuration information that you might want to keep. E.g. Configuration.fontScale reflects the Accessibility settings Large Text. By settings the language and losing all other Configuration your app would not reflect the Large Text settings any more, meaning text is smaller than it should be (if the user has enabled the large text setting).
+The correct way to do it is:
+
+Resources res = pContext.getResources();
+Configuration config = res.getConfiguration();
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+    configuration.setLocale(Locale.CANADA);
+}
+else {
+    configuration.locale = Locale.CANADA;
+}
+res.updateConfiguration(config, null);
+
+
+So instead of creating a new Configuration object we just update the current one.
+    

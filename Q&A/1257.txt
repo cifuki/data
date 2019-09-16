@@ -1,0 +1,249 @@
+133
+Q:I have a wizard generated app with navigation drawer in android studio 0.8.2
+
+I have created a fragment and added it with newInstance() and I get this error:
+
+
+  com.domain.myapp E/AndroidRuntime\xef\xb9\x95 FATAL EXCEPTION: main
+      java.lang.ClassCastException: com.domain.myapp.MainActivity@422fb8f0  must implement
+  OnFragmentInteractionListener
+
+
+I can't find anywhere how to implement this OnFragmentInteractionListener ??
+It cannot be found even in android sdk documentation!
+
+MainActivity.java
+
+import android.app.Activity;
+
+import android.app.ActionBar;
+import android.app.Fragment;
+import android.app.FragmentManager;
+import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
+import android.support.v4.widget.DrawerLayout;
+
+
+public class MainActivity extends Activity
+    implements NavigationDrawerFragment.NavigationDrawerCallbacks {
+
+/**
+ * Fragment managing the behaviors, interactions and presentation of the navigation drawer.
+ */
+private NavigationDrawerFragment mNavigationDrawerFragment;
+
+/**
+ * Used to store the last screen title. For use in {@link #restoreActionBar()}.
+ */
+private CharSequence mTitle;
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    mNavigationDrawerFragment = (NavigationDrawerFragment)
+            getFragmentManager().findFragmentById(R.id.navigation_drawer);
+    mTitle = getTitle();
+
+    // Set up the drawer.
+    mNavigationDrawerFragment.setUp(
+            R.id.navigation_drawer,
+            (DrawerLayout) findViewById(R.id.drawer_layout));
+}
+
+@Override
+public void onNavigationDrawerItemSelected(int position) {
+    // update the main content by replacing fragments
+    FragmentManager fragmentManager = getFragmentManager();
+
+    switch (position) {
+        case 0: fragmentManager.beginTransaction()
+                .replace(R.id.container, PlaceholderFragment.newInstance(position + 1))
+                .commit(); break; 
+        case 1: fragmentManager.beginTransaction() 
+                .replace(R.id.container, AboutFragment.newInstance("test1", "test2"))
+                .commit(); break; // this crashes the app
+        case 2: fragmentManager.beginTransaction()
+                .replace(R.id.container, BrowseQuotesFragment.newInstance("test1", "test2"))
+                .commit(); break; // this crashes the app
+    }
+}
+
+
+public void onSectionAttached(int number) {
+    switch (number) {
+        case 1:
+            mTitle = getString(R.string.title_section1);
+            break;
+        case 2:
+            mTitle = getString(R.string.title_section2);
+            break;
+        case 3:
+            mTitle = getString(R.string.title_section3);
+            break;
+    }
+}
+
+public void restoreActionBar() {
+    ActionBar actionBar = getActionBar();
+    actionBar.setNavigationMode(ActionBar.NAVIGATION_MODE_STANDARD);
+    actionBar.setDisplayShowTitleEnabled(true);
+    actionBar.setTitle(mTitle);
+}
+
+
+@Override
+public boolean onCreateOptionsMenu(Menu menu) {
+    if (!mNavigationDrawerFragment.isDrawerOpen()) {
+        // Only show items in the action bar relevant to this screen
+        // if the drawer is not showing. Otherwise, let the drawer
+        // decide what to show in the action bar.
+        getMenuInflater().inflate(R.menu.main, menu);
+        restoreActionBar();
+        return true;
+    }
+    return super.onCreateOptionsMenu(menu);
+}
+
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {
+    // Handle action bar item clicks here. The action bar will
+    // automatically handle clicks on the Home/Up button, so long
+    // as you specify a parent activity in AndroidManifest.xml.
+    int id = item.getItemId();
+    if (id == R.id.action_settings) {
+        return true;
+    }
+    return super.onOptionsItemSelected(item);
+}
+
+/**
+ * A placeholder fragment containing a simple view.
+ */
+public static class PlaceholderFragment extends Fragment {
+    /**
+     * The fragment argument representing the section number for this
+     * fragment.
+     */
+    private static final String ARG_SECTION_NUMBER = "section_number";
+
+    /**
+     * Returns a new instance of this fragment for the given section
+     * number.
+     */
+    public static PlaceholderFragment newInstance(int sectionNumber) {
+        PlaceholderFragment fragment = new PlaceholderFragment();
+        Bundle args = new Bundle();
+        args.putInt(ARG_SECTION_NUMBER, sectionNumber);
+        fragment.setArguments(args);
+        return fragment;
+    }
+
+    public PlaceholderFragment() {
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState) {
+        View rootView = inflater.inflate(R.layout.fragment_main, container, false);
+        return rootView;
+    }
+
+    @Override
+    public void onAttach(Activity activity) {
+        super.onAttach(activity);
+        ((MainActivity) activity).onSectionAttached(
+                getArguments().getInt(ARG_SECTION_NUMBER));
+    }
+}
+
+
+}
+    
+===============================================================================================
+113
+A:Answers posted here did not help, but the following link did:
+
+http://developer.android.com/training/basics/fragments/communicating.html
+
+Define an Interface
+
+public class HeadlinesFragment extends ListFragment {
+    OnHeadlineSelectedListener mCallback;
+
+    // Container Activity must implement this interface
+    public interface OnHeadlineSelectedListener {
+        public void onArticleSelected(int position);
+    }
+
+    @Override
+    public void onAttach(Activity activity) {
+        super.onAttach(activity);
+
+        // This makes sure that the container activity has implemented
+        // the callback interface. If not, it throws an exception
+        try {
+            mCallback = (OnHeadlineSelectedListener) activity;
+        } catch (ClassCastException e) {
+            throw new ClassCastException(activity.toString()
+                    + " must implement OnHeadlineSelectedListener");
+        }
+    }
+
+    ...
+}
+
+
+For example, the following method in the fragment is called when the user clicks on a list item. The fragment uses the callback interface to deliver the event to the parent activity.
+
+@Override
+public void onListItemClick(ListView l, View v, int position, long id) {
+    // Send the event to the host activity
+    mCallback.onArticleSelected(position);
+}
+
+
+Implement the Interface
+
+For example, the following activity implements the interface from the above example.
+
+public static class MainActivity extends Activity
+        implements HeadlinesFragment.OnHeadlineSelectedListener{
+    ...
+
+    public void onArticleSelected(int position) {
+        // The user selected the headline of an article from the HeadlinesFragment
+        // Do something here to display that article
+    }
+}
+
+
+
+
+Update for API 23: 8/31/2015
+
+Overrided method onAttach(Activity activity) is now deprecated in android.app.Fragment, code should be upgraded to onAttach(Context context)
+
+@Override
+public void onAttach(Context context) {
+    super.onAttach(context);
+}
+
+
+@Override
+public void onStart() {
+    super.onStart();
+    try {
+        mListener = (OnFragmentInteractionListener) getActivity();
+    } catch (ClassCastException e) {
+        throw new ClassCastException(getActivity().toString()
+                + " must implement OnFragmentInteractionListener");
+    }
+}
+
+    

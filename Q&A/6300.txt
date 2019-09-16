@@ -1,0 +1,248 @@
+40
+Q:As I was following an old tutorial (Cr\xc3\xa9ez des applications pour Android -> openclassroom) I got stuck on this deprecated method addPreferencesFromResource(int id) from the PreferenceActivity class.
+
+So my question is :
+
+
+  What is the new way of creating Preferences in Android ?
+
+    
+===============================================================================================
+101
+A:I found this post (What to use instead of \xe2\x80\x9caddPreferencesFromResource\xe2\x80\x9d in a PreferenceActivity?) that help me understand that you have to go through a PreferenceFragment in order to do it.
+
+In the following explanation I use your.package. just to show that you have to put the package name. Everybody has its own package so please replace it with your package.
+
+lets begin :
+
+
+
+1. Preference Fragment
+
+
+Create your PreferenceFragment class
+
+
+  MyPreferenceFragment
+
+
+public class MyPreferenceFragment extends PreferenceFragment
+{
+    @Override
+    public void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+        addPreferencesFromResource(R.xml.fragment_preference);
+    }
+}
+
+
+
+
+
+
+Then the associated xml resource
+
+
+  fragment_preference.xml (in the folder res/xml of your project)
+
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <PreferenceCategory 
+        android:title="FOO">
+
+        <CheckBoxPreference
+            android:key="checkBoxPref"
+            android:title="check it out"
+            android:summary="click this little box"/>
+
+    </PreferenceCategory>
+
+</PreferenceScreen>
+
+
+That's all for the Fragment part.
+
+
+
+
+
+
+2. Preference Activity
+
+
+Create the PreferenceActivity class
+
+
+  MyPreferenceActivity
+
+
+public class MyPreferenceActivity extends PreferenceActivity
+{
+    @Override
+    public void onBuildHeaders(List<Header> target)
+    {
+        loadHeadersFromResource(R.xml.headers_preference, target);
+    }
+
+    @Override
+    protected boolean isValidFragment(String fragmentName)
+    {
+        return MyPreferenceFragment.class.getName().equals(fragmentName);
+    }
+}
+
+
+Do not forget to override isValidFragment(String fragmentName) method as you will get punched in the face by your application ! ;) More seriously I have no idea why you need to do this but it is needed. If someone has an explanation about this I'd gladly read it :)
+
+EDIT :
+
+
+
+Thanks to kirtan403 I now know why it is needed : it has to be set because of an (android framework fragment injection).
+
+
+
+As you can see in the onBuildHeaders(List<Header> target) we load another xml file that contain the headers of the preference. In short, headers are the left part of the preference and the fragment are the right part (for tablet). For a phone you will first have the headers and when you click on an item the corresponding fragment will be put on top of the headers list. 
+
+Read this article (Multi-pane development in Android with Fragments - Tutorial) the images explain themselves.
+
+
+
+
+
+Then the associated xml resource
+
+
+  headers_preference.xml (in the folder res/xml of your project) 
+
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<preference-headers
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <header 
+        android:fragment="your.package.MyPreferenceFragment"
+        android:title="Goto: Preference fragment"
+        android:summary="An example of some preferences." />
+
+</preference-headers>
+
+
+As you may have noticed in the header section you have :
+
+android:fragment="your.package.MyPreferenceFragment"
+
+This will act as a Link to the fragment you want to show. On Tablet it will load on the right part and on the phone it will load on top of the current view.
+
+
+
+
+
+
+3. Android Manifest
+
+Now what you should do is to add your Activity to the AndroidManifest.xml file.
+
+Inside the application section add these lines :
+
+<activity
+    android:name="your.package.MyPreferenceActivity"
+    android:label="Preferences">
+</activity>
+
+
+You will probably tell me :
+
+
+  "Oh darling you forgot to put android:launchMode="singleTask" in your actvity" 
+
+
+But DO NOT PUT THIS as you will never load your fragment on phone. This error was solved by a great man ! This is the link to his blog (Android header preferences on small screen/phone).
+
+
+
+
+
+4. Start the Preferences from Menu
+
+Finally you need to add the ability to show this Preference !! To do so you will need 3 things :
+
+
+The Menu
+
+
+  menu.xml (in the folder res/menu of your project)
+
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<menu 
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item 
+        android:id="@+id/preferences"
+        android:title="Preferences" />
+
+</menu>
+
+
+
+
+
+
+Loading this Menu in your Main activity (not the PreferenceActivity) under the method onCreateOptionsMenu(Menu menu)
+
+@Override
+public boolean onCreateOptionsMenu(Menu menu)
+{
+    MenuInflater inflater = getMenuInflater();
+    inflater.inflate(R.menu.menu, menu);
+    return true;
+}
+
+
+
+
+
+
+Starting the MyPreferenceActivity Activity when you click on that button. 
+
+For that you will need to override the onOptionsItemSelected(MenuItem item) method in your Main activity.
+
+@Override
+public boolean onOptionsItemSelected(MenuItem item)
+{
+    switch(item.getItemId())
+    {
+        case R.id.preferences:
+        {
+            Intent intent = new Intent();
+            intent.setClassName(this, "your.package.MyPreferenceActivity");
+            startActivity(intent);
+            return true;
+        }
+    }
+
+    return super.onOptionsItemSelected(item);
+}
+
+
+
+
+
+
+
+Et voila les amis !
+
+I haven't tested this code. I took it and modified it from my own code so I may have not well copy pasted things. If you encounter errors tell me, I'll try to figure out the problem and fix this.
+
+I hope this post will help some people out there :D 
+
+Cheers !
+    

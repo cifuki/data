@@ -1,0 +1,102 @@
+70
+Q:I am using google wallet for my payment gateway, after purchasing the product google giving me a below response that
+
+{ 
+ "orderId":"12999763169054705758.1371079406387615", 
+ "packageName":"com.example.app",
+ "productId":"exampleSku",
+ "purchaseTime":1345678900000,
+ "purchaseState":0,
+ "developerPayload":"bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ",
+ "purchaseToken":"rojeslcdyyiapnqcynkjyyjh"
+ }
+
+
+I am trying to make use of Receipt Validation that google play newly introduced.In Google Developer console I made certificate key by Service Account in the Permission. But I am confused how to make use of Receipt Validation after purchasing a Product from the Google Play-store.
+
+So can anyone please help me how to do the Receipt validation of InApp Purchase.
+    
+===============================================================================================
+176
+A:Google provides receipt validation through the Google Play Developer API, within the API are two endpoints you will be most interested in: Purchases.products: get and Purchases.subscriptions: get.
+
+Purchases.products: get can be used to verify a non-auto-renewing product purchase, where Purchases.subscriptions: get is for verifying and re-verifying auto-renewing product subscriptions.
+
+To use either endpoint you must know the packageName, productId, purchaseToken all of these can be found in the payload you received on purchase. You also need an access_token which you can get by creating a Google API service account.
+
+To get started with a service account first go to the Google play Developer console API access settings page and click the Create new project button:
+
+
+
+You should now see a new Linked Project and a few new sections, in the the Service Account section, click the Create service account button.
+
+
+
+You will be presented with an info box with instructions to create your service account. Click the link to Google Developers Console and a new tab will spawn.
+
+
+
+Now click Create new Client ID, select Service account from the options and click Create Client ID.
+
+
+
+A JSON file will download, this is your JSON Web Token you will use to exchange for an access_token so keep it safe.
+
+Next, switch tabs back to the Google play Developer console and click Done in the info box. You should see your new service account in the list. Click on Grant access next to the service account email. 
+
+
+
+Next under the Choose a role for this user, select Finance and click Add user.
+
+
+
+You have now set up your service account and it has all the necessary access to perform receipt validations. Next up is exchanging your JWT for an access_token.
+
+The access_token expires after one hour of exchange you so need some server code to handle this and Google have provided several libraries in many languages to handle this (list not exhaustive):
+
+
+Ruby: https://github.com/google/google-api-ruby-client
+Node.js: https://github.com/google/google-api-nodejs-client
+Java: https://github.com/google/google-api-java-client
+Python: https://github.com/google/google-api-python-client
+
+
+I won't go into detail because there is plenty of documentation on how to use these libraries, but I will mention you want to use the https://www.googleapis.com/auth/androidpublisher as the OAuth2 scope, the client_email from the JWT as the issuer and the public key you can get from the private_key and the passphrase notasecret will be used for the signing_key.
+
+Once you have the access_token you're good to go (at least for the next hour at which point you will want to request a new one following the same process in the above paragraph).
+
+To check the status of a consumable (non-auto-renewing) purchase make a http get request to: https://www.googleapis.com/androidpublisher/v2/applications/com.example.app/purchases/products/exampleSku/tokens/rojeslcdyyiapnqcynkjyyjh?access_token=your_access_token
+
+If you get a 200 http response code, everything went as planed and your purchase was valid. A 404 will mean your token is invalid so the purchase was most likely a fraud attempt. A 401 will mean your access token is invalid and a 403 will mean your service account has insufficient access, check that you have enabled Finance for the access account in the Google Play Developer console.
+
+The response from a 200 will look similar to this:
+
+{
+  "kind": "androidpublisher#productPurchase",
+  "purchaseTimeMillis": long,
+  "purchaseState": integer,
+  "consumptionState": integer,
+  "developerPayload": string
+}
+
+
+For an explanation of each property see https://developers.google.com/android-publisher/api-ref/purchases/products.
+
+Subscriptions are similar however the endpoint looks like this:
+
+https://www.googleapis.com/androidpublisher/v2/applications/packageName/purchases/subscriptions/subscriptionId/tokens/token?access_token=you_access_token
+
+And the response should contain these properties:
+
+{
+  "kind": "androidpublisher#subscriptionPurchase",
+  "startTimeMillis": long,
+  "expiryTimeMillis": long,
+  "autoRenewing": boolean
+}
+
+
+See https://developers.google.com/android-publisher/api-ref/purchases/subscriptions for the property descriptions and note that startTimeMillis and expiryTimeMillis will be subject to change depending on the duration of the subscription.
+
+Happy validating!
+    

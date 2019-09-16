@@ -1,0 +1,118 @@
+357
+Q:Here is my manifest
+
+    <service android:name=".fcm.PshycoFirebaseMessagingServices">
+        <intent-filter>
+            <action android:name="com.google.firebase.MESSAGING_EVENT" />
+        </intent-filter>
+    </service>
+
+    <service android:name=".fcm.PshycoFirebaseInstanceIDService">
+        <intent-filter>
+            <action android:name="com.google.firebase.INSTANCE_ID_EVENT" />
+        </intent-filter>
+    </service>
+
+
+When the app is in background and notification arrives then the default notification comes and doesn't run my code of onMessageReceived.
+
+Here is my onMessageReceived code. This invokes if my app is running on foreground, not when app in background. How to run this code when the app is in background too?
+
+// [START receive_message]
+@Override
+public void onMessageReceived(RemoteMessage remoteMessage) {
+    // TODO(developer): Handle FCM messages here.
+    // If the application is in the foreground handle both data and notification messages here.
+    // Also if you intend on generating your own notifications as a result of a received FCM
+    // message, here is where that should be initiated. See sendNotification method below.
+    data = remoteMessage.getData();
+    String title = remoteMessage.getNotification().getTitle();
+    String message = remoteMessage.getNotification().getBody();
+    String imageUrl = (String) data.get("image");
+    String action = (String) data.get("action");
+    Log.i(TAG, "onMessageReceived: title : "+title);
+    Log.i(TAG, "onMessageReceived: message : "+message);
+    Log.i(TAG, "onMessageReceived: imageUrl : "+imageUrl);
+    Log.i(TAG, "onMessageReceived: action : "+action);
+
+    if (imageUrl == null) {
+        sendNotification(title,message,action);
+    } else {
+        new BigPictureNotification(this,title,message,imageUrl,action);
+    }
+}
+// [END receive_message]
+
+    
+===============================================================================================
+574
+A:1. Why is this happening?
+
+There are two types of messages in FCM (Firebase Cloud Messaging):
+
+
+Display Messages: These messages trigger the onMessageReceived() callback only when your app is in foreground
+Data Messages: Theses messages trigger the onMessageReceived() callback even if your app is in foreground/background/killed
+
+
+Firebase team have not developed a UI to send data-messages to your devices, yet.
+
+
+
+2. How to?
+
+To achieve this, you have to perform a POST request to the following URL:
+
+
+  POST https://fcm.googleapis.com/fcm/send
+
+
+Headers
+
+
+Key: Content-Type, Value: application/json
+Key: Authorization, Value: key=<your-server-key>
+
+
+Body using topics
+
+{
+    "to": "/topics/my_topic",
+    "data": {
+        "my_custom_key": "my_custom_value",
+        "my_custom_key2": true
+     }
+}
+
+
+Or if you want to send it to specific devices
+
+{
+    "data": {
+        "my_custom_key": "my_custom_value",
+        "my_custom_key2": true
+     },
+    "registration_ids": ["{device-token}","{device2-token}","{device3-token}"]
+}
+
+
+
+
+
+  NOTE: Be sure you're not adding JSON key notification
+  NOTE: To get your server key, you can find it in the firebase console: Your project -> settings -> Project settings -> Cloud messaging -> Server Key
+
+
+3. How to handle the push notification message?
+
+This is how you handle the received message:
+
+@Override
+public void onMessageReceived(RemoteMessage remoteMessage) { 
+     Map<String, String> data = remoteMessage.getData();
+     String myCustomKey = data.get("my_custom_key");
+
+     // Manage data
+}
+
+    

@@ -1,0 +1,284 @@
+47
+Q:I am able to send data upto 20 bytes by connecting to an external BLE device. How do I send data greater than 20 bytes. I have read that we have to either fragment the data or split characteristic to required parts. If I assume my data is 32 bytes, could you tell me changes I need to make in my code to get this working? Following are the required snippets from my code:
+
+public boolean send(byte[] data) {
+    if (mBluetoothGatt == null || mBluetoothGattService == null) {
+        Log.w(TAG, "BluetoothGatt not initialized");
+        return false;
+    }
+
+    BluetoothGattCharacteristic characteristic =
+            mBluetoothGattService.getCharacteristic(UUID_SEND);
+
+    if (characteristic == null) {
+        Log.w(TAG, "Send characteristic not found");
+        return false;
+    }
+
+    characteristic.setValue(data);
+    characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+    return mBluetoothGatt.writeCharacteristic(characteristic);
+}
+
+
+This is the code I used for sending the data. The "send" function is used in the following onclick event.
+
+sendValueButton = (Button) findViewById(R.id.sendValue);
+    sendValueButton.setOnClickListener(new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            String text = dataEdit.getText().toString();                           
+            yableeService.send(text.getBytes());
+        }
+    });
+
+
+When the String text is greater than 20 bytes then only the first 20 bytes are received. How to rectify this?
+
+To test sending multiple characteristics I tried this:
+
+sendValueButton = (Button) findViewById(R.id.sendValue);
+sendValueButton.setOnClickListener(new View.OnClickListener() {
+    @Override
+    public void onClick(View v) {
+        String text = "Test1";                           
+        yableeService.send(text.getBytes());
+
+        text = "Test2";                           
+        yableeService.send(text.getBytes());
+
+        text = "Test3";                           
+        yableeService.send(text.getBytes());
+    }
+});
+
+
+But I only received "Test3" i.e. the last characteristic. What mistake did I commit? I am new to BLE so please ignore any naiveness
+
+Edit:
+
+After accepting answer for anyone who views this later.
+
+There are two ways to accomplish this.
+1. Split up your data and write in a loop as the selected answer does.
+2. Split up your data and write using callback i.e. onCharacterisitcWrite(). This will save you from errors if there were any during writing.
+
+But most important between the writes use a Thread.sleep(200) if you are only writing and not waiting for a response from the firmware. This will ensure that all of your data reaches. Without the sleep I was always getting the last packet. If you notice the accepted answer he has also used sleep in between.
+    
+===============================================================================================
+28
+A:BLE allows you transfer maximum of 20 bytes.
+
+If you want to send more than 20 bytes, you should define array byte[] to  contain how many packets you want. 
+
+Following example worked fine if you want to send less than 160 characters (160 bytes).
+
+p/s : Let edit following as you want. Do not follow me exactly.
+
+Actually, when we are using BLE, mobile side and firmware side need to set up the Key (ex. 0x03 ...) to define the connection gate among both sides.
+
+The idea is :
+
+
+When we continue to transfer packets, not is the last one. The gate is byte[1] = 0x01.
+If we send the last one, The gate is byte[1] = 0x00.
+
+
+The data contruction (20 bytes):
+
+1 - Byte 1 - Define the Gate ID : ex. Message gate ID byte[0] = 0x03.
+
+2 - Byte 2 - Define the recognization : Is the last packet 0x00 or continue sending packets 0x01.
+
+3 - Byte 3 (Should be 18 bytes after eliminating Byte 1 & Byte 2) - Attach the message content in here.
+
+please understand my logic before reading the code below.
+
+Below is an example of sending a Message with many packets, each packet is an array of size 20 bytes.
+
+private void sendMessage(BluetoothGattCharacteristic characteristic, String CHARACTERS){
+        byte[] initial_packet = new byte[3];
+        /**
+         * Indicate byte
+         */
+        initial_packet[0] = BLE.INITIAL_MESSAGE_PACKET;
+        if (Long.valueOf(
+                String.valueOf(CHARACTERS.length() + initial_packet.length))
+                > BLE.DEFAULT_BYTES_VIA_BLE) {
+            sendingContinuePacket(characteristic, initial_packet, CHARACTERS);
+        } else {
+            sendingLastPacket(characteristic, initial_packet, CHARACTERS);
+        }
+    }
+
+private void sendingContinuePacket(BluetoothGattCharacteristic characteristic,
+            byte[] initial_packet, String CHARACTERS){
+        /**
+         * TODO If data length > Default data can sent via BLE : 20 bytes
+         */
+        // Check the data length is large how many times with Default Data (BLE)
+        int times = Byte.valueOf(String.valueOf(
+                CHARACTERS.length() / BLE.DEFAULT_BYTES_IN_CONTINUE_PACKET));
+
+        Log.i(TAG, "CHARACTERS.length() " + CHARACTERS.length());
+        Log.i(TAG, "times " + times);
+
+        // TODO
+        // 100 : Success
+        // 101 : Error
+        byte[] sending_continue_hex = new byte[BLE.DEFAULT_BYTES_IN_CONTINUE_PACKET];
+        for (int time = 0; time <= times; time++) {
+            /**
+             * Wait second before sending continue packet 
+             */
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            if (time == times) {
+                Log.i(TAG, "LAST PACKET ");
+
+                /**
+                 * If you do not have enough characters to send continue packet,
+                 * This is the last packet that will be sent to the band
+                 */
+
+                /**
+                 * Packet length byte :
+                 */
+                /**
+                 * Length of last packet
+                 */
+                int character_length = CHARACTERS.length()
+                        - BLE.DEFAULT_BYTES_IN_CONTINUE_PACKET*times;
+
+                initial_packet[1] = Byte.valueOf(String.valueOf(character_length
+                        + BLE.INITIAL_MESSAGE_PACKET_LENGTH));
+                initial_packet[2] = BLE.SENDING_LAST_PACKET;
+
+                Log.i(TAG, "character_length " + character_length);
+
+                /**
+                 * Message
+                 */
+                // Hex file
+                byte[] sending_last_hex = new byte[character_length];
+
+                // Hex file : Get next bytes
+                for (int i = 0; i < sending_last_hex.length; i++) {
+                    sending_last_hex[i] = 
+                            CHARACTERS.getBytes()[sending_continue_hex.length*time + i];
+                }
+
+                // Merge byte[]
+                byte[] last_packet = 
+                        new byte[character_length + BLE.INITIAL_MESSAGE_PACKET_LENGTH];
+                System.arraycopy(initial_packet, 0, last_packet,
+                        0, initial_packet.length);
+                System.arraycopy(sending_last_hex, 0, last_packet, 
+                        initial_packet.length, sending_last_hex.length);
+
+                // Set value for characteristic
+                characteristic.setValue(last_packet);
+            } else {
+                Log.i(TAG, "CONTINUE PACKET ");
+                /**
+                 * If you have enough characters to send continue packet,
+                 * This is the continue packet that will be sent to the band
+                 */
+                /**
+                 * Packet length byte
+                 */
+                int character_length = sending_continue_hex.length;
+
+                /**
+                 * TODO Default Length : 20 Bytes
+                 */
+                initial_packet[1] = Byte.valueOf(String.valueOf(
+                        character_length + BLE.INITIAL_MESSAGE_PACKET_LENGTH));
+
+                /**
+                 * If sent data length > 20 bytes (Default : BLE allow send 20 bytes one time)
+                 * -> set 01 : continue sending next packet
+                 * else or if after sent until data length < 20 bytes
+                 * -> set 00 : last packet
+                 */
+                initial_packet[2] = BLE.SENDING_CONTINUE_PACKET;
+                /**
+                 * Message
+                 */
+                // Hex file : Get first 17 bytes
+                for (int i = 0; i < sending_continue_hex.length; i++) {
+                    Log.i(TAG, "Send stt : " 
+                            + (sending_continue_hex.length*time + i));
+
+                    // Get next bytes
+                    sending_continue_hex[i] = 
+                            CHARACTERS.getBytes()[sending_continue_hex.length*time + i];
+                }
+
+                // Merge byte[]
+                byte[] sending_continue_packet = 
+                        new byte[character_length + BLE.INITIAL_MESSAGE_PACKET_LENGTH];
+                System.arraycopy(initial_packet, 0, sending_continue_packet, 
+                        0, initial_packet.length);
+                System.arraycopy(sending_continue_hex, 0, sending_continue_packet, 
+                        initial_packet.length, sending_continue_hex.length);
+
+                // Set value for characteristic
+                characteristic.setValue(sending_continue_packet);
+            }
+
+            // Write characteristic via BLE
+            mBluetoothGatt.writeCharacteristic(characteristic);
+        }
+    }
+
+public boolean writeCharacteristic(BluetoothGattCharacteristic characteristic,
+            String data) {
+        if (mBluetoothAdapter == null || mBluetoothGatt == null) {
+            Log.w(TAG, "BluetoothAdapter not initialized");
+            return false;
+        }
+
+        if (ActivityBLEController.IS_FIRST_TIME) {
+            /**
+             * In the first time, 
+             * should send the Title
+             */
+            byte[] merge_title = sendTitle(data);
+
+            // Set value for characteristic
+            characteristic.setValue(merge_title);
+
+            // Write characteristic via BLE
+            mBluetoothGatt.writeCharacteristic(characteristic);
+
+            // Reset
+            ActivityBLEController.IS_FIRST_TIME = false;
+
+            return true;
+        } else {
+            /**
+             * In the second time, 
+             * should send the Message
+             */
+            if (data.length() <= BLE.LIMIT_CHARACTERS) {
+                sendMessage(characteristic, data);
+
+                // Reset
+                ActivityBLEController.IS_FIRST_TIME = true; 
+
+                return true;
+            } else {
+                // Typed character
+                typed_character = data.length();
+
+                return false;
+            }
+        }
+    }
+
+    

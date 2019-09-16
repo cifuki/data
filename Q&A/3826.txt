@@ -1,0 +1,54 @@
+60
+Q:A few days ago I was struggling to find a way to use custom intents for my alarms. Although I got clear answer that I have to customize the Intents based on some unique ID eg. setAction() still have some problems.
+
+I define a PendingIntent this way:
+
+Intent intent = new Intent(this, viewContactQuick.class);
+intent.setAction("newmessage"+objContact.getId());//unique per contact
+intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK ).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP );
+intent.putExtra("id", Long.parseLong(objContact.getId()));
+intent.putExtra("results", result.toArray());
+
+PendingIntent contentIntent = PendingIntent.getActivity(context, 0, intent, 0);
+
+
+then this is used by a notification manager
+
+NotificationManager mNotificationManager = (NotificationManager) context.getSystemService(ns);
+// first try to clear any active notification with this contact ID
+mNotificationManager.cancel(Integer.parseInt(objContact.getId()));
+
+// then raise a new notification for this contact ID
+mNotificationManager.notify(Integer.parseInt(objContact.getId()), notification);
+
+
+This works like this:
+
+
+application creates a message for a contact
+an intent is provided with the contact id and details about the message
+notification is raised with the message
+user actiones on the notification and the app displays the message passed by the intent
+
+
+The problem
+
+This can happen more than once for a contact. And when the second message is generated, the notification is raised well (message is fine there) but the intent when the user actions the notification it uses old data, so previous message is passed and not the brand new message.
+
+So someway the intent is caching and reusing previous extras. How can I make it unique per contact and per action?
+    
+===============================================================================================
+95
+A:If only one of your PendingIntents for this contact will be outstanding at any point in time, or if you always want to use the latest set of extras, use FLAG_UPDATE_CURRENT when you create the PendingIntent.
+
+If more than one contact-specific PendingIntent will be outstanding at once, and they need to have separate extras, you will need to add a count or timestamp or something to distinguish them.
+
+intent.setAction("actionstring" + System.currentTimeMillis());
+
+
+
+
+UPDATE
+
+Also, the lightly-documented second parameter to getActivity() and kin on PendingIntent apparently can be used to create distinct PendingIntent objects for the same underlying Intent, though I have never tried this.
+    

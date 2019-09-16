@@ -1,0 +1,30 @@
+32
+Q:I've been searching the past three days for a built-in, hardware-accelerated way of bluring a bitmap with android. I stumbled upon certain work-arounds like shrinking the bitmap and scaling it up again, but this method produced low quality results which were not suitable for my image recognition requirements. I also read that implementing convolution with shaders or JNI is a good way to go, but I cannot believe that there is no built-in solution in the Android framework for this very common purpose. Currently I've ended up with a self-written convolution implementation in Java, but it is awkwardly slow. My question is:
+
+
+Is there really no built-in solution in the Android framework?
+In case there is none: what is the most efficient way of accelerating the convolution with a still reasonable complexity of implementation and maintenance? Shall we use JNI, shaders or something completely different?
+
+    
+===============================================================================================
+70
+A:I finally found a suitable solution:
+
+
+RenderScript allows implementing heavy computations which are scaled transparently to all cores available on the executing device. I've come to the conclusion, that with respect to a reasonable balance of performance and implementation complexity, this is a better approach than JNI or shaders.
+Since API Level 17, there is the ScriptIntrinsicBlur class available from the API. This is exactly what I've been looking for, namely a high level, hardware-accelerated Gaussian blur implementation.
+ScriptIntrinsicBlur is now a part of the android support library (v8) which supports Froyo and above (API>8). The android developer blog post on the support RenderScript library has some basic tips on how to use it. 
+
+
+However, the documentation on the ScriptIntrinsicBlur class is very rare and I've spent some more time on figuring out the correct invocation arguments. For bluring an ordinary ARGB_8888-typed bitmap named photo, here they are:
+
+final RenderScript rs = RenderScript.create( myAndroidContext );
+final Allocation input = Allocation.createFromBitmap( rs, photo, Allocation.MipmapControl.MIPMAP_NONE, Allocation.USAGE_SCRIPT );
+final Allocation output = Allocation.createTyped( rs, input.getType() );
+final ScriptIntrinsicBlur script = ScriptIntrinsicBlur.create( rs, Element.U8_4( rs ) );
+script.setRadius( myBlurRadius /* e.g. 3.f */ );
+script.setInput( input );
+script.forEach( output );
+output.copyTo( photo );
+
+    

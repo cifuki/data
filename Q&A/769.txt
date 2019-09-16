@@ -1,0 +1,196 @@
+185
+Q:In developer console error reports sometimes I see  reports with NPE issue. I do not understand what is wrong with my code. On emulator and my device application works good without forcecloses, however some users get NullPointerException in fragment class when the getActivity() method is called.
+
+Activity
+
+pulic class MyActivity extends FragmentActivity{
+
+    private ViewPager pager; 
+    private TitlePageIndicator indicator;
+    private TabsAdapter adapter;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        pager = (ViewPager) findViewById(R.id.pager);
+        indicator = (TitlePageIndicator) findViewById(R.id.indicator);
+        adapter = new TabsAdapter(getSupportFragmentManager(), false);
+
+        adapter.addFragment(new FirstFragment());
+        adapter.addFragment(new SecondFragment());
+        indicator.notifyDataSetChanged();
+        adapter.notifyDataSetChanged();
+
+        // push first task
+        FirstTask firstTask = new FirstTask(MyActivity.this);
+        // set first fragment as listener
+        firstTask.setTaskListener((TaskListener) adapter.getItem(0));
+        firstTask.execute();
+    }
+
+    indicator.setOnPageChangeListener(new ViewPager.OnPageChangeListener()  {
+        @Override
+        public void onPageSelected(int position) {
+            Fragment currentFragment = adapter.getItem(position);
+            ((Taskable) currentFragment).executeTask();
+        }
+
+        @Override
+        public void onPageScrolled(int i, float v, int i1) {}
+
+        @Override
+        public void onPageScrollStateChanged(int i) {}
+    });
+}
+
+
+AsyncTask class
+
+public class FirstTask extends AsyncTask{
+
+    private TaskListener taskListener;
+
+    ...
+
+    @Override
+    protected void onPostExecute(T result) {
+        ... 
+        taskListener.onTaskComplete(result);
+    }   
+}
+
+
+Fragment class
+
+public class FirstFragment extends Fragment immplements Taskable, TaskListener{
+
+    public FirstFragment() {
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        return inflater.inflate(R.layout.first_view, container, false);
+    }
+
+    @Override
+    public void executeTask() {
+        FirstTask firstTask = new FirstTask(MyActivity.this);
+        firstTask.setTaskListener(this);
+        firstTask.execute();
+    }
+
+    @Override
+    public void onTaskComplete(T result) {
+        // NPE is here 
+        Resources res = getActivity().getResources();
+        ...
+    }
+}
+
+
+Maybe this error happens when applications resumed from background. In this case how I should handle this situation properly?
+    
+===============================================================================================
+121
+A:It seems that I found a solution to my problem.
+Very good explanations are given here and here.
+Here is my example:
+
+pulic class MyActivity extends FragmentActivity{
+
+private ViewPager pager; 
+private TitlePageIndicator indicator;
+private TabsAdapter adapter;
+private Bundle savedInstanceState;
+
+ @Override
+public void onCreate(Bundle savedInstanceState) {
+
+    .... 
+    this.savedInstanceState = savedInstanceState;
+    pager = (ViewPager) findViewById(R.id.pager);;
+    indicator = (TitlePageIndicator) findViewById(R.id.indicator);
+    adapter = new TabsAdapter(getSupportFragmentManager(), false);
+
+    if (savedInstanceState == null){    
+        adapter.addFragment(new FirstFragment());
+        adapter.addFragment(new SecondFragment());
+    }else{
+        Integer  count  = savedInstanceState.getInt("tabsCount");
+        String[] titles = savedInstanceState.getStringArray("titles");
+        for (int i = 0; i < count; i++){
+            adapter.addFragment(getFragment(i), titles[i]);
+        }
+    }
+
+
+    indicator.notifyDataSetChanged();
+    adapter.notifyDataSetChanged();
+
+    // push first task
+    FirstTask firstTask = new FirstTask(MyActivity.this);
+    // set first fragment as listener
+    firstTask.setTaskListener((TaskListener) getFragment(0));
+    firstTask.execute();
+
+}
+
+private Fragment getFragment(int position){
+     return savedInstanceState == null ? adapter.getItem(position) : getSupportFragmentManager().findFragmentByTag(getFragmentTag(position));
+}
+
+private String getFragmentTag(int position) {
+    return "android:switcher:" + R.id.pager + ":" + position;
+}
+
+ @Override
+protected void onSaveInstanceState(Bundle outState) {
+    super.onSaveInstanceState(outState);
+    outState.putInt("tabsCount",      adapter.getCount());
+    outState.putStringArray("titles", adapter.getTitles().toArray(new String[0]));
+}
+
+ indicator.setOnPageChangeListener(new ViewPager.OnPageChangeListener() {
+        @Override
+        public void onPageSelected(int position) {
+            Fragment currentFragment = adapter.getItem(position);
+            ((Taskable) currentFragment).executeTask();
+        }
+
+        @Override
+        public void onPageScrolled(int i, float v, int i1) {}
+
+        @Override
+        public void onPageScrollStateChanged(int i) {}
+ });
+
+
+The main idea in this code is that, while running your application normally, you create new fragments and pass them to the adapter.  When you are resuming your application fragment manager already has this fragment's instance and you need to get it from fragment manager and pass it to the adapter.
+
+UPDATE
+
+Also, it is a good practice when using fragments to check isAdded before getActivity() is called. This helps avoid a null pointer exception when the fragment is detached from the activity. For example, an activity could contain a fragment that pushes an async task. When the task is finished, the onTaskComplete listener is called.
+
+@Override
+public void onTaskComplete(List<Feed> result) {
+
+    progress.setVisibility(View.GONE);
+    progress.setIndeterminate(false);
+    list.setVisibility(View.VISIBLE);
+
+    if (isAdded()) {
+
+        adapter = new FeedAdapter(getActivity(), R.layout.feed_item, result);
+        list.setAdapter(adapter);
+        adapter.notifyDataSetChanged();
+    }
+
+}
+
+
+If we open the fragment, push a task, and then quickly press back to return to a previous activity, when the task is finished, it will try to access the activity in onPostExecute() by calling the getActivity() method.  If the activity is already detached and this check is not there:
+
+if (isAdded()) 
+
+
+then the application crashes.
+    

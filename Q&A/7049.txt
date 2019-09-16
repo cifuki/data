@@ -1,0 +1,68 @@
+37
+Q:I am getting a IllegalStateException error in the Rx Library and don't know exactly where the root of the issue is, whether it is with RxJava or something I may be doing incorrectly. 
+
+The fatal crash occurs when certificate pinning (occurs on all server requests) but seems to point to a session timeout or logout and back in. Repro steps (occures about 25% of the time) are as follows: login, open list item - scroll all the way end - logout - logback in - open app - close app -> Crash!
+
+Anyone have any ideas on how to prevent this? I found a similar issue here Observer.onError firing off inconsistently
+
+java.lang.IllegalStateException: Fatal Exception thrown on Scheduler.Worker thread.
+   at rx.internal.schedulers.ScheduledAction.run(ScheduledAction.java:62)
+   at android.os.Handler.handleCallback(Handler.java:615)
+   at android.os.Handler.dispatchMessage(Handler.java:92)
+   at android.os.Looper.loop(Looper.java:137)
+   at android.app.ActivityThread.main(ActivityThread.java:4867)
+   at java.lang.reflect.Method.invokeNative(Method.java)
+   at java.lang.reflect.Method.invoke(Method.java:511)
+   at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1007)
+   at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:774)
+   at dalvik.system.NativeStart.main(NativeStart.java)
+Caused by: rx.exceptions.OnErrorFailedException: Error occurred when trying to propagate error to Observer.onError
+   at rx.observers.SafeSubscriber._onError(SafeSubscriber.java:201)
+   at rx.observers.SafeSubscriber.onError(SafeSubscriber.java:111)
+   at rx.internal.operators.OperatorObserveOn$ObserveOnSubscriber$2.call(OperatorObserveOn.java:159)
+   at rx.internal.schedulers.ScheduledAction.run(ScheduledAction.java:55)
+   at android.os.Handler.handleCallback(Handler.java:615)
+   at android.os.Handler.dispatchMessage(Handler.java:92)
+   at android.os.Looper.loop(Looper.java:137)
+   at android.app.ActivityThread.main(ActivityThread.java:4867)
+   at java.lang.reflect.Method.invokeNative(Method.java)
+   at java.lang.reflect.Method.invoke(Method.java:511)
+   at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1007)
+   at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:774)
+   at dalvik.system.NativeStart.main(NativeStart.java)
+Caused by: rx.exceptions.CompositeException: 2 exceptions occurred. 
+   at rx.observers.SafeSubscriber._onError(SafeSubscriber.java:201)
+   at rx.observers.SafeSubscriber.onError(SafeSubscriber.java:111)
+   at rx.internal.operators.OperatorObserveOn$ObserveOnSubscriber$2.call(OperatorObserveOn.java:159)
+   at rx.internal.schedulers.ScheduledAction.run(ScheduledAction.java:55)
+   at android.os.Handler.handleCallback(Handler.java:615)
+   at android.os.Handler.dispatchMessage(Handler.java:92)
+   at android.os.Looper.loop(Looper.java:137)
+   at android.app.ActivityThread.main(ActivityThread.java:4867)
+   at java.lang.reflect.Method.invokeNative(Method.java)
+   at java.lang.reflect.Method.invoke(Method.java:511)
+   at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1007)
+   at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:774)
+   at dalvik.system.NativeStart.main(NativeStart.java)
+Caused by: rx.exceptions.CompositeException$CompositeExceptionCausalChain: Chain of Causes for CompositeException In Order Received =>
+   at com.crashlytics.android.SessionDataWriter.getEventAppExecutionExceptionSize(SessionDataWriter.java:597)
+   at com.crashlytics.android.SessionDataWriter.getEventAppExecutionExceptionSize(SessionDataWriter.java:600)
+   at com.crashlytics.android.SessionDataWriter.getEventAppExecutionExceptionSize(SessionDataWriter.java:600)
+   at com.crashlytics.android.SessionDataWriter.getEventAppExecutionSize(SessionDataWriter.java:533)
+   at com.crashlytics.android.SessionDataWriter.getEventAppSize(SessionDataWriter.java:492)
+   at com.crashlytics.android.CrashlyticsUncaughtExceptionHandler.writeSessionEvent(CrashlyticsUncaughtExceptionHandler.java:956)
+   at com.crashlytics.android.CrashlyticsUncaughtExceptionHandler.access$200(CrashlyticsUncaughtExceptionHandler.java:56)
+   at com.crashlytics.android.CrashlyticsUncaughtExceptionHandler$7.call(CrashlyticsUncaughtExceptionHandler.java:274)
+   at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:305)
+   at java.util.concurrent.FutureTask.run(FutureTask.java:137)
+   at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1076)
+   at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:569)
+   at io.fabric.sdk.android.services.common.ExecutorUtils$1$1.onRun(ExecutorUtils.java:58)
+   at io.fabric.sdk.android.services.common.BackgroundPriorityRunnable.run(BackgroundPriorityRunnable.java:13)
+   at java.lang.Thread.run(Thread.java:856)
+
+    
+===============================================================================================
+46
+A:What's happening is that your onError implementation in a Subscriber is throwing an unchecked exception which is against the Observable contract and this aborts the observable processing throwing an OnErrorFailedException in the observeOn scheduler. 
+    

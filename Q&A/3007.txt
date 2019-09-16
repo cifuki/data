@@ -1,0 +1,131 @@
+73
+Q:I want to store an image(from url) into a sqlite database.
+
+For that I use: 
+
+db = new DataBase(getApplicationContext());
+URL url = new URL("http://sree.cc/wp-content/uploads/schogini_team.png");
+URLConnection ucon = url.openConnection();
+InputStream is = ucon.getInputStream();
+BufferedInputStream bis = new BufferedInputStream(is,128);
+ByteArrayBuffer barb= new ByteArrayBuffer(128);
+
+int current = 0;
+while ((current = bis.read()) != -1) {
+    barb.append((byte) current);
+}
+
+ContentValues filedata= new ContentValues();
+
+filedata.put(DataBase.IMG_SRC,barb.toByteArray());
+
+db.insert(DataBase.Table_Img, null, filedata);
+
+
+In the Insert():
+
+public void insert(String tableImg, Object object,
+        ContentValues dataToInsert) {
+    // TODO Auto-generated method stub
+    String sql = "INSERT INTO "+tableImg+" ("+ID+","+IMG_SRC+") " +
+            "VALUES ('"+1+"','"+dataToInsert+"')";
+    db.execSQL(sql);
+}
+
+
+For the retrieval of image:
+
+Cursor cursor = db.selectDataToShow(DataBase.Table_Img, DataBase.IMG_SRC);
+
+byte[] imageByteArray=cursor.getBlob(cursor.getColumnIndex(DataBase.IMG_SRC));      
+cursor.close();
+
+ByteArrayInputStream imageStream = new ByteArrayInputStream(imageByteArray);
+Bitmap theImage = BitmapFactory.decodeStream(imageStream);
+
+System.out.println(">>>>>>>>>>>>>>>>>>>>>> "+theImage);
+
+
+So here I got null.
+
+And in my database the value of image stored as: Image=[B@43e5ac48]
+    
+===============================================================================================
+65
+A:Here the code i used for my app
+
+This code will take a image from url and convert is to a byte array
+
+byte[] logoImage = getLogoImage(IMAGEURL);
+
+private byte[] getLogoImage(String url){
+     try {
+             URL imageUrl = new URL(url);
+             URLConnection ucon = imageUrl.openConnection();
+
+             InputStream is = ucon.getInputStream();
+             BufferedInputStream bis = new BufferedInputStream(is);
+
+             ByteArrayBuffer baf = new ByteArrayBuffer(500);
+             int current = 0;
+             while ((current = bis.read()) != -1) {
+                  baf.append((byte) current);
+             }
+
+             return baf.toByteArray();
+     } catch (Exception e) {
+          Log.d("ImageManager", "Error: " + e.toString());
+     }
+     return null;
+}
+
+
+To save the image to db i used this code.
+
+ public void insertUser(){
+        SQLiteDatabase db = dbHelper.getWritableDatabase();
+        String delSql = "DELETE FROM ACCOUNTS";
+        SQLiteStatement delStmt = db.compileStatement(delSql);
+        delStmt.execute();
+
+        String sql = "INSERT INTO ACCOUNTS (account_id,account_name,account_image) VALUES(?,?,?)";
+        SQLiteStatement insertStmt = db.compileStatement(sql);
+        insertStmt.clearBindings();
+        insertStmt.bindString(1, Integer.toString(this.accId));
+        insertStmt.bindString(2,this.accName);
+        insertStmt.bindBlob(3, this.accImage);
+        insertStmt.executeInsert();
+        db.close();
+}
+
+
+To retrieve the image back this is code i used.
+
+public Account getCurrentAccount() {
+    SQLiteDatabase db = dbHelper.getWritableDatabase();
+    String sql = "SELECT * FROM ACCOUNTS";
+    Cursor cursor = db.rawQuery(sql, new String[] {});
+
+    if(cursor.moveToFirst()){
+        this.accId  = cursor.getInt(0);
+        this.accName = cursor.getString(1);
+        this.accImage = cursor.getBlob(2);
+    }
+    if (cursor != null && !cursor.isClosed()) {
+        cursor.close();
+    }
+    db.close();
+    if(cursor.getCount() == 0){
+        return null;
+    } else {
+        return this;
+    }
+}
+
+
+Finally to load this image to a imageview
+
+logoImage.setImageBitmap(BitmapFactory.decodeByteArray( currentAccount.accImage, 
+        0,currentAccount.accImage.length));
+
+    

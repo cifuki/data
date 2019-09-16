@@ -1,0 +1,97 @@
+49
+Q:I'm trying to write an application to send messages over Bluetooth Low Energy, which will then be passed on by UART in my peripheral. I've followed the steps here and the app scans for and finds the device successfully. However, connection using the BluetoothGatt = BluetoothDevice.connectGatt(context, autoconnect, callback) method fails, with logcat saying "Failed to register callback".
+
+Call made from:
+
+//device scan callback
+private BluetoothAdapter.LeScanCallback btScanCallback = new BluetoothAdapter.LeScanCallback() 
+{
+    @Override
+    public void onLeScan(final BluetoothDevice device, final int rssi, final byte[] scanRecord)
+    {       
+        some stuff
+        currBtGatt = device.connectGatt(parentActivity, false, btGattCallback);
+    }
+};
+
+
+And the Gatt callback:
+
+//GATT callback
+private BluetoothGattCallback btGattCallback = new BluetoothGattCallback()
+{       
+    @Override
+    public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState)
+    {
+        // if connected successfully
+        if(newState == BluetoothProfile.STATE_CONNECTED)
+        {
+            //discover services
+            updateStatus("Connected");
+            gatt.discoverServices();
+        }
+        else if(newState == BluetoothProfile.STATE_DISCONNECTED)
+        {
+            updateStatus("Disconnected");
+        }
+    }
+
+    @Override
+    public void onServicesDiscovered(BluetoothGatt gatt, int status)
+    {
+        if(status == BluetoothGatt.GATT_SUCCESS)
+        {
+            //pick out the (app side) transmit channel
+            currBtService = gatt.getService(uartUuids[0]);
+            currBtCharacteristic = currBtService.getCharacteristic(uartUuids[1]);
+        }
+        else 
+        {
+            updateStatus("Service discovery failed");
+        }
+    }
+};
+
+
+Logcat says:
+
+11-19 10:40:39.363: D/BluetoothAdapter(11717): stopLeScan()
+11-19 10:40:39.373: D/BluetoothGatt(11717): connect() - device: DC:6D:75:0C:0F:F9, auto: false
+11-19 10:40:39.373: D/BluetoothGatt(11717): registerApp()
+11-19 10:40:39.373: D/BluetoothGatt(11717): registerApp() - UUID=3ba20989-5026-4715-add3-a5e31684009a
+11-19 10:40:39.373: I/BluetoothGatt(11717): Client registered, waiting for callback
+11-19 10:40:49.373: E/BluetoothGatt(11717): Failed to register callback
+11-19 10:40:49.533: D/BluetoothGatt(11717): onClientRegistered() - status=0 clientIf=5
+11-19 10:40:49.533: E/BluetoothGatt(11717): Bad connection state: 0
+11-19 10:40:49.593: D/BluetoothGatt(11717): onClientConnectionState() - status=0 clientIf=5 device=DC:6D:75:0C:0F:F9
+11-19 10:40:49.593: W/BluetoothGatt(11717): Unhandled exception: java.lang.NullPointerException
+
+
+Interestingly, my peripheral moves to a "connected" state (I have indication LEDs) and I can connect to it from the same phone with a demonstration application or with a PC BLE dongle. Any ideas appreciated.
+
+[EDIT] the connectGatt method returns null, which I guess is expected.
+
+[EDIT] On inspection of API 18 source code, it appears that the "Failed to register callback" message is delivered because the method registerApp() returns false because the registerClient() method of the IBluetoothGatt "mService" throws a remote exception, probably at the line:
+
+enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
+
+
+because the log message in the very next line is never seen. So it could be a permissions thing, except that the application has bluetooth and bluetooth_admin permissions.
+    
+===============================================================================================
+100
+A:I finally figured this problem out.  The device I am using is a Samsung Galaxy S4 and the actual problem (thanks Wibble for guidance in your answer, but you are slightly off in your conclusion) appears to be a threading issue.
+
+In Wibble's answer, he stated that adding a button to connect fixed his issue.  I started wondering why that matters, and I also can connect and disconnect fine during an entire session without a GUI button using background worker threads.  As soon as I force close my application, restart it, and try to connect, I start getting the error "Failed to register callback." and nothing works any more.  I almost pulled my hair out over this one :)
+
+See my post in Samsung's forums for more detail on my exact issues.
+
+Solution:
+To get around this issue, just make sure you run any BLE interaction code (device#connectGatt, connect, disconnect, etc) code in the UIThread (with a handler, local service, or Activity#runOnUiThread).  Follow this rule of thumb and you will hopefully avoid this dreadful problem.
+
+Deep in our library, I only had access to the application context.  You can create a handler from a context that will post to the main thread by using new Handler(ctx.getMainLooper());
+
+If you face other connection problems, deploy the sample app in samples\\android-18\\legacy\\BluetoothLeGatt and see if that application works.  That was kind of my baseline for realizing BLE does actually work with my peripheral, and gave me hope that if I dug enough in our library I would eventually find the answer.
+
+EDIT:  I did not see this 'Failed to register callback' issue on the Nexus 4, Nexus 5, or Nexus 7 2013 when using background threads to perform BLE operations.  It may just be an issue in Samsungs 4.3 implementation.
+    

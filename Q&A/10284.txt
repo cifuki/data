@@ -1,0 +1,166 @@
+27
+Q:I have created a scrollview and an imageview is placed within it. I'd like on scroll for it to resize in the same fashion it is done in the image below but so far I've had little success.
+
+In my attempts the image is resized on scroll but, there is space left over after the resize. How would you modify the below:
+
+Image:
+
+
+
+My Code so far:
+
+activity_main.xml
+
+<ImageView
+            android:layout_gravity="center"
+            android:adjustViewBounds="true"
+            android:layout_width="601dp"
+            android:layout_height="250dp"
+            android:paddingTop="0dp"
+            android:paddingLeft="0dp"
+            android:paddingRight="0dp"
+            android:scaleType="fitXY"
+            android:id="@+id/contactPic"
+            android:src="@drawable/stock"
+            android:clickable="true"/>
+
+
+MainActivity:
+
+@Override
+public void onScrollChanged(ObservableScrollView scrollView, int x, int y, int oldx, int oldy) {
+    final ImageView contactPicture = (ImageView) findViewById(R.id.contactPic);
+    final RelativeLayout contactLayout = (RelativeLayout) findViewById(R.id.ContactRLayout);
+    if (scrollView == contactScrollView) {
+        View view = (View) scrollView.getChildAt(scrollView.getChildCount() - 1);
+        int distanceFromPageEnd = (view.getBottom() - (scrollView.getHeight() + scrollView.getScrollY()));
+
+        Log.e("onScrollChanged", "distance from bottom = " + String.valueOf(distanceFromPageEnd));
+        if (distanceFromPageEnd >= 1408)
+        {
+       contactPicture.getLayoutParams().height = (distanceFromPageEnd - 1408);
+        contactPicture.requestLayout();
+        }
+    }
+
+
+ScrollViewListener:
+
+    public interface ScrollViewListener {
+
+        void onScrollChanged(ObservableScrollView scrollView, int x, int y, int oldx, int oldy);
+
+    }
+
+
+ObservableScrollView:
+
+public class ObservableScrollView extends ScrollView {
+
+    private ScrollViewListener scrollViewListener = null;
+
+    public ObservableScrollView(Context context) {
+        super(context);
+    }
+
+    public ObservableScrollView(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+    }
+
+    public ObservableScrollView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public void setScrollViewListener(ScrollViewListener scrollViewListener) {
+        this.scrollViewListener = scrollViewListener;
+    }
+
+    public void onOverScrolled(int scrollX, int scrollY, boolean clampedX, boolean clampedY) {
+        super.onOverScrolled(scrollX, scrollY, clampedX, clampedY);
+    }
+
+    @Override
+    protected void onScrollChanged(int x, int y, int oldx, int oldy) {
+        super.onScrollChanged(x, y, oldx, oldy);
+        if(scrollViewListener != null) {
+            scrollViewListener.onScrollChanged(this, x, y, oldx, oldy);
+        }
+    }
+
+}
+
+    
+===============================================================================================
+24
+A:There is simple example below that shows how to achieve parallax effect.
+
+First, put your ImageView and other views into FrameLayout:
+
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/scrollView"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <FrameLayout
+        android:id="@+id/flWrapper"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <ImageView
+            android:id="@+id/contactPic"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/contact_photo_height"
+            android:scaleType="centerCrop"
+            android:src="@drawable/stock" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/contact_photo_height">
+
+            <!-- Other Views -->
+
+        </LinearLayout>
+
+    </FrameLayout>
+</ScrollView>
+
+
+LinearLayout's top margin is equal to the ImageViews's height (@dimen/contact_photo_height in our example).
+
+Then we should listen scroll position of the ScrollView and change the position of ImageView:
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    <...>
+
+    mScrollView = (ScrollView) findViewById(R.id.scrollView);
+    mPhotoIV = (ImageView) findViewById(R.id.contactPic);
+    mWrapperFL = (FrameLayout) findViewById(R.id.flWrapper);
+
+    mScrollView.getViewTreeObserver().addOnScrollChangedListener(new ScrollPositionObserver());
+
+    <...>
+}
+
+private class ScrollPositionObserver implements ViewTreeObserver.OnScrollChangedListener {
+
+    private int mImageViewHeight;
+
+    public ScrollPositionObserver() {
+        mImageViewHeight = getResources().getDimensionPixelSize(R.dimen.contact_photo_height);
+    }
+
+    @Override
+    public void onScrollChanged() {
+        int scrollY = Math.min(Math.max(mScrollView.getScrollY(), 0), mImageViewHeight);
+
+        // changing position of ImageView
+        mPhotoIV.setTranslationY(scrollY / 2);
+
+        // alpha you could set to ActionBar background
+        float alpha = scrollY / (float) mImageViewHeight;
+    }
+}
+
+    

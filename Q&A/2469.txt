@@ -1,0 +1,249 @@
+84
+Q:Why I ask this question:
+
+I know there have been a lot of questions about AES encryption, even for Android. And there are lots of code snippets if you search the Web. But on every single page, in every Stack Overflow question, I find another implementation with major differences.
+
+So I created this question to find a "best practice". I hope we can collect a list of the most important requirements and set up an implementation that is really secure!
+
+I read about initialization vectors and salts. Not all implementations I found had these features. So do you need it? Does it increase the security a lot? How do you implement it? Should the algorithm raise exceptions if the encrypted data cannot be decrypted? Or is that insecure and it should just return an unreadable string? Can the algorithm use Bcrypt instead of SHA?
+
+What about these two implementations I found? Are they okay? Perfect or some important things missing? What of these is secure?
+
+The algorithm should take a string and a "password" for encryption and then encrypt the string with that password. The output should be a string (hex or base64?) again. Decryption should be possible as well, of course.
+
+What is the perfect AES implementation for Android?
+
+Implementation #1:
+
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.security.SecureRandom;
+
+import javax.crypto.Cipher;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
+
+public class AdvancedCrypto implements ICrypto {
+
+        public static final String PROVIDER = "BC";
+        public static final int SALT_LENGTH = 20;
+        public static final int IV_LENGTH = 16;
+        public static final int PBE_ITERATION_COUNT = 100;
+
+        private static final String RANDOM_ALGORITHM = "SHA1PRNG";
+        private static final String HASH_ALGORITHM = "SHA-512";
+        private static final String PBE_ALGORITHM = "PBEWithSHA256And256BitAES-CBC-BC";
+        private static final String CIPHER_ALGORITHM = "AES/CBC/PKCS5Padding";
+        private static final String SECRET_KEY_ALGORITHM = "AES";
+
+        public String encrypt(SecretKey secret, String cleartext) throws CryptoException {
+                try {
+
+                        byte[] iv = generateIv();
+                        String ivHex = HexEncoder.toHex(iv);
+                        IvParameterSpec ivspec = new IvParameterSpec(iv);
+
+                        Cipher encryptionCipher = Cipher.getInstance(CIPHER_ALGORITHM, PROVIDER);
+                        encryptionCipher.init(Cipher.ENCRYPT_MODE, secret, ivspec);
+                        byte[] encryptedText = encryptionCipher.doFinal(cleartext.getBytes("UTF-8"));
+                        String encryptedHex = HexEncoder.toHex(encryptedText);
+
+                        return ivHex + encryptedHex;
+
+                } catch (Exception e) {
+                        throw new CryptoException("Unable to encrypt", e);
+                }
+        }
+
+        public String decrypt(SecretKey secret, String encrypted) throws CryptoException {
+                try {
+                        Cipher decryptionCipher = Cipher.getInstance(CIPHER_ALGORITHM, PROVIDER);
+                        String ivHex = encrypted.substring(0, IV_LENGTH * 2);
+                        String encryptedHex = encrypted.substring(IV_LENGTH * 2);
+                        IvParameterSpec ivspec = new IvParameterSpec(HexEncoder.toByte(ivHex));
+                        decryptionCipher.init(Cipher.DECRYPT_MODE, secret, ivspec);
+                        byte[] decryptedText = decryptionCipher.doFinal(HexEncoder.toByte(encryptedHex));
+                        String decrypted = new String(decryptedText, "UTF-8");
+                        return decrypted;
+                } catch (Exception e) {
+                        throw new CryptoException("Unable to decrypt", e);
+                }
+        }
+
+        public SecretKey getSecretKey(String password, String salt) throws CryptoException {
+                try {
+                        PBEKeySpec pbeKeySpec = new PBEKeySpec(password.toCharArray(), HexEncoder.toByte(salt), PBE_ITERATION_COUNT, 256);
+                        SecretKeyFactory factory = SecretKeyFactory.getInstance(PBE_ALGORITHM, PROVIDER);
+                        SecretKey tmp = factory.generateSecret(pbeKeySpec);
+                        SecretKey secret = new SecretKeySpec(tmp.getEncoded(), SECRET_KEY_ALGORITHM);
+                        return secret;
+                } catch (Exception e) {
+                        throw new CryptoException("Unable to get secret key", e);
+                }
+        }
+
+        public String getHash(String password, String salt) throws CryptoException {
+                try {
+                        String input = password + salt;
+                        MessageDigest md = MessageDigest.getInstance(HASH_ALGORITHM, PROVIDER);
+                        byte[] out = md.digest(input.getBytes("UTF-8"));
+                        return HexEncoder.toHex(out);
+                } catch (Exception e) {
+                        throw new CryptoException("Unable to get hash", e);
+                }
+        }
+
+        public String generateSalt() throws CryptoException {
+                try {
+                        SecureRandom random = SecureRandom.getInstance(RANDOM_ALGORITHM);
+                        byte[] salt = new byte[SALT_LENGTH];
+                        random.nextBytes(salt);
+                        String saltHex = HexEncoder.toHex(salt);
+                        return saltHex;
+                } catch (Exception e) {
+                        throw new CryptoException("Unable to generate salt", e);
+                }
+        }
+
+        private byte[] generateIv() throws NoSuchAlgorithmException, NoSuchProviderException {
+                SecureRandom random = SecureRandom.getInstance(RANDOM_ALGORITHM);
+                byte[] iv = new byte[IV_LENGTH];
+                random.nextBytes(iv);
+                return iv;
+        }
+
+}
+
+
+Source: http://pocket-for-android.1047292.n5.nabble.com/Encryption-method-and-reading-the-Dropbox-backup-td4344194.html
+
+Implementation #2:
+
+import java.security.SecureRandom;
+
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+
+/**
+ * Usage:
+ * <pre>
+ * String crypto = SimpleCrypto.encrypt(masterpassword, cleartext)
+ * ...
+ * String cleartext = SimpleCrypto.decrypt(masterpassword, crypto)
+ * </pre>
+ * @author ferenc.hechler
+ */
+public class SimpleCrypto {
+
+    public static String encrypt(String seed, String cleartext) throws Exception {
+        byte[] rawKey = getRawKey(seed.getBytes());
+        byte[] result = encrypt(rawKey, cleartext.getBytes());
+        return toHex(result);
+    }
+
+    public static String decrypt(String seed, String encrypted) throws Exception {
+        byte[] rawKey = getRawKey(seed.getBytes());
+        byte[] enc = toByte(encrypted);
+        byte[] result = decrypt(rawKey, enc);
+        return new String(result);
+    }
+
+    private static byte[] getRawKey(byte[] seed) throws Exception {
+        KeyGenerator kgen = KeyGenerator.getInstance("AES");
+        SecureRandom sr = SecureRandom.getInstance("SHA1PRNG");
+        sr.setSeed(seed);
+        kgen.init(128, sr); // 192 and 256 bits may not be available
+        SecretKey skey = kgen.generateKey();
+        byte[] raw = skey.getEncoded();
+        return raw;
+    }
+
+
+    private static byte[] encrypt(byte[] raw, byte[] clear) throws Exception {
+        SecretKeySpec skeySpec = new SecretKeySpec(raw, "AES");
+        Cipher cipher = Cipher.getInstance("AES");
+        cipher.init(Cipher.ENCRYPT_MODE, skeySpec);
+        byte[] encrypted = cipher.doFinal(clear);
+        return encrypted;
+    }
+
+    private static byte[] decrypt(byte[] raw, byte[] encrypted) throws Exception {
+        SecretKeySpec skeySpec = new SecretKeySpec(raw, "AES");
+        Cipher cipher = Cipher.getInstance("AES");
+        cipher.init(Cipher.DECRYPT_MODE, skeySpec);
+        byte[] decrypted = cipher.doFinal(encrypted);
+        return decrypted;
+    }
+
+    public static String toHex(String txt) {
+        return toHex(txt.getBytes());
+    }
+    public static String fromHex(String hex) {
+        return new String(toByte(hex));
+    }
+
+    public static byte[] toByte(String hexString) {
+        int len = hexString.length()/2;
+        byte[] result = new byte[len];
+        for (int i = 0; i < len; i++)
+            result[i] = Integer.valueOf(hexString.substring(2*i, 2*i+2), 16).byteValue();
+        return result;
+    }
+
+    public static String toHex(byte[] buf) {
+        if (buf == null)
+            return "";
+        StringBuffer result = new StringBuffer(2*buf.length);
+        for (int i = 0; i < buf.length; i++) {
+            appendHex(result, buf[i]);
+        }
+        return result.toString();
+    }
+    private final static String HEX = "0123456789ABCDEF";
+    private static void appendHex(StringBuffer sb, byte b) {
+        sb.append(HEX.charAt((b>>4)&0x0f)).append(HEX.charAt(b&0x0f));
+    }
+
+}
+
+
+Source: http://www.tutorials-android.com/learn/How_to_encrypt_and_decrypt_strings.rhtml
+    
+===============================================================================================
+35
+A:Neither implementation you give in your question is entirely correct, and neither implementation you give should be used as is.  In what follows, I will discuss aspects of password-based encryption in Android.
+
+Keys and Hashes
+
+I will start discussing the password-based system with salts. The salt is a randomly generated number. It is not "deduced". Implementation 1 includes a generateSalt() method that generates a cryptographically strong random number. Because the salt is important to security, it should be kept secret once it is generated, though it only needs to be generated once. If this is a Web site, it's relatively easy to keep the salt secret, but for installed applications (for desktop and mobile devices), this will be much more difficult.
+
+The method getHash() returns a hash of the given password and salt, concatenated into a single string. The algorithm used is SHA-512, which returns a 512-bit hash. This method returns a hash that's useful for checking a string's integrity, so it might as well be used by calling getHash() with just a password or just a salt, since it simply concatenates both parameters. Since this method won't be used in the password-based encryption system, I won't be discussing it further.
+
+The method getSecretKey(), derives a key from a char array of the password and a hex-encoded salt, as returned from generateSalt(). The algorithm used is PBKDF1 (I think) from PKCS5 with SHA-256 as the hash function, and returns a 256-bit key. getSecretKey() generates a key by repeatedly generating hashes of the password, salt, and a counter (up to the iteration count given in PBE_ITERATION_COUNT, here 100) in order to increase the time needed to mount a brute-force attack. The salt's length should be at least as long as the key being generated, in this case, at least 256 bits. The iteration count should be set as long as possible without causing unreasonable delay. For more information on salts and iteration counts in key derivation, see section 4 in RFC2898.
+
+The implementation in Java's PBE, however, is flawed if the password contains Unicode characters, that is, those that require more than 8 bits to be represented. As stated in PBEKeySpec, "the PBE mechanism defined in PKCS #5 looks at only the low order 8 bits of each character". To work around this problem, you can try generating a hex string (which will contain only 8-bit characters) of all 16-bit characters in the password before passing it to PBEKeySpec. For example, "ABC" becomes "004100420043". Note also that PBEKeySpec "requests the password as a char array, so it can be overwritten [with clearPassword()] when done". (With respect to "protecting strings in memory", see this question.) I don't see any problems, though, with representing a salt as a hex-encoded string.
+
+Encryption
+
+Once a key is generated, we can use it to encrypt and decrypt text. In implementation 1, the cipher algorithm used is AES/CBC/PKCS5Padding, that is, AES in the Cipher Block Chaining (CBC) cipher mode, with padding defined in PKCS#5. (Other AES cipher modes include counter mode (CTR), electronic codebook mode (ECB), and Galois counter mode (GCM). Another question on Stack Overflow contains answers that discuss in detail the various AES cipher modes and the recommended ones to use.  Be aware, too, that there are several attacks on CBC mode encryption, some of which are mentioned in RFC 7457.)
+
+If the encrypted text will be made available to outsiders, then applying a message authentication code, or MAC, to the encrypted data (and optionally additional parameters) is recommended to protect its integrity (a technique known as authenticated encryption with associated data, AEAD, described in RFC 5116). Popular here are hash-based MACs, or HMACs, that are based on SHA-256 or other secure hash functions. If a MAC is used, however, using a secret that's at least twice as long as a normal encryption key is recommended, to avoid related key attacks: the first half serves as the encryption key, and the second half serves as the key for the MAC. (That is, in this case, generate a single secret from a password and salt, and split that secret in two.)
+
+Java Implementation
+
+The various functions in implementation 1 use a specific provider, namely "BC", for its algorithms. In general, though, it is not recommended to request specific providers, since not all providers are available on all Java implementations, whether for lack of support, to avoid code duplication, or for other reasons.  This advice has especially become important since the release of Android P preview in early 2018, because some functionality from the "BC" provider has been deprecated there — see the article "Cryptography Changes in Android P" in the Android Developers Blog.  See also the Introduction to Oracle Providers.
+
+Thus, PROVIDER should not exist and the string -BC should be removed from PBE_ALGORITHM. Implementation 2 is correct in this respect.
+
+It is inappropriate for a method to catch all exceptions, but rather to handle only the exceptions it can. The implementations given in your question can throw a variety of checked exceptions. A method can choose to wrap only those checked exceptions with CryptoException, or specify those checked exceptions in the throws clause. For convenience, wrapping the original exception with CryptoException may be appropriate here, since there are potentially many checked exceptions the classes can throw.
+
+SecureRandom in Android
+
+As detailed in the article "Some SecureRandom Thoughts", in the Android Developers Blog, the implementation of java.security.SecureRandom in Android releases before 2013 has a flaw that reduces the strength of random numbers it delivers.  This flaw can be mitigated by passing an unpredictable and random block of data (such as the output of /dev/urandom) to that class's setSeed method.
+    

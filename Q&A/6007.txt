@@ -1,0 +1,209 @@
+42
+Q:I've noticed a strange issue with my Android app on my new phone. SDK 23 permission popups like external storage are blocked by the attached alert below. I initially thought this was related to my phone, but it doesn't seem to affect any of my other installed apps.
+
+Is this issue perhaps related to having a debug version installed, or is it something wrong with my permission handling? I thought it could somehow be related to one of the ad platforms I'm using but I tried disabling them and it still showed up
+
+
+
+I've pasted the image saving function that is generate this permission request below. I'm using Dexter to save on writing a whole bunch of hideous boilerplate
+
+public static void saveToExternalStorageIfAllowed(final Context context, final Bitmap bitmapImage, final String title) {
+    final Tracker t = ((LoLHistory) context.getApplicationContext()).getTracker(LoLHistory.TrackerName.APP_TRACKER);
+
+    // saving to publicly visible/accessible folder. Requires write permission
+    int permissionCheck = ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+    if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
+        // do not have permissions to write, request
+        t.send(new HitBuilders.EventBuilder()
+                .setCategory("FILE")
+                .setAction("PermissionMissing")
+                .setLabel("WRITE_EXTERNAL")
+                .build());
+        Dexter.checkPermission(new PermissionListener() {
+            @Override
+            public void onPermissionGranted(PermissionGrantedResponse response) {
+                t.send(new HitBuilders.EventBuilder()
+                        .setCategory("FILE")
+                        .setAction("PermissionGranted")
+                        .setLabel("WRITE_EXTERNAL")
+                        .build());
+
+                saveToExternalStorage(context, bitmapImage, title);
+            }
+
+            @Override
+            public void onPermissionDenied(PermissionDeniedResponse response) {
+                t.send(new HitBuilders.EventBuilder()
+                        .setCategory("FILE")
+                        .setAction("PermissionDenied")
+                        .setLabel("WRITE_EXTERNAL")
+                        .build());
+            }
+
+            @Override
+            public void onPermissionRationaleShouldBeShown(PermissionRequest permission, PermissionToken token) {/* ... */}
+        }, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+    } else {
+        saveToExternalStorage(context, bitmapImage, title);
+    }
+}
+
+private static void saveToExternalStorage(Context context, Bitmap bitmapImage, String title) {
+    Tracker t = ((LoLHistory) context.getApplicationContext()).getTracker(LoLHistory.TrackerName.APP_TRACKER);
+
+    // create image folder if does not exist
+    File imagesFolder = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), context.getString(R.string.app_name));
+    if (!imagesFolder.mkdirs() && !imagesFolder.isDirectory()) {
+        String state = Environment.getExternalStorageState();
+        if (Environment.MEDIA_MOUNTED.equals(state)) {
+            // failed to create and is not a directory. Something went wrong...
+            t.send(new HitBuilders.EventBuilder()
+                    .setCategory("FILE")
+                    .setAction("CreateDirFailed")
+                    .setLabel(imagesFolder.getPath())
+                    .build());
+        } else {
+            t.send(new HitBuilders.EventBuilder()
+                    .setCategory("FILE")
+                    .setAction("CreateDirFailedMediaNotMounted")
+                    .setLabel(imagesFolder.getPath())
+                    .build());
+        }
+    }
+
+    // delete image if already exists so FOS can create a new one
+    File image = new File(imagesFolder, title + ".jpg");
+    if (image.exists()) {
+        // image already exists, deleting to start from clean state
+        if (!image.delete()) {
+            // failed to delete
+            t.send(new HitBuilders.EventBuilder()
+                    .setCategory("FILE")
+                    .setAction("DeleteFailed")
+                    .setLabel(image.getPath())
+                    .build());
+        }
+    }
+
+    // compress bitmap and write to file stream. FOS creates file if does not exist
+    FileOutputStream out = null;
+    try {
+        out = new FileOutputStream(image);
+        bitmapImage.compress(Bitmap.CompressFormat.JPEG, 50, out);
+        out.flush();
+    } catch (Exception e) {
+        e.printStackTrace();
+        t.send(new HitBuilders.ExceptionBuilder()
+                .setDescription(e.getLocalizedMessage())
+                .setFatal(true)
+                .build());
+    } finally {
+        try {
+            if (out != null) {
+                out.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            t.send(new HitBuilders.ExceptionBuilder()
+                    .setDescription(e.getLocalizedMessage())
+                    .setFatal(true)
+                    .build());
+        }
+    }
+
+    // get Uri from saved image
+    Uri uriSavedImage = Uri.fromFile(image);
+
+    // media scan the new file so it shows up in the gallery
+    Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+    mediaScanIntent.setData(uriSavedImage);
+    context.sendBroadcast(mediaScanIntent);
+}
+
+
+
+
+UPDATE: Since a lot of people are mentioning it, as stated earlier this issue is not due to having an overlay app installed. Under the Draw over other apps menu, I have the following applications: Google Play Music, Google Play services, Photos, TalkBack, Twitch, Twitter. All of these are set to No.
+
+Additionally, I have tested other applications like Google Hangouts and Twitter which also have actions that require Dangerous Permissions and I am able to provide those permissions without this issue.
+
+
+
+SOLUTION:
+I have marked R. Zagorski's answer as the solution as it includes a lot of general cases. For me it was actually a Toast that was breaking my permissions flow. This popup wasted so much time by sending me on the completely wrong path...
+
+This is the Toast I had visible for the first few seconds after the permission popup showed up:
+
+
+    
+===============================================================================================
+51
+A:This popup is caused by the manifest.PERMISSION.SYSTEM_ALERT_WINDOW permission declared by the manifest.
+The are 3 categories of permissions, that developer must be aware of.:
+
+
+Normal permission - do nothing with them, just declare in the Manifest
+Vulnerable permissions - declare in Manifest and ask for permission at first time. They can be changed through system settings
+Above dangerous permissions: SYSTEM_ALERT_WINDOW and WRITE_SETTINGS belong to this category. They must be granted, but are not visible in system settings. To request for it you don't use a standard way (int checkSelfPermission (String permission)) but you have to check Settings.canDrawOverlays() or Settings.System.canWrite() appropriately
+
+
+
+
+If you don't have SYSTEM_ALERT_WINDOW permission:
+
+
+check if you have a Toast visible when interacting with the permissions popup. Though the Overlay Detected popup doesn't mention it, a Toast also counts as an overlay
+check if any of your dependencies require it.
+
+
+
+
+If you're not sure if you're using this permission, there are a couple of test cases that you can do:
+
+
+Request this permission by yourself:
+
+public class MainActivity extends AppCompatActivity {
+
+    public final static int REQUEST_CODE = 10101;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        if (checkDrawOverlayPermission()) {
+            startService(new Intent(this, PowerButtonService.class));
+        }
+    }
+
+    public boolean checkDrawOverlayPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true;
+        }
+        if (!Settings.canDrawOverlays(this)) {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:" + getPackageName()));
+            startActivityForResult(intent, REQUEST_CODE);
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    @Override
+    @TargetApi(Build.VERSION_CODES.M)
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQUEST_CODE) {
+            if (Settings.canDrawOverlays(this)) {
+                startService(new Intent(this, PowerButtonService.class));
+            }
+        }
+    }
+}
+
+Check if this or this is not your case
+Check out this post to be aware, that when installing app through Play Store this permission is automatically granted (I have not checked is, therefore cannot confirm)
+
+
+The permission model can be understood, just sometimes requires more digging.
+    

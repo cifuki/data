@@ -1,0 +1,312 @@
+64
+Q:I've been seeing some strange behavior with my ViewPager along with my own FragmentStatePagerAdapter.
+
+My View hierarchy goes like this:
+
+-> (1) Fragment root view (RelativeLayout)
+ -> (2) ViewPager
+  -> (3) ViewPager's current fragment view
+
+
+When the Fragment that is responsible for the Fragment root view (1) gets hidden (using .hide() in a fragment transaction) and then shown (with .show()), the fragment view that was currently showing in the ViewPager (3) becomes null, although the fragment still exists.  Basically, my ViewPager becomes completely blank/transparent.
+
+The only way I have found to fix this is to call 
+
+int current = myViewPager.getCurrentItem();
+myViewPager.setAdapter(myAdapter);
+myViewPager.setCurrentItem(current);
+
+
+after the parent fragment is shown.  This somehow triggers the views to be recreated and appear on screen.  Unfortunately, this occasionally causes exceptions dealing with the pager adapter calling unregisterDataSetObserver() twice on an old observer.
+
+Is there a better way to do this?  I guess what I am asking is:  
+
+Why are my fragment views inside my ViewPager getting destroyed when the parent fragment of the ViewPager is hidden?
+
+Update: this also happens when the application is "minimized" and then "restored" (by pressing the home action key and then returning).
+
+Per request, here's my pager adapter class:
+
+public class MyInfoSlidePagerAdapter extends FragmentStatePagerAdapter {
+
+    private ArrayList<MyInfo> infos = new ArrayList<MyInfo>();
+
+    public MyInfoSlidePagerAdapter (FragmentManager fm) {
+        super(fm);
+    }
+
+    public MyInfoSlidePagerAdapter (FragmentManager fm, MyInfo[] newInfos) {
+        super(fm);
+        setInfos(newInfos);
+    }
+
+    @Override
+    public int getItemPosition(Object object) {
+        int position = infos.indexOf(((MyInfoDetailsFragment)object).getMyInfo());
+        return position > 0 ? position : POSITION_NONE;
+    }
+
+    @Override
+    public CharSequence getPageTitle(int position) {
+        return infos.get(position).getName();
+    }
+
+    @Override
+    public Fragment getItem(int i) {
+        return infos.size() > 0 ? MyInfoDetailsFragment.getNewInstance(infos.get(i)) : null;
+    }
+
+    @Override
+    public int getCount() {
+        return infos.size();
+    }
+
+    public Location getMyInfoAtPosition(int i) {
+        return infos.get(i);
+    }
+
+    public void setInfos(MyInfo[] newInfos) {
+        infos = new ArrayList<MyInfo>(Arrays.asList(newInfos));
+    }
+
+    public int getPositionOfMyInfo(MyInfo info) {
+        return infos.indexOf(info);
+    }
+}
+
+
+I've renamed some variables but other than that it is exactly what I have.
+    
+===============================================================================================
+89
+A:You're not providing enough info for your specific issue, so I built a sample project that tries to reproduce your issue: the app has an activity that holds a fragment (PagerFragment) within a relative layout and below this layout I have a button that hides & shows above PagerFragment. PagerFragment has a ViewPager and each fragment within pager adapter simply displays a label - this fragment is named DataFragment. The label list is created in parent activity and passed to PagerFragment and then through its adapter to each DataFragment. Changing the PagerFragment visibility is done with no issues and each time it's becoming visible again it shows the previous shown label. 
+
+The key of the issue:
+Use Fragment#getChildFragmentManager() when you're creating the viewpager adapter and not getFragmentManager!
+
+Maybe you can compare this simple project with what you have and check where are the differences. So here goes (top-down):
+
+PagerActivity (the only activity in the project):
+
+public class PagerActivity extends FragmentActivity {
+
+    private static final String PAGER_TAG = "PagerActivity.PAGER_TAG";
+
+    @Override
+    protected void onCreate(Bundle savedInstance) {
+        super.onCreate(savedInstance);
+        setContentView(R.layout.pager_activity);
+        if (savedInstance == null) {
+            PagerFragment frag = PagerFragment.newInstance(buildPagerData());
+            FragmentManager fm = getSupportFragmentManager();
+            fm.beginTransaction().add(R.id.layout_fragments, frag, PAGER_TAG).commit();
+        }
+        findViewById(R.id.btnFragments).setOnClickListener(new OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                changeFragmentVisibility();
+            }
+        });
+    }
+
+    private List<String> buildPagerData() {
+        ArrayList<String> pagerData = new ArrayList<String>();
+        pagerData.add("Robert de Niro");
+        pagerData.add("John Smith");
+        pagerData.add("Valerie Irons");
+        pagerData.add("Metallica");
+        pagerData.add("Rammstein");
+        pagerData.add("Zinedine Zidane");
+        pagerData.add("Ronaldo da Lima");
+        return pagerData;
+    }
+
+    protected void changeFragmentVisibility() {
+        Fragment frag = getSupportFragmentManager().findFragmentByTag(PAGER_TAG);
+        if (frag == null) {
+            Toast.makeText(this, "No PAGER fragment found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        boolean visible = frag.isVisible();
+        Log.d("APSampler", "Pager fragment visibility: " + visible);
+        FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
+        if (visible) {
+            ft.hide(frag);
+        } else {
+            ft.show(frag);
+        }
+        ft.commit();
+        getSupportFragmentManager().executePendingTransactions();
+    }
+}
+
+
+its layout file pager_activity.xml
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="4dp" >
+
+    <Button
+        android:id="@+id/btnFragments"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:text="Hide/Show fragments" />
+
+    <RelativeLayout
+        android:id="@+id/layout_fragments"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@+id/btnFragments"
+        android:layout_marginBottom="4dp" >
+    </RelativeLayout>
+
+</RelativeLayout>
+
+
+Observe that I am adding the PagerFragment when the activity is first shown - and the PagerFragment class:
+
+public class PagerFragment extends Fragment {
+
+    private static final String DATA_ARGS_KEY = "PagerFragment.DATA_ARGS_KEY";
+
+    private List<String> data;
+
+    private ViewPager pagerData;
+
+    public static PagerFragment newInstance(List<String> data) {
+        PagerFragment pagerFragment = new PagerFragment();
+        Bundle args = new Bundle();
+        ArrayList<String> argsValue = new ArrayList<String>(data);
+        args.putStringArrayList(DATA_ARGS_KEY, argsValue);
+        pagerFragment.setArguments(args);
+        return pagerFragment;
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        data = getArguments().getStringArrayList(DATA_ARGS_KEY);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        return inflater.inflate(R.layout.pager_fragment, container, false);
+    }
+
+    @Override
+    public void onViewCreated(View view, Bundle savedInstanceState) {
+        pagerData = (ViewPager) view.findViewById(R.id.pager_data);
+        setupPagerData();
+    }
+
+    private void setupPagerData() {
+        PagerAdapter adapter = new LocalPagerAdapter(getChildFragmentManager(), data);
+        pagerData.setAdapter(adapter);
+    }
+
+}
+
+
+its layout (only the ViewPager that takes full size):
+
+<android.support.v4.view.ViewPager xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/pager_data"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" />
+
+
+and its adapter:
+
+public class LocalPagerAdapter extends FragmentStatePagerAdapter {
+    private List<String> pagerData;
+
+    public LocalPagerAdapter(FragmentManager fm, List<String> pagerData) {
+        super(fm);
+        this.pagerData = pagerData;
+    }
+
+    @Override
+    public Fragment getItem(int position) {
+        return DataFragment.newInstance(pagerData.get(position));
+    }
+
+    @Override
+    public int getCount() {
+        return pagerData.size();
+    }
+}
+
+
+This adapter creates a DataFragment for each page:
+
+public class DataFragment extends Fragment {
+    private static final String DATA_ARG_KEY = "DataFragment.DATA_ARG_KEY";
+
+    private String localData;
+
+    public static DataFragment newInstance(String data) {
+        DataFragment df = new DataFragment();
+        Bundle args = new Bundle();
+        args.putString(DATA_ARG_KEY, data);
+        df.setArguments(args);
+        return df;
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        localData = getArguments().getString(DATA_ARG_KEY);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        return inflater.inflate(R.layout.data_fragment, container, false);
+    }
+
+    @Override
+    public void onViewCreated(View view, Bundle savedInstanceState) {
+        view.findViewById(R.id.btn_page_action).setOnClickListener(new OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                Toast.makeText(getActivity(), localData, Toast.LENGTH_SHORT).show();
+            }
+        });
+        ((TextView) view.findViewById(R.id.txt_label)).setText(localData);
+    }
+}
+
+
+and DataFragment's layout:
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="4dp" >
+
+    <Button
+        android:id="@+id/btn_page_action"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:text="Interogate" />
+
+    <TextView
+        android:id="@+id/txt_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:textAppearance="?android:attr/textAppearanceLarge" />
+
+</RelativeLayout>
+
+
+Enjoy coding!
+    

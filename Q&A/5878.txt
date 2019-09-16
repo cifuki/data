@@ -1,0 +1,161 @@
+43
+Q:Like this previous person, I have unwanted overlap between GridView items:
+
+
+
+Notice the text, in every column except the rightmost one.
+
+Where I differ from that previous question is that I don't want a constant row height. I want the row height to vary to accommodate the tallest content in each row, for efficient use of screen space.
+
+Looking at the source for GridView (not the authoritative copy, but kernel.org is still down), we can see in fillDown() and makeRow() that the last View seen is the "reference view": the row's height is set from the height of that View, not from the tallest one. This explains why the rightmost column is ok. Unfortunately, GridView is not well set-up for me to fix this by inheritance. All the relevant fields and methods are private.
+
+So, before I take the well-worn bloaty path of "clone and own", is there a trick I'm missing here? I could use a TableLayout, but that would require me to implement numColumns="auto_fit" myself (since I want e.g. just one long column on a phone screen), and it also wouldn't be an AdapterView, which this feels like it ought to be.
+
+Edit: in fact, clone and own is not practical here. GridView depends on inaccessible parts of its parent and sibling classes, and would result in importing at least 6000 lines of code (AbsListView, AdapterView, etc.)
+    
+===============================================================================================
+27
+A:I used a static array to drive max heights for the row. This is not perfect since the earlier columns will not be resized until the cell is redisplayed. Here is the code for the inflated reusable content view.
+
+Edit: I got this work correctly but I had pre-measure all cells before rendering. I did this by subclassing GridView and adding a measuring hook in the onLayout method.
+
+/**
+ * Custom view group that shares a common max height
+ * @author Chase Colburn
+ */
+public class GridViewItemLayout extends LinearLayout {
+
+    // Array of max cell heights for each row
+    private static int[] mMaxRowHeight;
+
+    // The number of columns in the grid view
+    private static int mNumColumns;
+
+    // The position of the view cell
+    private int mPosition;
+
+    // Public constructor
+    public GridViewItemLayout(Context context) {
+        super(context);
+    }
+
+    // Public constructor
+    public GridViewItemLayout(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    /**
+     * Set the position of the view cell
+     * @param position
+     */
+    public void setPosition(int position) {
+        mPosition = position;
+    }
+
+    /**
+     * Set the number of columns and item count in order to accurately store the
+     * max height for each row. This must be called whenever there is a change to the layout
+     * or content data.
+     * 
+     * @param numColumns
+     * @param itemCount
+     */
+    public static void initItemLayout(int numColumns, int itemCount) {
+        mNumColumns = numColumns;
+        mMaxRowHeight = new int[itemCount];
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        // Do not calculate max height if column count is only one
+        if(mNumColumns <= 1 || mMaxRowHeight == null) {
+            return;
+        }
+
+        // Get the current view cell index for the grid row
+        int rowIndex = mPosition / mNumColumns;
+        // Get the measured height for this layout
+        int measuredHeight = getMeasuredHeight();
+        // If the current height is larger than previous measurements, update the array
+        if(measuredHeight > mMaxRowHeight[rowIndex]) {
+            mMaxRowHeight[rowIndex] = measuredHeight;
+        }
+        // Update the dimensions of the layout to reflect the max height
+        setMeasuredDimension(getMeasuredWidth(), mMaxRowHeight[rowIndex]);
+    }
+}
+
+
+Here is the measuring function in my BaseAdapter subclass. Note that I have a method updateItemDisplay that sets all appropriate text and images on the view cell.
+
+    /**
+     * Run a pass through each item and force a measure to determine the max height for each row
+     */
+    public void measureItems(int columnWidth) {
+        // Obtain system inflater
+        LayoutInflater inflater = (LayoutInflater) mContext.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+        // Inflate temp layout object for measuring
+        GridViewItemLayout itemView = (GridViewItemLayout)inflater.inflate(R.layout.list_confirm_item, null);
+
+        // Create measuring specs
+        int widthMeasureSpec = MeasureSpec.makeMeasureSpec(columnWidth, MeasureSpec.EXACTLY);
+        int heightMeasureSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+
+        // Loop through each data object
+        for(int index = 0; index < mItems.size(); index++) {
+            String[] item = mItems.get(index);
+
+            // Set position and data
+            itemView.setPosition(index);
+            itemView.updateItemDisplay(item, mLanguage);
+
+            // Force measuring
+            itemView.requestLayout();
+            itemView.measure(widthMeasureSpec, heightMeasureSpec);
+        }
+    }
+
+
+And finally, here is the GridView subclass set up to measure view cells during layout:
+
+/**
+ * Custom subclass of grid view to measure all view cells
+ * in order to determine the max height of the row
+ * 
+ * @author Chase Colburn
+ */
+public class AutoMeasureGridView extends GridView {
+
+    public AutoMeasureGridView(Context context) {
+        super(context);
+    }
+
+    public AutoMeasureGridView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public AutoMeasureGridView(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+    }
+
+    @Override
+    protected void onLayout(boolean changed, int l, int t, int r, int b) {
+        if(changed) {
+            CustomAdapter adapter = (CustomAdapter)getAdapter();
+
+            int numColumns = getContext().getResources().getInteger(R.integer.list_num_columns);
+            GridViewItemLayout.initItemLayout(numColumns, adapter.getCount());
+
+            if(numColumns > 1) {
+                int columnWidth = getMeasuredWidth() / numColumns;
+                adapter.measureItems(columnWidth);
+            }
+        }
+        super.onLayout(changed, l, t, r, b);
+    }
+}
+
+
+The reason I have the number of columns as a resource is so that I can have a different number based on orientation, etc. 
+    

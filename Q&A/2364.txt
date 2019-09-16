@@ -1,0 +1,91 @@
+87
+Q:Has anyone been able to accomplish sending a multipart/form-data POST in Android with Volley yet? I have had no success trying to upload an image/png using a POST request to our server and am curious if anyone has. 
+
+I believe the default way to do this would be to override public byte[] getPostBody() in the Request.java class and attach the File there with a blank Header key for the boundary. However, converting my file to a String for the Map<String, String> postParams and then having it encoded again seems obtuse and not really elegant.  Also I've been unsuccessful in my attempts. This is really the only thing holding us back from switching to this library.
+
+Anyway, all thoughts and answers are extremely appreciated. Thank you for your help.  
+    
+===============================================================================================
+73
+A:I might be wrong on this but I think you need to implement your own com.android.volley.toolbox.HttpStack for this because the default ones (HurlStack if version > Gingerbread or HttpClientStack) don't deal with multipart/form-data. 
+
+Edit:
+
+And indeed I was wrong. I was able to do it using MultipartEntity in Request like this:
+
+public class MultipartRequest extends Request<String> {
+
+    private MultipartEntity entity = new MultipartEntity();
+
+    private static final String FILE_PART_NAME = "file";
+    private static final String STRING_PART_NAME = "text";
+
+    private final Response.Listener<String> mListener;
+    private final File mFilePart;
+    private final String mStringPart;
+
+    public MultipartRequest(String url, Response.ErrorListener errorListener, Response.Listener<String> listener, File file, String stringPart)
+    {
+        super(Method.POST, url, errorListener);
+
+        mListener = listener;
+        mFilePart = file;
+        mStringPart = stringPart;
+        buildMultipartEntity();
+    }
+
+    private void buildMultipartEntity()
+    {
+        entity.addPart(FILE_PART_NAME, new FileBody(mFilePart));
+        try
+        {
+            entity.addPart(STRING_PART_NAME, new StringBody(mStringPart));
+        }
+        catch (UnsupportedEncodingException e)
+        {
+            VolleyLog.e("UnsupportedEncodingException");
+        }
+    }
+
+    @Override
+    public String getBodyContentType()
+    {
+        return entity.getContentType().getValue();
+    }
+
+    @Override
+    public byte[] getBody() throws AuthFailureError
+    {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try
+        {
+            entity.writeTo(bos);
+        }
+        catch (IOException e)
+        {
+            VolleyLog.e("IOException writing to ByteArrayOutputStream");
+        }
+        return bos.toByteArray();
+    }
+
+    @Override
+    protected Response<String> parseNetworkResponse(NetworkResponse response)
+    {
+        return Response.success("Uploaded", getCacheEntry());
+    }
+
+    @Override
+    protected void deliverResponse(String response)
+    {
+        mListener.onResponse(response);
+    }
+}
+
+
+It's pretty raw but I tried it with an image and a simple string and it works. The response is a placeholder, doesn't make much sense to return a Response String in this case. I had problems using apache httpmime to use MultipartEntity so I used this https://code.google.com/p/httpclientandroidlib/ don't know if there's a better way.
+Hope it helps.
+
+Edit
+
+You can use httpmime without using httpclientandroidlib, the only dependency is httpcore.
+    

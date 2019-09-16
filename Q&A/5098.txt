@@ -1,0 +1,370 @@
+48
+Q:This problem has been solved! Thanks a lot to Brad, Denis and junkie! You're the heroes! :)
+
+This is the working code. It connects to Zeemote and reads data from it.
+
+===== Code =====
+
+
+public class ZeeTest extends Activity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        try {
+            for (int i = 0; i < 3; i++) {
+                test();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private boolean connected = false;
+    private BluetoothSocket sock;
+    private InputStream in;
+    public void test() throws Exception {
+        if (connected) {
+            return;
+        }
+        BluetoothDevice zee = BluetoothAdapter.getDefaultAdapter().
+            getRemoteDevice("00:1C:4D:02:A6:55");
+        Method m = zee.getClass().getMethod("createRfcommSocket",
+            new Class[] { int.class });
+        sock = (BluetoothSocket)m.invoke(zee, Integer.valueOf(1));
+        Log.d("ZeeTest", "++++ Connecting");
+        sock.connect();
+        Log.d("ZeeTest", "++++ Connected");
+        in = sock.getInputStream();
+        byte[] buffer = new byte[50];
+        int read = 0;
+        Log.d("ZeeTest", "++++ Listening...");
+        try {
+            while (true) {
+                read = in.read(buffer);
+                connected = true;
+                StringBuilder buf = new StringBuilder();
+                for (int i = 0; i < read; i++) {
+                    int b = buffer[i] & 0xff;
+                    if (b < 0x10) {
+                        buf.append("0");
+                    }
+                    buf.append(Integer.toHexString(b)).append(" ");
+                }
+                Log.d("ZeeTest", "++++ Read "+ read +" bytes: "+ buf.toString());
+            }
+        } catch (IOException e) {}
+        Log.d("ZeeTest", "++++ Done: test()");
+    }
+    @Override
+    public void onDestroy() {
+        try {
+            if (in != null) {
+                in.close();
+            }
+            if (sock != null) {
+                sock.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        super.onDestroy();
+    }
+}
+
+
+===== Original question =====
+
+I'm trying to connect to a Zeemote (http://zeemote.com/) gaming controller from Moto Droid running 2.0.1 firmware. The test application below does connect to the device (LED flashes) but connection is dropped immediately after that. 
+
+I'm pasting two test apps below: one that actually tries to read from input stream and second one that just sits there, waiting for the device to disconnect after 5 seconds. And yes, I do have third version :) which first waits for ACL_CONNECTED and then opens socket but there's nothing new in its behaviour.
+
+Some background info:
+I can connect to the Zeemote from my laptop perfectly fine using bluez tools (log attached as well). I know for sure that Droid is able to talk to Zeemote as well because 'Game Pro' from the Market works fine with it (but then it's a driver/service so maybe it uses lower-level API?).
+
+I noticed that 'adb bugreport' reports neither UUID nor RFCOMM channel for Zeemote while it does so for all other devices (including Moto HS815 headset, another dumb device for which 'sdp browse' reports nothing). Also, when the device boots, Zeemote's priority is 0 (others have priority 100+).
+
+I'm quite at a loss here, I worked on it for so long that I ran out of ideas so any help would be very much appreciated (even if you don't know the answer :) )
+
+Thanks,
+Max
+
+Test application No. 1
+
+This app tries to actually read from the device.
+
+===== Code =====
+
+
+public class ZeeTest extends Activity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        try {
+            test();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private BluetoothSocket sock;
+    private InputStream in;
+    public void test() throws IOException {
+        BluetoothDevice zee = BluetoothAdapter.getDefaultAdapter().
+                      getRemoteDevice("00:1C:4D:02:A6:55");
+        sock = zee.createRfcommSocketToServiceRecord(
+                      UUID.fromString("8e1f0cf7-508f-4875-b62c-fbb67fd34812"));
+        Log.d("ZeeTest", "++++ Connecting");
+        sock.connect();
+        Log.d("ZeeTest", "++++ Connected");
+        in = sock.getInputStream();
+        byte[] buffer = new byte[1];
+        int bytes = 0;
+        int x = 0;
+        Log.d("ZeeTest", "++++ Listening...");
+        while (x < 2) {
+            x++;
+            try {
+                bytes = in.read(buffer);
+                Log.d("ZeeTest", "++++ Read "+ bytes +" bytes");
+            } catch (IOException e) {
+                e.printStackTrace();
+                try { Thread.sleep(100); } catch (InterruptedException ie) {}
+            }
+        }
+        Log.d("ZeeTest", "++++ Done: test()");
+    }
+    @Override
+    public void onDestroy() {
+        try {
+            if (in != null) {
+                in.close();
+            }
+            if (sock != null) {
+                sock.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        super.onDestroy();
+    }
+}
+
+
+===== Log =====
+
+
+04-19 22:27:01.147: DEBUG/ZeeTest(8619): ++++ Connecting
+04-19 22:27:04.085: INFO/usbd(1062): process_usb_uevent_message(): buffer = add@/devices/virtual/bluetooth/hci0/hci0:1
+04-19 22:27:04.085: INFO/usbd(1062): main(): call select(...)
+04-19 22:27:04.327: ERROR/BluetoothEventLoop.cpp(4029): event_filter: Received signal org.bluez.Device:PropertyChanged from /org/bluez/4121/hci0/dev_00_1C_4D_02_A6_55
+04-19 22:27:04.491: VERBOSE/BluetoothEventRedirector(7499): Received android.bleutooth.device.action.UUID
+04-19 22:27:04.905: DEBUG/ZeeTest(8619): ++++ Connected
+04-19 22:27:04.905: DEBUG/ZeeTest(8619): ++++ Listening...
+04-19 22:27:05.538: WARN/System.err(8619): java.io.IOException: Software caused connection abort
+04-19 22:27:05.600: WARN/System.err(8619):     at android.bluetooth.BluetoothSocket.readNative(Native Method)
+...
+04-19 22:27:05.717: WARN/System.err(8619): java.io.IOException: Software caused connection abort
+04-19 22:27:05.717: WARN/System.err(8619):     at android.bluetooth.BluetoothSocket.readNative(Native Method)
+...
+04-19 22:27:05.819: DEBUG/ZeeTest(8619): ++++ Done: test()
+04-19 22:27:07.155: VERBOSE/BluetoothEventRedirector(7499): Received android.bleutooth.device.action.UUID
+04-19 22:27:09.077: INFO/usbd(1062): process_usb_uevent_message(): buffer = remove@/devices/virtual/bluetooth/hci0/hci0:1
+04-19 22:27:09.085: INFO/usbd(1062): main(): call select(...)
+04-19 22:27:09.139: ERROR/BluetoothEventLoop.cpp(4029): event_filter: Received signal org.bluez.Device:PropertyChanged from /org/bluez/4121/hci0/dev_00_1C_4D_02_A6_55
+
+
+Test application No. 2
+
+This test connects and waits -- useful for displaying the auto-disconnect issue.
+
+===== Code =====
+
+
+public class ZeeTest extends Activity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        getApplicationContext().registerReceiver(receiver,
+                    new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED));
+        getApplicationContext().registerReceiver(receiver,
+                    new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED));
+        try {
+            BluetoothDevice zee = BluetoothAdapter.getDefaultAdapter().
+                            getRemoteDevice("00:1C:4D:02:A6:55");
+            sock = zee.createRfcommSocketToServiceRecord(
+                            UUID.fromString("8e1f0cf7-508f-4875-b62c-fbb67fd34812"));
+
+            Log.d("ZeeTest", "++++ Connecting");
+            sock.connect();
+            Log.d("ZeeTest", "++++ Connected");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static final LogBroadcastReceiver receiver = new LogBroadcastReceiver();
+    public static class LogBroadcastReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Log.d("ZeeReceiver", intent.toString());
+            Bundle extras = intent.getExtras();
+            for (String k : extras.keySet()) {
+                Log.d("ZeeReceiver", "    Extra: "+ extras.get(k).toString());
+            }
+        }
+    }
+
+    private BluetoothSocket sock;
+    @Override
+    public void onDestroy() {
+        getApplicationContext().unregisterReceiver(receiver);
+        if (sock != null) {
+            try {
+                sock.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        super.onDestroy();
+    }
+}
+
+
+===== Log =====
+
+
+04-19 22:06:34.944: DEBUG/ZeeTest(7986): ++++ Connecting
+04-19 22:06:38.202: INFO/usbd(1062): process_usb_uevent_message(): buffer = add@/devices/virtual/bluetooth/hci0/hci0:1
+04-19 22:06:38.202: INFO/usbd(1062): main(): call select(...)
+04-19 22:06:38.217: ERROR/BluetoothEventLoop.cpp(4029): event_filter: Received signal org.bluez.Device:PropertyChanged from /org/bluez/4121/hci0/dev_00_1C_4D_02_A6_55
+04-19 22:06:38.428: VERBOSE/BluetoothEventRedirector(7499): Received android.bleutooth.device.action.UUID
+04-19 22:06:38.968: DEBUG/ZeeTest(7986): ++++ Connected
+04-19 22:06:39.061: DEBUG/ZeeReceiver(7986): Intent { act=android.bluetooth.device.action.ACL_CONNECTED (has extras) }
+04-19 22:06:39.108: DEBUG/ZeeReceiver(7986):     Extra: 00:1C:4D:02:A6:55
+04-19 22:06:39.538: INFO/ActivityManager(4029): Displayed activity zee.test/.ZeeTest: 5178 ms (total 5178 ms)
+04-19 22:06:41.014: VERBOSE/BluetoothEventRedirector(7499): Received android.bleutooth.device.action.UUID
+04-19 22:06:43.038: INFO/usbd(1062): process_usb_uevent_message(): buffer = remove@/devices/virtual/bluetooth/hci0/hci0:1
+04-19 22:06:43.038: INFO/usbd(1062): main(): call select(...)
+04-19 22:06:43.069: ERROR/BluetoothEventLoop.cpp(4029): event_filter: Received signal org.bluez.Device:PropertyChanged from /org/bluez/4121/hci0/dev_00_1C_4D_02_A6_55
+04-19 22:06:43.124: DEBUG/ZeeReceiver(7986): Intent { act=android.bluetooth.device.action.ACL_DISCONNECTED (has extras) }
+04-19 22:06:43.124: DEBUG/ZeeReceiver(7986):     Extra: 00:1C:4D:02:A6:55
+
+
+System logs
+
+===== Terminal log =====
+
+
+$ sdptool browse
+Inquiring ...
+Browsing 00:1C:4D:02:A6:55 ...
+
+$ sdptool records 00:1C:4D:02:A6:55
+Service Name: Zeemote
+Service RecHandle: 0x10015
+Service Class ID List:
+  UUID 128: 8e1f0cf7-508f-4875-b62c-fbb67fd34812
+Protocol Descriptor List:
+  "L2CAP" (0x0100)
+  "RFCOMM" (0x0003)
+    Channel: 1
+Language Base Attr List:
+  code_ISO639: 0x656e
+  encoding:    0x6a
+  base_offset: 0x100
+
+$ rfcomm connect /dev/tty10 00:1C:4D:02:A6:55
+Connected /dev/rfcomm0 to 00:1C:4D:02:A6:55 on channel 1
+Press CTRL-C for hangup
+
+# rfcomm show /dev/tty10
+rfcomm0: 00:1F:3A:E4:C8:40 -> 00:1C:4D:02:A6:55 channel 1 connected [reuse-dlc release-on-hup tty-attached]
+
+# cat /dev/tty10
+(nothing here)
+
+# hcidump
+HCI sniffer - Bluetooth packet analyzer ver 1.42
+device: hci0 snap_len: 1028 filter: 0xffffffff
+< HCI Command: Create Connection (0x01|0x0005) plen 13
+> HCI Event: Command Status (0x0f) plen 4
+> HCI Event: Connect Complete (0x03) plen 11
+< HCI Command: Read Remote Supported Features (0x01|0x001b) plen 2
+> HCI Event: Read Remote Supported Features (0x0b) plen 11
+< ACL data: handle 11 flags 0x02 dlen 10
+    L2CAP(s): Info req: type 2
+> HCI Event: Command Status (0x0f) plen 4
+> HCI Event: Page Scan Repetition Mode Change (0x20) plen 7
+> HCI Event: Max Slots Change (0x1b) plen 3
+< HCI Command: Remote Name Request (0x01|0x0019) plen 10
+> HCI Event: Command Status (0x0f) plen 4
+> ACL data: handle 11 flags 0x02 dlen 16
+    L2CAP(s): Info rsp: type 2 result 0
+      Extended feature mask 0x0000
+< ACL data: handle 11 flags 0x02 dlen 12
+    L2CAP(s): Connect req: psm 3 scid 0x0040
+> HCI Event: Number of Completed Packets (0x13) plen 5
+> ACL data: handle 11 flags 0x02 dlen 16
+    L2CAP(s): Connect rsp: dcid 0x04fb scid 0x0040 result 1 status 2
+      Connection pending - Authorization pending
+> HCI Event: Remote Name Req Complete (0x07) plen 255
+> ACL data: handle 11 flags 0x02 dlen 16
+    L2CAP(s): Connect rsp: dcid 0x04fb scid 0x0040 result 0 status 0
+      Connection successful
+< ACL data: handle 11 flags 0x02 dlen 16
+    L2CAP(s): Config req: dcid 0x04fb flags 0x00 clen 4
+      MTU 1013
+(events are properly received using bluez)
+
+
+===== Part of adb bugreport =====
+
+
+--Known devices--
+00:19:A1:2D:16:EA     bonded (0) LG U830
+    00001105-0000-1000-8000-00805f9b34fb RFCOMM channel = 17
+00:1C:4D:02:A6:55     bonded (0) Zeemote JS1
+00:0B:2E:6E:6F:00     bonded (0) Motorola HS815
+    00001108-0000-1000-8000-00805f9b34fb RFCOMM channel = 1
+    0000111e-0000-1000-8000-00805f9b34fb RFCOMM channel = 2
+00:1F:3A:E4:C8:40     bonded (0) BRCM BT4X
+    00001105-0000-1000-8000-00805f9b34fb RFCOMM channel = 9
+00:18:42:EC:E2:99     bonded (0) N95
+    00001105-0000-1000-8000-00805f9b34fb RFCOMM channel = 9
+
+
+===== Excerpt from boot log =====
+
+
+04-18 21:55:10.382: VERBOSE/BluetoothEventRedirector(1985): Received android.bluetooth.adapter.action.STATE_CHANGED
+04-18 21:55:10.421: DEBUG/BT HSHFP(1237): Loaded priority 00:19:A1:2D:16:EA = 100
+04-18 21:55:10.428: DEBUG/BT HSHFP(1237): Loaded priority 00:1C:4D:02:A6:55 = 0
+04-18 21:55:10.444: DEBUG/BT HSHFP(1237): Loaded priority 00:0B:2E:6E:6F:00 = 101
+04-18 21:55:10.749: DEBUG/BT HSHFP(1237): Loaded priority 00:1F:3A:E4:C8:40 = 100
+04-18 21:55:10.780: DEBUG/BT HSHFP(1237): Loaded priority 00:18:42:EC:E2:99 = 100
+
+    
+===============================================================================================
+25
+A:Try to change your code for creating RfcommSocket:
+
+sock = zee.createRfcommSocketToServiceRecord(
+                      UUID.fromString("8e1f0cf7-508f-4875-b62c-fbb67fd34812"));
+
+
+for this code:
+
+Method m = zee.getClass().getMethod("createRfcommSocket", new Class[] { int.class });
+sock = (BluetoothSocket) m.invoke(device, 1);
+
+
+Also try to change argument value in range 1-3 in this m.invoke(device, 1);
+When connection will be Connected, but aborted when you try reading, call in some loop your method test() again.
+As simple:
+
+for(int i=0;i<3;i++){  if(!testDone) test(); }
+
+    

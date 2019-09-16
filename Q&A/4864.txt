@@ -1,0 +1,43 @@
+49
+Q:I have uploaded my application on google play but users have reported the following exception
+
+java.lang.RuntimeException: WakeLock under-locked C2DM_LIB. This exception occurs when I try to release the WakeLock. Can anyone tell what could be the problem.
+    
+===============================================================================================
+54
+A:I have traced same exception in new GCM Library too. Actually old C2DM Android library have same error, same crash, and Google hasn't fixed it yet. As I can see by our statistics, about 0.1% of users experiencing this crash.
+
+My investigations shows that problem is in incorrect releasing of network WakeLock in GCM library, when library tries to release WakeLock that holds nothing (internal lock counter becomes negative).
+
+I was satisfied with simple solution - just catch this exception and do nothing, because we don't need to do any extra job then our wakelock hold nothing.
+
+In order to do this you need to import GCM library sources in your project, rather than already compiled .jar file. You can find GCM library sources under "$Android_SDK_Home$/extras/google/gcm/gcm-client/src" folder (you need to download it first using Android SDK Manager).
+
+Next open GCMBaseIntentService class, find line
+
+sWakeLock.release();
+
+
+and surround it with try-catch.
+
+It should look like this:
+
+    synchronized (LOCK) {
+        // sanity check for null as this is a public method
+        if (sWakeLock != null) {
+            Log.v(TAG, "Releasing wakelock");
+            try {
+                sWakeLock.release();
+            } catch (Throwable th) {
+                // ignoring this exception, probably wakeLock was already released
+            }
+        } else {
+            // should never happen during normal workflow
+            Log.e(TAG, "Wakelock reference is null");
+        }
+    }
+
+
+UPDATE:
+Alternativally, as suggested @fasti in his answer, you can use mWakeLock.isHeld() method to check if wakelock actually holding this lock.
+    

@@ -1,0 +1,63 @@
+29
+Q:I've set up a very simple project to test the integration of Robolectric + Data Binding + Retrolambda. When I run the test suit, I get the following message:
+
+Error:(30, 30) Gradle: error: cannot access AndroidHttpClient
+class file for android.net.http.AndroidHttpClient not found
+
+
+This is pretty odd since I don't use AndroidHttpClient anywhere.
+
+
+
+The error occurs here, on the "activity" line:
+
+@Before
+public void setup() {
+    activity = Robolectric.setupActivity(MainActivity.class); // Error on this line
+    textView = (TextView) shadowOf(activity).findViewById(R.id.textView);
+    button = (Button) activity.findViewById(R.id.button);
+    editText = (EditText) activity.findViewById(R.id.editText);
+}
+
+
+The program never uses AndroidHttpClient. In fact, this is the entire program:
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    final ActivityMainBinding binding = DataBindingUtil.setContentView(this, R.layout.activity_main);
+
+    binding.setUser(new User());
+    binding.button.setOnClickListener((v) -> {
+        binding.textView.setText(String.format("Hello, %s!", binding.editText.getText()));
+        binding.editText.setText("");
+    });
+}
+
+
+
+
+Ideas as to what's wrong?
+    
+===============================================================================================
+46
+A:AndroidHttpClient was removed from the SDK in v23 of the build tools.
+
+As Robolectric is running against earlier versions, it expects it to be there, which is why you're seeing this error.
+
+For now, you can add it back in:
+
+android {
+    useLibrary 'org.apache.http.legacy'
+}
+
+
+As detailed here.
+
+There is a GitHub ticket open for Robolectric to fix this. You can follow the thread/ticket here.
+
+Update:
+
+As some people have correctly pointed out, a better way of doing this would be to create a class android.net.http.AndroidHttpClient in your test resources. This would be a preferred method because you're only modifying the test sources, not the production code, in order to accommodate the tests.
+    

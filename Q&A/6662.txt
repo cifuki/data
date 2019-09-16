@@ -1,0 +1,173 @@
+38
+Q:I have a common class say for eg Class A which extends AsyncTask and has all the methods implemented i.e. onPreExecute, doinbackground and onPostExecute.
+
+Now, there are other classes which want to use Class A object.
+
+Say Class B uses class A in the below manner
+
+A a = new A(context)
+a.execute(url)
+
+
+Then i fetch the result in get method. But get method is not the proper way of using AsyncTask. I will like to get the result in onPostExecute. For that i tried using a boolean parameter which will get true only in onpostexecute. The class B will check till it gets true and when it gets true it will fetch the result.
+
+But this is somehow blocking the application.
+
+I have placed the code for asynctask below.
+
+'
+
+import java.io.IOException;
+
+import org.apache.http.client.ClientProtocolException;
+
+import org.apache.http.client.HttpClient;
+
+import org.apache.http.client.ResponseHandler;
+
+import org.apache.http.client.methods.HttpGet;
+
+import org.apache.http.impl.client.BasicResponseHandler;
+
+import org.apache.http.impl.client.DefaultHttpClient;
+
+
+import android.app.ProgressDialog;
+import android.content.Context;
+import android.os.AsyncTask;
+
+public class A extends AsyncTask<String, Void, String> 
+{
+private Context context = null;
+
+private final HttpClient httpClient = new DefaultHttpClient();
+
+private String content = null;
+//private String error = null;
+private String finalResult = null;
+private static boolean isResult = false;
+
+private ProgressDialog progressDialog = null; 
+
+public BabbleVilleSyncTask(Context context)
+{
+    this.context = context; 
+    progressDialog = new ProgressDialog(this.context);
+}
+
+protected void onPreExecute() 
+{
+    progressDialog.setMessage("Please Wait....");
+    progressDialog.show();
+}
+
+protected String doInBackground(String... urls) 
+{
+    try 
+    {
+        //urls[0] = URLEncoder.encode(urls[0], "UTF-8");
+
+        HttpGet httpget = new HttpGet(urls[0]);
+        ResponseHandler<String> responseHandler = new BasicResponseHandler();
+        content = httpClient.execute(httpget, responseHandler);
+    }
+    /*catch(UnsupportedEncodingException ue)
+    {
+        error = ue.getMessage();
+    }*/
+    catch (ClientProtocolException e) 
+    {
+        //error = e.getMessage();
+        cancel(true);
+    }
+    catch (IOException e) 
+    {
+        //error = e.getMessage();
+        cancel(true);
+    }
+
+    httpClient.getConnectionManager().shutdown();
+
+    return content;
+}
+
+protected void onPostExecute(String result) 
+{
+    finalResult = result;
+    progressDialog.dismiss();
+    System.out.println("on Post execute called");
+    isResult = true;
+}  
+
+public boolean getIsResult()
+{
+    return isResult;
+}
+
+public void setIsResult(boolean flag)
+{
+    isResult = flag;
+}
+
+public String getResult()
+{
+    return finalResult;
+}
+}
+
+
+'
+
+Can someone let me know what the issue may be?
+
+Regards
+
+Sunil
+    
+===============================================================================================
+134
+A:A clean way to use AsyncTask to get a result would be to use a callback interface.
+
+Here is a simple example of this concept:
+
+interface AsyncTaskCompleteListener<T> {
+   public void onTaskComplete(T result);
+}
+
+
+then in your B class :
+
+class B implements AsyncTaskCompleteListener<String> {
+
+    public void onTaskComplete(String result) {
+        // do whatever you need
+    }
+
+    public void launchTask(String url) {
+        A a = new A(context, this);
+        a.execute(url);
+    }
+}
+
+
+you should now add the following code to your A class:
+
+class A extends AsyncTask<String, Void, String> {
+    private AsyncTaskCompleteListener<String> callback;
+
+    public A(Context context, AsyncTaskCompleteListener<String> cb) {
+        this.context = context;
+        this.callback = cb;
+    }
+
+    protected void onPostExecute(String result) {
+       finalResult = result;
+       progressDialog.dismiss();
+       System.out.println("on Post execute called");
+       callback.onTaskComplete(result);
+   }  
+}
+
+
+This way, you don't need to wait explicitely for your task to complete, instead, your main code (which is probably the main UI thread), is waiting in the normal android event loop, and the onTaskComplete method will be automatically called, allowing to handle the task result there.
+    

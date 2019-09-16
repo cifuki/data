@@ -1,0 +1,691 @@
+27
+Q:I have a AutoCompleteTextView which gives user auto-completion search result from Google Places API. Once I was done I discovered SearchView and how it can be placed in the ActionBar. I checked out the SearchView example provided by google and added it to my application as a starting point (it lists the installed applications) but I don\xc2\xb4t know how to proceed from here. I want to have the same functionality as AutoCompleteTextView but use the SearchView instead.
+Any suggestion? 
+The whole  class is provided below.
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import android.app.Activity;
+import android.app.SearchManager;
+import android.app.SearchableInfo;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.SharedPreferences.OnSharedPreferenceChangeListener;
+import android.os.AsyncTask;
+import android.os.Bundle;
+import android.os.Handler;
+import android.preference.PreferenceManager;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.Window;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
+import android.widget.AdapterView;
+import android.widget.AdapterView.OnItemClickListener;
+import android.widget.ArrayAdapter;
+import android.widget.AutoCompleteTextView;
+import android.widget.ImageView;
+import android.widget.ListView;
+import android.widget.SearchView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+
+
+/**
+ * 
+ * @author 
+ *
+ */
+public class PlacesListSearchActivity extends Activity implements SearchView.OnQueryTextListener{
+
+    private static final String TAG = "PlacesListActivity";
+
+    private ResultReceiver mReceiver;
+
+    private OnSharedPreferenceChangeListener sharedPreferencesListener;
+    private SharedPreferences sharedPreferences;
+
+    /** Called when the activity is first created. */
+    public ArrayAdapter<String> adapter;
+    public AutoCompleteTextView textView;
+
+    private SearchView mSearchView;
+    private TextView mStatusView;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        getWindow().requestFeature(Window.FEATURE_ACTION_BAR);
+        setContentView(R.layout.places_search);
+        mStatusView = (TextView) findViewById(R.id.status_text);
+
+
+        final ArrayAdapter<String> adapter = new ArrayAdapter<String>(this,R.layout.item_list);
+        textView = (AutoCompleteTextView)findViewById(R.id.autoCompleteTextView1);
+        adapter.setNotifyOnChange(true);
+        textView.setHint("type store name");
+        textView.setAdapter(adapter);
+        textView.addTextChangedListener(new TextWatcher() {
+
+        public void onTextChanged(CharSequence s, int start, int before, int count) {
+            if (count%3 == 1) {
+                adapter.clear();
+                    GetPlaces task = new GetPlaces();
+                    //now pass the argument in the textview to the task
+                    task.execute(textView.getText().toString());
+            }
+        }
+
+        public void beforeTextChanged(CharSequence s, int start, int count,
+        int after) {
+        // TODO Auto-generated method stub
+
+        }
+
+        public void afterTextChanged(Editable s) {
+
+        }
+
+        });
+    }
+
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        super.onCreateOptionsMenu(menu);
+
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.searchview_in_menu, menu);
+        MenuItem searchItem = menu.findItem(R.id.action_search);
+        mSearchView = (SearchView) searchItem.getActionView();
+        setupSearchView(searchItem);
+
+        return true;
+    }
+
+    private void setupSearchView(MenuItem searchItem) {
+
+        if (isAlwaysExpanded()) {
+            mSearchView.setIconifiedByDefault(false);
+        } else {
+            searchItem.setShowAsActionFlags(MenuItem.SHOW_AS_ACTION_IF_ROOM
+                    | MenuItem.SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW);
+        }
+
+        SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
+        if (searchManager != null) {
+            List<SearchableInfo> searchables = searchManager.getSearchablesInGlobalSearch();
+
+            // Try to use the "applications" global search provider
+            SearchableInfo info = searchManager.getSearchableInfo(getComponentName());
+            for (SearchableInfo inf : searchables) {
+                if (inf.getSuggestAuthority() != null
+                        && inf.getSuggestAuthority().startsWith("applications")) {
+                    info = inf;
+                }
+            }
+            mSearchView.setSearchableInfo(info);
+        }
+
+        mSearchView.setOnQueryTextListener(this);
+    }
+
+    public boolean onQueryTextChange(String newText) {
+        mStatusView.setText("Query = " + newText);
+        return false;
+    }
+
+    public boolean onQueryTextSubmit(String query) {
+        mStatusView.setText("Query = " + query + " : submitted");
+        return false;
+    }
+
+    public boolean onClose() {
+        mStatusView.setText("Closed!");
+        return false;
+    }
+
+    protected boolean isAlwaysExpanded() {
+        return false;
+    }
+
+    class GetPlaces extends AsyncTask<String, Void, ArrayList<String>> {
+        @Override
+        // three dots is java for an array of strings
+        protected ArrayList<String> doInBackground(String... args)
+        {
+            Log.d("PlacesListActivity", "doInBackground");
+            ArrayList<String> predictionsArr = new ArrayList<String>();
+            try
+            {
+                URL googlePlaces = new URL(
+                        "https://maps.googleapis.com/maps/api/place/autocomplete/json?input=" +
+                        URLEncoder.encode(args[0], "UTF-8") +
+//                      "&types=geocode&language=en&sensor=true&key=" + SEARCHES FOR GEO CODES
+                        "&types=establishment&language=en&sensor=true&key=" +
+                        getResources().getString(R.string.googleAPIKey));
+
+                Log.d("PlacesListActivity", googlePlaces.toString());
+
+                URLConnection tc = googlePlaces.openConnection();
+                BufferedReader in = new BufferedReader(new InputStreamReader(
+                        tc.getInputStream()));
+
+                String line;
+                StringBuffer sb = new StringBuffer();
+                //take Google's legible JSON and turn it into one big string.
+                while ((line = in.readLine()) != null) {
+                    sb.append(line);
+                }
+                //turn that string into a JSON object
+                JSONObject predictions = new JSONObject(sb.toString()); 
+                //now get the JSON array that's inside that object            
+                JSONArray ja = new JSONArray(predictions.getString("predictions"));
+
+                for (int i = 0; i < ja.length(); i++) {
+                    JSONObject jo = (JSONObject) ja.get(i);
+                    //add each entry to our array
+                    predictionsArr.add(jo.getString("description"));
+                }
+            } catch (IOException e)
+            {
+            Log.e("PlacesListActivity", "GetPlaces : doInBackground", e);
+            } catch (JSONException e)
+            {
+            Log.e("PlacesListActivity", "GetPlaces : doInBackground", e);
+            }
+
+            return predictionsArr;
+        }
+
+        @Override
+        protected void onPostExecute(ArrayList<String> result){
+            Log.d("PlacesListActivity", "onPostExecute : " + result.size());
+            //update the adapter
+            adapter = new ArrayAdapter<String>(getBaseContext(), R.layout.item_list);
+            adapter.setNotifyOnChange(true);
+            //attach the adapter to textview
+            textView.setAdapter(adapter);
+
+            for (String string : result) {
+                Log.d("PlacesListActivity", "onPostExecute : result = " + string);
+                adapter.add(string);
+                adapter.notifyDataSetChanged();
+            }
+
+            Log.d("PlacesListActivity", "onPostExecute : autoCompleteAdapter" + adapter.getCount());
+        }
+
+    }
+
+}
+
+
+After updating the code suggested by saxman, I can see that the query method in the provider is never called:
+
+My manifest file looks like this:
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.rathinavelu.rea"
+    android:versionCode="1"
+    android:versionName="1.0" >
+
+    <uses-sdk
+        android:minSdkVersion="7"
+        android:targetSdkVersion="15" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name" >
+
+        <activity
+            android:name=".MainActivity"
+            android:label="@string/app_name"
+            android:screenOrientation="portrait" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".PlacesListActivity" >
+        </activity>
+
+        <activity android:name=".PlacesListSearchActivity" >
+            <action android:name="android.intent.action.SEARCH" />
+            <meta-data
+                android:name="android.app.searchable"
+                android:resource="@xml/searchable" />
+        </activity>
+
+        <activity android:name=".TestMapActivity" >
+        </activity>
+
+        <activity android:name=".SettingsPreferencesActivity" >
+        </activity>
+
+        <activity android:name="com.rathinavelu.util.ConnectionChecker" >
+        </activity>
+
+        <uses-library android:name="com.google.android.maps" />
+
+        <service
+            android:name=".places.PlacesRESTService"
+            android:enabled="true"
+            android:exported="false" >
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_SYNC" />
+            </intent-filter>
+        </service>
+
+        <provider
+            android:name=".places.PlacesSuggestionProvider"
+            android:authorities="com.rathinavelu.rea.places.search_suggestion_provider"
+            android:syncable="false" />
+
+    </application>
+
+</manifest>
+
+
+I use the same authority in the manifest, content provider and manifest file. I see the searchView in the menu and I have not modified the query method so It should just return the one line cursor. but the query method is never called. please help.
+Another issue I just spotted is that the searchView does not show the specified search_hint!
+
+Providing more code
+*PlacesListSearchActivity.java*
+
+public class PlacesListSearchActivity extends Activity {
+
+        private static final String TAG = "PlacesListSearchActivity";
+
+        private ResultReceiver mReceiver;
+
+        private OnSharedPreferenceChangeListener sharedPreferencesListener;
+        private SharedPreferences sharedPreferences;
+
+    /** Called when the activity is first created. */
+        public ArrayAdapter<String> adapter;
+        public AutoCompleteTextView textView;
+
+        private SearchView mSearchView;
+        private TextView mStatusView;
+
+        @Override
+    public void onCreate(Bundle savedInstanceState) {
+                super.onCreate(savedInstanceState);
+                getWindow().requestFeature(Window.FEATURE_ACTION_BAR);
+                setContentView(R.layout.places_search);
+                mStatusView = (TextView) findViewById(R.id.status_text);
+
+
+                final ArrayAdapter<String> adapter = new ArrayAdapter<String>(this,R.layout.item_list);
+                textView = (AutoCompleteTextView)findViewById(R.id.autoCompleteTextView1);
+                adapter.setNotifyOnChange(true);
+                textView.setHint("type store name");
+                textView.setAdapter(adapter);
+                textView.addTextChangedListener(new TextWatcher() {
+
+                public void onTextChanged(CharSequence s, int start, int before, int count) {
+                        if (count%3 == 1) {
+                                adapter.clear();
+                                        GetPlaces task = new GetPlaces();
+                                        //now pass the argument in the textview to the task
+                                        task.execute(textView.getText().toString());
+                        }
+                }
+
+                public void beforeTextChanged(CharSequence s, int start, int count,
+                int after) {
+                // TODO Auto-generated method stub
+
+                }
+
+                public void afterTextChanged(Editable s) {
+
+                }
+
+                });
+        }
+
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+//        super.onCreateOptionsMenu(menu);
+        // Inflate the options menu from XML
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.places_list_search_options_menu, menu);
+
+        SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
+        SearchView searchView = (SearchView) menu.findItem(R.id.menu_search).getActionView();
+        // Tells your app's SearchView to use this activity's searchable configuration
+        searchView.setSearchableInfo(searchManager.getSearchableInfo(getComponentName()));
+        searchView.setIconifiedByDefault(false); // Do not iconify the widget; expand it by default
+
+//        setupSearchView(searchItem);
+
+        return true;
+    }
+
+
+places_search.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent"
+        android:background="#dddddd">
+
+<AutoCompleteTextView android:id="@+id/autoCompleteTextView1"
+    android:layout_width="fill_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="10dp" >
+        <requestFocus></requestFocus>
+        </AutoCompleteTextView>
+
+    <TextView
+            android:id="@+id/status_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"/>
+</RelativeLayout>
+
+
+places_list_search_options_menu.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android" >
+    <item android:id="@+id/menu_search"
+          android:title="@string/menu_search"
+          android:icon="@android:drawable/ic_menu_search"
+          android:showAsAction="collapseActionView|ifRoom"
+          android:actionViewClass="android.widget.SearchView" />
+</menu>
+
+
+searchable.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<searchable xmlns:android="http://schemas.android.com/apk/res/android"
+    android:label="@string/app_name"
+    android:hint="@string/search_hint"
+    android:searchSuggestAuthority="com.rathinavelu.rea.places.search_suggestion_provider">
+</searchable>
+
+
+PlacesSuggestionProvider.java
+
+public class PlacesSuggestionProvider extends ContentProvider {
+    private static final String LOG_TAG = "PlacesSuggestionProvider";
+
+    public static final String AUTHORITY = "com.rathinavelu.rea.places.search_suggestion_provider";
+    public static final Uri CONTENT_URI = Uri.parse("content://" + AUTHORITY + "/search");
+
+    // UriMatcher constant for search suggestions
+    private static final int SEARCH_SUGGEST = 1;
+
+    private static final UriMatcher uriMatcher;
+
+    private static final String[] SEARCH_SUGGEST_COLUMNS = {
+            BaseColumns._ID,
+            SearchManager.SUGGEST_COLUMN_TEXT_1,
+            SearchManager.SUGGEST_COLUMN_TEXT_2,
+            SearchManager.SUGGEST_COLUMN_INTENT_DATA_ID
+    };
+
+    static {
+        uriMatcher = new UriMatcher(UriMatcher.NO_MATCH);
+        uriMatcher.addURI(AUTHORITY, SearchManager.SUGGEST_URI_PATH_QUERY, SEARCH_SUGGEST);
+        uriMatcher.addURI(AUTHORITY, SearchManager.SUGGEST_URI_PATH_QUERY + "/*", SEARCH_SUGGEST);
+    }
+
+    @Override
+    public int delete(Uri uri, String arg1, String[] arg2) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public String getType(Uri uri) {
+        switch (uriMatcher.match(uri)) {
+            case SEARCH_SUGGEST:
+                return SearchManager.SUGGEST_MIME_TYPE;
+            default:
+                throw new IllegalArgumentException("Unknown URL " + uri);
+        }
+    }
+
+    @Override
+    public Uri insert(Uri uri, ContentValues arg1) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean onCreate() {
+        return true;
+    }
+
+    @Override
+    public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs,
+            String sortOrder) {
+        Log.d(LOG_TAG, "query = " + uri);
+
+        // Use the UriMatcher to see what kind of query we have
+        switch (uriMatcher.match(uri)) {
+            case SEARCH_SUGGEST:
+                Log.d(LOG_TAG, "Search suggestions requested.");
+                MatrixCursor cursor = new MatrixCursor(SEARCH_SUGGEST_COLUMNS, 1);
+                cursor.addRow(new String[] {
+                        "1", "Search Result", "Search Result Description", "content_id"
+                });
+                return cursor;
+            default:
+                throw new IllegalArgumentException("Unknown Uri: " + uri);
+        }
+    }
+
+    @Override
+    public int update(Uri uri, ContentValues arg1, String arg2, String[] arg3) {
+        throw new UnsupportedOperationException();
+    }
+}
+
+    
+===============================================================================================
+50
+A:To get Places Autocomplete API results in a SearchView, you'll first need a ContentProvider for the API.
+
+import android.app.SearchManager;
+import android.content.ContentProvider;
+import android.content.ContentValues;
+import android.content.UriMatcher;
+import android.database.Cursor;
+import android.database.MatrixCursor;
+import android.net.Uri;
+import android.provider.BaseColumns;
+import android.util.Log;
+
+public class PlacesSuggestionProvider extends ContentProvider {
+    private static final String LOG_TAG = "ExampleApp";
+
+    public static final String AUTHORITY = "com.example.google.places.search_suggestion_provider";
+    public static final Uri CONTENT_URI = Uri.parse("content://" + AUTHORITY + "/search");
+
+    // UriMatcher constant for search suggestions
+    private static final int SEARCH_SUGGEST = 1;
+
+    private static final UriMatcher uriMatcher;
+
+    private static final String[] SEARCH_SUGGEST_COLUMNS = {
+            BaseColumns._ID,
+            SearchManager.SUGGEST_COLUMN_TEXT_1,
+            SearchManager.SUGGEST_COLUMN_TEXT_2,
+            SearchManager.SUGGEST_COLUMN_INTENT_DATA_ID
+    };
+
+    static {
+        uriMatcher = new UriMatcher(UriMatcher.NO_MATCH);
+        uriMatcher.addURI(AUTHORITY, SearchManager.SUGGEST_URI_PATH_QUERY, SEARCH_SUGGEST);
+        uriMatcher.addURI(AUTHORITY, SearchManager.SUGGEST_URI_PATH_QUERY + "/*", SEARCH_SUGGEST);
+    }
+
+    @Override
+    public int delete(Uri uri, String arg1, String[] arg2) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public String getType(Uri uri) {
+        switch (uriMatcher.match(uri)) {
+            case SEARCH_SUGGEST:
+                return SearchManager.SUGGEST_MIME_TYPE;
+            default:
+                throw new IllegalArgumentException("Unknown URL " + uri);
+        }
+    }
+
+    @Override
+    public Uri insert(Uri uri, ContentValues arg1) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean onCreate() {
+        return true;
+    }
+
+    @Override
+    public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs,
+            String sortOrder) {
+        Log.d(LOG_TAG, "query = " + uri);
+
+        // Use the UriMatcher to see what kind of query we have
+        switch (uriMatcher.match(uri)) {
+            case SEARCH_SUGGEST:
+                Log.d(LOG_TAG, "Search suggestions requested.");
+                MatrixCursor cursor = new MatrixCursor(SEARCH_SUGGEST_COLUMNS, 1);
+                cursor.addRow(new String[] {
+                        "1", "Search Result", "Search Result Description", "content_id"
+                });
+                return cursor;
+            default:
+                throw new IllegalArgumentException("Unknown Uri: " + uri);
+        }
+    }
+
+    @Override
+    public int update(Uri uri, ContentValues arg1, String arg2, String[] arg3) {
+        throw new UnsupportedOperationException();
+    }
+}
+
+
+Then add your Places Autocomplete API client code into the query method on the content provider.  You extract the user input as follows:
+
+String query = uri.getLastPathSegment().toLowerCase();
+
+
+Add the PlacesSuggestionProvider to your AndroidManifest, and make sure your activity has a searchable configuration.
+
+    <application
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name" >
+
+        <activity android:name=".PlacesSearchViewActivity" >
+            <intent-filter>
+                <action android:name="android.intent.action.SEARCH" />
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.app.searchable"
+                android:resource="@xml/searchable" />
+        </activity>
+
+        <provider
+            android:name="com.example.google.places.PlacesSuggestionProvider"
+            android:authorities="com.example.google.places.search_suggestion_provider"
+            android:syncable="false" />
+    </application>
+
+</manifest>
+
+
+And make sure your searchable configuration (res/xml/searchable.xml) has a search suggest authority.
+
+<?xml version="1.0" encoding="utf-8"?>
+<searchable xmlns:android="http://schemas.android.com/apk/res/android"
+    android:label="@string/app_name"
+    android:hint="@string/search_hint"
+    android:searchSuggestAuthority="com.example.google.places.search_suggestion_provider">
+</searchable>
+
+
+The authority should be the same in AndroidManifest.xml, searchable.xml, and your content provider.
+
+Create a options menu for your ActionBar that includes a SearchView (/res/menu/options_menu.xml).
+
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/menu_search"
+          android:title="@string/menu_search"
+          android:icon="@drawable/ic_menu_search"
+          android:showAsAction="collapseActionView|ifRoom"
+          android:actionViewClass="android.widget.SearchView" />
+</menu>
+
+
+Configure your Activity with a SearchView that's associated with your searchable configuration/
+
+@Override
+public boolean onCreateOptionsMenu(Menu menu) {
+    // Inflate the options menu from XML
+    MenuInflater inflater = getMenuInflater();
+    inflater.inflate(R.menu.options_menu, menu);
+
+    SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
+    SearchView searchView = (SearchView) menu.findItem(R.id.menu_search).getActionView();
+    // Tells your app's SearchView to use this activity's searchable configuration
+    searchView.setSearchableInfo(searchManager.getSearchableInfo(getComponentName()));
+    searchView.setIconifiedByDefault(false); // Do not iconify the widget; expand it by default
+
+    return true;
+}
+
+
+A few key docs are:
+
+Adding Custom Suggestions:
+http://developer.android.com/guide/topics/search/adding-custom-suggestions.html
+
+Creating a Content Provider:
+http://developer.android.com/guide/topics/providers/content-provider-creating.html
+
+Using a Search Widget:
+http://developer.android.com/guide/topics/search/search-dialog.html#UsingSearchWidget
+    

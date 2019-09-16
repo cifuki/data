@@ -1,0 +1,93 @@
+39
+Q:When working on Android, does ORMLite only save shallow level objects? I have a data structure with nested Objects, both of which are newly created, and I would like to be able to save both of them with one call to dao.create()
+
+For exmaple, I have the following Parent Class. 
+
+@DatabaseTable
+public class Parent {
+
+  @DatabaseField(generatedId=true)
+  public int id;
+
+  @DatabaseField
+  public String name;
+
+  @DatabaseField
+  public Child child;
+}
+
+
+and the following Child Class.
+
+@DatabaseTable
+public class Child {
+
+  @DatabaseField(generatedId=true)
+  public int id;
+
+  @DatabaseField
+  public String name;
+}
+
+
+I want to be able to do the following.
+
+Parent parent = new Parent();
+parent.name = "ParentName";
+
+Child child = new Child();
+child.name = "ChildName";
+
+parent.child = child;
+
+//  .. get helper and create dao object...
+dao.create(parent);
+
+
+When doing this, the parent object is persisted but not the child object and the auto-generated child_id column in the parent table is set to 0. Is this normal behavior? Is there a way to have nested objects persisted and propagate the primary key up?
+    
+===============================================================================================
+42
+A:As of version 4.27 ORMlite supports the foreignAutoCreate and foreignAutoRefresh settings on the @DatabaseField annotation on a field:
+
+@DatabaseField(foreign = true, foreignAutoCreate = true, foreignAutoRefresh = true)
+public Child child;
+
+
+This means that you assign your child field and if the id field on the child is not set when the parent is created then it to will be created.  The foreignAutoRefresh means that when a parent is retrieved a separate SQL call will be made to get the child field populated.
+
+
+  When doing this, the parent object is persisted but not the child object and the auto-generated child_id column in the parent table is set to 0. Is this normal behavior?
+
+
+You can also have more control over when ORMLite makes the calls to the child object by creating the child before you create the parent.
+
+Parent parent = new Parent();
+parent.name = "ParentName";
+
+Child child = new Child();
+child.name = "ChildName";
+
+parent.child = child;
+
+// this will update the id in child
+childDao.create(child);
+
+// this saves the parent with the id of the child
+parentDao.create(parent);
+
+
+One more thing to note is that without the foreignAutoRefresh = true when you query for a Parent object, the child object that you get back only has its id field retrieved.  If the id is an auto-generated int (for example), then the above name field will not be retrieved until you do an update on the child object.
+
+// assuming the id of the Parent is the name
+Parent parent = parentDao.queryForId("ParentName");
+System.out.println("Child id should be set: " + parent.child.id);
+System.out.println("Child name should be null: " + parent.child.name);
+
+// now we refresh the child object to load all of the fields
+childDao.refresh(parent.child);
+System.out.println("Child name should now be set: " + parent.child.name);
+
+
+For more documentation about this, see the online page about Foreign Object Fields.
+    

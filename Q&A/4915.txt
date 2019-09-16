@@ -1,0 +1,100 @@
+49
+Q:I followed the insttructions on https://developer.android.com/training/app-indexing/deep-linking.html, but when I want to trigger the intent through adb with:
+
+adb shell am start
+           -W -a android.intent.action.BROWSEABLE
+           -d "http://example.com/gizmos" com.myapp.android
+
+
+I just get 
+
+
+  Error: Activity not started, unable to resolve Intent {
+  act=android.intent.action.VIEW dat=example://gizmos flg=0x10000000
+  pkg=com.myapp.android }
+
+
+<activity
+        android:name=".activities.DeepLinkActivity"
+        android:label="@string/title_activity_deep_link">
+        <meta-data
+            android:name="android.app.searchable"
+            android:resource="@xml/searchable" />
+
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+
+            <data
+                android:scheme="http"
+                android:host="example.com"
+                android:pathPrefix="/gizmos" />
+        </intent-filter>
+    </activity>
+
+
+Have I made any obvious mistakes?
+    
+===============================================================================================
+107
+A:EDIT:
+
+Ok first make sure that your package is reachable by adb:
+
+adb shell am start -n com.example.simon.test/.activities.MainActivity
+
+
+Then to accept multiple data tags you need different intent filters (that's the way it worked for me unlike all the other examples I've seen on the net). E.g.:
+
+<intent-filter>
+    ...
+    <data android:scheme="http"
+          android:host="example.com"/>
+</intent-filter>
+<intent-filter>
+    ...
+    <data android:scheme="http"
+          android:host="example.com"
+          android:pathPrefix="/gizmos"/>
+</intent-filter>
+
+
+NOTE that in the above example the pathPrefix starts with a forward slash !
+
+I am not sure why Google's Docs are so misleading or maybe that was for some different version of adb, but the above changes worked perfectly for me. This helped: Source
+
+
+
+This is how I made the Chrome browser route specific links to my app:
+
+<activity
+    android:name=".activities.DeepLinkActivity"
+    android:label="@string/app_name">
+    <!-- Accept chrome links -->
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="http"
+              android:host="example.com"
+            android:pathPrefix="/"/>
+    </intent-filter>
+    <!-- Accept adb data flag -->
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="http"
+              android:host="example.com"/>
+    </intent-filter>
+</activity>
+
+
+NOTE The 1st filter works on Google Chrome while the 2nd one works on the ADB.
+
+NOTE2 The app choice menu won't be shown if the link is entered into the browser's address bar. It has to be a <a href="http://example.com"></a> link in side some page.
+
+In my opinion everything here is rather blurry and really not how I expected it all to work. But that's how it works on my device. Hope this helps (and works) for you too.
+    

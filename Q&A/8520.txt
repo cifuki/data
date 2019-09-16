@@ -1,0 +1,31 @@
+31
+Q:When using Room from the Android Architecture Components, I received the following error when attempting to access the database using a Dagger component:
+
+java.lang.IllegalStateException: attempt to re-open an already-closed object: SQLiteDatabase: (database path)
+
+
+I was using Dagger version 2.11 and Room version 1.0.0-alpha7. The error was reproducible on version 1.0.0-alpha5.
+
+This error occurred on any attempt to access the database through a DAO after initialising the database and injecting it into my class.
+    
+===============================================================================================
+80
+A:It's because you are trying to modify the schema of the existing database without giving it any migration information. So basically it attempts to write the new database schema to the existing DB which doesn't work.
+
+There are two ways around this. If you are in your development environment what you can do is fallback to a destructive migration, to do this your database creation code would look something like the following:
+
+MyDatabase myDatabase = Room.databaseBuilder(context, MyDatabase.class, "my-db")
+    .fallbackToDestructiveMigration()
+    .build();
+
+
+This means when you provide the database with an updated or new entity it will do what the answer from @huw said and just delete the database on the application's installation removing all the data from it and give you a fresh install.
+
+The other method is to use a migration function. They are pretty long so unless someone wants me to write it up here I'll leave it for now but basically, the documentation can be found here:
+
+Room DB Migration Documentation
+
+This essentially causes the DB to run some SQL provided by yourself to update the database to the new version. This way you can ensure that none of your data is lost while doing the migration; or as little as possible depending on what you are doing. This is the preferred method for production apps as it means users won't lose their pre-existing data and you won't get a lot of angry reviews/lost customers.
+
+Hope that makes helps!
+    

@@ -1,0 +1,135 @@
+77
+Q:I have the activity with several input fields. When activity started soft keyboard is shown. When back button pressed soft keyboard closes and to close activity I need to press back button one more time. 
+
+So the question: is it possible to intercept back button to close soft keyboard and finish activity in one press of back button without creating custom InputMethodService?
+
+P.S. I know how to intercept back button in other cases: onKeyDown() or onBackPressed() but it doesn't work in this case: only second press of back button is intercepted.
+    
+===============================================================================================
+74
+A:Yes, it is completely possible to show and hide the keyboard and intercept the calls to the back button. It is a little extra effort as it has been mentioned there is no direct way to do this in the API. The key is to override boolean dispatchKeyEventPreIme(KeyEvent) within a layout. What we do is create our layout. I chose RelativeLayout since it was the base of my Activity.
+
+<?xml version="1.0" encoding="utf-8"?>
+<com.michaelhradek.superapp.utilities.SearchLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res/com.michaelhradek.superapp"
+    android:orientation="vertical"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:background="@color/white">
+
+
+Inside our Activity we set up our input fields and call the setActivity(...) function.
+
+private void initInputField() {
+    mInputField = (EditText) findViewById(R.id.searchInput);        
+
+    InputMethodManager imm = 
+        (InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE); 
+    imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 
+            InputMethodManager.HIDE_IMPLICIT_ONLY);
+
+    mInputField.setOnEditorActionListener(new OnEditorActionListener() {
+
+        @Override
+        public boolean onEditorAction(TextView v, int actionId,
+                KeyEvent event) {
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                performSearch();
+                return true;
+            }
+
+            return false;
+        }
+    });
+
+    // Let the layout know we are going to be overriding the back button
+    SearchLayout.setSearchActivity(this);
+}
+
+
+Obviously, the initInputField() function sets up the input field. It also enables the enter key to execute the functionality (in my case a search).
+
+@Override
+public void onBackPressed() {
+    // It's expensive, if running turn it off.
+    DataHelper.cancelSearch();
+    hideKeyboard();
+    super.onBackPressed();
+}
+
+
+So when the onBackPressed() is called within our layout we then can do whatever we want like hide the keyboard:
+
+private void hideKeyboard() {
+    InputMethodManager imm = (InputMethodManager) 
+        getSystemService(Context.INPUT_METHOD_SERVICE);
+    imm.hideSoftInputFromWindow(mInputField.getWindowToken(), 0);
+}
+
+
+Anyway, here is my override of the RelativeLayout.
+
+package com.michaelhradek.superapp.utilities;
+
+import android.app.Activity;
+import android.content.Context;
+import android.util.AttributeSet;
+import android.util.Log;
+import android.view.KeyEvent;
+import android.widget.RelativeLayout;
+
+/**
+ * The root element in the search bar layout. This is a custom view just to 
+ * override the handling of the back button.
+ * 
+ */
+public class SearchLayout extends RelativeLayout {
+
+    private static final String TAG = "SearchLayout";
+
+    private static Activity mSearchActivity;;
+
+    public SearchLayout(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public SearchLayout(Context context) {
+        super(context);
+    }
+
+    public static void setSearchActivity(Activity searchActivity) {
+        mSearchActivity = searchActivity;
+    }
+
+    /**
+     * Overrides the handling of the back key to move back to the 
+     * previous sources or dismiss the search dialog, instead of 
+     * dismissing the input method.
+     */
+    @Override
+    public boolean dispatchKeyEventPreIme(KeyEvent event) {
+        Log.d(TAG, "dispatchKeyEventPreIme(" + event + ")");
+        if (mSearchActivity != null && 
+                    event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            KeyEvent.DispatcherState state = getKeyDispatcherState();
+            if (state != null) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN
+                        && event.getRepeatCount() == 0) {
+                    state.startTracking(event, this);
+                    return true;
+                } else if (event.getAction() == KeyEvent.ACTION_UP
+                        && !event.isCanceled() && state.isTracking(event)) {
+                    mSearchActivity.onBackPressed();
+                    return true;
+                }
+            }
+        }
+
+        return super.dispatchKeyEventPreIme(event);
+    }
+}
+
+
+Unfortunately I can't take all the credit. If you check the Android source for the quick SearchDialog box you will see where the idea came from.
+    

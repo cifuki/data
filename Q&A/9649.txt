@@ -1,0 +1,122 @@
+28
+Q:I have a image file on the disk and I am resizing the file and saving it back to disk as a new image file.  For the sake of this question, I am not bringing them into memory in order to display them on the screen, only to resize them and resave them.  This all works just fine.  However, the scaled images have artifacts on them like shown here: android: quality of the images resized in runtime
+
+They are saved with this distortion, as I can pull them off the disk and look at them on my computer and they still have the same issue.
+
+I am using code similar to this Strange out of memory issue while loading an image to a Bitmap object to decode the bitmap into memory:
+
+BitmapFactory.Options options = new BitmapFactory.Options();
+options.inJustDecodeBounds = true;
+BitmapFactory.decodeFile(imageFilePathString, options);
+
+int srcWidth = options.outWidth;
+int srcHeight = options.outHeight;
+int scale = 1;
+
+while(srcWidth / 2 > desiredWidth){
+   srcWidth /= 2;
+   srcHeight /= 2;
+   scale *= 2;
+}
+
+options.inJustDecodeBounds = false;
+options.inDither = false;
+options.inSampleSize = scale;
+Bitmap sampledSrcBitmap = BitmapFactory.decodeFile(imageFilePathString, options);
+
+
+Then I am doing the actual scaling with:
+
+Bitmap scaledBitmap = Bitmap.createScaledBitmap(sampledSrcBitmap, desiredWidth, desiredHeight, false);
+
+
+Lastly, the new resized image is saved to disk with:
+
+FileOutputStream out = new FileOutputStream(newFilePathString);
+scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 100, out);
+
+
+Then, as I mentioned, if I pull that file off the disk and look at it, it has that quality issue linked above and looks terrible.  If I skip the createScaledBitmap and just save the sampledSrcBitmap right back to disk there is no problem, it seems to only happen if the size changes.
+
+I have tried, as you can see in the code, setting inDither to false as mentioned here http://groups.google.com/group/android-developers/browse_thread/thread/8b1abdbe881f9f71 and as mentioned in the very first linked post above.  That didn't change anything.  Also, in the first post I linked, Romain Guy said: 
+
+
+  Instead of resizing at drawing time
+  (which is going to be very costly),
+  try to resize in an offscreen bitmap
+  and make sure that Bitmap is 32 bits
+  (ARGB888).
+
+
+However, I have no idea how to make sure the Bitmap stays as 32 bits through the whole process.
+
+I have also read a couple other articles such as this http://android.nakatome.net/2010/04/bitmap-basics.html but they all seemed to be addressing drawing and displaying the Bitmap, I just want to resize it and save it back to disk without this quality problem.
+
+Thanks much
+    
+===============================================================================================
+55
+A:After experimenting I have finally found a way to do this with good quality results.  I'll write this up for anyone that might find this answer helpful in the future.
+
+To solve the first problem, the artifacts and weird dithering introduced into the images, you need to insure your image stays as a 32-bit ARGB_8888 image.  Using the code in my question, you can simply add this line to the options before the second decode.
+
+options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+
+
+After adding that, the artifacts were gone but edges throughout the images came through jagged instead of crisp.  After some more experimentation I discovered that resizing the bitmap using a Matrix instead of Bitmap.createScaledBitmap produced much crisper results.
+
+With those two solutions, the images are now resizing perfectly.  Below is the code I am using in case it benefits someone else coming across this problem.
+
+// Get the source image's dimensions
+BitmapFactory.Options options = new BitmapFactory.Options();
+options.inJustDecodeBounds = true;
+BitmapFactory.decodeFile(STRING_PATH_TO_FILE, options);
+
+int srcWidth = options.outWidth;
+int srcHeight = options.outHeight;
+
+// Only scale if the source is big enough. This code is just trying to fit a image into a certain width.
+if(desiredWidth > srcWidth)
+    desiredWidth = srcWidth;
+
+
+
+// Calculate the correct inSampleSize/scale value. This helps reduce memory use. It should be a power of 2
+// from: https://stackoverflow.com/questions/477572/android-strange-out-of-memory-issue/823966#823966
+int inSampleSize = 1;
+while(srcWidth / 2 > desiredWidth){
+    srcWidth /= 2;
+    srcHeight /= 2;
+    inSampleSize *= 2;
+}
+
+float desiredScale = (float) desiredWidth / srcWidth;
+
+// Decode with inSampleSize
+options.inJustDecodeBounds = false;
+options.inDither = false;
+options.inSampleSize = inSampleSize;
+options.inScaled = false;
+options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+Bitmap sampledSrcBitmap = BitmapFactory.decodeFile(STRING_PATH_TO_FILE, options);
+
+// Resize
+Matrix matrix = new Matrix();
+matrix.postScale(desiredScale, desiredScale);
+Bitmap scaledBitmap = Bitmap.createBitmap(sampledSrcBitmap, 0, 0, sampledSrcBitmap.getWidth(), sampledSrcBitmap.getHeight(), matrix, true);
+sampledSrcBitmap = null;
+
+// Save
+FileOutputStream out = new FileOutputStream(NEW_FILE_PATH);
+scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 100, out);
+scaledBitmap = null;
+
+
+EDIT:  After continual work on this I have found that the images still aren't 100% perfect.  I'll make an update if I can improve it.
+
+Update:  After revisting this, I found this question on SO and there was an answer that mentioned the inScaled option.  This helped with the quality as well so I added updated the answer above to include it. I also now null the bitmaps after they are done being used.
+
+Also, as a side note, if you are using these images in a WebView, make sure you take this post into consideration.
+
+Note: you should also add a check to make sure the width and height are valid numbers (not -1).  If they are, it will cause the inSampleSize loop to become infinite.
+    

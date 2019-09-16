@@ -1,0 +1,42 @@
+41
+Q:What's the difference in calling
+stopSelf() , stopSelf(int) or stopService(new Intent(this,MyServiceClass.class))
+inside onStartCommand() ?
+
+for example if I start the same services twice this way:
+
+...
+Intent myIntent1 = new Intent(AndroidAlarmService.this, MyAlarmService.class);
+myIntent1.putExtra("test", 1); 
+Intent myIntent2 = new Intent(AndroidAlarmService.this, MyAlarmService.class);
+myIntent2.putExtra("test", 2);
+startService(myIntent1);
+startService(myIntent2);
+...
+
+
+And implement onStartCommand in this way:
+
+public int onStartCommand(Intent intent, int flags, int startId)
+{
+Toast.makeText(this, "onStartCommand called "+intent.getIntExtra("test", 0), Toast.LENGTH_LONG).show();
+stopService(new Intent(this,MyAlarmService.class));
+return START_NOT_STICKY;
+}
+
+
+I get exactly the same behaviour with the three methods,
+that is onDestroy will only be called after onStartCommand is executed twice.
+    
+===============================================================================================
+76
+A:I hope this will help you:
+
+A started service must manage its own lifecycle. That is, the system does not stop or destroy the service unless it must recover system memory and the service continues to run after onStartCommand() returns. So, the service must stop itself by calling stopSelf() or another component can stop it by calling stopService().
+
+Once requested to stop with stopSelf() or stopService(), the system destroys the service as soon as possible.
+
+However, if your service handles multiple requests to onStartCommand() concurrently, then you shouldn't stop the service when you're done processing a start request, because you might have since received a new start request (stopping at the end of the first request would terminate the second one). To avoid this problem, you can use stopSelf(int) to ensure that your request to stop the service is always based on the most recent start request. 
+
+That is, when you call stopSelf(int), you pass the ID of the start request (the startId delivered to onStartCommand()) to which your stop request corresponds. Then if the service received a new start request before you were able to call stopSelf(int), then the ID will not match and the service will not stop.
+    

@@ -1,0 +1,114 @@
+37
+Q:I want my button text to be in the Copperplate Gothic Light font and I yet have not come across a simple clean code for a simple function as this. Help! 
+
+PS: Since android comes with ariel and a few other fonts on its own we need to import  (apologies for the lack of a better word since I'm new to this) the font we wish to use. This is all I have been able to gather till yet and this is where the trail ends for me.
+    
+===============================================================================================
+136
+A:If you plan to add the same font to several buttons I suggest that you go all the way and implement it as a style and subclass button:
+
+public class ButtonPlus extends Button {
+
+    public ButtonPlus(Context context) {
+        super(context);
+    }
+
+    public ButtonPlus(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        CustomFontHelper.setCustomFont(this, context, attrs);
+    }
+
+    public ButtonPlus(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+        CustomFontHelper.setCustomFont(this, context, attrs);
+    }
+}
+
+
+This is a helper class to set a font on a TextView (remember, Button is a subclass of TextView) based on the com.my.package:font attribute:
+
+public class CustomFontHelper {
+
+    /**
+     * Sets a font on a textview based on the custom com.my.package:font attribute
+     * If the custom font attribute isn't found in the attributes nothing happens
+     * @param textview
+     * @param context
+     * @param attrs
+     */
+    public static void setCustomFont(TextView textview, Context context, AttributeSet attrs) {
+        TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.CustomFont);
+        String font = a.getString(R.styleable.CustomFont_font);
+        setCustomFont(textview, font, context);
+        a.recycle();
+    }
+
+    /**
+     * Sets a font on a textview
+     * @param textview
+     * @param font
+     * @param context
+     */
+    public static void setCustomFont(TextView textview, String font, Context context) {
+        if(font == null) {
+            return;
+        }
+        Typeface tf = FontCache.get(font, context);
+        if(tf != null) {
+            textview.setTypeface(tf);
+        }
+    }
+
+}
+
+
+And here's the FontCache to reduce memory usage on older devices:
+
+public class FontCache {
+
+    private static Hashtable<String, Typeface> fontCache = new Hashtable<String, Typeface>();
+
+    public static Typeface get(String name, Context context) {
+        Typeface tf = fontCache.get(name);
+        if(tf == null) {
+            try {
+                tf = Typeface.createFromAsset(context.getAssets(), name);
+            }
+            catch (Exception e) {
+                return null;
+            }
+            fontCache.put(name, tf);
+        }
+        return tf;
+    }
+}
+
+
+In res/values/attrs.xml we define the custom styleable attribute
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="CustomFont">
+        <attr name="font" format="string"/>
+    </declare-styleable>
+</resources>
+
+
+And finally an example use in a layout:
+
+    <com.my.package.buttons.ButtonPlus
+        style="@style/button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/button_sometext"/>
+
+
+And in res/values/style.xml
+
+<style name="button" parent="@android:style/Widget.Button">
+    <item name="com.my.package:font">fonts/copperplate_gothic_light.TTF</item>
+</style>
+
+
+This may seem like an awful lot of work, but you'll thank me once you have couple of handfuls of buttons and textfields that you want to change font on.
+    

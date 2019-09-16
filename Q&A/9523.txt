@@ -1,0 +1,203 @@
+29
+Q:There are a few questions floating around regarding transitive dependencies with AAR files in Gradle:
+
+
+Android Studio 0.2.3 cannot resolve transitive aar dependencies
+Android Gradle library dependency with library dependency using Nexus
+Aar in repository. External dependency and NoClassDefFoundError
+
+
+I too have run into similar problems trying to set up transitive dependencies upon AAR files in a remote repository. I have App A, depending upon Library B, which in turn depends
+upon Library C. Library C is in a Maven repo. Library B is in the same repo, with a POM
+that contains the dependency upon Library C. App A has Library B in its dependencies. However, running gradle clean assembleDebug results in: "Module version [Library B] depends on libraries but is not a library itself".
+
+I tried putting a bounty on one of those questions, hoping for clarity, with no luck.
+
+My guess is that there are two possible sources of the difficulty that I and those with the aforementioned SO question are seeing:
+
+
+Transitive AAR dependencies from a remote repository are simply broken
+Transitive AAR dependencies from a remote repository work, but there is something off in our POM files, build.gradle files, or something that is breaking the dependencies
+
+
+The Question: Does anyone know of an AAR artifact in some public repository (e.g., Maven Central), that depends upon another AAR artifact, also in the same public repository?
+
+I am not interested in an AAR that depends upon something in a local repository, like an AAR in Maven Central that depends upon com.android.support:support-v4. In my case, if Library B and Library C are both in my local Maven repository (~/.m2), everything works fine.
+
+According to Xav, what I am doing should work. Hence, I am hoping that somebody can point me to a working example, so that I can use it to determine where the rest of us may be going wrong.
+
+NOTE: I know that asking for off-site resources is verboten. In this case, I am not looking for the resource in its own right, but as an example of a working configuration, to help debug a non-working configuration. If you have another way of writing up an answer showing a working configuration, that'd be awesome!
+
+Thanks!
+    
+===============================================================================================
+6
+A:I don't have a public example but I have this scenario successfully setup in a internally-hosted Nexus repository. Here is the setup:
+
+App - Android application project
+LibraryB - Android library project
+picasso - Open source library from Square (available on Maven Central)
+LibraryA - Android library project
+
+App depends on LibraryB and picasso
+LibraryB depends on LibraryA
+
+Here is the POM for LibraryB (downloaded from Nexus)
+
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+   <modelVersion>4.0.0</modelVersion>
+   <groupId>com.example</groupId>
+   <artifactId>LibraryB</artifactId>
+   <version>0.1</version>
+   <packaging>aar</packaging>
+   <dependencies>
+      <dependency>
+         <groupId>com.example</groupId>
+         <artifactId>LibraryA</artifactId>
+         <version>3.0.1</version>
+         <scope>compile</scope>
+      </dependency>
+      <dependency>
+         <groupId>com.squareup.picasso</groupId>
+         <artifactId>picasso</artifactId>
+         <version>2.1.1</version>
+         <scope>compile</scope>
+      </dependency>
+   </dependencies>
+</project>
+
+
+Here is the build.gradle for LibraryB
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.6.+'
+    }
+}
+apply plugin: 'android-library'
+apply plugin: 'maven'
+
+version versionProp
+group 'com.example'
+
+repositories {
+    mavenCentral()
+    maven {
+        url(exampleReleaseRepoUrl)
+    }
+}
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "19.0.0"
+
+    defaultConfig {
+        minSdkVersion 8
+        targetSdkVersion 19
+    }
+    release {
+        runProguard false
+        proguardFile 'proguard-rules.txt'
+        proguardFile getDefaultProguardFile('proguard-android.txt')
+    }
+}
+
+dependencies {
+    compile 'com.example:LibraryA:3.0.1'
+    compile 'com.squareup.picasso:picasso:2.1.1'
+}
+
+uploadArchives {
+    repositories {
+        mavenDeployer {
+            repository(url: uri(exampleReleaseRepoUrl)) {
+                authentication(userName: nexusUsername, password: nexusPassword)
+            }
+            snapshotRepository(url: uri(exampleSnapshotRepoUrl)) {
+                authentication(userName: nexusUsername, password: nexusPassword)
+            }
+        }
+    }
+}
+
+
+Here is the POM for LibraryA (downloaded from Nexus)
+
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+   <modelVersion>4.0.0</modelVersion>
+   <groupId>com.example</groupId>
+   <artifactId>LibraryA</artifactId>
+   <version>3.0.1</version>
+   <packaging>aar</packaging>
+   <dependencies>
+      <dependency>
+         <groupId>com.android.support</groupId>
+         <artifactId>support-v4</artifactId>
+         <version>19.0.0</version>
+         <scope>compile</scope>
+      </dependency>
+   </dependencies>
+</project>
+
+
+The build.gradle for LibraryA is very similar to the one for LibraryB above.
+
+The artifacts and POM for LibraryA and LibraryB were uploaded via the following Gradle command
+
+gradle uploadArchives
+
+
+The build.gradle for App looks like this
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.6.+'
+    }
+}
+apply plugin: 'android'
+
+repositories {
+    mavenCentral()
+    maven {
+        url(exampleReleaseRepoUrl)
+    }
+}
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "19.0.0"
+
+    defaultConfig {
+        minSdkVersion 8
+        targetSdkVersion 19
+    }
+    buildTypes {
+        release {
+            runProguard false
+            proguardFile getDefaultProguardFile('proguard-android.txt')
+        }
+    }
+    productFlavors {
+        defaultFlavor {
+            proguardFile 'proguard-rules.txt'
+        }
+    }
+}
+
+dependencies {
+    compile 'com.android.support:support-v4:19.0.0'
+    compile 'com.android.support:appcompat-v7:19.0.0'
+    compile 'com.example:LibraryB:0.1'
+}
+
+
+If you need any further information let me know.
+    

@@ -1,0 +1,155 @@
+60
+Q:I'm trying to understand how should I approach the following project setup:
+
+\xe2\x94\x8cTop Android Project
+\xe2\x94\x82
+\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 Project 1 - (Pure Java Modules)
+\xe2\x94\x82    \xe2\x94\x82
+\xe2\x94\x82    \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 Module A1
+\xe2\x94\x82    \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 Module B1
+\xe2\x94\x82    :
+\xe2\x94\x82    \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 Module Z1
+\xe2\x94\x82  
+\xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 Project 2 - (Android Libraries Modules)
+\xe2\x94\x82    \xe2\x94\x82
+\xe2\x94\x82    \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 Module A2
+\xe2\x94\x82    \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 Module B2
+\xe2\x94\x82    :
+\xe2\x94\x82    \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 Module Z2
+\xe2\x94\x82  
+\xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 Module - Actual Android Project
+
+
+In the current setup I have there is a build.gradle in each of the Modules, what I really hate about this setup is that all the content of the build.gradle is duplicated between modules.
+
+Fact is that I would like the same logic in most of them, 'Pure Java Modules' are all infra modules, which I would like to Jar the output, the JavaDoc, and sources, and deploy to some remote repository (* default).
+
+On the other hand, some modules of the 'Pure Java Modules' I would like to have a second agenda, for example, aside from the default* build I would like to deploy a jar with dependencies for a specific project, or something like that.
+
+While building the Actual Android Project, I would like the modules to compile in the default* build, and finally to configure a default build.gradle for all of my Android projects, which are quite a few, and I would not like to duplicate that file.
+
+===============================================================
+
+I guess what I'm looking for is something like Maven parent pom, but since I don't fully understand how Gradle works, I'm opening this to you guys to share your thoughts...
+
+Taking under consideration that duplicating same build file is (I dare say) unacceptable, due to the fact that I might want to change something in all the build logic of all the modules
+
+What would be the best approach to handle this sort of setup?
+    
+===============================================================================================
+57
+A:Most of this is pretty normal to the http://www.gradle.org/docs/current/userguide/multi_project_builds.html page. However you are going to need to add 
+
+evaluationDependsOn(':project1')
+evaluationDependsOn(':project2')
+
+
+so that gradle will evaluate project1 and project2 before module. In all the projects that contain code you will need to have an empty build.gradle file. This will also allow you to customize a project if needed.
+
+Example: https://github.com/ethankhall/AndroidComplexBuild
+
+Add a build.gradle at the root of your projects. So you need 4 that have useful information in it.
+
+/build.gradle
+/settings.gradle
+/project1/build.gradle
+/project2/build.gradle
+/module/build.gradle
+
+
+in /build.gradle put
+
+dependencies {
+    project(":module")
+}
+
+
+in /settings.gradle put
+
+include ':module'
+include ':project1', ':project1:A1', ':project1:B1', ':project1:Z1'
+include ':project2', ':project2:A2', ':project2:B2', ':project2:Z2'
+
+
+in /project1/build.gradle put
+
+apply plugin: 'java'
+
+subprojects {
+    apply plugin: 'java'
+
+    sourceCompatibility = JavaVersion.VERSION_1_6
+    targetCompatibility = JavaVersion.VERSION_1_6
+
+    repositories{
+        mavenCentral()
+    }   
+
+    //Anything else you would need here that would be shared across all subprojects
+}
+
+
+/project2/build.gradle
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }   
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.4.2'
+    }   
+}
+
+subprojects {
+    apply plugin: 'android-library'
+
+    android {
+        compileSdkVersion 17
+        buildToolsVersion "17.0"
+    }   
+
+    sourceCompatibility = JavaVersion.VERSION_1_6
+    targetCompatibility = JavaVersion.VERSION_1_6
+
+    repositories{
+        mavenCentral()
+    }   
+
+    //Anything else you would need here that would be shared across all subprojects
+}
+
+
+in /module/build.gradle put
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }   
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.4.2'
+    }   
+}
+
+evaluationDependsOn(':project1')
+evaluationDependsOn(':project2')
+
+apply plugin: 'android'
+
+android {
+    compileSdkVersion 17
+    buildToolsVersion "17.0"
+}
+
+dependencies {
+    compile project(":project1:A1")
+    compile project(":project1:B1")
+    compile project(":project1:Z1")
+
+    compile project(":project2:A2")
+    compile project(":project2:B2")
+    compile project(":project2:Z2")
+}
+
+    

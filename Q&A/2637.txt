@@ -1,0 +1,62 @@
+80
+Q:I'm developing an application which basically downloads a lot of data at the start of the application itself and displays it in the ListActivity. What I'm planning to do is show a Splash Screen till the data is loaded.
+
+Till now all my attempts have been futile. I tried anddev.org mentioned methods, but my problem is that the main Activity should start but The Splash Screen should be visible till I populate my ListActivity. So in short I have to go through the following steps:
+
+
+Start my main activity.
+Show the Splash Screen.
+Keep running the process in background.
+Exit the Splashscreen when processing completed and show the main List.
+
+
+Hope you understand what it is like....
+    
+===============================================================================================
+89
+A:The problem is most likely that you are running the splash screen (some sort of Dialog such as ProgressDialog I assume) in the same thread as all the work being done.  This will keep the view of the splash screen from being updated, which can keep it from even getting displayed to the screen.  You need to display the splash screen, kick off an instance of AsyncTask to go download all your data, then hide the splash screen once the task is complete.
+
+So your Activity's onCreate() method would simply create a ProgressDialog and show it.  Then create the AsyncTask and start it.  I would make the AsyncTask an inner class of your main Activity, so it can store the data it has downloaded to some variable in your Activity and close the ProgressDialog in its onPostExecute() method.
+
+Not sure how to elaborate anymore without just showing the code, so here it is:
+
+public class MyActivity extends Activity {
+    private ProgressDialog pd = null;
+    private Object data = null;
+
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        // Show the ProgressDialog on this thread
+        this.pd = ProgressDialog.show(this, "Working..", "Downloading Data...", true, false);
+
+        // Start a new thread that will download all the data
+        new DownloadTask().execute("Any parameters my download task needs here");
+    }
+
+    private class DownloadTask extends AsyncTask<String, Void, Object> {
+         protected Object doInBackground(String... args) {
+             Log.i("MyApp", "Background thread starting");
+
+             // This is where you would do all the work of downloading your data
+
+             return "replace this with your data object";
+         }
+
+         protected void onPostExecute(Object result) {
+             // Pass the result data back to the main activity
+             MyActivity.this.data = result;
+
+             if (MyActivity.this.pd != null) {
+                 MyActivity.this.pd.dismiss();
+             }
+         }
+    }    
+}
+
+
+Obviously there are some pieces you need to fill in there, but this code should run and give you a good starting point (forgive me if there is a code error, I don't have access to the Android SDK as I'm typing this currently).
+
+Some more good reading on the subject of AsyncTasks in Android can be found here and here.
+    

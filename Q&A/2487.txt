@@ -1,0 +1,229 @@
+83
+Q:As I am trying to create a custom screen for incoming calls I am trying to programatically answer an incoming call. I am using the following code but it is not working in Android 5.0.
+
+// Simulate a press of the headset button to pick up the call
+Intent buttonDown = new Intent(Intent.ACTION_MEDIA_BUTTON);             
+buttonDown.putExtra(Intent.EXTRA_KEY_EVENT, new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_HEADSETHOOK));
+context.sendOrderedBroadcast(buttonDown, "android.permission.CALL_PRIVILEGED");
+
+// froyo and beyond trigger on buttonUp instead of buttonDown
+Intent buttonUp = new Intent(Intent.ACTION_MEDIA_BUTTON);               
+buttonUp.putExtra(Intent.EXTRA_KEY_EVENT, new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_HEADSETHOOK));
+context.sendOrderedBroadcast(buttonUp, "android.permission.CALL_PRIVILEGED");
+
+    
+===============================================================================================
+137
+A:Update with Android 8.0 Oreo
+
+Even though the question was originally asked for Android L support, people still seem to be hitting this question and answer, so it is worth describing the improvements introduced in Android 8.0 Oreo. The backward compatible methods are still described below.
+
+What changed?
+
+Starting with Android 8.0 Oreo, the PHONE permission group also contains the ANSWER_PHONE_CALLS permission. As the name of permission suggests, holding it allows your app to programmatically accept incoming calls through a proper API call without any hacking around the system using reflection or simulating the user.
+
+How do we utilize this change?
+
+You should check system version at runtime if you are supporting older Android versions so that you can encapsulate this new API call while maintaining support for those older Android versions. You should follow requesting permissions at run time to obtain that new permission during run-time, as is standard on the newer Android versions.
+
+After having obtained the permission, your app just has to simply call the TelecomManager's acceptRingingCall method. A basic invocation looks as follows then:
+
+TelecomManager tm = (TelecomManager) mContext
+        .getSystemService(Context.TELECOM_SERVICE);
+
+if (tm == null) {
+    // whether you want to handle this is up to you really
+    throw new NullPointerException("tm == null");
+}
+
+tm.acceptRingingCall();
+
+
+
+
+Method 1: TelephonyManager.answerRingingCall()
+
+For when you have unlimited control over the device.
+
+What is this?
+
+There is TelephonyManager.answerRingingCall() which is a hidden, internal method. It works as a bridge for ITelephony.answerRingingCall() which has been discussed on the interwebs and seems promising at the start. It is not available on 4.4.2_r1 as it was introduced only in commit 83da75d for Android 4.4 KitKat (line 1537 on 4.4.3_r1) and later "reintroduced" in commit f1e1e77 for Lollipop (line 3138 on 5.0.0_r1) due to how the Git tree was structured. This means that unless you only support devices with Lollipop, which is probably a bad decision based on the tiny market share of it as of right now, you still need to provide fallback methods if going down this route.
+
+How would we use this?
+
+As the method in question is hidden from the SDK applications use, you need to use reflection to dynamically examine and use the method during runtime. If you are not familiar with reflection, you can quickly read What is reflection, and why is it useful?. You can also dig deeper into the specifics at Trail: The Reflection API if you are interested in doing so.
+
+And how does that look in code?
+
+// set the logging tag constant; you probably want to change this
+final String LOG_TAG = "TelephonyAnswer";
+
+TelephonyManager tm = (TelephonyManager) mContext
+        .getSystemService(Context.TELEPHONY_SERVICE);
+
+try {
+    if (tm == null) {
+        // this will be easier for debugging later on
+        throw new NullPointerException("tm == null");
+    }
+
+    // do reflection magic
+    tm.getClass().getMethod("answerRingingCall").invoke(tm);
+} catch (Exception e) {
+    // we catch it all as the following things could happen:
+    // NoSuchMethodException, if the answerRingingCall() is missing
+    // SecurityException, if the security manager is not happy
+    // IllegalAccessException, if the method is not accessible
+    // IllegalArgumentException, if the method expected other arguments
+    // InvocationTargetException, if the method threw itself
+    // NullPointerException, if something was a null value along the way
+    // ExceptionInInitializerError, if initialization failed
+    // something more crazy, if anything else breaks
+
+    // TODO decide how to handle this state
+    // you probably want to set some failure state/go to fallback
+    Log.e(LOG_TAG, "Unable to use the Telephony Manager directly.", e);
+}
+
+
+This is too good to be true!
+
+Actually, there is one slight problem. This method should be fully functional, but the security manager wants callers to hold android.permission.MODIFY_PHONE_STATE.
+This permission is in the realm of only partially documented features of the system as 3rd parties are not expected to touch it (as you can see from the documentation for it). You can try adding a <uses-permission> for it but that will do no good because the protection level for this permission is signature|system (see line 1201 of core/AndroidManifest on 5.0.0_r1).
+
+You can read Issue 34785: Update android:protectionLevel documentation which was created back in 2012 to see that we are missing details about the specific "pipe syntax", but from experimenting around, it appears it must function as an 'AND' meaning all the specified flags have to be fulfilled for the permission to be granted. Working under that assumption, it would mean you must have your application:
+
+
+Installed as a system application.
+
+This should be fine and could be accomplished by asking the users to install using a ZIP in recovery, such as when rooting or installing Google apps on custom ROMs that don't have them already packaged.
+Signed with the same signature as frameworks/base aka the system, aka the ROM.
+
+This is where the problems pop up. To do this, you need to have your hands on the keys used for signing frameworks/base. You would not only have to get access to Google's keys for Nexus factory images, but you would also have to get access to all other OEMs' and ROM developers' keys. This does not seem plausible so you can have your application signed with the system keys by either making a custom ROM and asking your users to switch to it (which might be hard) or by finding an exploit with which the permission protection level can be bypassed (which might be hard as well).
+
+
+Additionally, this behavior appears to be related to Issue 34792: Android Jelly Bean / 4.1: android.permission.READ_LOGS no longer works which utilizes the same protection level along with an undocumented development flag as well.
+
+Working with the TelephonyManager sounds good, but will not work unless you get the appropriate permission which is not that easy to do in practice.
+
+What about using TelephonyManager in other ways?
+
+Sadly, it appears to require you to hold the android.permission.MODIFY_PHONE_STATE to use the cool tools which in turn means you are going to have a hard time getting access to those methods.
+
+
+
+Method 2: service call SERVICE CODE
+
+For when you can test that the build running on the device will work with the specified code.
+
+Without being able to interact with the TelephonyManager, there is also the possibility of interacting with the service through the service executable.
+
+How does this work?
+
+It is fairly simple, but there is even less documentation about this route than others. We know for sure the executable takes in two arguments - the service name and the code.
+
+
+The service name we want to use is phone.
+
+This can be seen by running service list.
+The code we want to use appears to have been 6 but seems to now be 5.
+
+It looks like it has been based on IBinder.FIRST_CALL_TRANSACTION + 5 for many versions now (from 1.5_r4 to 4.4.4_r1) but during local testing the code 5 worked to answer an incoming call. As Lollipo is a massive update all around, it is understandable internals changed here as well.
+
+
+This results with a command of service call phone 5.
+
+How do we utilize this programmatically?
+
+Java
+
+The following code is a rough implementation made to function as a proof of concept. If you actually want to go ahead and use this method, you probably want to check out guidelines for problem-free su usage and possibly switch to the more fully developed libsuperuser by Chainfire.
+
+try {
+    Process proc = Runtime.getRuntime().exec("su");
+    DataOutputStream os = new DataOutputStream(proc.getOutputStream());
+
+    os.writeBytes("service call phone 5\
+");
+    os.flush();
+
+    os.writeBytes("exit\
+");
+    os.flush();
+
+    if (proc.waitFor() == 255) {
+        // TODO handle being declined root access
+        // 255 is the standard code for being declined root for SU
+    }
+} catch (IOException e) {
+    // TODO handle I/O going wrong
+    // this probably means that the device isn't rooted
+} catch (InterruptedException e) {
+    // don't swallow interruptions
+    Thread.currentThread().interrupt();
+}
+
+
+Manifest
+
+<!-- Inform the user we want them root accesses. -->
+<uses-permission android:name="android.permission.ACCESS_SUPERUSER"/>
+
+
+Does this really require root access?
+
+Sadly, it seems so. You can try using Runtime.exec on it, but I was not able to get any luck with that route.
+
+How stable is this?
+
+I'm glad you asked. Due to not being documented, this can break across various versions, as illustrated by the seeming code difference above. The service name should probably stay phone across various builds, but for all we know, the code value can change across multiple builds of the same version (internal modifications by, say, the OEM's skin) in turn breaking the method used. It is therefore worth mentioning the testing took place on a Nexus 4 (mako/occam). I would personally advise you against using this method, but as I am not able to find a more stable method, I believe this is the best shot.
+
+
+
+Original method: Headset keycode intents
+
+For times when you have to settle.
+
+The following section was strongly influenced by this answer by Riley C.
+
+The simulated headset intent method as posted in the original question seems to be broadcast just as one would expect, but it doesn't appear to accomplish the goal of answering the call. While there appears to be code in place that should handle those intents, they simply aren't being cared about, which has to mean there must be some kind of new countermeasures in place against this method. The log doesn't show anything of interest either and I don't personally believe digging through the Android source for this will be worthwhile just due to the possibility of Google introducing a slight change that easily breaks the method used anyway.
+
+Is there anything we can do right now?
+
+The behavior can be consistently reproduced using the input executable. It takes in a keycode argument, for which we simply pass in KeyEvent.KEYCODE_HEADSETHOOK. The method doesn't even require root access making it suitable for common use cases in the general public, but there is a small drawback in the method - the headset button press event cannot be specified to require a permission, meaning it works like a real button press and bubbles up through the whole chain, which in turn means you have to be cautious about when to simulate the button press as it could, for example, trigger the music player to start playback if nobody else of higher priority is ready to handle the event.
+
+Code?
+
+new Thread(new Runnable() {
+
+    @Override
+    public void run() {
+        try {
+            Runtime.getRuntime().exec("input keyevent " +
+                    Integer.toString(KeyEvent.KEYCODE_HEADSETHOOK));
+        } catch (IOException e) {
+            // Runtime.exec(String) had an I/O problem, try to fall back
+            String enforcedPerm = "android.permission.CALL_PRIVILEGED";
+            Intent btnDown = new Intent(Intent.ACTION_MEDIA_BUTTON).putExtra(
+                    Intent.EXTRA_KEY_EVENT, new KeyEvent(KeyEvent.ACTION_DOWN,
+                            KeyEvent.KEYCODE_HEADSETHOOK));
+            Intent btnUp = new Intent(Intent.ACTION_MEDIA_BUTTON).putExtra(
+                    Intent.EXTRA_KEY_EVENT, new KeyEvent(KeyEvent.ACTION_UP,
+                            KeyEvent.KEYCODE_HEADSETHOOK));
+
+            mContext.sendOrderedBroadcast(btnDown, enforcedPerm);
+            mContext.sendOrderedBroadcast(btnUp, enforcedPerm);
+        }
+    }
+
+}).start();
+
+
+
+
+tl;dr
+
+There is a nice public API for Android 8.0 Oreo and later.
+
+There is no public API prior to Android 8.0 Oreo. The internal APIs are off-limits or simply without documentation. You should proceed with caution.
+    

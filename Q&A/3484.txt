@@ -1,0 +1,76 @@
+65
+Q:I am using the onScroll method of GestureDetector.SimpleOnGestureListener to scroll a large bitmap on a canvas. When the scroll has ended I want to redraw the bitmap in case the user wants to scroll further ... off the edge of the bitmap, but I can't see how to detect when the scroll has ended (the user has lifted his finger from the screen).
+
+e2.getAction() always seems to return the value 2 so that is no help.
+e2.getPressure seems to return fairly constant values (around 0.25) until the final onScroll call when the pressure seems to fall to about 0.13. I suppose I could detect this reduction in pressure, but this will be far from foolproof.
+
+There must be a better way: can anyone help, please?
+    
+===============================================================================================
+67
+A:Here is how I solved the problem.  Hope this helps.
+
+// declare class member variables
+private GestureDetector mGestureDetector;
+private OnTouchListener mGestureListener;
+private boolean mIsScrolling = false;
+
+
+public void initGestureDetection() {
+        // Gesture detection
+    mGestureDetector = new GestureDetector(new SimpleOnGestureListener() {
+        @Override
+        public boolean onDoubleTap(MotionEvent e) {
+            handleDoubleTap(e);
+            return true;
+        }
+
+        @Override
+        public boolean onSingleTapConfirmed(MotionEvent e) {
+            handleSingleTap(e);
+            return true;
+        }
+
+        @Override
+        public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+            // i'm only scrolling along the X axis
+            mIsScrolling = true;                
+            handleScroll(Math.round((e2.getX() - e1.getX())));
+            return true;
+        }
+
+        @Override
+        /**
+         * Don't know why but we need to intercept this guy and return true so that the other gestures are handled.
+         * https://code.google.com/p/android/issues/detail?id=8233
+         */
+        public boolean onDown(MotionEvent e) {
+            Log.d("GestureDetector --> onDown");
+            return true;
+        }
+    });
+
+    mGestureListener = new View.OnTouchListener() {
+        public boolean onTouch(View v, MotionEvent event) {
+
+            if (mGestureDetector.onTouchEvent(event)) {
+                return true;
+            }
+
+            if(event.getAction() == MotionEvent.ACTION_UP) {
+                if(mIsScrolling ) {
+                    Log.d("OnTouchListener --> onTouch ACTION_UP");
+                    mIsScrolling  = false;
+                    handleScrollFinished();
+                };
+            }
+
+            return false;
+        }
+    };
+
+    // attach the OnTouchListener to the image view
+    mImageView.setOnTouchListener(mGestureListener);
+}
+
+    

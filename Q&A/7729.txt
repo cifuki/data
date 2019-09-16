@@ -1,0 +1,101 @@
+34
+Q:What is the easiest to time execution in Android?
+
+I have looked around a bit and I found TimingLogger on the Android SDK,
+and instructions here. It looks very convenient.
+But I can't get it work. This is my code:
+
+TimingLogger timings = new TimingLogger("TopicLogTag", "Parsing html");
+   My code to time here...
+timings.dumpToLog();
+
+
+It's supposed to dump the times in LogCat. But I can't see anything.. I What am I doing wrong? Eclipse doesn't show any varnings. I guess it has something with verbose ouput, but I have set LogCat to show Verbose.
+Thank you..
+    
+===============================================================================================
+57
+A:I gave it a test run and I am experiencing the same thing. It all boils down to this little bit of the description in the Javadoc for TimingLogger:
+
+
+  If the Log.isLoggable is not enabled
+  to at least the Log.VERBOSE level for
+  that tag at creation time then the
+  addSplit and dumpToLog call will do
+  nothing.
+
+
+I did a test locally:
+
+TimingLogger timings = new TimingLogger("MyTag", "Initialization");
+Log.d("MyTag", "Is Loggable? " + Log.isLoggable("MyTag", Log.VERBOSE));
+timings.dumpToLog();
+
+
+And oddly, I get an output to the log:
+
+06-28 08:35:18.693: DEBUG/MyTag(24366): Is Loggable? false
+
+
+But that's it. And since it's false, I doubt TimingLogger is doing anything, based on the TimingLogger code:
+
+  90     /**
+  91      * Clear and initialize a TimingLogger object that will log using
+  92      * the tag and label that was specified previously, either via
+  93      * the constructor or a call to reset(tag, label). If the
+  94      * Log.isLoggable is not enabled to at least the Log.VERBOSE
+  95      * level for that tag at creation time then the addSplit and
+  96      * dumpToLog call will do nothing.
+  97      */
+  98     public void reset() {
+  99         mDisabled = !Log.isLoggable(mTag, Log.VERBOSE);
+ 100         if (mDisabled) return;
+ 101         if (mSplits == null) {
+ 102             mSplits = new ArrayList<Long>();
+ 103             mSplitLabels = new ArrayList<String>();
+ 104         } else {
+ 105             mSplits.clear();
+ 106             mSplitLabels.clear();
+ 107         }
+ 108         addSplit(null);
+ 109     }
+
+
+I'm not sure why Log.isLoggable is returning false when it's obviously logging at above VERBOSE, since my Log.d obviously logged.
+
+You can enable logging for that tag manually from the [Log class Javadoc][3]:
+
+
+  You can change the default level by
+  setting a system property: 'setprop
+  log.tag. ' Where
+  level is either VERBOSE, DEBUG, INFO,
+  WARN, ERROR, ASSERT, or SUPPRESS.
+  SUPPRESS will turn off all logging for
+  your tag. You can also create a
+  local.prop file that with the
+  following in it:
+  'log.tag.=' and
+  place that in /data/local.prop.
+
+
+Which I did through adb shell:
+
+$ adb shell
+# setprop
+usage: setprop <key> <value>
+# setprop log.tag.MyTag VERBOSE
+# 
+
+
+Results in:
+
+06-28 08:53:42.447: DEBUG/MyTag(24739): Is Loggable? true
+06-28 08:53:44.744: DEBUG/MyTag(24739): Initialization: begin
+06-28 08:53:44.744: DEBUG/MyTag(24739): Initialization: end, 0 ms
+
+
+See droidgren's comment on this answer - apparently a call to addSplit is also necessary.
+
+[3]: http://developer.android.com/reference/android/util/Log.html#isLoggable(java.lang.String, int)
+    

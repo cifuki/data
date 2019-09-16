@@ -1,0 +1,64 @@
+29
+Q:I'm using Android's Room Persistence Library from the Android Architecture Components recently announced at Google I/O. Things seem to be working, but I'm getting the following error:
+
+
+  Warning:tagId column references a foreign key but it is not part of an
+  index. This may trigger full table scans whenever parent table is
+  modified so you are highly advised to create an index that covers this
+  column.
+
+
+My database has 3 tables: Note, Tag, and JoinNotesTags. Notes to Tags is a many-to-many relationship, hence the JoinNotesTags table to handle the mapping. The tables are straightforward:
+
+
+Note.id and Tag.id are both primary keys
+JoinNotesTags.noteId references Note.id
+JoinNotesTags.tagId references Tag.id
+
+
+The foreign key constraints are defined on the JoinNotesTags table. For reference, here is the CREATE TABLE statement for the JoinNotesTags table:
+
+"CREATE TABLE IF NOT EXISTS `JoinNotesTags` (
+    `id` INTEGER PRIMARY KEY AUTOINCREMENT, 
+    `noteId` INTEGER, 
+    `tagId` INTEGER, 
+    FOREIGN KEY(`noteId`) REFERENCES `Note`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , 
+    FOREIGN KEY(`tagId`) REFERENCES `Tag`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION 
+)"
+
+
+And here is the corresponding @Entity annotation for that class:
+
+@Entity(
+        indices = arrayOf(Index(value = *arrayOf("noteId", "tagId"), unique = true)),
+        foreignKeys = arrayOf(
+                ForeignKey(
+                        entity = Note::class,
+                        parentColumns = arrayOf("id"),
+                        childColumns = arrayOf("noteId"),
+                        onDelete = ForeignKey.CASCADE),
+                ForeignKey(
+                        entity = Tag::class,
+                        parentColumns = arrayOf("id"),
+                        childColumns = arrayOf("tagId"))
+        )
+)
+
+
+As you can see from the @Entity annotation, tagId is included in a composite unique index along with noteId. I've confirmed that this index is correctly defined in the auto-generated json schema file as well:
+
+"CREATE UNIQUE INDEX `index_JoinNotesTags_noteId_tagId` 
+    ON `JoinNotesTags` (`noteId`, `tagId`)"
+
+
+So, my question: Is this warning just a bug in the (still-alpha-release) Room Library -- i.e. the compile-time analysis is missing the fact that tagId is part of this composite index? Or do I really have an indexing problem that I need to resolve in order to avoid full table scans?
+    
+===============================================================================================
+13
+A:When you modify the Tag table, the database might need to lookup corresponding rows in the JoinNotesTags table. To be efficient, this requires an index on the tagId column.
+
+Your composite index is not useful for that; because of the way how indexes work, the column(s) to be searched must be the leftmost column(s) in the index.
+
+You should add an index on only the tagId column.
+(You could swap the order of the columns in the composite index, but then you'd have the same problem with noteId.)
+    

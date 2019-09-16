@@ -1,0 +1,99 @@
+35
+Q:I've looked at a couple different articles which seem to suggest two different ways of doing custom scoping in Dagger 2:
+
+
+MVP Presenters that Survive Configuration Changes Part-2 (Github repo):
+
+
+Uses unique custom scopes for each fragment, e.g. @Hello1Scope and @Hello2Scope for Hello1Fragment and Hello2Fragment respectively
+
+Tasting Dagger 2 on Android:
+
+
+Uses a single custom scope for all fragments, e.g. @PerFragment.
+
+
+
+From what I understand, it seems that, as in method 2, it should be okay to have a single scope defined that can be used for all fragments (i.e., @PerFragment). In fact (please correct me if I'm wrong), it seems like the name of the custom scope is irrelevant, and it's only where the subcomponent is created (i.e. in Application, Activity, or Fragment) that matters.
+
+Is there any use case for defining a unique scope for each fragment such as in case 1?
+    
+===============================================================================================
+79
+A:After reading the answer by @vaughandroid, and What determines the lifecycle of a component (object graph) in Dagger 2? I think I understand custom scopes well enough to answer my own question.
+
+First, here are a couple rules when dealing with components, modules, and scoping annotations in dagger2.
+
+
+A Component must have a (single) scope annotation (e.g. @Singleton or @CustomScope).
+A Module does not have a scope annotation.
+A Module Method may have a (single) scope that matches its Component or no scope, where:
+
+
+Scoped: means a single instance is created for each instance of the component.
+Unscoped: mean a new instance is created with each inject() or provider call
+NOTE: Dagger2 reserves @Singleton for the root Component (and it's modules) only. Subcomponents must use a custom scope, but the functionality of that scope is exactly the same as @Singleton.
+
+
+
+Now, to answer the question: I would say create a new named scope for each conceptually different scope. For example, create a @PerActivity, @PerFragment, or @PerView annotation that indicates where the component should be instantiated, and thus indicating its lifetime.
+
+Note: this is a compromise between two extremes. Consider the case of a root component and n subcomponents you will need:
+
+
+at least 2 annotations (@Singleton and @SubSingleton), and
+at most n+1 annotations (@Singleton, @SubSingleton1, ... @SubSingletonN). 
+
+
+
+
+Example:
+
+Application:
+
+/** AppComponent.java **/ 
+@Singleton
+@Component( modules = AppModule.class )
+public interface AppComponent{
+    void inject(MainActivity mainActivity);
+}
+
+/** AppModule.java **/
+@Module
+public class AppModule{
+    private App app;
+
+    public AppModule(App app){
+        this.app = app;
+    }
+
+    // For singleton objects, annotate with same scope as component, i.e. @Singleton
+    @Provides @Singleton public App provideApp() { return app; }
+    @Provides @Singleton public EventBus provideBus() { return EventBus.getDefault(); }
+}
+
+
+Fragment:
+
+/** Fragment1Component.java **/
+@PerFragment
+@Component( modules = {Fragment1Module.class}, dependencies = {AppComponent.class} )
+public interface Fragment1Component {
+    void inject(Fragment1 fragment1);
+}
+
+/** Fragment1Module.java **/ 
+@Module
+public class Fragment1Module {
+    // For singleton objects, annotate with same scope as component, i.e. @PerFragment
+    @Provides @PerFragment public Fragment1Presenter providePresenter(){
+        return new Fragment1Presenter();
+    }
+}
+
+/** PerFragment.java **/ 
+@Scope
+@Retention(RetentionPolicy.RUNTIME)
+public @interface PerFragment {}
+
+    

@@ -1,0 +1,42 @@
+28
+Q:I want to dynamically add a dependency in an Android Gradle project based on the current buildType. I know I can specify the buildType in the dependency:
+
+compile project(path: ':lib1', configuration: 'debug')
+
+
+But how can I use the current buildType to specify which variant of the library I want to import, so that a debug or release build automatically imports the debug or release variant of the library? What I want is something like this (where currentBuildType is a variable containing the name of the currently used buildType):
+
+compile project(path: ':lib1', configuration: currentBuildType)
+
+
+The library project I want to import has set publishNonDefault true, so all buildTypes are published.
+    
+===============================================================================================
+12
+A:Add a task which depends on each assembleXxx task and property setting up after it invoked
+
+ext {
+    currentConfig = ""
+}
+task generateConfigProperty(dependsOn: 'installDebug') {
+
+    android.applicationVariants.all { variant ->
+        variant.outputs.each { output ->
+
+            def taskName = "taskindicate$output.name"
+            task "$taskName"() << {
+                project.ext.set("currentConfig", "$output.name")
+            }
+            output.assemble.dependsOn "taskindicate$output.name"
+        }
+    }
+
+}
+
+task getConfig(dependsOn: ['installDebug', 'generateConfigProperty']) << {
+    println("My config is $currentConfig")
+}
+
+
+took idea from the answer
+    

@@ -1,0 +1,224 @@
+33
+Q:We have a program that we install on the phones and loan the phones to users for a certain period. We would like the phones to be used solely for running our application (no phone calls, no games, no nothing). The phones will be rooted.
+
+So the things we need:
+
+
+Run in full screen, nothing else will be visible 
+Home button and other device buttons won't work
+Our app will run automatically on startup
+
+
+It doesn't have to be "hacker proof", but should be sufficient to prevent average user messing with the device.
+
+Is this possible?  I have done similar things on Symbian & Windows Mobile but I don't have much experience with this stuff on Android. How may this be achieved?
+
+UPDATE 2015: If you don't mind limiting your app to single phone vendor, Samsung has introduced the KNOX SDK that lets you achieve kiosk mode and much more easily without rooting the phone. See details at: https://seap.samsung.com/developer/sdk/knox-standard-android
+    
+===============================================================================================
+47
+A:Yes it is possible but you can not control the behaviour of Home key and end call key.
+
+for full screen add android:theme="@android:style/Theme.NoTitleBar.Fullscreen" to activity tag in manifest file.
+
+To disable incoming call you need to listen phone calls:
+
+import android.app.Service;
+import android.os.IBinder;
+import android.telephony.PhoneStateListener;
+import android.telephony.TelephonyManager;
+
+public class MyPhoneStateListener extends Service{
+
+    @Override
+    public IBinder onBind(Intent arg0) {
+        return null;
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+            StateListener phoneStateListener = new StateListener();
+            TelephonyManager telephonymanager = (TelephonyManager)getSystemService(TELEPHONY_SERVICE);
+            telephonymanager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE);
+
+    }
+
+    class StateListener extends PhoneStateListener{
+        @Override
+        public void onCallStateChanged(int state, String incomingNumber) {
+            super.onCallStateChanged(state, incomingNumber);
+            switch(state){
+                case TelephonyManager.CALL_STATE_RINGING:
+                    //Disconnect the call here...
+                    break;
+                case TelephonyManager.CALL_STATE_OFFHOOK:
+                    break;
+                case TelephonyManager.CALL_STATE_IDLE:
+                    break;
+            }
+        }
+    };
+
+    @Override
+    public void onDestroy() {
+
+    }
+}
+
+
+Note:  While stopping service don't foget to remove the listener and add these permissions to your manifest file:
+
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+
+and disconnect the call programmatically:
+
+try{
+    TelephonyManager manager = (TelephonyManager)context.getSystemService(Context.TELEPHONY_SERVICE);
+    Class c = Class.forName(manager.getClass().getName());
+    Method m = c.getDeclaredMethod("getITelephony");
+    m.setAccessible(true);
+    ITelephony telephony = (ITelephony)m.invoke(manager);
+    telephony.endCall();
+} catch(Exception e){
+    Log.d("",e.getMessage());
+}
+
+
+Note: Add this file to disconnect the call:
+http://dl.dropbox.com/u/31740476/ITelephony.aidl
+
+To disable keys you need to override:
+
+@Override
+public boolean dispatchKeyEvent(KeyEvent event) {
+    if(KeyEvent.KEYCODE_MENU == event.getKeyCode() || KeyEvent.KEYCODE_DPAD_LEFT==event.getKeyCode()
+            || KeyEvent.KEYCODE_DPAD_DOWN==event.getKeyCode() || KeyEvent.KEYCODE_DPAD_RIGHT==event.getKeyCode()
+            || KeyEvent.KEYCODE_DPAD_UP==event.getKeyCode() || KeyEvent.KEYCODE_DPAD_CENTER==event.getKeyCode()
+            || KeyEvent.KEYCODE_BACK==event.getKeyCode())
+    {
+        return false;
+    }
+    return true;
+}
+
+
+On Home key press the Home screen will come, so to overcome this you need to implement a service and there you need to implement a infinite thread to relaunch your app like this:
+
+public class AppTrackingService extends Service {
+
+    private RunnableThread thread;
+    private Context ctx;
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    public void onCreate(){
+        super.onCreate();
+        ctx = AppTrackingService.this;
+        thread = new RunnableThread();
+    }
+
+    public void onStart(Intent intent, int startid) {
+        try{
+            if(thread==null) thread = new RunnableThread();
+            thread.startThread();
+        }catch(Exception e){  }
+    }
+
+    class RunnableThread extends Thread {
+
+        Handler back_handler = new Handler();
+        boolean isContinue = false;
+
+        public RunnableThread(){
+            isContinue = false;
+        }
+
+        public void setIsContinue(boolean val){
+            this.isContinue = val;
+        }
+
+        public void startThread(){
+            isContinue = true;
+            start();
+        }
+
+        public void run(){
+            ActivityManager actMngr = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            while(isContinue){
+                try{
+                //Maintain a boolean "isyourapprunning" to know if your app was running or not....
+                    if(isyourapprunning){
+                    String runningPkg = actMngr.getRunningTasks(1).get(0).topActivity.getPackageName();
+                        if (!runningPkg.equals(ctx.getPackageName())){
+                                launchApp(ctx.getPackageName());
+                            }
+                        Thread.sleep(2500);  //2.5 secs
+                    }else{
+                        isContinue = false;
+                        stopSelf();
+                    }
+
+                }catch(Exception e){ }
+            }//end of while loop
+        }
+
+        protected void launchApp(String packageName) {
+            Intent mIntent = getPackageManager().getLaunchIntentForPackage(packageName);
+            mIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            mIntent.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+            if (null != mIntent) {
+                try {
+                    startActivity(mIntent);
+                } catch(Exception e) { }
+            }
+        }
+    }
+}
+
+
+EDIT
+
+You would need to add the following permission to be able to end calls:
+
+<uses-permission android:name="android.permission.CALL_PHONE" />
+
+
+And you can use the following AIDL file:
+
+package com.android.internal.telephony;
+
+/**
+ * Interface used to interact with the phone.  Mostly this is used by the
+ * TelephonyManager class.  A few places are still using this directly.
+ * Please clean them up if possible and use TelephonyManager instead.
+ *
+ * {@hide}
+ */
+interface ITelephony {
+    /**
+     * End call if there is a call in progress, otherwise does nothing.
+     *
+     * @return whether it hung up
+     */
+    boolean endCall();
+
+    /**
+     * Silence the ringer if an incoming call is currently ringing.
+     * (If vibrating, stop the vibrator also.)
+     *
+     * It's safe to call this if the ringer has already been silenced, or
+     * even if there's no incoming call.  (If so, this method will do nothing.)
+     *
+     * TODO: this should be a oneway call too (see above).
+     *       (Actually *all* the methods here that return void can
+     *       probably be oneway.)
+     */
+    void silenceRinger();
+}
+
+    

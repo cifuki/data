@@ -1,0 +1,97 @@
+98
+Q:I'm trying to upgrade to Retrofit 2.0 and add RxJava in my android project. I'm making an api call and want to retrieve the error code in case of an error response from the server. 
+
+Observable<MyResponseObject> apiCall(@Body body);
+
+
+And in the RxJava call:
+
+myRetrofitObject.apiCall(body).subscribe(new Subscriber<MyResponseObject>() {
+        @Override
+        public void onCompleted() {
+
+        }
+
+        @Override
+        public void onError(Throwable e) {
+
+        }
+
+        @Override
+        public void onNext(MyResponseObject myResponseObject) {
+           //On response from server
+        }
+    });
+
+
+In Retrofit 1.9, the RetrofitError still existed and we could get the status by doing:
+
+error.getResponse().getStatus()
+
+
+How do you do this with Retrofit 2.0 using RxJava?
+    
+===============================================================================================
+175
+A:Instead of declaring the API call like you did:
+
+Observable<MyResponseObject> apiCall(@Body body);
+
+
+You can also declare it like this:
+
+Observable<Response<MyResponseObject>> apiCall(@Body body);
+
+
+You will then have a Subscriber like the following:
+
+new Subscriber<Response<StartupResponse>>() {
+    @Override
+    public void onCompleted() {}
+
+    @Override
+    public void onError(Throwable e) {
+        Timber.e(e, "onError: %", e.toString());
+
+        // network errors, e. g. UnknownHostException, will end up here
+    }
+
+    @Override
+    public void onNext(Response<StartupResponse> startupResponseResponse) {
+        Timber.d("onNext: %s", startupResponseResponse.code());
+
+        // HTTP errors, e. g. 404, will end up here!
+    }
+}
+
+
+So, server responses with an error code will also be delivered to onNext and you can get the code by calling reponse.code().
+
+http://square.github.io/retrofit/2.x/retrofit/retrofit/Response.html
+
+EDIT: OK, I finally got around to looking into what e-nouri said in their comment, namely that only 2xx codes will to to onNext. Turns out we are both right:
+
+If the call is declared like this:
+
+Observable<Response<MyResponseObject>> apiCall(@Body body);
+
+
+or even this
+
+Observable<Response<ResponseBody>> apiCall(@Body body);
+
+
+all responses will end up in onNext, regardless of their error code. This is possible because everything is wrapped in a Response object by Retrofit.
+
+If, on the other hand, the call is declared like this:
+
+Observable<MyResponseObject> apiCall(@Body body);
+
+
+or this
+
+Observable<ResponseBody> apiCall(@Body body);
+
+
+indeed only the 2xx responses will go to onNext. Everything else will be wrapped in an HttpException and sent to onError. Which also makes sense, because without the Response wrapper, what should be emitted to onNext? Given that the request was not successful the only sensible thing to emit would be null...
+    

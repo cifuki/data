@@ -1,0 +1,166 @@
+168
+Q:I am using ACRA to report app crashes. I was getting a View not attached to window manager error message and thought I had fixed it by wrapping the pDialog.dismiss(); in an if statement:
+
+if (pDialog!=null) 
+{
+    if (pDialog.isShowing()) 
+    {
+        pDialog.dismiss();   
+    }
+}
+
+
+It has reduced the amount of View not attached to window manager crashes I recieve, but I am still getting some and I am not sure how to solve it.
+
+Error message:
+
+java.lang.IllegalArgumentException: View not attached to window manager
+at android.view.WindowManagerGlobal.findViewLocked(WindowManagerGlobal.java:425)
+at android.view.WindowManagerGlobal.removeView(WindowManagerGlobal.java:327)
+at android.view.WindowManagerImpl.removeView(WindowManagerImpl.java:83)
+at android.app.Dialog.dismissDialog(Dialog.java:330)
+at android.app.Dialog.dismiss(Dialog.java:312)
+at com.package.class$LoadAllProducts.onPostExecute(class.java:624)
+at com.package.class$LoadAllProducts.onPostExecute(class.java:1)
+at android.os.AsyncTask.finish(AsyncTask.java:631)
+at android.os.AsyncTask.access$600(AsyncTask.java:177)
+at android.os.AsyncTask$InternalHandler.handleMessage(AsyncTask.java:644)
+at android.os.Handler.dispatchMessage(Handler.java:99)
+at android.os.Looper.loop(Looper.java:176)
+at android.app.ActivityThread.main(ActivityThread.java:5419)
+at java.lang.reflect.Method.invokeNative(Native Method)
+at java.lang.reflect.Method.invoke(Method.java:525)
+at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1046)
+at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:862)
+at dalvik.system.NativeStart.main(Native Method)
+
+
+Code snippet:
+
+class LoadAllProducts extends AsyncTask<String, String, String> 
+{
+
+    /**
+     * Before starting background thread Show Progress Dialog
+     * */
+    @Override
+    protected void onPreExecute() 
+    {
+        super.onPreExecute();
+        pDialog = new ProgressDialog(CLASS.this);
+        pDialog.setMessage("Loading. Please wait...");
+        pDialog.setIndeterminate(false);
+        pDialog.setCancelable(false);
+        pDialog.show();
+    }
+
+    /**
+     * getting All products from url
+     * */
+    protected String doInBackground(String... args) 
+    {
+        // Building Parameters
+        doMoreStuff("internet");
+        return null;
+    }
+
+
+    /**
+     * After completing background task Dismiss the progress dialog
+     * **/
+    protected void onPostExecute(String file_url) 
+    {
+         // dismiss the dialog after getting all products
+         if (pDialog!=null) 
+         {
+                if (pDialog.isShowing()) 
+                {
+                    pDialog.dismiss();   //This is line 624!    
+                }
+         }
+         something(note);
+    }
+}
+
+
+Manifest:
+
+    <activity
+        android:name="pagename.CLASS" 
+        android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout"            
+        android:label="@string/name" >
+    </activity>
+
+
+What am I missing to stop this crash from happening?
+    
+===============================================================================================
+417
+A:How to reproduce the bug:
+
+
+Enable this option on your device: Settings -> Developer Options -> Don't keep Activities.
+Press Home button while the AsyncTask is executing and the ProgressDialog is showing.
+
+
+The Android OS will destroy an activity as soon as it is hidden. When onPostExecute is called the Activity will be in "finishing" state and the ProgressDialog will be not attached to Activity.
+
+How to fix it:
+
+
+Check for the activity state in your onPostExecute method. 
+Dismiss the ProgressDialog in onDestroy method. Otherwise, android.view.WindowLeaked exception will be thrown. This exception usually comes from dialogs that are still active when the activity is finishing.
+
+
+Try this fixed code:
+
+public class YourActivity extends Activity {
+
+    private void showProgressDialog() {
+        if (pDialog == null) {
+            pDialog = new ProgressDialog(StartActivity.this);
+            pDialog.setMessage("Loading. Please wait...");
+            pDialog.setIndeterminate(false);
+            pDialog.setCancelable(false);
+        }
+        pDialog.show();
+    }
+
+    private void dismissProgressDialog() {
+        if (pDialog != null && pDialog.isShowing()) {
+            pDialog.dismiss();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        dismissProgressDialog();
+        super.onDestroy();
+    }
+
+    class LoadAllProducts extends AsyncTask<String, String, String> {
+
+        // Before starting background thread Show Progress Dialog
+        @Override
+        protected void onPreExecute() {
+            showProgressDialog();
+        }
+
+        //getting All products from url
+        protected String doInBackground(String... args) {
+            doMoreStuff("internet");
+            return null;
+        }
+
+        // After completing background task Dismiss the progress dialog
+        protected void onPostExecute(String file_url) {
+            if (YourActivity.this.isDestroyed()) { // or call isFinishing() if min sdk version < 17
+                return;
+            }
+            dismissProgressDialog();
+            something(note);
+        }
+    }
+}
+
+    

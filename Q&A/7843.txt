@@ -1,0 +1,67 @@
+34
+Q:WorkManager is a library used to enqueue work that is guaranteed to execute after its constraints are met.
+
+
+Hence, After going though the Constraints class I haven't found any function to add time constraint on the work. For like example, I want to start a work to perform at 8:00am (The work can be any of two types OneTimeWorkRequest or PeriodicWorkRequest) in the morning. How can I add constraint to schedule this work with WorkManager.
+    
+===============================================================================================
+28
+A:Unfortunately, you cannot schedule a work at specific time as of now. If you have time critical implementation then you should use AlarmManager to set alarm that can fire while in Doze to by using setAndAllowWhileIdle() or setExactAndAllowWhileIdle().
+
+You can schedule a work, with onetime initial delay or execute it periodically, using the WorkManager as follows:
+
+Create Worker class:
+
+public class MyWorker extends Worker {
+    @Override
+    public Worker.WorkerResult doWork() {
+
+        // Do the work here
+
+        // Indicate success or failure with your return value:
+        return WorkerResult.SUCCESS;
+
+        // (Returning RETRY tells WorkManager to try this task again
+        // later; FAILURE says not to try again.)
+    }
+}
+
+
+Then schedule OneTimeWorkRequest as follows:
+
+OneTimeWorkRequest mywork=
+        new OneTimeWorkRequest.Builder(MyWorker.class)
+        .setInitialDelay(<duration>, <TimeUnit>)// Use this when you want to add initial delay or schedule initial work to `OneTimeWorkRequest` e.g. setInitialDelay(2, TimeUnit.HOURS)
+        .build();
+WorkManager.getInstance().enqueue(mywork);
+
+
+You can setup additional constraints as follows:
+
+// Create a Constraints that defines when the task should run
+Constraints myConstraints = new Constraints.Builder()
+    .setRequiresDeviceIdle(true)
+    .setRequiresCharging(true)
+    // Many other constraints are available, see the
+    // Constraints.Builder reference
+     .build();
+
+
+Then create a OneTimeWorkRequest that uses those constraints
+
+OneTimeWorkRequest mywork=
+                new OneTimeWorkRequest.Builder(MyWorker.class)
+     .setConstraints(myConstraints)
+     .build();
+WorkManager.getInstance().enqueue(mywork);
+
+
+PeriodicWorkRequest can be created as follows:
+
+ PeriodicWorkRequest periodicWork = new PeriodicWorkRequest.Builder(MyWorker.class, 12, TimeUnit.HOURS)
+                                   .build();
+  WorkManager.getInstance().enqueue(periodicWork);
+
+
+This creates a PeriodicWorkRequest to run periodically once every 12 hours.
+    

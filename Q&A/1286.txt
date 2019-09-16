@@ -1,0 +1,58 @@
+132
+Q:I need to tell if my device has Internet connection or not. I found many answers like:
+
+private boolean isNetworkAvailable() {
+    ConnectivityManager connectivityManager 
+         = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+    NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
+    return activeNetworkInfo != null;
+}
+
+
+(Taken from Detect whether there is an Internet connection available on Android.)
+
+But this is not right, for example if I'm connected to a wireless network which doesn't have Internet access, this method will return true\xe2\x80\xa6 Is there a way to tell if the device has Internet connection and not if it is only connected to something?
+    
+===============================================================================================
+180
+A:You are right. The code you've provided only checks if there is a network connection.
+The best way to check if there is an active Internet connection is to try and connect 
+to a known server via http.
+
+public static boolean hasActiveInternetConnection(Context context) {
+    if (isNetworkAvailable(context)) {
+        try {
+            HttpURLConnection urlc = (HttpURLConnection) (new URL("http://www.google.com").openConnection());
+            urlc.setRequestProperty("User-Agent", "Test");
+            urlc.setRequestProperty("Connection", "close");
+            urlc.setConnectTimeout(1500); 
+            urlc.connect();
+            return (urlc.getResponseCode() == 200);
+        } catch (IOException e) {
+            Log.e(LOG_TAG, "Error checking internet connection", e);
+        }
+    } else {
+        Log.d(LOG_TAG, "No network available!");
+    }
+    return false;
+}
+
+
+Of course you can substitute the http://www.google.com URL for any other server you want to connect to, or a server you know has a good uptime.
+
+As Tony Cho also pointed out in this comment below, make sure you don't run this code on the main thread, otherwise you'll get a NetworkOnMainThread exception (in Android 3.0 or later). Use an AsyncTask or Runnable instead.
+
+If you want to use google.com you should look at Jeshurun's modification. In his answer he modified my code and made it a bit more efficient. If you connect to 
+
+HttpURLConnection urlc = (HttpURLConnection) 
+            (new URL("http://clients3.google.com/generate_204")
+            .openConnection());
+
+
+and then check the responsecode for 204
+
+return (urlc.getResponseCode() == 204 && urlc.getContentLength() == 0);
+
+
+then you don't have to fetch the entire google home page first.
+    

@@ -1,0 +1,63 @@
+52
+Q:I've got a few EditText fields in a ListView.  When I tap on one of the EditText fields, the keyboard slides into view (as it should), but the EditText field I tapped loses focus.  I've tried using various InputMethodManager methods to make the keyboard start out in view (in order to get around the problem rather than truly solve it), but that didn't work - the keyboard was not in view when the Activity appeared.
+
+The EditText's type is number, and when the keyboard is sliding in, it is a number keyboard, but when it finishes sliding and the EditText loses focus, it changes to the alphabetical keyboard (which reinforces the idea that the EditText no longer has focus).
+
+My questions are these:
+
+1) How can I make the selection of my EditText field and the subsequent sliding in of the soft keyboard not make my EditText lose focus?
+
+... failing that... 
+
+2) How can I make the keyboard start out in view so it never has to slide in (thus avoiding the behavior I find so objectionable)?
+
+My manifest does include android:windowSoftInputMode="stateAlwaysVisible", but the keyboard does not appear until I tap on an EditText.  This ignoring of the 'stateAlwaysVisible' attribute seems to only occur in the emulator - on my provisioned device, it is honored so question number 2 above does work on the device... but not in the emulator.  
+
+Thanks for any help you can provide!
+    
+===============================================================================================
+14
+A:Here is how I did it.  The onFocusChangeListener() is called several times when you touch a EditText to type text into it.  The sequence is:
+
+
+If focus was on a different view, then that view loses focus
+The target gains focus
+Soft keyboard pops up.
+This causes the target to lose focus
+The code detects this situation and calls target.requestFocus()
+The leftmost, topmost view gains focus, due to Android nonsense
+The leftmost view loses focus, due to requestFocus being called
+Target finally gains focus
+
+//////////////////////////////////////////////////////////////////
+private final int minDelta = 300;           // threshold in ms
+private long focusTime = 0;                 // time of last touch
+private View focusTarget = null;
+
+View.OnFocusChangeListener onFocusChangeListener = new View.OnFocusChangeListener() {
+    @Override
+    public void onFocusChange(View view, boolean hasFocus) {
+        long t = System.currentTimeMillis();
+        long delta = t - focusTime;
+        if (hasFocus) {     // gained focus
+            if (delta > minDelta) {
+                focusTime = t;
+                focusTarget = view;
+            }
+        }
+        else {              // lost focus
+            if (delta <= minDelta  &&  view == focusTarget) {
+                focusTarget.post(new Runnable() {   // reset focus to target
+                    public void run() {
+                        focusTarget.requestFocus();
+                    }
+                });
+            }
+        }
+    }
+};
+
+
+
+The code above works well for the keyboard pop-ups.  However, it does not detect the speech-to-text pop-up.  
+    

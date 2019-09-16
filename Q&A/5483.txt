@@ -1,0 +1,95 @@
+45
+Q:I found really weird bug that is reproduced only on Android N devices.
+
+In tour of my app there is a possibility to change language. Here is the code that changes it. 
+
+ public void update(Locale locale) {
+
+    Locale.setDefault(locale);
+
+    Configuration configuration = res.getConfiguration();
+
+    if (BuildUtils.isAtLeast24Api()) {
+        LocaleList localeList = new LocaleList(locale);
+
+        LocaleList.setDefault(localeList);
+        configuration.setLocales(localeList);
+        configuration.setLocale(locale);
+
+    } else if (BuildUtils.isAtLeast17Api()){
+        configuration.setLocale(locale);
+
+    } else {
+        configuration.locale = locale;
+    }
+
+    res.updateConfiguration(configuration, res.getDisplayMetrics());
+}
+
+
+This code works great in activity of my tour ( with recreate() call) but in all next activities all String resources are wrong. Screen rotation fixes it. What can i do with this problem? Should i change locale for Android N differently or it's just system bug?
+
+P.S. Here's what i found. At first start of MainActivity (which is after my tour) Locale.getDefault() is correct but resources are wrong. But in other activities it gives me wrong Locale and wrong resources from this locale. After rotation screen (or perhaps some other configuration change) Locale.getDefault() is correct.
+    
+===============================================================================================
+90
+A:Ok. Finally i managed to find a solution. 
+
+First you should know that in 25 API Resources.updateConfiguration(...) is deprecated. So instead you can do something like this:
+
+1) You need to create your own ContextWrapper that will override all configuration params in baseContext. For example this is mine ContextWrapper that changes Locale correctly. Pay attention on context.createConfigurationContext(configuration) method.
+
+public class ContextWrapper extends android.content.ContextWrapper {
+
+    public ContextWrapper(Context base) {
+        super(base);
+    }
+
+    public static ContextWrapper wrap(Context context, Locale newLocale) {
+        Resources res = context.getResources();
+        Configuration configuration = res.getConfiguration();
+
+        if (BuildUtils.isAtLeast24Api()) {
+            configuration.setLocale(newLocale);
+
+            LocaleList localeList = new LocaleList(newLocale);
+            LocaleList.setDefault(localeList);
+            configuration.setLocales(localeList);
+
+            context = context.createConfigurationContext(configuration);
+
+        } else if (BuildUtils.isAtLeast17Api()) {
+            configuration.setLocale(newLocale);
+            context = context.createConfigurationContext(configuration);
+
+        } else {
+            configuration.locale = newLocale;
+            res.updateConfiguration(configuration, res.getDisplayMetrics());
+        }
+
+        return new ContextWrapper(context);
+    }
+}
+
+
+2) Here's what you should do in your BaseActivity:
+
+@Override
+protected void attachBaseContext(Context newBase) {
+
+    Locale newLocale;
+    // .. create or get your new Locale object here.
+
+    Context context = ContextWrapper.wrap(newBase, newLocale);
+    super.attachBaseContext(context);
+}
+
+
+Note:
+
+
+  Remember to recreate your activity if you want to change Locale in
+  your App somewhere. You can override any configuration you want using
+  this solution.
+
+    

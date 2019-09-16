@@ -1,0 +1,187 @@
+114
+Q:I spent a moment trying to figure out a way to add a header to a RecyclerView, unsuccessfully.
+This is what I got so far:
+
+@Override
+protected void onCreate(Bundle savedInstanceState)
+{
+    ...
+
+    layouManager = new LinearLayoutManager(getActivity());
+    recyclerView.setLayoutManager(layouManager);
+
+    LayoutInflater inflater = (LayoutInflater) getActivity().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+    headerPlaceHolder = inflater.inflate(R.layout.view_header_holder_medium, null, false);
+    layouManager.addView(headerPlaceHolder, 0);
+
+   ...
+}
+
+
+The LayoutManager seems to be the object handling the disposition of the RecyclerView items. As I couldn't find any addHeaderView(View view) method, I decided to go with the LayoutManager's addView(View view, int position) method and to add my header view in first position to act like a header. 
+
+Aaand this is where things get uglier:
+
+java.lang.NullPointerException: Attempt to read from field 'android.support.v7.widget.RecyclerView$ViewHolder android.support.v7.widget.RecyclerView$LayoutParams.mViewHolder' on a null object reference
+            at android.support.v7.widget.RecyclerView.getChildViewHolderInt(RecyclerView.java:2497)
+            at android.support.v7.widget.RecyclerView$LayoutManager.addViewInt(RecyclerView.java:4807)
+            at android.support.v7.widget.RecyclerView$LayoutManager.addView(RecyclerView.java:4803)
+            at com.mathieumaree.showz.fragments.CategoryFragment.setRecyclerView(CategoryFragment.java:231)
+            at com.mathieumaree.showz.fragments.CategoryFragment.access$200(CategoryFragment.java:47)
+            at com.mathieumaree.showz.fragments.CategoryFragment$2.success(CategoryFragment.java:201)
+            at com.mathieumaree.showz.fragments.CategoryFragment$2.success(CategoryFragment.java:196)
+            at retrofit.CallbackRunnable$1.run(CallbackRunnable.java:41)
+            at android.os.Handler.handleCallback(Handler.java:739)
+            at android.os.Handler.dispatchMessage(Handler.java:95)
+            at android.os.Looper.loop(Looper.java:135)
+            at android.app.ActivityThread.main(ActivityThread.java:5221)
+            at java.lang.reflect.Method.invoke(Native Method)
+            at java.lang.reflect.Method.invoke(Method.java:372)
+            at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:899)
+            at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:694)
+
+
+After getting several NullPointerExceptions trying to call the addView(View view) at different moments of the Activity creation (also tried adding the view once everything is set up, even the Adapter's data), I realized I have no idea if this is the right way to do it (and it doesn't look to be).
+
+PS: Also, a solution that could handle the GridLayoutManager in addition to the LinearLayoutManager would be really appreciated!
+    
+===============================================================================================
+102
+A:I had to add a footer to my RecyclerView and here I'm sharing my code snippet as I thought it might be useful. Please check the comments inside the code for better understanding of the overall flow.
+
+import android.content.Context;
+import android.support.v7.widget.RecyclerView;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+
+import java.util.ArrayList;
+
+public class RecyclerViewWithFooterAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+
+    private static final int FOOTER_VIEW = 1;
+    private ArrayList<String> data; // Take any list that matches your requirement.
+    private Context context;
+
+    // Define a constructor
+    public RecyclerViewWithFooterAdapter(Context context, ArrayList<String> data) {
+        this.context = context;
+        this.data = data;
+    }
+
+    // Define a ViewHolder for Footer view
+    public class FooterViewHolder extends ViewHolder {
+        public FooterViewHolder(View itemView) {
+            super(itemView);
+            itemView.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    // Do whatever you want on clicking the item
+                }
+            });
+        }
+    }
+
+    // Now define the ViewHolder for Normal list item
+    public class NormalViewHolder extends ViewHolder {
+        public NormalViewHolder(View itemView) {
+            super(itemView);
+
+            itemView.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    // Do whatever you want on clicking the normal items
+                }
+            });
+        }
+    }
+
+    // And now in onCreateViewHolder you have to pass the correct view
+    // while populating the list item.
+
+    @Override
+    public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+
+        View v;
+
+        if (viewType == FOOTER_VIEW) {
+            v = LayoutInflater.from(context).inflate(R.layout.list_item_footer, parent, false);
+            FooterViewHolder vh = new FooterViewHolder(v);
+            return vh;
+        }
+
+        v = LayoutInflater.from(context).inflate(R.layout.list_item_normal, parent, false);
+
+        NormalViewHolder vh = new NormalViewHolder(v);
+
+        return vh;
+    }
+
+    // Now bind the ViewHolder in onBindViewHolder
+    @Override
+    public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+
+        try {
+            if (holder instanceof NormalViewHolder) {
+                NormalViewHolder vh = (NormalViewHolder) holder;
+
+                vh.bindView(position);
+            } else if (holder instanceof FooterViewHolder) {
+                FooterViewHolder vh = (FooterViewHolder) holder;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Now the critical part. You have return the exact item count of your list
+    // I've only one footer. So I returned data.size() + 1
+    // If you've multiple headers and footers, you've to return total count
+    // like, headers.size() + data.size() + footers.size()
+
+    @Override
+    public int getItemCount() {
+        if (data == null) {
+            return 0;
+        }
+
+        if (data.size() == 0) {
+            //Return 1 here to show nothing
+            return 1;
+        }
+
+        // Add extra view to show the footer view
+        return data.size() + 1;
+    }
+
+    // Now define getItemViewType of your own.
+
+    @Override
+    public int getItemViewType(int position) {
+        if (position == data.size()) {
+            // This is where we'll add footer.
+            return FOOTER_VIEW;
+        }
+
+        return super.getItemViewType(position);
+    }
+
+    // So you're done with adding a footer and its action on onClick.
+    // Now set the default ViewHolder for NormalViewHolder
+
+    public class ViewHolder extends RecyclerView.ViewHolder {
+        // Define elements of a row here
+        public ViewHolder(View itemView) {
+            super(itemView);
+            // Find view by ID and initialize here
+        }
+
+        public void bindView(int position) {
+            // bindView() method to implement actions
+        }
+    }
+}
+
+
+The above code snippet adds a footer to the RecyclerView. You can check this GitHub repository for checking the implementation of adding both header and a footer. 
+    

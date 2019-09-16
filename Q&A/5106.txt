@@ -1,0 +1,93 @@
+48
+Q:I'm requesting images from presenter in adapter:
+
+  @Override
+  public void onBindViewHolder(SiteAdapter.ViewHolder holder, int position)
+  {
+    Site site = sites.get(position);
+    holder.siteName.setText(site.getName());
+    requestHolderLogo(holder, site.getLinks().getLogoUrl());
+  }
+
+  private void requestHolderLogo(final ViewHolder holder, final String logoUrl)
+  {
+    compositeSubscription.add(
+      presenter.bitmap(logoUrl)
+        .subscribe(
+          bitmap -> {
+            holder.siteLogo.setImageBitmap(bitmap);
+            holder.siteLogo.setVisibility(View.VISIBLE);
+          },
+          error -> {
+            holder.siteName.setVisibility(View.VISIBLE);
+          })
+    );
+  }
+
+
+I should unsubscribe when ViewHolder is re-used. It is easy.
+
+But how stop all subscription when view is destroyed? I should also probably nullify presenter reference to avoid memory leak
+    
+===============================================================================================
+20
+A:I think the best way to do that would be to:
+
+
+Keep a subscription reference in the SiteAdapter.ViewHolder
+unsubscribe the subscription object in onBindViewHolder (it's called when the ViewHolder is reused)
+Keep the CompositeSubscription object in your adapter
+Use the onDetachedFromRecyclerView method of your Adapter to unsubscribe the compositeSubscription
+
+
+Like so:
+
+public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
+
+    private CompositeSubscription compositeSubscription = new CompositeSubscription();
+
+    // other needed SiteAdapter methods
+
+    @Override
+    public void onBindViewHolder(SiteAdapter.ViewHolder holder, int position) {
+        if (holder.subscription != null && !holder.subscription.isUnsubscribed()) {
+            compositeSubscription.remove(holder.subscription);
+            // this will unsubscribe the subscription as well
+        }
+        Site site = sites.get(position);
+        holder.siteName.setText(site.getName());
+        requestHolderLogo(holder, site.getLinks().getLogoUrl());
+    }
+
+    private void requestHolderLogo(final SiteAdapter.ViewHolder holder, final String logoUrl) {
+        holder.subscription = presenter.bitmap(logoUrl)
+                .subscribe(
+                        bitmap -> {
+                            holder.siteLogo.setImageBitmap(bitmap);
+                            holder.siteLogo.setVisibility(View.VISIBLE);
+                        },
+                        error -> {
+                            holder.siteName.setVisibility(View.VISIBLE);
+                        });
+        compositeSubscription.add(holder.subscription);
+    }
+
+    @Override
+    public void onDetachedFromRecyclerView(RecyclerView recyclerView) {
+        compositeSubscription.unsubscribe();
+    }
+
+    public static class ViewHolder extends RecyclerView.ViewHolder {
+
+        public Subscription subscription;
+
+        // some holder-related stuff
+
+        public ViewHolder(View itemView) {
+            super(itemView);
+            // init holder
+        }
+    }
+}
+
+    

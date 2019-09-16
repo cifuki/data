@@ -1,0 +1,180 @@
+51
+Q:I'm writing an Android app that requires SSL client authentication. I know how to create a JKS keystore for a desktop Java application, but Android only supports the BKS format. Every way I've tried to create the keystore results in the following error:
+handling exception: javax.net.ssl.SSLHandshakeException: null cert chain
+
+So it looks like the client is never sending a proper certificate chain, probably because I'm not creating the keystore properly. I'm unable to enable SSL debugging like I can on the desktop, so that's making this much more difficult than it should be.
+
+For reference the following is the command that IS working to create a BKS truststore:
+keytool -importcert -v -trustcacerts -file "cacert.pem" -alias ca -keystore "mySrvTruststore.bks" -provider org.bouncycastle.jce.provider.BouncyCastleProvider -providerpath "bcprov-jdk16-145.jar" -storetype BKS -storepass testtest
+
+
+
+Here is the command I've tried that is NOT working to create a BKS client keystore:
+
+cat clientkey.pem clientcert.pem cacert.pem > client.pem
+
+keytool -import -v -file <(openssl x509 -in client.pem) -alias client -keystore "clientkeystore" -provider org.bouncycastle.jce.provider.BouncyCastleProvider -providerpath "bcprov-jdk16-145.jar" -storetype BKS -storepass testtest
+
+    
+===============================================================================================
+62
+A:Detailed Step by Step instructions I followed to achieve this
+
+
+Download bouncycastle JAR from 
+        http://repo2.maven.org/maven2/org/bouncycastle/bcprov-ext-jdk15on/1.46/bcprov-ext-jdk15on-1.46.jar
+or take it from the "doc" folder.
+Configure BouncyCastle for PC using one of the below methods.
+
+Adding the BC Provider Statically (Recommended)
+
+Copy the bcprov-ext-jdk15on-1.46.jar to each
+
+D:\\tools\\jdk1.5.0_09\\jre\\lib\\ext   (JDK (bundled JRE)
+D:\\tools\\jre1.5.0_09\\lib\\ext       (JRE)
+C:\\                                (location to be used in env variable)
+
+Modify the java.security file under
+
+D:\\tools\\jdk1.5.0_09\\jre\\lib\\security
+D:\\tools\\jre1.5.0_09\\lib\\security
+and add the following entry
+
+security.provider.7=org.bouncycastle.jce.provider.BouncyCastleProvider
+
+
+Add the following environment variable in "User Variables" section
+
+CLASSPATH=%CLASSPATH%;c:\\bcprov-ext-jdk15on-1.46.jar
+
+
+Add bcprov-ext-jdk15on-1.46.jar to CLASSPATH of your project and Add the following line in your code
+
+Security.addProvider(new BouncyCastleProvider());
+
+
+Generate the Keystore using Bouncy Castle
+
+Run the following command
+
+keytool -genkey -alias myproject -keystore C:/myproject.keystore -storepass myproject -storetype BKS -provider org.bouncycastle.jce.provider.BouncyCastleProvider
+
+This generates the file C:\\myproject.keystore
+Run the following command to check if it is properly generated or not
+
+keytool -list -keystore C:\\myproject.keystore -storetype BKS
+
+
+Configure BouncyCastle for TOMCAT
+
+
+Open D:\\tools\\apache-tomcat-6.0.35\\conf\\server.xml and add the following entry
+
+
+<Connector
+port="8443"
+keystorePass="myproject"
+alias="myproject"
+keystore="c:/myproject.keystore"
+keystoreType="BKS"
+SSLEnabled="true"
+clientAuth="false"
+protocol="HTTP/1.1"
+scheme="https"
+secure="true"
+sslProtocol="TLS"
+sslImplementationName="org.bouncycastle.jce.provider.BouncyCastleProvider"/>
+
+Restart the server after these changes.
+
+Configure BouncyCastle for Android Client
+
+No need to configure since Android supports Bouncy Castle Version 1.46 internally in the provided "android.jar".
+Just implement your version of HTTP Client (MyHttpClient.java can be found below) and set the following in code
+
+SSLSocketFactory.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
+
+If you don't do this, it gives an exception as below
+
+javax.net.ssl.SSLException: hostname in certificate didn't match: <192.168.104.66> != 
+
+In production mode, change the above code to 
+
+SSLSocketFactory.setHostnameVerifier(SSLSocketFactory.STRICT_HOSTNAME_VERIFIER);
+
+
+
+
+MyHttpClient.java
+
+package com.arisglobal.aglite.network;
+
+import java.io.InputStream;
+import java.security.KeyStore;
+
+import org.apache.http.conn.ClientConnectionManager;
+import org.apache.http.conn.scheme.PlainSocketFactory;
+import org.apache.http.conn.scheme.Scheme;
+import org.apache.http.conn.scheme.SchemeRegistry;
+import org.apache.http.conn.ssl.SSLSocketFactory;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.conn.SingleClientConnManager;
+
+import com.arisglobal.aglite.activity.R;
+
+import android.content.Context;
+
+public class MyHttpClient extends DefaultHttpClient {
+
+    final Context context;
+
+    public MyHttpClient(Context context) {
+        this.context = context;
+    }
+
+    @Override
+    protected ClientConnectionManager createClientConnectionManager() {
+        SchemeRegistry registry = new SchemeRegistry();
+
+        registry.register(new Scheme("http", PlainSocketFactory.getSocketFactory(), 80));
+
+        // Register for port 443 our SSLSocketFactory with our keystore to the ConnectionManager
+        registry.register(new Scheme("https", newSslSocketFactory(), 443));
+        return new SingleClientConnManager(getParams(), registry);
+    }
+
+    private SSLSocketFactory newSslSocketFactory() {
+        try {
+            // Get an instance of the Bouncy Castle KeyStore format
+            KeyStore trusted = KeyStore.getInstance("BKS");
+
+            // Get the raw resource, which contains the keystore with your trusted certificates (root and any intermediate certs)
+            InputStream in = context.getResources().openRawResource(R.raw.aglite);
+            try {
+                // Initialize the keystore with the provided trusted certificates.
+                // Also provide the password of the keystore
+                trusted.load(in, "aglite".toCharArray());
+            } finally {
+                in.close();
+            }
+
+            // Pass the keystore to the SSLSocketFactory. The factory is responsible for the verification of the server certificate.
+            SSLSocketFactory sf = new SSLSocketFactory(trusted);
+
+            // Hostname verification from certificate
+            // http://hc.apache.org/httpcomponents-client-ga/tutorial/html/connmgmt.html#d4e506
+            sf.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
+            return sf;
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+}
+
+
+How to invoke the above code in your Activity class:
+
+DefaultHttpClient client = new MyHttpClient(getApplicationContext());
+HttpResponse response = client.execute(...);
+
+    

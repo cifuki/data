@@ -1,0 +1,39 @@
+56
+Q:The project I'm working on uses several "high resolution" backgrounds (note the quotes). Just to get into situation, one of them is a 640x935 1.19M PNG file. As far as I know, even if Android decompresses images into memory as raw data this should be:
+
+640 x 935 x 4bytes = 2.39M
+
+I'm having memory issues on my project which I cannot really understand and I hope someone can shed some light on this matter. I'll name two devices that I am developing in and some of the results.
+
+To make sure this wasn't a secondary problem I made an activity not load the background when first created and then, when the user presses a button, all it does is:
+
+findViewById(R.id.completed_block_background).setBackgroundResource(R.drawable.blockbackgroundbottom1);
+
+
+Then, using DDMS with "Update Heap" on the process (and first forcing GC to make sure this won't be a problem), I'm getting the following memory results:
+
+Nexus S: Going from 18M to 26M (8M difference) 
+
+Galaxy Nexus: Going from 28M to 39M (11M difference)
+
+So, as you can see, putting that theorically 2.39M uncompressed image into the background actually increases 8M and 11M in memory usage. Can someone explain why is this and if there is any solution?
+
+The only solution I have been able to find is using bitmaps to halve resolution or to lower the channel format (so far this is what I have done, switched them to 565 RGB, but this makes some banding problems which I cannot accept).
+
+I would also accept, in case there's nothing that can be done, an explanation of why this is happening. Thanks in advance.
+    
+===============================================================================================
+111
+A:Is that why it's making the image so big? 
+
+
+Well, what's happening is that setBackgroundResource(R.drawable.blockbackgroundbottom1) is going to cause Android to first do the BitmapFactory.decodeResource() thing you that experimented with, but then have the rendering logic scale the image to apply it as a background. So, for example, the 3MB difference between the Galaxy Nexus and the Nexus S probably reflects the size difference, in pixels, between the renditions of the LinearLayout.
+
+There may also be some resampling going on based on screen density, depending upon where you have stored this image in your resource tree.
+
+
+  Is there any way to make it keep the original image size in any way?
+
+
+Off the cuff, I would first try putting it in res/drawable-nodpi/ (to prevent any automatic density-based resampling), then manually get the Bitmap via the version of BitmapFactory.decodeResource() that takes the BitmapFactory.Options, so you can get it scaled as it is being read in. If that does not seem to help much, you may need to move the PNG out of drawable resources and into a raw resource or assets, as Android might still try holding onto an un-scaled copy of the image. I don't think that it will if you use BitmapFactory.decodeResource() directly yourself, but I cannot rule it out.
+    

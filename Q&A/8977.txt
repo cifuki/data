@@ -1,0 +1,50 @@
+30
+Q:I have some typical codes which used HttpURLConnection to get a file with an URL.
+They worked fine in android 1.x and 2.x. But failed in Android 4.1!
+
+I searched on the web but found little similar information.
+Would anybody please help to investigate this issue?
+
+private String mURLStr; 
+private HttpURLConnection mHttpConnection;
+
+...
+
+url = new URL(mURLStr);
+
+...
+
+mHttpConnection = (HttpURLConnection) url.openConnection();
+mHttpConnection.setDoOutput(true);
+mHttpConnection.setRequestMethod("GET");
+
+...
+
+InputStream is = mHttpConnection.getInputStream();
+
+
+The getInputStream method throws an exception:
+
+08-01 15:56:48.856: W/System.err(13613): java.io.IOException: No authentication challenges found
+08-01 15:56:48.856: W/System.err(13613):      at libcore.net.http.HttpURLConnectionImpl.getAuthorizationCredentials(HttpURLConnectionImpl.java:427)
+08-01 15:56:48.866: W/System.err(13613):      at libcore.net.http.HttpURLConnectionImpl.processAuthHeader(HttpURLConnectionImpl.java:407)
+08-01 15:56:48.866: W/System.err(13613):      at libcore.net.http.HttpURLConnectionImpl.processResponseHeaders(HttpURLConnectionImpl.java:356)
+08-01 15:56:48.866: W/System.err(13613):      at libcore.net.http.HttpURLConnectionImpl.getResponse(HttpURLConnectionImpl.java:292)
+08-01 15:56:48.866: W/System.err(13613):      at libcore.net.http.HttpURLConnectionImpl.getInputStream(HttpURLConnectionImpl.java:168)
+...
+
+    
+===============================================================================================
+27
+A:I am currently facing the same problem. On 4.1 Jelly Bean I receive an IOException "No authentication challenges found" when calling getResponseCode() on the HttpURLConnection.
+
+I have searched online to see what has changed in the Android source code and found the following:
+4.0.4 (working): https://bitbucket.org/seandroid/libcore/src/7ecbe081ec95/luni/src/main/java/libcore/net/http/HttpURLConnectionImpl.java
+4.1.1 (not working): https://bitbucket.org/seandroid/libcore/src/6b27266a2856/luni/src/main/java/libcore/net/http/HttpURLConnectionImpl.java
+
+As one can see in 4.1 JB the method getAuthorizationCredentials() throws the IOException. It parses the challenge headers it finds in the response using HeaderParser.parseChallenges(..), if the response code is 401 or 407. If the returned List is empty the Exception is thrown.
+
+https://bitbucket.org/seandroid/libcore/src/6b27266a2856/luni/src/main/java/libcore/net/http/HeaderParser.java
+
+We are currently investigating what exactly causes that List to be empty, but have the suspicion that our server might use realm=... instead of realm="..." in the challenge header. Missing quotation marks might be the cause for this problem. We have to investigate further if that is indeed the case and if we can make it work.
+    

@@ -1,0 +1,62 @@
+35
+Q:I'm drawing a rather large path in my view and I'm running into some performance problems. The path is currently 32,000 points long, but my application should scale to at least 128,000 points. I can't really do anything about the size of the path, as the datasets are just that large and I need to be able to display the whole path at once and allow zooming in.
+
+I'm using a Nexus 10 running Android 4.2, which has hardware acceleration enabled by default for applications that don't explicitly disable it.
+
+The path is created with the following code (I omitted some setup and other irrelevant parts):
+
+dataPath.moveTo(0, offset - (float) data[leftLimit]/ scalingFactor);
+        for (int i = leftLimit; i < rightLimit; ++i) {
+            x = (i - leftLimit) * dx;
+            y = offset - (float) data[i]/ scalingFactor;
+            dataPath.lineTo(x, y);
+        }
+
+
+And then drawn in the onDraw() method:
+
+canvas.drawColor(Color.WHITE);
+canvas.drawPath(dataPath, linePaint);
+
+
+I measured the time it takes to draw my view using adb shell dumpsys gfxinfo with and without hardware acceleration, and to my suprise the hardware acceleration is much slower:
+
+With hardware acceleration:
+
+
+
+Without hardware acceleration:
+
+
+
+The hardware accelerated version takes around 200-300 ms per frame, most spent in the Process stage. The non-accelerated version takes around 50 ms, with 2/3 in the Draw stage and 1/3 in the process stage.
+
+Obviously even my faster version without hardware acceleration is still too slow to achieve 60 fps, or to be even barely useable when I move to larger datasets. 
+
+The idea to render the path to a bitmap and then only transform that bitmap to fit the screen is also problematic in my case. I need to support zooming in very far onto the path, and to enable zooming in without the path quality getting much worse I would have to render oversized bitmaps of the path (and would likely run into memory limits and the texture size limits). And when zooming in far I would have to either create newer images of only parts of the path, or switch to just rendering the path directly, which likely would lead to delays greater than the framerate if the performance is still similar to what I have right now.
+
+What I'm wondering now is
+
+
+Is drawing lines/paths just something the GPU is bad at and that one should not try to hardware accelerate, or am I likely doing something wrong that causes the bad performance?
+Is there anything I can do to draw such huge paths with acceptable performance?
+
+    
+===============================================================================================
+47
+A:Is drawing lines/paths just something the GPU is bad at and that one
+  should not try to hardware accelerate, or am I likely doing something
+  wrong that causes the bad performance?
+
+
+Paths are always rendered using the CPU. When the app is hardware accelerated this means the renderer will first draw your path using the CPU into a bitmap, then upload that bitmap as a texture to the GPU and finally draw the texture on screen.
+
+Lines are entirely hardware accelerated. Instead of using a Path I recommend you use Canvas.drawLines() in this case.
+
+
+  Is there anything I can do to draw such huge paths with acceptable
+  performance?
+
+
+You should either use Canvas.drawLines() or render the path yourself into a Bitmap that you manage.
+    

@@ -1,0 +1,68 @@
+27
+Q:I would like to take a Cookie string (as it might be returned in a Set-Cookie header) and be able to easily modify parts of it, specifically the expiration date.
+
+I see there are several different Cookie classes, such as BasicClientCookie, available but I don't see any easy way to parse the string into one of those objects.
+
+I see in api level 9 they added HttpCookie which has a parse method, but I need something to work in previous versions.
+
+Any ideas?
+
+Thanks
+    
+===============================================================================================
+11
+A:I believe you'll have to parse it out manually.  Try this:
+
+BasicClientCookie parseRawCookie(String rawCookie) throws Exception {
+    String[] rawCookieParams = rawCookie.split(";");
+
+    String[] rawCookieNameAndValue = rawCookieParams[0].split("=");
+    if (rawCookieNameAndValue.length != 2) {
+        throw new Exception("Invalid cookie: missing name and value.");
+    }
+
+    String cookieName = rawCookieNameAndValue[0].trim();
+    String cookieValue = rawCookieNameAndValue[1].trim();
+    BasicClientCookie cookie = new BasicClientCookie(cookieName, cookieValue);
+    for (int i = 1; i < rawCookieParams.length; i++) {
+        String rawCookieParamNameAndValue[] = rawCookieParams[i].trim().split("=");
+
+        String paramName = rawCookieParamNameAndValue[0].trim();
+
+        if (paramName.equalsIgnoreCase("secure")) {
+            cookie.setSecure(true);
+        } else {
+            if (rawCookieParamNameAndValue.length != 2) {
+                throw new Exception("Invalid cookie: attribute not a flag or missing value.");
+            }
+
+            String paramValue = rawCookieParamNameAndValue[1].trim();
+
+            if (paramName.equalsIgnoreCase("expires")) {
+                Date expiryDate = DateFormat.getDateTimeInstance(DateFormat.FULL)
+                        .parse(paramValue);
+                cookie.setExpiryDate(expiryDate);
+            } else if (paramName.equalsIgnoreCase("max-age")) {
+                long maxAge = Long.parseLong(paramValue);
+                Date expiryDate = new Date(System.getCurrentTimeMillis() + maxAge);
+                cookie.setExpiryDate(expiryDate);
+            } else if (paramName.equalsIgnoreCase("domain")) {
+                cookie.setDomain(paramValue);
+            } else if (paramName.equalsIgnoreCase("path")) {
+                cookie.setPath(paramValue);
+            } else if (paramName.equalsIgnoreCase("comment")) {
+                cookie.setPath(paramValue);
+            } else {
+                throw new Exception("Invalid cookie: invalid attribute name.");
+            }
+        }
+    }
+
+    return cookie;
+}
+
+
+I haven't actually compiled or run this code, but it should be a strong start.  You'll probably have to mess with the date parsing a bit: I'm not sure that the date format used in cookies is actually the same as DateFormat.FULL.  (Check out this related question, which addresses handling the date format in cookies.) Also, note that there are some cookie attributes not handled by BasicClientCookie such as version and httponly.
+
+Finally, this code assumes that the name and value of the cookie appear as the first attribute: I'm not sure if that's necessarily true, but that's how every cookie I've ever seen is ordered.
+    

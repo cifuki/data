@@ -1,0 +1,52 @@
+133
+Q:I was going through the official doc about the new Permissions model in Android M. It talks about the shouldShowRequestPermissionRationale() function which returns true if the app has requested this permission previously and the user denied the request. If the user turned down the permission request in the past and chose the Don't ask again option, this method returns false. 
+
+But how can we differentiate between the following two cases?
+
+Case 1: The app doesn't have a permission and the user has not been asked for the permission before. In this case, shouldShowRequestPermissionRationale() will return false because this is the first time we're asking the user.
+
+Case 2: The user has denied the permission and selected "Don't ask again", in this case too shouldShowRequestPermissionRationale() will return false. 
+
+I would want to send the user to the App's settings page in Case 2. How do i go about differentiating these two cases?\xef\xbb\xbf
+    
+===============================================================================================
+155
+A:After M Preview 1, if the dialog is displayed for the first time, there is no Never ask again checkbox.
+
+If the user denies the permission request, there will be a Never ask again checkbox in the permission dialog the second time permission is requested.
+
+So the logic should be like this:
+
+
+Request permission:
+
+if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+    ActivityCompat.requestPermissions(context, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CODE);
+} else {
+    //Do the stuff that requires permission...
+}
+
+Check if the permission was denied or granted in onRequestPermissionsResult.
+
+If the permission was denied previously, this time there will be a Never ask again checkbox in the permission dialog.  
+
+Call shouldShowRequestPermissionRationale to see if the user checked Never ask again. shouldShowRequestPermissionRationale method returns false only if the user selected Never ask again or device policy prohibits the app from having that permission:
+
+if (grantResults.length > 0){
+    if(grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        //Do the stuff that requires permission...
+    }else if (grantResults[0] == PackageManager.PERMISSION_DENIED){
+        // Should we show an explanation?
+        if (ActivityCompat.shouldShowRequestPermissionRationale(context, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+            //Show permission explanation dialog...
+        }else{
+            //Never ask again selected, or device policy prohibits the app from having that permission.
+            //So, disable that feature, or fall back to another situation...
+        }
+    }
+}
+
+
+
+So, you won't have to track if a user checked Never ask again or not.
+    

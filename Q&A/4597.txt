@@ -1,0 +1,132 @@
+52
+Q:I'm using the Google DrawerLayout.
+
+When an item gets clicked, the drawer is smoothly closed and an Activity will be launched. Turning these activities into Fragments is not an option. Because of this, launching an activity and then closing the drawer is also not an option. Closing the drawer and launching the activity at the same time will make the closing animation stutter.
+
+Given that I want to smoothly close it first, and then launch the activity, I have a problem with the latency between when a user clicks on the drawer item, and when they see the activity they wanted to go to.
+
+This is what the click listener for each item looks like.
+
+final View.OnClickListener mainItemClickListener = new View.OnClickListener() {
+    @Override
+    public void onClick(final View v) {
+        mViewToLaunch = v;
+        mDrawerLayout.closeDrawers();
+    }
+};
+
+
+My activity is also the DrawerListener, its onDrawerClosed method looks like:
+
+@Override
+public synchronized void onDrawerClosed(final View view) {
+    if (mViewToLaunch != null) {
+        onDrawerItemSelection(mViewToLaunch);
+        mViewToLaunch = null;
+    }
+}
+
+
+onDrawerItemSelection just launches one of the five activities.
+
+I do nothing on onPause of the DrawerActivity.
+
+I am instrumenting this and it takes on average from 500-650ms from the moment onClick is called, to the moment onDrawerClosed ends.
+
+There is a noticeable lag, once the drawer closes, before the corresponding activity is launched.
+
+I realize a couple of things are happening:
+
+
+The closing animation takes place, which is a couple of milliseconds right there (let's say 300). 
+Then there's probably some latency between the drawer visually closing and its listener getting fired. I'm trying to figure out exactly how much of this is happening by looking at DrawerLayout source but haven't figured it out yet.
+Then there's the amount of time it takes for the launched activity to perform its startup lifecycle methods up to, and including, onResume. I have not instrumented this yet but I estimate about 200-300ms.
+
+
+This seems like a problem where going down the wrong path would be quite costly so I want to make sure I fully understand it.
+
+One solution is just to skip the closing animation but I was hoping to keep it around.
+
+How can I decrease my transition time as much as possible?
+    
+===============================================================================================
+42
+A:According the docs,
+
+
+  Avoid performing expensive operations such as layout during animation as it can cause stuttering; try to perform expensive operations during the STATE_IDLE state. 
+
+
+Instead of using a Handler and hard-coding the time delay, you can override the onDrawerStateChanged method of ActionBarDrawerToggle (which implements DrawerLayout.DrawerListener), so that you can perform the expensive operations when the drawer is fully closed.
+
+Inside MainActivity,
+
+private class SmoothActionBarDrawerToggle extends ActionBarDrawerToggle {
+
+    private Runnable runnable;
+
+    public SmoothActionBarDrawerToggle(Activity activity, DrawerLayout drawerLayout, Toolbar toolbar, int openDrawerContentDescRes, int closeDrawerContentDescRes) {
+        super(activity, drawerLayout, toolbar, openDrawerContentDescRes, closeDrawerContentDescRes);
+    }
+
+    @Override
+    public void onDrawerOpened(View drawerView) {
+        super.onDrawerOpened(drawerView);
+        invalidateOptionsMenu();
+    }
+    @Override
+    public void onDrawerClosed(View view) {
+        super.onDrawerClosed(view);
+        invalidateOptionsMenu();
+    }
+    @Override
+    public void onDrawerStateChanged(int newState) {
+        super.onDrawerStateChanged(newState);
+        if (runnable != null && newState == DrawerLayout.STATE_IDLE) {
+            runnable.run();
+            runnable = null;
+        }
+    }
+
+    public void runWhenIdle(Runnable runnable) {
+        this.runnable = runnable;
+    }
+}
+
+
+Set the DrawerListener in onCreate:
+
+mDrawerToggle = new SmoothActionBarDrawerToggle(this, mDrawerLayout, mToolbar, R.string.open, R.string.close);
+mDrawerLayout.setDrawerListener(mDrawerToggle);
+
+
+Finally,
+
+private void selectItem(int position) {
+    switch (position) {
+        case DRAWER_ITEM_SETTINGS: {
+            mDrawerToggle.runWhenIdle(new Runnable() {
+                @Override
+                public void run() {
+                    Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
+                    startActivity(intent);
+                }
+            });
+            mDrawerLayout.closeDrawers();
+            break;
+        }
+        case DRAWER_ITEM_HELP: {
+            mDrawerToggle.runWhenIdle(new Runnable() {
+                @Override
+                public void run() {
+                    Intent intent = new Intent(MainActivity.this, HelpActivity.class);
+                    startActivity(intent);
+                }
+            });
+            mDrawerLayout.closeDrawers();
+            break;
+        }
+    }
+}
+
+    

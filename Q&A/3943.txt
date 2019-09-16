@@ -1,0 +1,77 @@
+59
+Q:Android's official proguard documentation shows two primary optimizations:
+
+
+set minifyEnabled to true 
+use proguard-android-optimize.txt
+instead of proguard-android.txt
+
+
+Are these two the most aggressive possible settings? 
+
+I am writing an android library and need to make sure when people use my library that my code doesn't break. (I know there are rules I can put in my library to counter the proguard configuration set on the app that uses the library, but I don't want to do that if I don't have to.)
+    
+===============================================================================================
+54
+A:Remember that the best ProGuard configuration - is a configuration with a minimum of exceptions.
+Under the exceptions I understand:
+
+ -keepclassmembers class * extends android.content.Context {
+    public void *(android.view.View);
+    public void *(android.view.MenuItem);
+ }
+
+
+Let's walk through proguard-android-optimize.txt and look on optimisation/obfuscation options. 
+
+For detailed description of ProGuard options I use this 
+
+-optimizations !code/simplification/arithmetic,!code/simplification/cast,!field/*,!class/merging/*
+This - list of possible optimisation, ! mean negate, so this optimization is not used
+
+-optimizationpasses 5
+    Specifies the number of optimization passes to be performed. By default, a single pass is performed. Multiple passes may result in further improvements. If no improvements are found after an optimization pass, the optimization is ended. Only applicable when optimizing.  
+Usage: OK, and looks like that default 5 passes is enough
+
+-allowaccessmodification
+    Specifies that the access modifiers of classes and class members may be broadened during processing. This can improve the results of the optimization step.
+Usage: OK, yes looks like improve optimization
+
+-dontpreverify
+    When targeting Android, preverifing is not necessary, so dontpreverify turn it off to reduce the processing time a bit. But this option is not impact on unbreakability of code.
+Usage: OK, just to little bit reduse processing time
+
+-dontusemixedcaseclassnames
+    Specifies not to generate mixed-case class names while obfuscating. By default, obfuscated class names can contain a mix of upper-case characters and lower-case characters. This creates perfectly acceptable and usable jars. 
+Usage: QUESTIONABLE, I can't find exact reason why this option added, but looks like change class name from abcdef to AbSdEf doesn't make code unbreakable
+
+-dontskipnonpubliclibraryclasses
+    Specifies not to ignore non-public library classes. As of version 4.5, this is the default setting.
+Usage: OK, very useful
+
+The following options aren't include to proguard-android-optimize.txt:
+
+-mergeinterfacesaggressively
+    Specifies that interfaces may be merged, even if their implementing classes don't implement all interface methods... setting this option can reduce the performance of the processed code on some JVMs 
+    Usage: BAD, look dangerous for Android, don't included into config, sumular of prohibition of class/merging/ in optimizations     
+
+-overloadaggressively
+    Specifies to apply aggressive overloading while obfuscating. Multiple fields and methods can then get the same names, as long as their arguments and return types are different, as required by Java bytecode (not just their arguments, as required by the Java language)
+    Usage: BAD, Google's Dalvik VM can't handle overloaded static fields.
+
+-repackageclasses ''
+    Specifies to repackage all class files that are renamed, by moving them into the single given package. Without argument or with an empty string (''), the package is removed completely. This option overrides the -flattenpackagehierarchy option.
+    Usage: OK, Used by Google, so look like we at least have found the option which we can add to our config
+
+So I know only one more useful for obfuscation and non dangerous option:-repackageclasses ''
+
+Also please notice about decoding stack traces. ProGuard also removes the filename and line numbers from the stacktrace. This makes finding errors very complicated. You can keep the line numbers by adding the following code to your config:
+
+-renamesourcefileattribute SourceFile 
+-keepattributes SourceFile,LineNumberTable
+
+
+This will keep the line numbers but replace the filename in the stacktrace with "SourceFile".
+
+Also do not forget that the ProGuard looks vulnerable because it does not encrypt the string resources, so consider using DexGuard or encrypt important strings (like tokens, urls) themselves. 
+    

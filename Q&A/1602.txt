@@ -1,0 +1,87 @@
+114
+Q:I've already created sqlite tables for my app, but now I want to add a new table to the database.
+
+I changed the DB version as below
+
+private static final int DATABASE_VERSION = 2;
+
+
+and Added string to create table
+
+private static final String DATABASE_CREATE_color = 
+   "CREATE TABLE IF NOT EXISTS files(color text, incident_id text)";
+
+
+onCreate and onUpgrade as below:
+
+@Override
+    public void onCreate(SQLiteDatabase database) {
+        database.execSQL(DATABASE_CREATE_incident);
+        database.execSQL(DATABASE_CREATE_audio);
+        database.execSQL(DATABASE_CREATE_video);
+        database.execSQL(DATABASE_CREATE_image);
+
+    }
+
+    @Override
+    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        //drop table and add new tables when version 2 released.
+        db.execSQL(DATABASE_CREATE_color);
+
+    }
+
+
+But for some reason the new table is not being created. What am I doing wrong?
+    
+===============================================================================================
+272
+A:1. About onCreate() and onUpgrade()
+
+onCreate(..) is called whenever the app is freshly installed.  onUpgrade is called whenever the app is upgraded and launched and the database version is not the same.  
+
+2. Incrementing the db version
+
+You need a constructor like:
+
+MyOpenHelper(Context context) {
+   super(context, "dbname", null, 2); // 2 is the database version
+}
+
+
+IMPORTANT: Incrementing the app version alone is not enough for onUpgrade to be called!
+
+3. Don't forget your new users!
+
+Don't forget to add
+
+database.execSQL(DATABASE_CREATE_color);
+
+
+to your onCreate() method as well or newly installed apps will lack the table.
+
+4.  How to deal with multiple database changes over time
+
+When you have successive app upgrades, several of which have database upgrades, you want to be sure to check oldVersion:
+
+onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+   switch(oldVersion) {
+   case 1:
+       db.execSQL(DATABASE_CREATE_color);
+       // we want both updates, so no break statement here...
+   case 2:
+       db.execSQL(DATABASE_CREATE_someothertable); 
+   }
+}
+
+
+This way when a user upgrades from version 1 to version 3, they get both updates.  When a user upgrades from version 2 to 3, they just get the revision 3 update...  After all, you can't count on 100% of your user base to upgrade each time you release an update.  Sometimes they skip an update or 12 :)
+
+5.  Keeping your revision numbers under control while developing
+
+And finally... calling 
+
+adb uninstall <yourpackagename>
+
+
+totally uninstalls the app.  When you install again, you are guaranteed to hit onCreate which keeps you from having to keep incrementing the database version into the stratosphere as you develop...
+    

@@ -1,0 +1,65 @@
+30
+Q:I use Google Analytics in my Android App and it works well. After updating the SDK (google play service) to the current version (6587000) the app hangs up at startup at following line 8 of 10 times:
+
+GoogleAnalytics analytics = GoogleAnalytics.getInstance(this);
+
+
+There is no error in console. I added Achievements and Leaderboards too, but Analytics is called first. I also changed the context, but that works sometimes and sometimes not.
+
+The only time I get a reproducable result is, when I remove following lines from AndroidManifest.xml. Then there is no freeze at startup anymore.
+
+<meta-data 
+        android:name="com.google.android.gms.analytics.globalConfigResource"
+        android:resource="@xml/analytics_global_config" />
+
+
+But my configuration is correct:
+
+<?xml version="1.0" encoding="utf-8" ?>
+<resources>
+  <string name="ga_appName">TestAppName</string>
+  <string name="ga_appVersion">Version1.0</string>
+  <string name="ga_logLevel">verbose</string>
+  <integer name="ga_dispatchPeriod">1000</integer>
+  <bool name="ga_dryRun">true</bool>
+</resources>
+
+
+And if I change the configuration there is the same result: 8 of 10 times the App freezes at startup.
+
+Does someone have a clue what the problem is or what else I can check to make my app running again without freezing at startup?
+    
+===============================================================================================
+37
+A:i had similar i removed the below code and application runs.. 
+
+<meta-data 
+        android:name="com.google.android.gms.analytics.globalConfigResource"
+        android:resource="@xml/analytics_global_config" />
+
+
+and add following code for getTracker class... build the GoogleAnalytics using java code rather than XML approch
+
+synchronized Tracker getTracker(TrackerName trackerId) {
+        Log.d(TAG, "getTracker()");
+        if (!mTrackers.containsKey(trackerId)) {
+            GoogleAnalytics analytics = GoogleAnalytics.getInstance(this);
+
+            // Global GA Settings
+            // <!-- Google Analytics SDK V4 BUG20141213 Using a GA global xml freezes the app! Do config by coding. -->
+            analytics.setDryRun(false);
+
+            analytics.getLogger().setLogLevel(Logger.LogLevel.INFO);
+            //analytics.getLogger().setLogLevel(Logger.LogLevel.VERBOSE);
+
+            // Create a new tracker
+            Tracker t = (trackerId == TrackerName.APP_TRACKER) ? analytics.newTracker(R.xml.ga_tracker_config) : null;
+            if (t != null) {
+                t.enableAdvertisingIdCollection(true);
+            }
+            mTrackers.put(trackerId, t);
+        }
+        return mTrackers.get(trackerId);
+    }
+
+    

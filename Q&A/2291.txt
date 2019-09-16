@@ -1,0 +1,25 @@
+89
+Q:I'm moving a project to the new Android Native Development Kit (i.e. JNI) and I'd like to catch SIGSEGV, should it occur (possibly also SIGILL, SIGABRT, SIGFPE) in order to present a nice crash reporting dialog, instead of (or before) what currently happens: the immediate unceremonious death of the process and possibly some attempt by the OS to restart it. (Edit: The JVM/Dalvik VM catches the signal and logs a stack trace and other useful information; I just want to offer the user the option to email that info to me really.) 
+
+The situation is: a large body of C code which I didn't write does most of the work in this application (all the game logic) and although it's well-tested on numerous other platforms, it's entirely possible that I, in my Android port, will feed it garbage and cause a crash in native code, so I want the crash dumps (both native and Java) that currently show up in the Android log (I guess it would be stderr in a non-Android situation). I'm free to modify both C and Java code arbitrarily, although the callbacks (both going in and coming out of JNI) number about 40 and obviously, bonus points for small diffs.
+
+I've heard of the signal chaining library in J2SE, libjsig.so, and if I could safely install a signal handler like that on Android, that would solve the catching part of my question, but I see no such library for Android/Dalvik.
+    
+===============================================================================================
+79
+A:Edit: From Jelly Bean onwards you can't get the stack trace, because READ_LOGS went away. :-(
+
+I actually got a signal handler working without doing anything too exotic, and have released code using it, which you can see on github (edit: linking to historical release; I removed the crash handler since then). Here's how:
+
+
+Use sigaction() to catch the signals and store the old handlers. (android.c:570)
+Time passes, a segfault happens.
+In the signal handler, call up to JNI one last time and then call the old handler. (android.c:528)
+In that JNI call, log any useful debugging info, and call startActivity() on an activity that is flagged as needing to be in its own process. (SGTPuzzles.java:962, AndroidManifest.xml:28)
+When you come back from Java and call that old handler, the Android framework will connect to debuggerd to log a nice native trace for you, and then the process will die. (debugger.c, debuggerd.c)
+Meanwhile, your crash-handling activity is starting up. Really you should pass it the PID so it can wait for step 5 to complete; I don't do this. Here you apologise to the user and ask if you can send a log. If so, gather the output of logcat -d -v threadtime and launch an ACTION_SEND with recipient, subject and body filled in. The user will have to press Send. (CrashHandler.java, SGTPuzzles.java:462, strings.xml:41
+Watch out for logcat failing or taking more than a few seconds. I have encountered one device, the T-Mobile Pulse / Huawei U8220, where logcat immediately goes into the T (traced) state and hangs. (CrashHandler.java:70, strings.xml:51)
+
+
+In a non-Android situation, some of this would be different. You'd need to gather your own native trace, see this other question, depending on what sort of libc you have. You'd need to handle dumping that trace, launching your separate crash-handler process, and sending the email in some appropriate ways for your platform, but I imagine the general approach should still work.
+    

@@ -1,0 +1,187 @@
+41
+Q:How to implement the Scroll Listener for WebView in Android
+
+i tried this but its not calling my Log.i on scrolling the webview.
+
+package com.example.webview.full.width;
+import android.content.Context;
+import android.util.AttributeSet;
+import android.util.Log;
+import android.webkit.WebView;
+import android.widget.AbsListView;
+import android.widget.AbsListView.OnScrollListener;
+
+public class scorllableWebview extends WebView implements OnScrollListener {
+
+
+Context ctx;
+AttributeSet atrs;
+
+public scorllableWebview(Context context) {
+    super(context);
+
+    ctx = context;
+}
+
+public scorllableWebview(Context context, AttributeSet atters){
+    super(context, atters);
+
+    ctx = context;
+    atrs = atters;
+}
+
+@Override
+public void onScroll(AbsListView view, int firstVisibleItem,
+        int visibleItemCount, int totalItemCount) {
+
+    Log.i("onScroll", "Called");
+}
+
+@Override
+public void onScrollStateChanged(AbsListView view, int scrollState) {
+
+
+    Log.i("onScrollStateChanged", "Called");
+
+}
+}
+
+
+Here is my MainActivity.java
+
+package com.example.webview.full.width;
+import android.app.Activity;
+import android.app.ProgressDialog;
+import android.os.Bundle;
+import android.view.Menu;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.Toast;
+
+public class MainActivity extends Activity {
+
+ProgressDialog progressDialog;
+scorllableWebview wv;
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    wv = (scorllableWebview) findViewById(R.id.scorllableWebview);
+
+    wv.getSettings().setJavaScriptEnabled(true);
+
+    wv.getSettings().setBuiltInZoomControls(true);
+    wv.getSettings().supportZoom();
+
+    progressDialog = ProgressDialog.show(MainActivity.this,
+            "Loading Book...!", "Please Wait");
+    progressDialog.setCancelable(true);
+
+    String htnlString = "<!DOCTYPE html><html><body style = \\"text-align:center\\"><script type=\\"text/javascript\\">for(a=1;a<=10;a++)document.write('<img style=\\"border-style:dotted;border-width:10px;border-color:black;\\"src=\\"http://myURL.com/books_snaps/EN567/'+a+'.jpg\\" alt=\\"Page Not Found\\"/>');</script></body></html>";
+    // width=\\"100%\\"
+    wv.setWebViewClient(new WebViewClient() {
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            progressDialog.dismiss();
+            Toast.makeText(MainActivity.this, "Completed",
+                    Toast.LENGTH_SHORT).show();
+            wv.pageUp(true);
+            super.onPageFinished(view, url);
+        }
+
+    });
+
+    wv.loadDataWithBaseURL(null, htnlString, "text/html", "UTF-8", null);
+
+}
+   }
+
+
+and here is my XML file.
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+android:layout_width="match_parent"
+android:layout_height="match_parent" >
+
+<com.example.webview.full.width.scorllableWebview
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/scorllableWebview"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" />
+
+</RelativeLayout>
+
+    
+===============================================================================================
+86
+A:Something like:
+
+public class ObservableWebView extends WebView
+{
+    private OnScrollChangedCallback mOnScrollChangedCallback;
+
+    public ObservableWebView(final Context context)
+    {
+        super(context);
+    }
+
+    public ObservableWebView(final Context context, final AttributeSet attrs)
+    {
+        super(context, attrs);
+    }
+
+    public ObservableWebView(final Context context, final AttributeSet attrs, final int defStyle)
+    {
+        super(context, attrs, defStyle);
+    }
+
+    @Override
+    protected void onScrollChanged(final int l, final int t, final int oldl, final int oldt)
+    {
+        super.onScrollChanged(l, t, oldl, oldt);
+        if(mOnScrollChangedCallback != null) mOnScrollChangedCallback.onScroll(l, t, oldl, oldt);
+    }
+
+    public OnScrollChangedCallback getOnScrollChangedCallback()
+    {
+        return mOnScrollChangedCallback;
+    }
+
+    public void setOnScrollChangedCallback(final OnScrollChangedCallback onScrollChangedCallback)
+    {
+        mOnScrollChangedCallback = onScrollChangedCallback;
+    }
+
+    /**
+     * Impliment in the activity/fragment/view that you want to listen to the webview
+     */
+    public static interface OnScrollChangedCallback
+    {
+        public void onScroll(int l, int t, int oldl, int oldt);
+    }
+}
+
+
+Should work, this is untested but this works for almost every other view in Android.
+
+You would implement like:
+
+wv = (ObservableWebView) findViewById(R.id.scorllableWebview);
+wv.setOnScrollChangedCallback(new OnScrollChangedCallback(){
+    public void onScroll(int l, int t, int oldl, int oldt){
+        if(t> oldt){
+            //Do stuff
+            System.out.println("Swipe UP");
+            //Do stuff
+        }
+        else if(t< oldt){
+            System.out.println("Swipe Down");
+        }
+        Log.d(TAG,"We Scrolled etc...");
+    }
+});
+
+    

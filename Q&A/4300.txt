@@ -1,0 +1,84 @@
+55
+Q:I'm trying to build an app in Android Studio.  After adding the Eclipse Paho library as a gradle dependency(or is it Maven?  I'm new to the Android ecosystem), I got the following error:
+
+Program type already present: android.support.v4.accessibilityservice.AccessibilityServiceInfoCompat
+Message{kind=ERROR, text=Program type already present: android.support.v4.accessibilityservice.AccessibilityServiceInfoCompat, sources=[Unknown source file], tool name=Optional.of(D8)}
+
+
+I've checked many different StackOverflow questions relating to this error, but the answers are all specific to certain libraries.  I'm looking not only for a solution to the error, but an understanding of what the error means.  That way it'll be easier for people to figure out solutions for their specific cases.  So far, no answer has provided that.
+
+From other StackOverflow answers, I've gathered that it has something to do with my gradle file.  So, here's app/build.gradle:
+
+apply plugin: 'com.android.application'
+android {
+    compileSdkVersion 27
+    defaultConfig {
+        applicationId "---REDACTED FOR PRIVACY---"
+        minSdkVersion 15
+        targetSdkVersion 27
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation 'com.android.support:appcompat-v7:27.1.0'
+    implementation 'com.android.support:support-media-compat:27.1.0'
+    implementation 'com.android.support:support-v13:27.1.0'
+    implementation 'com.google.android.gms:play-services-maps:12.0.1'
+    testImplementation 'junit:junit:4.12'
+    androidTestImplementation 'com.android.support.test:runner:1.0.1'
+    androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.1'
+    implementation 'com.android.support.constraint:constraint-layout:1.0.2'
+    implementation 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.0.2'
+    implementation 'org.eclipse.paho:org.eclipse.paho.android.service:1.0.2'
+}
+
+repositories {
+    maven { url 'https://repo.eclipse.org/content/repositories/paho-releases/' }
+} 
+
+    
+===============================================================================================
+54
+A:This problem usually come from a naming conflict, in your case the support-v4 library, which is use by several libraries.
+
+To find the list of dependencies for the module app (default module's name for the app) we can do a gradlew app:dependencies to retrieve a list of all the libraries.
+
+We found that support-v4 is used by:
+
+//short version of the dependencies list highlighting support-v4
++--- com.android.support:support-v13:27.1.0
+|    \\--- com.android.support:support-v4:27.1.0
+
++--- com.google.android.gms:play-services-maps:12.0.1
+|    +--- com.google.android.gms:play-services-base:12.0.1
+|    |    +--- com.google.android.gms:play-services-basement:12.0.1
+|    |    |    +--- com.android.support:support-v4:26.1.0 -> 27.1.0 (*)
+
++--- org.eclipse.paho:org.eclipse.paho.android.service:1.0.2
+|    +--- com.google.android:support-v4:r7  // <- problem here
+
+
+We see that the support-v4 on Maps will use the version provided from support-v13.
+
+We also see that the eclipse library is using another version (r7 ??).
+
+To resolve your issue, you can try to exclude the module support-v4 from this eclipse library like this:
+
+implementation ('org.eclipse.paho:org.eclipse.paho.android.service:1.0.2') {
+    exclude module: 'support-v4'
+}
+
+
+Then you should be able to compile your application.
+
+Btw you should take care that the eclipse module won't break by testing your code.
+    

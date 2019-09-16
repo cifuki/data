@@ -1,0 +1,103 @@
+87
+Q:I am trying to create contact bubbles in the MultiAutoCompleteTextView similiar to how it is implemented in the Google+ app. Below is a screen shot:
+
+
+ .
+
+I have tried to extend the DynamicDrawableSpan class in order to get a spannable drawable in the background of a span of text
+
+public class BubbleSpan extends DynamicDrawableSpan {
+  private Context c;
+
+  public BubbleSpan(Context context) {
+    super();
+    c = context;
+  }
+
+  @Override
+  public Drawable getDrawable() {
+    Resources res = c.getResources();
+    Drawable d = res.getDrawable(R.drawable.oval);
+    d.setBounds(0, 0, 100, 20);
+    return d;
+  }
+}
+
+
+Where my oval.xml drawable is defined as so:
+
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+  <solid android:color="#352765"/>
+  <padding android:left="7dp" android:top="7dp"
+    android:right="7dp" android:bottom="7dp" />
+  <corners android:radius="6dp" />
+</shape>
+
+
+In my Activity class that has the MulitAutoCompleteTextView, I set the bubble span like so:
+
+final Editable e = tv.getEditableText();
+final SpannableStringBuilder sb = new SpannableStringBuilder();
+sb.append("some sample text");
+sb.setSpan(new BubbleSpan(getApplicationContext()), 0, 6, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+e.append(sb); 
+
+
+However, instead of the oval shape displaying behind the first 6 characters in the string, the characters are not visible and there is no oval drawable in the background.
+
+If i change the BubbleSpan's getDrawable() method to use a .png instead of a shape drawable:
+
+public Drawable getDrawable() {
+  Resources res = c.getResources();
+  Drawable d = res.getDrawable(android.R.drawable.bottom_bar);
+  d.setBounds(0, 0, 100, 20);
+  return d;
+}
+
+
+Then the .png will show up but the characters in the string that are a part of the span will not show up.  How can I make it so that the characters in the span are displayed in the foreground, meanwhile a custom shape drawable gets displayed in the background?
+
+I attempted to also use an ImageSpan instead of subclassing DynamicDrawableSpan but was unsuccessful.
+    
+===============================================================================================
+55
+A:Thanks @chrish for all the help.  So here is how i did it:
+
+final SpannableStringBuilder sb = new SpannableStringBuilder();
+TextView tv = createContactTextView(contactName);
+BitmapDrawable bd = (BitmapDrawable) convertViewToDrawable(tv);
+bd.setBounds(0, 0, bd.getIntrinsicWidth(),bd.getIntrinsicHeight());
+
+sb.append(contactName + ",");
+sb.setSpan(new ImageSpan(bd), sb.length()-(contactName.length()+1), sb.length()-1,Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+to_input.setText(sb);
+
+public TextView createContactTextView(String text){
+  //creating textview dynamically
+  TextView tv = new TextView(this);
+  tv.setText(text);
+  tv.setTextSize(20);
+  tv.setBackgroundResource(R.drawable.oval);
+  tv.setCompoundDrawablesWithIntrinsicBounds(0, 0, R.drawable.ic_clear_search_api_holo_light, 0);
+  return tv;
+}
+
+public static Object convertViewToDrawable(View view) {
+  int spec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+  view.measure(spec, spec);
+  view.layout(0, 0, view.getMeasuredWidth(), view.getMeasuredHeight());
+  Bitmap b = Bitmap.createBitmap(view.getMeasuredWidth(), view.getMeasuredHeight(),
+            Bitmap.Config.ARGB_8888);
+  Canvas c = new Canvas(b);
+  c.translate(-view.getScrollX(), -view.getScrollY());
+  view.draw(c);
+  view.setDrawingCacheEnabled(true);
+  Bitmap cacheBmp = view.getDrawingCache();
+  Bitmap viewBmp = cacheBmp.copy(Bitmap.Config.ARGB_8888, true);
+  view.destroyDrawingCache();
+  return new BitmapDrawable(viewBmp);
+
+}
+
+    

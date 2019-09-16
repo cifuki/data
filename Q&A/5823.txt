@@ -1,0 +1,159 @@
+43
+Q:I have theme that specifies textColor for TextView as red.
+
+I am using LayoutInflater to instantiate TextView. The problem is that styles are not applied to TextView when inflater created using ApplicationContext - the color is not red. All works fine when LayoutInflater created using activity.
+
+Why this happens, and how can be fixed?
+
+/res/values/styles.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="MyTheme">
+        <item name="android:textViewStyle">@style/MyTextView</item>
+    </style>
+
+    <style name="MyTextView" parent="@android:style/Widget.TextView">
+        <item name="android:textColor">#f00</item>
+    </style>
+</resources>
+
+
+AndroidManifest.xml:
+
+<application 
+    android:icon="@drawable/icon" 
+    android:label="@string/app_name"
+    android:theme="@style/MyTheme"
+    >
+
+
+Code:
+
+public class A extends Activity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.test_a);
+
+        final LayoutInflater goodInflater = getInflater((Activity)this); 
+        final LayoutInflater badInflater = getInflater(getApplicationContext());
+        final LinearLayout container = (LinearLayout)findViewById(R.id.container);
+
+        findViewById(R.id.add_with_appContext).setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                add(container, badInflater); // Creates gray TextView
+            }            
+        });
+
+        findViewById(R.id.add_with_activity).setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                add(container, goodInflater); // Creates red TextView
+            }            
+        });
+    }
+
+    private LayoutInflater getInflater(Context context) {
+        return (LayoutInflater)context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+    }
+
+    private void add(LinearLayout container, LayoutInflater inflater) {
+        inflater.inflate(R.layout.my_template, container, true);
+    }
+}
+
+
+/res/layout/test_a.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <Button 
+        android:text="Add with AppContext" 
+        android:id="@+id/add_with_appContext" 
+        android:layout_width="wrap_content" 
+        android:layout_height="wrap_content" 
+        />
+
+    <Button 
+        android:text="Add with Activity" 
+        android:id="@+id/add_with_activity" 
+        android:layout_width="wrap_content" 
+        android:layout_height="wrap_content" 
+        />
+
+    <LinearLayout
+        android:id="@+id/container"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"  
+        />
+
+</LinearLayout>
+
+
+/res/layout/my_template.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent" 
+    android:layout_height="wrap_content"
+    >
+
+    <TextView
+        android:id="@+id/text"
+        android:text="Some text..."
+        android:layout_width="fill_parent" 
+        android:layout_height="wrap_content"
+    />
+
+</LinearLayout>
+
+    
+===============================================================================================
+50
+A:Solution # 1
+
+The inflate method accepts optional 'ViewGroup root' argument:
+
+public View inflate (int resource, ViewGroup root, boolean attachToRoot)
+
+
+If we have value to pass as 'root' parameter, than hence we can use it to get 'activity context' from where we can get correct LayoutInflater:
+
+ViewGroup root > activity context > LayoutInflater
+
+
+So my code could be:
+
+private void add(LinearLayout container) {
+    LayoutInflater inflater = getInflater(container.getContext());
+    inflater.inflate(R.layout.my_template, container, true);
+}
+
+
+Solution # 2
+
+Just tried to set Application Context theme programmatically, and it works:
+
+getApplicationContext().setTheme(R.style.MyTheme);
+
+
+I think it was logical to expect this markup:
+
+<application 
+    android:icon="@drawable/icon" 
+    android:label="@string/app_name"
+    android:theme="@style/MyTheme"
+    >
+
+
+to set it automatically, but it does not.
+    

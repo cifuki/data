@@ -1,0 +1,88 @@
+114
+Q:I'm working on a UI for an app, and I'm attempting to use grayscale icons, and allow the user to change the theme to a color of their choosing. To do this, I'm trying to just apply a ColorFilter of some sort to overlay a color on top of the drawable. I've tried using PorterDuff.Mode.MULTIPLY, and it works almost exactly as I need, except that whites get overlayed with the color as well. What I'm ideally looking for is something like the "Color" blending mode in Photoshop, where the graphic retains its transparency and luminosity, and only modifies the color of the image. For example:
+ becomes After doing some research, it appears that the ColorMatrixColorFilter class may do what I need, but I can't seem to find any resources pointing to how the matrix is used. It's a 4x5 matrix, but what I need to know is how I go about designing the matrix. Any ideas?
+
+EDIT: So okay, what I've found so far on this is as follows:
+
+1 0 0 0 0 //red
+0 1 0 0 0 //green
+0 0 1 0 0 //blue
+0 0 0 1 0 //alpha
+
+
+Where this matrix is the identity matrix (when applied, makes no changes), and the numbers range from 0 to 1 (floats). This matrix will be multiplied with each pixel to convert to the new color. So this is where it starts to get fuzzy for me. So I would think each pixel would be a 1 x 4 vector containing the argb values (e.g. 0.2, 0.5, 0.8, 1) that would be dotted with the transformation matrix. So to double the red intensity of an image, you would use a matrix such as:
+
+2 0 0 0 0 
+0 1 0 0 0 
+0 0 1 0 0 
+0 0 0 1 0 
+
+
+which would give you a vector (color) of 0.4, 0.5, 0.8, 1. From limited testing, this seems to be the case, and works properly, but I actually still end up with the same problem (i.e. whites gain coloring). Further reading tells me that this is because it's doing the conversion on RGB values, whereas for hue shifting, the values should first be converted to HSL values. So possibly I could write a class that would read the image and convert the colors, and redraw the image with the new colors. This creates ANOTHER problem with StateListDrawables, as I'm not sure how I would go about getting each of these in code and modifying all of them, and how slow a process it would be. :/
+
+Hmm, okay, so I suppose another question I would have is whether a matrix can be used to convert RGB to another color space with luminosity information, such as Lab or HSL? If so, I could just multiply the matrix for that converstion, then make the hue adjustment to THAT matrix, then apply that matrix as the ColorFilter.
+    
+===============================================================================================
+73
+A:This is what I use for my game. This is the compilation of various part found on various articles on websites. Credits goes to the original author from the @see links.
+Note that a lot more can be done with color matrices. Including inverting, etc...
+
+public class ColorFilterGenerator
+{
+    /**
+ * Creates a HUE ajustment ColorFilter
+ * @see http://groups.google.com/group/android-developers/browse_thread/thread/9e215c83c3819953
+ * @see http://gskinner.com/blog/archives/2007/12/colormatrix_cla.html
+ * @param value degrees to shift the hue.
+ * @return
+ */
+public static ColorFilter adjustHue( float value )
+{
+    ColorMatrix cm = new ColorMatrix();
+
+    adjustHue(cm, value);
+
+    return new ColorMatrixColorFilter(cm);
+}
+
+/**
+ * @see http://groups.google.com/group/android-developers/browse_thread/thread/9e215c83c3819953
+ * @see http://gskinner.com/blog/archives/2007/12/colormatrix_cla.html
+ * @param cm
+ * @param value
+ */
+public static void adjustHue(ColorMatrix cm, float value)
+{
+    value = cleanValue(value, 180f) / 180f * (float) Math.PI;
+    if (value == 0)
+    {
+        return;
+    }
+    float cosVal = (float) Math.cos(value);
+    float sinVal = (float) Math.sin(value);
+    float lumR = 0.213f;
+    float lumG = 0.715f;
+    float lumB = 0.072f;
+    float[] mat = new float[]
+    { 
+            lumR + cosVal * (1 - lumR) + sinVal * (-lumR), lumG + cosVal * (-lumG) + sinVal * (-lumG), lumB + cosVal * (-lumB) + sinVal * (1 - lumB), 0, 0, 
+            lumR + cosVal * (-lumR) + sinVal * (0.143f), lumG + cosVal * (1 - lumG) + sinVal * (0.140f), lumB + cosVal * (-lumB) + sinVal * (-0.283f), 0, 0,
+            lumR + cosVal * (-lumR) + sinVal * (-(1 - lumR)), lumG + cosVal * (-lumG) + sinVal * (lumG), lumB + cosVal * (1 - lumB) + sinVal * (lumB), 0, 0, 
+            0f, 0f, 0f, 1f, 0f, 
+            0f, 0f, 0f, 0f, 1f };
+    cm.postConcat(new ColorMatrix(mat));
+}
+
+protected static float cleanValue(float p_val, float p_limit)
+{
+    return Math.min(p_limit, Math.max(-p_limit, p_val));
+}
+}
+
+
+To complete this I should add an example:
+
+ImageView Sun = (ImageView)findViewById(R.id.sun);
+Sun.setColorFilter(ColorFilterGenerator.adjustHue(162)); // 162 degree rotation
+
+    

@@ -1,0 +1,232 @@
+60
+Q:I have a problem with implementing double tap. Well I implemented the onGestureListener and I had the gestureDetector, but I'm not sure where is the problem, here is my code:
+
+ public class home extends TabActivity implements OnGestureListener {
+    /** Called when the activity is first created. */
+
+ private EditText queryText;
+ private ResultsAdapter m_adapter;
+ private ProgressDialog pd;
+ final Handler h = new Handler();
+ private TabHost mTabHost;
+ private ArrayList<SearchItem> sResultsArr = new ArrayList<SearchItem>();
+ private String queryStr;
+ private JSONObject searchResponse;
+ private GestureDetector gestureScanner;
+
+ final Runnable mUpdateResults = new Runnable() {
+        public void run() {
+         updateListUi();
+        }
+    };
+
+ @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        Button search = (Button)findViewById(R.id.search);
+        Button testButt = (Button)findViewById(R.id.testbutt);
+        queryText = (EditText)findViewById(R.id.query);
+        ListView lvr = (ListView)findViewById(R.id.search_results);
+
+      //initialise the arrayAdapter
+        this.m_adapter = new ResultsAdapter(home.this, R.layout.listrow, sResultsArr);
+        lvr.setAdapter(this.m_adapter);
+        lvr.setOnItemClickListener(new OnItemClickListener(){
+   @Override
+   public void onItemClick(AdapterView<?> arg0, View arg1, int arg2,
+     long arg3) {
+    // TODO Auto-generated method stub
+         pd = ProgressDialog.show(home.this, null,"Loading products from server", true, false);
+
+   }
+
+        });
+        gestureScanner = new GestureDetector(this,this);
+        gestureScanner.setOnDoubleTapListener(new OnDoubleTapListener(){ 
+            public boolean onDoubleTap(MotionEvent e) { 
+                 //viewA.setText("-" + "onDoubleTap" + "-"); 
+         pd = ProgressDialog.show(home.this, null,"Loading products from server", true, false);
+
+                 return false; 
+            } 
+            public boolean onDoubleTapEvent(MotionEvent e) { 
+                // viewA.setText("-" + "onDoubleTapEvent" + "-"); 
+                 return false; 
+            } 
+            public boolean onSingleTapConfirmed(MotionEvent e) { 
+                 //viewA.setText("-" + "onSingleTapConfirmed" + "-"); 
+                 return false; 
+            } 
+
+     });
+
+
+        //initialise tab contents
+        mTabHost = getTabHost();
+        mTabHost.addTab(mTabHost.newTabSpec("tab1").setIndicator("Home").setContent(R.id.homepage));
+        mTabHost.addTab(mTabHost.newTabSpec("tab2").setIndicator("Search Results").setContent(R.id.tab2));
+        mTabHost.setCurrentTab(0);
+
+        //sets the respective listeners
+        testButt.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View arg0) {
+
+         if(mTabHost.getTabWidget().getVisibility()==View.GONE){
+          mTabHost.getTabWidget().setVisibility(View.VISIBLE);
+         }
+         else{
+          mTabHost.getTabWidget().setVisibility(View.GONE);
+         }
+        }
+     });
+
+        search.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View arg0) {
+         sResultsArr.clear();
+         queryStr = "http://rose.mosuma.com/mobile?query=" + queryText.getText().toString();
+         pd = ProgressDialog.show(home.this, null,"Loading products from server", true, false);
+         goSearch();
+      }
+     });
+    }
+
+ //updates the listUI whenever after receiving the response from the server
+ public void updateListUi(){  
+    if(sResultsArr.size() > 0){
+
+       }
+
+    try{
+     String ptypename;
+     int count;
+     LinearLayout ptypebar = (LinearLayout)findViewById(R.id.productCat);
+     ptypebar.removeAllViews();
+     JSONArray ptypes = searchResponse.getJSONArray("ptypes"); 
+     for(int index =0;index < ptypes.length();index++){
+      JSONObject ptype = ptypes.getJSONObject(index);
+      count = ptype.getInt("count");      
+      ptypename = ptype.getString("ptypename"); 
+
+      //add into tab 2's UI
+
+      //ImageView icon = new ImageView(this);
+      TextView t = new TextView(home.this);
+      t.setText(ptypename + " (" + count + ")");
+      ptypebar.addView(t);
+     }
+    }
+    catch(JSONException e){
+
+    }
+   //if(m_adapter.getItems() != sResultsArr){
+    ArrayList<SearchItem> a  = m_adapter.getItems(); 
+    a = sResultsArr;
+   //}
+      m_adapter.notifyDataSetChanged();
+     pd.dismiss();
+ }
+
+ public void goSearch(){
+  mTabHost.setCurrentTab(1);
+
+  //separate thread for making http request and updating the arraylist
+  Thread t = new Thread() {
+           public void run() {
+
+            searchResponse = sendSearchQuery(queryStr);
+            try{
+             JSONArray results = searchResponse.getJSONArray("results");
+
+             //this is stupid. i probably have to see how to make a json adapter
+             for(int index =0;index < results.length();index++){
+
+              JSONObject product = results.getJSONObject(index);
+
+              //gets the searched products from the json object
+              URL imgUrl =  new URL(product.getString("image"));
+              String productname = product.getString("productname");
+              String ptypename = product.getString("ptypename");
+              int pid = product.getInt("pid");
+              int positive = product.getInt("pos");
+              int negative = product.getInt("neg");
+              int neutral = product.getInt("neu");
+
+
+              SearchItem item  = new SearchItem(imgUrl,productname,ptypename,neutral,positive,negative,pid);
+              sResultsArr.add(item);
+             }
+            }
+            catch(JSONException e){
+
+            }
+            catch(Exception e){
+
+               }
+            //returns back to UI therad
+            h.post(mUpdateResults);
+           }
+       };
+       t.start();
+ }
+
+ //sends a request with qry as URL
+ //and receives back a JSONobject as response
+ public JSONObject sendSearchQuery(String qry){
+  HttpRequest r = new HttpRequest();
+  JSONObject response = r.sendHttpRequest(qry);  
+  return response;
+ }
+
+ @Override
+ public boolean onDown(MotionEvent arg0) {
+      return gestureScanner.onTouchEvent(arg0); 
+ }
+
+ @Override
+ public boolean onFling(MotionEvent arg0, MotionEvent arg1, float arg2,
+   float arg3) {
+  // TODO Auto-generated method stub
+  return false;
+ }
+
+ @Override
+ public void onLongPress(MotionEvent arg0) {
+  // TODO Auto-generated method stub
+
+ }
+
+ @Override
+ public boolean onScroll(MotionEvent arg0, MotionEvent arg1, float arg2,
+   float arg3) {
+  // TODO Auto-generated method stub
+  return false;
+ }
+
+ @Override
+ public void onShowPress(MotionEvent arg0) {
+  // TODO Auto-generated method stub
+
+ }
+
+ @Override
+ public boolean onSingleTapUp(MotionEvent arg0) {
+  // TODO Auto-generated method stub
+  return false;
+ }
+
+
+Oh, another question, if my ListView has an onItemClickListener, can android detect between single tap or double tap for it?
+    
+===============================================================================================
+19
+A:Why aren't you using a Long Press?  Or are you using that already for something else?  The advantages of a Long Press over a Double Touch:
+
+
+Long Press is a recommeded interaction in the UI Guidelines, Double Touch is not.
+It's what users expect; a user might not find a Double Touch action as they won't go looking for it
+It's already handled in the API.
+Implementing a Double Touch will affect handling of Single Touches, because you'll have to wait to see if every Single Touch turns into a Double Touch before you can process it.
+
+    

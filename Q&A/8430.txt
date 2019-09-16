@@ -1,0 +1,81 @@
+32
+Q:So I tried the code from here: Creating an ImageView with a mask. I'm using the following images as original and mask:
+
+
+
+However, the result I get is this:
+
+
+
+Note that the window background is not black, but holo light (which on the galaxy nexus looks like a very pale gray, not completely white). The second image is the result I get when an item is selected on a list view.
+
+If instead I create a new Bitmap using the same algorithm and then pass it to the image view instead of overriding onDraw(), it draws correctly:
+
+Canvas canvas = new Canvas();
+Bitmap mainImage = //get original image
+Bitmap maskImage = //get mask image
+Bitmap result = Bitmap.createBitmap(mainImage.getWidth(), mainImage.getHeight(), Bitmap.Config.ARGB_8888);
+
+canvas.setBitmap(result);
+Paint paint = new Paint();
+paint.setFilterBitmap(false);
+
+canvas.drawBitmap(mainImage, 0, 0, paint);
+paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_IN));
+canvas.drawBitmap(maskImage, 0, 0, paint);
+paint.setXfermode(null);
+
+imageView.setImageBitmap(result);
+
+
+I get the expected result:
+
+
+
+Note the fade is correctly applied. This is more evident when a selection is made.
+
+So what's going on on ImageView's onDraw method to create this black backdrop instead of letting the window background show through? What's interesting is that if the original image itself has some transparency, that transparency is respected, for example:
+
+
+
+I can't figure it out by myself. I'd rather be able to do it on onDraw instead of pre-creating the bitmap because it only works for bitmaps as source and mask. I want to be able to do it with other drawables like gradients and solid colours but on those cases the width and height are not set.
+    
+===============================================================================================
+28
+A:I have found the perfect combination for creating masking without black border after researching through all the stackoverflow posts. It suits my purpose quite well.
+
+Currently I'm creating a draggable view using one normal image and a masking image (a png with transparency), so I'll need to override the onDraw function.
+
+private Bitmap mImage = ...;
+private Bitmap mMask = ...;  // png mask with transparency
+private int mPosX = 0;
+private int mPosY = 0;
+
+private final Paint maskPaint;
+private final Paint imagePaint;
+
+public CustomView (final Context context) {
+    maskPaint = new Paint();
+    maskPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+
+    imagePaint = new Paint();
+    imagePaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OVER));
+}
+
+/* TODO
+ if you have more constructors, make sure you initialize maskPaint and imagePaint
+ Declaring these as final means that all your constructors have to initialize them.
+ Failure to do so = your code won't compile.
+*/
+
+@Override
+public void onDraw(Canvas canvas) {
+    super.onDraw(canvas);
+
+    canvas.save();      
+    canvas.drawBitmap(mMask, 0, 0, maskPaint);
+    canvas.drawBitmap(mImage, mPosX, mPosY, imagePaint);
+    canvas.restore();
+}
+
+    

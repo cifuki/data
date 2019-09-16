@@ -1,0 +1,46 @@
+28
+Q:I've recently upgraded to Android SDK Platform-Tools version 28.0.2. Version information:
+
+$ adb version
+Android Debug Bridge version 1.0.40
+Version 28.0.2-5303910
+
+
+When using the adb connect command I now get the following error:
+
+$ adb connect 192.168.1.20
+missing port in specification: tcp:192.168.1.20
+
+
+ADB previously connected to devices using TCP port 5555 by default. I am still able to connect to my device by specifying this port number:
+
+$ adb connect 192.168.1.20:5555
+connected to 192.168.1.20:5555
+
+
+However, this is a minor inconvenience to me as I'm used to typing in just the IP address. Is there any way of telling this version of ADB to use TCP port 5555 by default?
+    
+===============================================================================================
+17
+A:This would appear to be a bug within ADB, introduced in December or January. I believe this relates to recent changes to this else statement in socket_spec.cpp. 
+
+} else {
+    std::string addr(spec.substr(4));
+    port_value = -1;
+
+    // FIXME: ParseNetAddress rejects port 0. This currently doesn't hurt, because listening
+    //        on an address that isn't 'localhost' is unsupported.
+    if (!android::base::ParseNetAddress(addr, &hostname_value, &port_value, serial, error)) {
+        return false;
+    }
+
+    if (port_value == -1) {
+        *error = "missing port in specification: ";
+        *error += spec;
+        return false;
+    }
+}
+
+
+If a port value is not specified, the variable port_value is initialised at -1 and does not change. This value is not altered by android::base::ParseNetAddress either. If the ParseNetAddress check passes then we will always fall into the error-catching statement immediately afterwards. I've filed a bug with Google.
+    

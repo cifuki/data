@@ -1,0 +1,126 @@
+31
+Q:I am in the process of (finally) writing the chapter on tasks for my book, and I am encountering a few lingering puzzles.
+
+Things that serve as home screen launchers seem to use the combination of FLAG_ACTIVITY_NEW_TASK and FLAG_ACTIVITY_RESET_TASK_IF_NEEDED when they launch the requested launcher activity:
+
+Intent i=new Intent(Intent.ACTION_MAIN);
+
+i.addCategory(Intent.CATEGORY_LAUNCHER);
+i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
+            Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+i.setComponent(name);
+
+startActivity(i);  
+
+
+The documentation for FLAG_ACTIVITY_RESET_TASK_IF_NEEDED has:
+
+
+  If set, and this activity is either being started in a new task or bringing to the top an existing task, then it will be launched as the front door of the task. This will result in the application of any affinities needed to have that task in the proper state (either moving activities to or from it), or simply resetting that task to its initial state if needed. 
+
+
+That's not especially clear.
+
+In particular, it would seem that the same effects would be seen using a combination of FLAG_ACTIVITY_CLEAR_TOP and FLAG_ACTIVITY_SINGLE_TOP. Quoting the docs for FLAG_ACTIVITY_CLEAR_TOP:
+
+
+  If set, and the activity being launched is already running in the current task, then instead of launching a new instance of that activity, all of the other activities on top of it will be closed and this Intent will be delivered to the (now on top) old activity as a new Intent...
+  
+  The currently running instance of [the desired activity] will either receive the new intent you are starting here in its onNewIntent() method, or be itself finished and restarted with the new intent. If it has declared its launch mode to be "multiple" (the default) and you have not set FLAG_ACTIVITY_SINGLE_TOP in the same intent, then it will be finished and re-created; for all other launch modes or if FLAG_ACTIVITY_SINGLE_TOP is set then this Intent will be delivered to the current instance's onNewIntent(). 
+
+
+The FLAG_ACTIVITY_CLEAR_TOP documentation makes sense, at least to me.
+
+So, what does FLAG_ACTIVITY_RESET_TASK_IF_NEEDED do that is different than the combination of FLAG_ACTIVITY_CLEAR_TOP and FLAG_ACTIVITY_SINGLE_TOP?
+
+
+
+Bonus points if you can explain what FLAG_ACTIVITY_CLEAR_TASK does that is different from either of the other two options described above.
+
+
+  If set in an Intent passed to Context.startActivity(), this flag will cause any existing task that would be associated with the activity to be cleared before the activity is started. That is, the activity becomes the new root of an otherwise empty task, and any old activities are finished. This can only be used in conjunction with FLAG_ACTIVITY_NEW_TASK. 
+
+
+One obvious difference between this and FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP is that FLAG_ACTIVITY_CLEAR_TASK needs FLAG_ACTIVITY_NEW_TASK. But, other than that, it would seem like the net effects are the same, and also match FLAG_ACTIVITY_RESET_TASK_IF_NEEDED.
+    
+===============================================================================================
+40
+A:I had a look at the source code for the ActivityManager. The flag Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED does indeed do some magic that Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP does not do: It triggers task reparenting.
+
+Here's an (albeit lame) example:
+
+In App A we have the root Activity RootA and we have another Activity ReparentableA:
+
+<application
+        android:label="@string/app_name">
+    <activity android:name=".RootA">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent-filter>
+    </activity>
+    <activity android:name=".ReparentableA"
+            android:allowTaskReparenting="true"/>
+</application>
+
+
+App A has the package name "com.app.a" so the default taskAffinity of its components is "com.app.a".
+
+In App B we have the root Activity RootB:
+
+<application
+        android:label="@string/app_name">
+    <activity android:name="RootB">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent-filter>
+    </activity>
+</application>
+
+
+App B has the package name "com.app.b" so the default taskAffinity of its components is "com.app.b".
+
+Now we launch App B from the HOME screen. This starts a new task and creates a new instance of Activity RootB as the root Activity in that task. Activity RootB now launches Activity ReparentableA in the standard way, without any special flags. An instance of ReparentableA is created and put on top of RootB in the current task.
+
+Press HOME.
+
+Now we launch App A from the HOME screen. This starts a new task and creates a new instance of Activity RootA as the root Activity in that task. NOTE: When Android launches a "launcher" Intent, it automatically sets the flags Intent.FLAG_ACTIVITY_NEW_TASK and Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED. Because of this, launching RootA now triggers task reparenting. Android looks to see if there are any activities in any other tasks that have an affinity for this new task (and are reparentable). It finds ReparentableA (which has the same task affinity as RootA) in the App B task and moves it to the new App A task. When launching App A we do not see RootA, we actually see ReparentableA, as it is moved to the top of the new task.
+
+If we return to App B, we can see that ReparentableA is gone from the task stack and that task now consists of only one Activity: RootB.
+
+
+
+Notes about using Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP
+
+The important thing to remember about using these flags to "reset a task" is that it only works if there is already an instance of the target Activity at the root of the task. If your root Activity ever finishes, you cannot clear your task by starting the root Activity with Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP. Android will just create a new instance of the target (root) Activity and put it on top of the existing activities in the task, which is probably not at all what you want.
+
+
+
+Difference between Intent.FLAG_ACTIVITY_CLEAR_TASK and Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP:
+
+As noted above, using CLEAR_TOP | SINGLE_TOP only works if there is already an instance of the target Activity in the task. CLEAR_TASK, however, removes all activities from the task, regardless of whether or not there was an instance of the target Activity in the task. Also, using CLEAR_TASK ensures that the target Activity becomes the root Activity of the task, without you needing to know what Activity was the root Activity before you cleared the task.
+
+
+
+Difference between Intent.FLAG_ACTIVITY_CLEAR_TASK and Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED:
+
+As indicated above, using CLEAR_TASK will always remove all activities from the task and launch a new instance of the target activity. In contrast, RESET_TASK_IF_NEEDED will only reset the task in certain situations (the "IF_NEEDED" part). The task is only "reset" if Android is either:
+
+
+Creating a new task (in which case the "reset" functionality involves the task reparenting explained above), or 
+If Android is bringing a background task to the foreground (in which case the task is only cleared of any activities that were launched with Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET and any activities that are on top of those activities). NOTE: The root Activity is never cleared in this case.
+
+
+
+
+IMPORTANT NOTE: When you are testing, please note that there is a difference in the way Android behaves when launching apps from the HOME screen (or from the list of available applications) and when selecting tasks from the recent task list.
+
+In the first case (launching an app by selecting it from the list of available applications or from a shortcut on the HOME screen), a launcher Intent with Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED is created. This is used regardless of whether or not the app is already running. The Intent is launched and then the ActivityManager figures out what to do.
+
+In the second case (selecting a task from the list of recent tasks), if the task still exists, it is just brought the front. The task "reset" is NOT performed if the task is just brought to the front using the recent task list. It isn't obvious to me how this is managed and I've not had a chance to look through the source code to figure out why that is.
+
+
+
+I hope this answers your questions. Looking forward to your feedback and test results.
+    

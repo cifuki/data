@@ -1,0 +1,92 @@
+42
+Q:I am developing an android application in which I set an image to imageview. Now programmatic I want to change the bitmap image color. Suppose my image have red color initially and now I need to change it to orange color. How can I do that? Please help.
+
+Here is my code. I managed to change the opacity but I do not know how to change the color.
+
+  @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        ImageView iv = (ImageView) findViewById(R.id.img);
+        Drawable d = getResources().getDrawable(R.drawable.pic1);
+        Bitmap mNewBitmap = ((BitmapDrawable)d).getBitmap();
+        Bitmap nNewBitmap = adjustOpacity(mNewBitmap);
+        iv.setImageBitmap(nNewBitmap);
+    }
+
+    private Bitmap adjustOpacity( Bitmap bitmap ) {
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        Bitmap dest = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        int[] pixels = new int[width * height];
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
+        dest.setPixels(pixels, 0, width, 0, 0, width, height);
+        return dest;
+    } 
+
+    
+===============================================================================================
+52
+A:I tried Josip's answer but wouldn't work for me, regardless of whether the offset parameter was 1 or 0 - the drawn bitmap just appeared in original colour.
+
+However, this did work:
+
+// You have to copy the bitmap as any bitmaps loaded as drawables are immutable
+Bitmap bm = ImageLoader.getInstance().loadImageSync("drawable://" + drawableId, o)
+            .copy(Bitmap.Config.ARGB_8888, true);
+
+Paint paint = new Paint();
+ColorFilter filter = new PorterDuffColorFilter(ContextCompat.getColor(this, R.color.COLOR_1_DARK), PorterDuff.Mode.SRC_IN);
+paint.setColorFilter(filter);
+
+Canvas canvas = new Canvas(bm);
+canvas.drawBitmap(bm, 0, 0, paint);
+
+
+Update 1
+
+Whilst the above works well and is useful in a lot of cases, if you just want to change the main colour of an ImageView drawable, which the op did, you can just use:
+
+imgView.setColorFilter(ContextCompat.getColor(this, R.color.COLOR_1_DARK));
+
+
+If you need more flexibility or this doesn't give the desired effect, there's an overload that allows you to change the PorterDuff Mode until you get what you're after:
+
+imgView.setColorFilter(ContextCompat.getColor(this, R.color.COLOR_1_DARK), PorterDuff.Mode.SRC_ATOP);
+
+
+Update 2
+
+Another good use case I've had for this lately is customizing the appearance of a Google map v2 marker icon. In order to use 2 graphics to allow (for example) small/large icons on a marker, but also a range of colours on those 2 graphics by changing the colour of them dynamically. In my case I was doing this inside a ClusterRenderer as the markers were also clustered, but this can be used with a regular map marker the same way:
+
+@Override
+protected void onBeforeClusterItemRendered(MyClusterItem item, MarkerOptions markerOptions) {
+    try {
+        int markerColor = item.getColor();
+
+        Bitmap icon;
+
+        if (item.isFeatured()) {
+            // We must copy the bitmap or we get an exception "Immutable bitmap passed to Canvas constructor"
+            icon = BitmapFactory.decodeResource(context.getResources(),
+                    R.drawable.icon_marker_large).copy(Bitmap.Config.ARGB_8888, true);
+        } else {
+            // We must copy the bitmap or we get an exception "Immutable bitmap passed to Canvas constructor"
+            icon = BitmapFactory.decodeResource(context.getResources(),
+                    R.drawable.icon_marker_small).copy(Bitmap.Config.ARGB_8888, true);
+        }
+
+        Paint paint = new Paint();
+        ColorFilter filter = new PorterDuffColorFilter(ContextCompat.getColor(context, markerColor), PorterDuff.Mode.SRC_IN);
+        paint.setColorFilter(filter);
+
+        Canvas canvas = new Canvas(icon);
+        canvas.drawBitmap(icon, 0, 0, paint);
+
+        markerOptions.icon(BitmapDescriptorFactory.fromBitmap(icon));
+    } catch (Exception ex) {
+        ex.printStackTrace();
+    }
+}
+
+    

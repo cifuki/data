@@ -1,0 +1,312 @@
+32
+Q:There are a bunch of old SO threads dealing with running NodeJS on Android. Most of these are no longer viable (JXCore) and/or provide confusing, outdated, incomplete, or erroneous information.
+
+Therefore I have investigated what seems to be currently (as of August 2017) viable approaches and found three likely candidates.
+
+To decide between them I would like to know:
+
+
+the primary differences between these approaches
+specific pro's and con's on each approach
+likely hurdles, challenges and shortcomings
+do you know of other viable alternatives?
+
+
+Viable approaches are:
+
+
+Running V8 javascript engine which includes NodeJS (J2V8)
+Use NodeJS directly, embedded as native library (node-on-android)
+Combining React Native with NodeJS app-as-a-service (react-native-node)
+
+
+Besides that I have found a number of related interesting resources:
+
+
+NPM install NodeJS directly using Termux without rooting (not for end-users)
+LiquidCore - native mobile micro-app devenv (not investigated, interesting concepts)
+dna2oslab - has a working NodeJS build script for node executables
+Building NodeJS for Android - blog with useful compilation tips and example project
+
+    
+===============================================================================================
+15
+A:Investigating viable options
+
+[NOTE This answer contains findings that were in the original question]
+
+I have investigated the various options a bit more and here are some preliminary findings.
+
+0. Compiling NodeJS
+
+Each of the options uses some form of NodeJS compiled for Android. But to use any option you would probably want to compile to different Node, Android and architecture (x86, ARM, ARM64, etc.) versions.
+
+This is problematic. NodeJS has an android-configure script, but this results in errors in most combinations I've tried. I created a number of github issues for a working build script. In this issue results are collected: 
+
+
+Working build script for Android ARM Node 7.x or 8.x shared library
+
+
+To summarize:
+
+
+shared library builds all fail (except when building physically on your android, see below)
+J2V8 with NodeJS (libnode.a) statically linked in libj2v8.so works for 7.x up to 7.9.0
+build-as-node-executable works for 7.x (using dna2oslab build script)
+
+
+One interesting workaround was used by @mafintosh: transfer Node to device using Termux and do the compilation there (needs much space and time, but works).
+
+1. Running V8 javascript engine which includes NodeJS (J2V8)
+
+
+  J2V8 is a set of Java bindings for V8. J2V8 focuses on performance and tight integration with V8. [...] [which] forces a more static type system between the JS and Java code, but it also improves the performance since intermediate Objects are not created. [...]
+  
+  Building J2V8 requires building both the native parts and the Java library (.jar/.aar file). To build the native parts we first build node.js as a library and then statically link J2V8 to that. [...]
+  
+  For cross-compiling J2V8 uses Docker (android, linux, windows) and Vagrant (macos).
+
+
+See slideshare: Running NodeJS in a Java World (or see InfoQ video, 32min.)
+
+Features:
+
+
+replace JavaScriptCore engine with more powerful v8 (with NodeJS)
+multi-threading (threads/workers) support via added J2V8 JNI / Java layer
+
+
+every thread can have its own Isolated V8 Instance
+
+2-way js-to-java bridge (call java from script and vice versa)
+2-way integrated error / exception handling
+beautiful cross-compiling interactive build system (in the works)
+chrome debugging support
+others, typed arrays, ES6 support, ...
+
+
+Characteristics:
+
+
+Specify the versions to compile in build_system/build_settings.py
+Start a build simply with python build.py --interactive, select build:
+
+[0] Docker >> android-x86 >> NODE_ENABLED
+[1] Docker >> android-arm >> NODE_ENABLED
+[2] Docker >> alpine-linux-x64 >> NODE_ENABLED
+[3] Docker >> linux-x64 >> NODE_ENABLED
+[4] Docker >> linux-x86 >> NODE_ENABLED
+[5] Vagrant >> macosx-x64 >> NODE_ENABLED
+[6] Vagrant >> macosx-x86 >> NODE_ENABLED
+[7] Native >> windows-x64 >> NODE_ENABLED
+[8] Docker >> windows-x64 >> NODE_ENABLED
+[9] Vagrant >> windows-x64 >> NODE_ENABLED
+
+Select build steps (or all):
+
+NodeJS --> CMake --> JNI --> Optimize --> Java/Android --> JUnit
+
+Compiles V8 as shared library libj2v8_{platform}_{abi}.{ext}
+
+
+Note: nodejs build step cannot build Node shared library (errors), creates static libnode.a to be linked in libj2v8.so
+
+Has a JNI layer to make large parts of v8 accessible by Java
+Additional features (e.g. JS <--> Java bridge) implemented in Java
+Final build output is a Gradle .aar to include as project dependency
+
+
+Pros:
+
+
+Relatively active project
+Good quality code including Java unit tests
+Adds full power of Java to your app design toolkit
+Great, intuitive build system (once finished)
+
+
+Cons:
+
+
+Little, mostly outdated usage documentation
+
+
+Especially undocumented is usage in large(r)-scale JS projects
+
+Lot of JNI glue code that must be maintained
+Project not well-maintained (many old open issues, non-merged PR's)
+
+
+Some PR's hang around for 2 years without even getting a response. Not good
+
+Harder to understand J2V8 project setup (many files) than other options
+Licensing issue ("All rights reserved" in EPL 1.0 license)
+
+
+2. Use NodeJS directly, embedded as native library (node-on-android)
+
+
+  Node on android works by running your Node.js inside the android app using a shared library. It then bundles a WebView that hosts your UI code. All UI is just classic html/css/js.
+  
+  In the node app you can require node-on-android to get access to the WebView. You can use this to load an html page in the WebView.
+
+
+According to node-on-android creator (@mafintosh) this is easier and better than J2V8 as it compiles V8 directly as the real thing.
+
+Features:
+
+
+Build full-fledged NodeJS applications, including UI (via native WebView)
+
+
+Characteristics:
+
+
+Relevant directories / files in gradle app project:
+
+
+app/src/main/include/node with node .h headers
+app/src/main/jniLibs/arm64-v8a with libc++_shared.so and libnode.so
+app/src/main/cpp with native-lib.cpp (includes node.h)
+Java code, just spins up a Service with node running in a separate thread
+
+Has no JNI for libnode.so, so private native void startNode(String... app); shows as error in IDE (but compiles)
+The NodeJS project resides in android/app/src/main/assets/node
+NodeJS code is transferred to temporary storage and executed from there
+NodeJS app specifies views to load in WebView via exposed loadUrl function
+
+
+Node service accessible via NPM package node-on-android
+
+
+
+Pros:
+
+
+Simple project, not much plumbing code
+Comes with a recent v8.x Node version out-of-the-box
+Simple HTML-based app UI programming (e.g. using choo)
+Works out-of-the-box :)
+
+
+Cons:
+
+
+Very new project, only experimental code still
+Comes just for arm64 architecture (full mobile support planned, or DIY build)
+
+
+Note: 64-bit cannot be combined with React Native (no 64-bit support)!
+
+No native UI possible (unless coding in Gradle/Java/XML)
+No debugging support on Node app (AFAIK, but maybe you can attach to the WebView somehow)
+
+
+3. Combining React Native with NodeJS app-as-a-service (react-native-node)
+
+
+  Run a real Node.js process in the background, behind a React Native app.
+  
+  Using this package you can: run http servers in Android, use Node streams, interface with the filesystem, offload some heavy processing out of the JS thread in React Native, and more! Running the real Node.js in Android, you can do everything that Node.js on desktop can.
+
+
+Features:
+
+
+Use React Native for the UI, NodeJS as a background service
+
+
+Characteristics:
+
+
+Derived from NodeBase
+Very similar to node-on-android (run Service with Node on separate thread)
+
+
+But node is compiled/used as application, not an embedded shared lib
+NodeJS app code is located in {projectRoot}/background
+NodeJS executable is in /android/src/main/res/raw/bin_node_v710
+At build time Node app is tarballed, unpacked at `/android/src/main/res/raw/{appName}
+NodeJS service is invoked as if run from the command-line, passing args
+
+Node service RNNode is available in RN by importing react-native-node
+
+
+react-native-node also contains CLI that transfers Node code at build time
+
+The Example project communicates from React Native to NodeJS service via REST
+
+
+Running an express server on http://localhost:5000 at Node side
+
+
+
+Pros:
+
+
+Simple project, not much plumbing code
+Obvious: React Native support with NodeJS on android!
+Node-as-executable will probably work with 64-bit devices + react-native
+
+
+Cons:
+
+
+Very new project, only experimental code still
+Comes with old NodeJS 7.1.0 version (but DIY build newer ones)
+No easy way to communicate between RN and Node apps (REST-based)
+
+
+Need to extend REST API or roll your own mechanism
+
+No debugging support on Node app. Really hard to know what's going on
+
+
+Status (2017-08-17)
+
+My goal is React Native + NodeJS. This is the status of my activities:
+
+
+Compiling NodeJS v7.x versions as executable works
+Compiling NodeJS v7.4.0 up to v7.9.0 works with new J2V8 build system
+Compiling NodeJS v8.1.2 will soon work with J2v8 (compiled against libc++)
+react-native-node does compile, but does not operate despite many tries
+node-on-android works, but node-only app development and 64-bit incompatible with RN
+
+
+I decided to combine react-native-node with J2V8 because of:
+
+
+Great cross-compile build PR: https://github.com/eclipsesource/J2V8/pull/327
+Builds into a nice J2V8 .aar to be easily included in Gradle
+
+
+React Native 0.46.4 + NodeJS 7.9.0 is now working! See:
+
+
+https://github.com/staltz/react-native-node/issues/5#issuecomment-323049897
+
+
+
+
+My use case: fat client with P2P decentralized networking
+
+I am thinking of a CQRS (command-query-responsibility-segregation) design:
+
+
+react-native UI is constructed from view queried from the node service
+react-native UI actions trigger commands on the node background service
+background service processes network messages, incoming commands, triggers events
+events are stored in Realm DB that forms the bridge between front and back
+
+
+Details: Realm.io to bridge native NodeJS + React Native in Android fat client app (CQRS-style)
+
+
+
+Conclusion
+
+Even after years of people trying to port NodeJS to Android there are still no real good solutions, it is pioneering. 
+
+Expect many hurdles and errors as you set up your project and build environment, but once setup you could enjoy the full power of Node on your phone.
+    

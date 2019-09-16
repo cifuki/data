@@ -1,0 +1,157 @@
+54
+Q:I am working on a project similar to UBER, Lyft or OLA ie. Map on the home with available moving Cars. 
+I'm looking for some kind of Library which can make Cars move and take turn smoothly just like UBER. For now I was able to move car smoothly from one lat-long to another with the below code. But tricky part is Taking turn and make sure the car face to front when moving to direction. 
+
+Smooth Moving Car Code: 
+
+    final LatLng SomePos = new LatLng(12.7796354, 77.4159606);
+
+    try {
+        if (googleMap == null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                googleMap = ((MapFragment) getFragmentManager().findFragmentById(R.id.map)).getMap();
+            }
+        }
+        googleMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+        googleMap.setMyLocationEnabled(true);
+        googleMap.setTrafficEnabled(false);
+        googleMap.setIndoorEnabled(false);
+        googleMap.setBuildingsEnabled(true);
+        googleMap.getUiSettings().setZoomControlsEnabled(true);
+        googleMap.moveCamera(CameraUpdateFactory.newLatLng(SomePos));
+        googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(new CameraPosition.Builder()
+                .target(googleMap.getCameraPosition().target)
+                .zoom(17)
+                .bearing(30)
+                .tilt(45)
+                .build()));
+
+        myMarker = googleMap.addMarker(new MarkerOptions()
+                .position(SomePos)
+                .icon(BitmapDescriptorFactory.fromResource(R.mipmap.ic_launcher))
+                .title("Hello world"));
+
+
+        googleMap.setOnMarkerClickListener(new GoogleMap.OnMarkerClickListener() {
+            @Override
+            public boolean onMarkerClick(Marker arg0) {
+
+                final LatLng startPosition = myMarker.getPosition();
+                final LatLng finalPosition = new LatLng(12.7801569, 77.4148528);
+                final Handler handler = new Handler();
+                final long start = SystemClock.uptimeMillis();
+                final Interpolator interpolator = new AccelerateDecelerateInterpolator();
+                final float durationInMs = 3000;
+                final boolean hideMarker = false;
+
+                handler.post(new Runnable() {
+                    long elapsed;
+                    float t;
+                    float v;
+
+                    @Override
+                    public void run() {
+                        // Calculate progress using interpolator
+                        elapsed = SystemClock.uptimeMillis() - start;
+                        t = elapsed / durationInMs;
+
+                        LatLng currentPosition = new LatLng(
+                                startPosition.latitude * (1 - t) + finalPosition.latitude * t,
+                                startPosition.longitude * (1 - t) + finalPosition.longitude * t);
+
+                        myMarker.setPosition(currentPosition);
+
+                        // Repeat till progress is complete.
+                        if (t < 1) {
+                            // Post again 16ms later.
+                            handler.postDelayed(this, 16);
+                        } else {
+                            if (hideMarker) {
+                                myMarker.setVisible(false);
+                            } else {
+                                myMarker.setVisible(true);
+                            }
+                        }
+                    }
+                });
+
+                return true;
+
+            }
+
+        });
+
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+
+    
+===============================================================================================
+46
+A:I recently came across the same use-case. Here is my solution on it. 
+
+First, I would like to thank @VipiN for sharing "The Smooth Moving Car Code". It works smoothly.
+
+The second part is to place car-marker in the right direction and rotate it according to turns. To achieve this I calculated the bearing or heading angle between two successive points(i.e. location updates you receive from device/server). This link will help you understand the maths behind it. 
+
+The following code will give you bearing between two locations:
+
+private double bearingBetweenLocations(LatLng latLng1,LatLng latLng2) {
+
+    double PI = 3.14159;
+    double lat1 = latLng1.latitude * PI / 180;
+    double long1 = latLng1.longitude * PI / 180;
+    double lat2 = latLng2.latitude * PI / 180;
+    double long2 = latLng2.longitude * PI / 180;
+
+    double dLon = (long2 - long1);
+
+    double y = Math.sin(dLon) * Math.cos(lat2);
+    double x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1)
+            * Math.cos(lat2) * Math.cos(dLon);
+
+    double brng = Math.atan2(y, x);
+
+    brng = Math.toDegrees(brng);
+    brng = (brng + 360) % 360;
+
+    return brng;
+}
+
+
+Finally, we need to rotate the car-marker by the angle that we get from above method.
+
+private void rotateMarker(final Marker marker, final float toRotation) {
+    if(!isMarkerRotating) {
+        final Handler handler = new Handler();
+        final long start = SystemClock.uptimeMillis();
+        final float startRotation = marker.getRotation();
+        final long duration = 1000;
+
+        final Interpolator interpolator = new LinearInterpolator();
+
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                isMarkerRotating = true;
+
+                long elapsed = SystemClock.uptimeMillis() - start;
+                float t = interpolator.getInterpolation((float) elapsed / duration);
+
+                float rot = t * toRotation + (1 - t) * startRotation;
+
+                marker.setRotation(-rot > 180 ? rot / 2 : rot);
+                if (t < 1.0) {
+                    // Post again 16ms later.
+                    handler.postDelayed(this, 16);
+                } else {
+                    isMarkerRotating = false;
+                }
+            }
+        });
+    }
+}
+
+
+Cheers!
+    

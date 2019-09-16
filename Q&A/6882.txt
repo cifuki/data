@@ -1,0 +1,60 @@
+37
+Q:With Facebook's new Android SDK 3.0 (that was released a few days ago), the process of authentication has changed.
+
+So how do you request a read permission such as "friends_hometown"?
+
+The following code is how I am trying to do it - but I'm quite sure it's not the way you should do this:
+
+Version 1:
+
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    Session.openActiveSession(this, true, new Session.StatusCallback() { // start Facebook login
+        @Override
+        public void call(Session session, SessionState state, Exception exception) { // callback for session state changes
+            if (session.isOpened()) {
+                List<String> permissions = new ArrayList<String>();
+                permissions.add("friends_hometown");
+                session.requestNewReadPermissions(new Session.NewPermissionsRequest(FBImport.this, permissions));
+                Request.executeGraphPathRequestAsync(session, "me/friends/?access_token="+session.getAccessToken()+"&fields=id,name,hometown", new Request.Callback() {
+                    ...
+                });
+            }
+        }
+    });
+}
+
+
+Version 2:
+
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    Session currentSession = Session.getActiveSession();
+    if (currentSession == null || currentSession.getState().isClosed()) {
+        Session session = Session.openActiveSession(this, true, fbStatusCallback); // PROBLEM: NO PERMISSIONS YET BUT CALLBACK IS EXECUTED ON OPEN
+        currentSession = session;
+    }
+    if (currentSession != null && !currentSession.isOpened()) {
+        OpenRequest openRequest = new OpenRequest(this).setCallback(fbStatusCallback); // HERE IT IS OKAY TO EXECUTE THE CALLBACK BECAUSE WE'VE GOT THE PERMISSIONS
+        if (openRequest != null) {
+            openRequest.setDefaultAudience(SessionDefaultAudience.FRIENDS);
+            openRequest.setPermissions(Arrays.asList("friends_hometown"));
+            openRequest.setLoginBehavior(SessionLoginBehavior.SSO_WITH_FALLBACK);
+            currentSession.openForRead(openRequest);
+        }
+    }
+}
+
+
+What I'm doing is to request the permission as soon as the session is open - but at this point the code is already starting a Graph API request, thus the permission request comes to late ...
+
+Can't you request a permission at the same time you initialize the session?
+    
+===============================================================================================
+16
+A:I recommend that you read our login tutorial here specifically in step 3.  Using the login button that we provide is the most convenient method, (see authButton.setReadPermissions())
+
+EDIT:
+
+To set permissions without using the loginbutton is trickier since you will have to do all the session management by hand.  Digging into the source code for the login button, this line of code is probably what you need.  It looks like you will need to create your own Session.OpenRequest and set it's attributes such as permissions, audience, and login behavior, then get the current session and call openForRead() on your Session.OpenRequest.
+    

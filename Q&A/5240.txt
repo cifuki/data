@@ -1,0 +1,164 @@
+47
+Q:I have recently written my first Android app which was roughly 8,000-10,000 lines of code.  One thing that continuously hindered my use of normal design patterns was android's heavy use of asynchronous calls (opening dialogs, activities, etc).  Due to this, my code very quickly began looking "spaghetti" like, and I eventually started to dislike looking at certain classes.  
+
+Are there specific design patterns or programming methodologies which are for systems such as these that anyone would recommend?  Are there any suggestions for writing manageable asynchronous code? 
+    
+===============================================================================================
+46
+A:Use global variables
+
+
+If you do not want to mess up your code with simple Intent.putExtra() calls and manage this things for each unique Activity you'll have to use global variables within the application. Extend Application and store data that you need as long your application is alive. To actually implement it, use this excellent answer. This will make dependencies between activities disappear. For example, say that you need a "username" for your application during the application's life cycle - this is an excellent tool for just that. No need for dirty Intent.putExtra() calls.
+
+
+Use styles
+
+
+One common mistake when making the first Android application is that one usually just start writing the XML views. The XML files will (without problem and very fast) go up to very many lines of code. Here you can have a solution where you just use the style attribute to implement a specific behaviour. For example, consider this piece of code:
+
+values/styles.xml:
+
+<style name="TitleText">
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:textSize">18sp</item>
+    <item name="android:textColor">#000</item>
+    <item name="android:textStyle">bold</item>   
+</style>
+
+
+layout/main.xml:
+
+Now, if you have, let's say, two TextViews and both of them should have the same behaviour, make them use the TitleText style. Sample code:
+
+<!--- ... -->
+<TextView
+   android:id="@+id/textview_one"
+   style="@style/TitleText" 
+/>
+
+<TextView
+   android:id="@+id/textview_two" 
+   style="@style/TitleText" 
+/>
+<!--- ... -->
+
+
+Simple and you don't need to duplicate code. If you really want to look further on this particular subject, please look at Layout Tricks: Creating Reusable UI Components.
+
+
+Use strings
+
+
+This point is short but I think it is important to mention it. Another mistake that developers might do is to skip the strings.xml and just write UI messages (and attribute names) inside the code (where he will need it). To make your application easier to maintain; just define messages and attributes in the strings.xml file.
+
+
+Create and use a global tool class
+
+
+When I wrote my first application I just wrote (and duplicated) methods where I needed it. The result? A lot of methods that had the same behaviour between various activities. What I have learned is to make a tool class. For example, let's say you have to make web requests in all of your activities. In that case, skip defining them inside the actual Activity and make a static method for it. Sample code:
+
+public final class Tools {
+
+    private Tools() {
+    }
+
+    public static final void sendData(String url, 
+              String user, String pass) {
+        // URLConnections, HttpClients, etc...
+    }
+
+}
+
+
+Now, you can just use this code below in your Activity that needs to send data towards a server:
+
+Tools.sendData("www.www.www", "user", "pass");
+
+
+However, you get the point. Use this "pattern" where you need it, it will keep you from messing up your code.
+
+
+Let custom classes define the behaviour where the user needs to interact with your application
+
+
+This is probably the most useful point. To just define "where the user needs to interact with your application" let's say you have a Menu, which behaviour is very long in terms of lines, why do we keep the Menu's calculations in the same class? Every little item will make your Activity class a painful piece of code longer - your code look like "spaghetti". For example, instead of having something like this:
+
+@Override
+public boolean onPrepareOptionsMenu(Menu menu) {
+    MenuItem item;
+    item = menu.findItem(R.id.menu_id_one);
+    if (aBooleanVariable) {
+        item.setEnabled(true);
+    } else {
+        item.setEnabled(false);
+    }
+    // More code...
+    return super.onPrepareOptionsMenu(menu);
+}
+
+@Override
+public boolean onOptionsItemSelected(MenuItem i) {
+    // Code, calculations...
+    // ...
+    // ...
+    return super.onOptionsItemSelected(i);
+}
+
+
+redesign it to something like this:
+
+private MyCustomMenuInstance mMenuInstance;
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);        
+    setContentView(R.layout.main);
+
+    mMenuInstance = new MyCustomMenuInstance();
+}  
+
+@Override
+public boolean onPrepareOptionsMenu(Menu menu) {
+    mMenuInstance.onPrepareOptionsMenu(menu);
+    return super.onPrepareOptionsMenu(menu);
+}
+
+@Override
+public boolean onOptionsItemSelected(MenuItem i) {
+    mMenuInstance.onOptionsItemSelected(i);
+    return super.onOptionsItemSelected(i);
+}
+
+
+For example, MyCustomMenuInstance:
+
+public class MyCustomMenuInstance { 
+
+    // Member fields..
+
+    public MyCustomMenuInstance() {
+        // Init stuff.
+    }
+
+    public void onPrepareOptionsMenu(Menu menu) {
+        // Do things..
+        // Maybe you want to modify a variable in the Activity 
+        // class? Well, pass an instance as an argument and create
+        // a method for it in your Activity class.
+    }
+
+    public void onOptionsItemSelected(MenuItem i) {
+        // Do things..
+        // Maybe you want to modify a variable in the Activity 
+        // class? Well, pass an instance as an argument and create
+        // a method for it in your Activity class.
+    }
+
+}
+
+
+You see where this is going. You can apply this to many things, e.g. onClick, onClickListener, onCreateOptionsMenu, the list is long. To learn more "best practices" you can see some sample applications from Google here. Look for how they've implemented things in a nice and correct way.
+
+Last word; keep your code clean, name your variables and methods in a logical manner and especially in a correct way. Always, always understand where you are in your code - that is  very important.
+    

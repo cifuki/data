@@ -1,0 +1,235 @@
+41
+Q:[Disclosure: I am an engineer at Firebase. This question is meant to be a reference question to answer many questions in one go.]
+
+I have the following JSON structure in my Firebase database:
+
+{  
+  "users": {
+    "-Jx5vuRqItEF-7kAgVWy": {
+        "handle": "puf",
+        "name": "Frank van Puffelen",
+        "soId": 209103
+    },
+    "-Jx5w3IOHD2kRFFgkMbh": {
+        "handle": "kato",
+        "name": "Kato Wulf",
+        "soId": 394010
+    },
+    "-Jx5x1VWs08Zc5S-0U4p": {
+        "handle": "mimming",
+        "name": "Jenny Tong",
+        "soId": 839465
+    }
+  }
+}
+
+
+I am reading this with the following code:
+
+private static class User {
+    String handle;
+    String name;
+
+    public String getHandle() { return handle; }
+    public String getName() { return name; }
+}
+
+Firebase ref = new Firebase("https://stackoverflow.firebaseio.com/32108969/users");
+
+ref.addListenerForSingleValueEvent(new ValueEventListener() {
+    @Override
+    public void onDataChange(DataSnapshot usersSnapshot) {
+        for (DataSnapshot userSnapshot : usersSnapshot.getChildren()) {
+          User user = userSnapshot.getValue(User.class);
+          System.out.println(user.toString());
+        }
+    }
+
+    @Override
+    public void onCancelled(FirebaseError firebaseError) { }
+});
+
+
+But I get this error:
+
+
+  Exception in thread "FirebaseEventTarget" com.firebase.client.FirebaseException: Failed to bounce to type
+
+
+How can I read my users into Java objects?
+    
+===============================================================================================
+50
+A:Firebase uses Jackson to allow serialization of Java objects to JSON and deserialization of JSON back into Java objects. You can find more about Jackson on the Jackson website and this page about Jackson annotations. 
+
+In the rest of this answer, we\xe2\x80\x99ll show a few common ways of using Jackson with Firebase.
+
+Loading complete users
+
+The simplest way of loading the users from Firebase into Android is if we create a Java class that completely mimics the properties in the JSON:
+
+private static class User {
+  String handle;
+  String name;
+  long stackId;
+
+  public String getHandle() { return handle; }
+  public String getName() { return name; }
+  public long getStackId() { return stackId; }
+
+  @Override
+  public String toString() { return "User{handle='"+handle+\xe2\x80\x9c', name='"+name+"', stackId="+stackId+"\\\xe2\x80\x99}\xe2\x80\x9d; }
+}
+
+
+We can use this class in a listener:
+
+Firebase ref = new Firebase("https://stackoverflow.firebaseio.com/32108969/users");
+
+ref.addListenerForSingleValueEvent(new ValueEventListener() {
+  @Override
+  public void onDataChange(DataSnapshot usersSnapshot) {
+    for (DataSnapshot userSnapshot : usersSnapshot.getChildren()) {
+      User user = userSnapshot.getValue(User.class);
+      System.out.println(user.toString());
+    }
+  }
+
+  @Override
+  public void onCancelled(FirebaseError firebaseError) { }
+});
+
+
+You may note that the User class follow the JavaBean property pattern. Every JSON property maps by a field in the User class and we have a public getter method for each field. By ensuring that all properties are mapped with the exact same name, we ensure that Jackson can automatically map them.
+
+You can also manually control the mapping by putting Jackson annotations on your Java class, and its fields and methods. We\xe2\x80\x99ll cover the two most common annotations (@JsonIgnore and @JsonIgnoreProperties) below.
+
+Partially loading users
+
+Say that you only care about the user\xe2\x80\x99s name and handle in your Java code. Let\xe2\x80\x99s remove the stackId and see what happens:
+
+private static class User {
+  String handle;
+  String name;
+
+  public String getHandle() { return handle; }
+  public String getName() { return name; }
+
+  @Override
+  public String toString() { 
+    return "User{handle='" + handle + \xe2\x80\x9c\\', name='" + name + "\\\xe2\x80\x99}\xe2\x80\x9d; 
+  }
+}
+
+
+If we now attach the same listener as before and run the program, it will throw an exception:
+
+Exception in thread "FirebaseEventTarget" com.firebase.client.FirebaseException: Failed to bounce to type
+
+at com.firebase.client.DataSnapshot.getValue(DataSnapshot.java:187)
+
+at com.firebase.LoadPartialUsers$1.onDataChange(LoadPartialUsers.java:16)
+
+
+The \xe2\x80\x9cfailed to debounce type\xe2\x80\x9d indicates that Jackson was unable to deserialize the JSON into a User object. In the nested exception it tells us why:
+
+Caused by: com.shaded.fasterxml.jackson.databind.exc.UnrecognizedPropertyException: Unrecognized field "stackId" (class com.firebase.LoadPartialUsers$User), not marked as ignorable (2 known properties: , "handle", "name"])
+
+ at [Source: java.io.StringReader@43079089; line: 1, column: 15] (through reference chain: com.firebase.User["stackId"])
+
+at com.shaded.fasterxml.jackson.databind.exc.UnrecognizedPropertyException.from(UnrecognizedPropertyException.java:79)
+
+
+Jackson found a property stackId in the JSON and doesn\xe2\x80\x99t know what to do with it, so it throws an exception. Luckily there is an annotation that we can use to tell it to ignore specific properties from the JSON when mapping it to our User class:
+
+@JsonIgnoreProperties({ \xe2\x80\x9cstackId" })
+private static class User {
+  ...
+}
+
+
+If we not run the code with our listener again, Jackson will know that it can ignore stackId in the JSON and it will be able to deserialize the JSON into a User object again.
+
+Since adding properties to the JSON is such a common practice in Firebase applications, you may find it more convenient to simply tell Jackson to ignore all properties that don\xe2\x80\x99t have a mapping in the Java class:
+
+@JsonIgnoreProperties(ignoreUnknown=true)
+private static class User {
+  ...
+}
+
+
+Now if we add properties to the JSON later, the Java code will still be able to load the Users. Just keep in mind that the User objects won\xe2\x80\x99t contain all information that was present in the JSON, so be careful when writing them back to Firebase again.
+
+Partially saving users
+
+One reason why it is nice to have a custom Java class, is that we can add convenience methods to it. Say that we add a convenience method that gets the name to display for a user:
+
+private static class User {
+  String handle;
+  String name;
+
+  public String getHandle() { return handle; }
+  public String getName() { return name; }
+
+  @JsonIgnore
+  public String getDisplayName() {
+    return getName() + \xe2\x80\x9c (" + getHandle() + ")";
+  }
+
+  @Override
+  public String toString() { 
+    return "User{handle='" + handle + "\\', name='" + name + "\\', displayName='" + getDisplayName() + "'}"; 
+  }
+}
+
+
+Now let's read the users from Firebase and write them back into a new location:
+
+Firebase srcRef = new Firebase("https://stackoverflow.firebaseio.com/32108969/users");
+final Firebase copyRef = new Firebase("https://stackoverflow.firebaseio.com/32108969/copiedusers");
+
+srcRef.addListenerForSingleValueEvent(new ValueEventListener() {
+  @Override
+  public void onDataChange(DataSnapshot usersSnapshot) {
+    for (DataSnapshot userSnapshot : usersSnapshot.getChildren()) {
+      User user = userSnapshot.getValue(User.class);
+      copyRef.child(userSnapshot.getKey()).setValue(user);
+    }
+  }
+
+  @Override
+  public void onCancelled(FirebaseError firebaseError) { }
+});
+
+
+The JSON in the copiedusers node looks like this:
+
+"copiedusers": {
+    "-Jx5vuRqItEF-7kAgVWy": {
+        "displayName": "Frank van Puffelen (puf)",
+        "handle": "puf",
+        "name": "Frank van Puffelen"
+    },
+    "-Jx5w3IOHD2kRFFgkMbh": {
+        "displayName": "Kato Wulf (kato)",
+        "handle": "kato",
+        "name": "Kato Wulf"
+    },
+    "-Jx5x1VWs08Zc5S-0U4p": {
+        "displayName": "Jenny Tong (mimming)",
+        "handle": "mimming",
+        "name": "Jenny Tong"
+    }
+}
+
+
+That\xe2\x80\x99s not the same as the source JSON, because Jackson recognizes the new getDisplayName() method as a JavaBean getter and thus added a displayName property to the JSON it outputs. We solve this problem by adding a JsonIgnore annotation to getDisplayName().
+
+    @JsonIgnore
+    public String getDisplayName() {
+        return getName() + "(" + getHandle() + ")";
+    }
+
+
+When serializing a User object, Jackson will now ignore the getDisplayName() method and the JSON we write out will be the same as what we got it.
+    

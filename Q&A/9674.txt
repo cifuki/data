@@ -1,0 +1,109 @@
+28
+Q:I'm having a problem that my method 
+
+@Override
+public boolean onTouchEvent(MotionEvent event) {
+    return gestureDetector.onTouchEvent(event);
+}
+
+
+is newer called. Any ideas why is that so? I'm building a google's api 4.0.3 application, and i'm trzing to enable swipes for my viewFliper. However it can't work if on touch is newer called.
+
+btw: 
+
+ public class MainActivity extends SherlockMapActivity implements ActionBar.TabListener {
+
+
+Thats the declaration of my activity. and to detect swipes i have implemented that:
+
+    SimpleOnGestureListener simpleOnGestureListener = new SimpleOnGestureListener(){
+
+    @Override
+    public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX,float velocityY) {
+
+        float sensitvity = 50;
+        if((e1.getX() - e2.getX()) > sensitvity){
+            SwipeLeft();
+        }else if((e2.getX() - e1.getX()) > sensitvity){
+            SwipeRight();
+        }
+
+        return true;
+    }
+
+};
+GestureDetector gestureDetector= new GestureDetector(simpleOnGestureListener);
+
+
+Thank u!
+
+edit:
+
+main.xml:
+
+ <?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+android:id="@+id/main_view"
+android:layout_width="fill_parent"
+android:layout_height="fill_parent"
+android:orientation="horizontal" >
+
+<ViewFlipper
+    android:id="@+id/ViewFlipper"
+    android:layout_width="fill_parent"
+    android:layout_height="wrap_content"
+    android:background="#ffffff" >
+
+    <include
+        android:layout_height="match_parent"
+        layout="@layout/mymain" />
+
+    <include layout="@layout/secondmain" />
+    <include layout="@layout/thirdmain" />
+    <include layout="@layout/fourthmain" />
+</ViewFlipper>
+</LinearLayout>
+
+
+edit2: all of my included layouts have scrollview implemented is it possible that scroll takes that events and handle them. And how to detect gestures if so?
+    
+===============================================================================================
+44
+A:I found a perfect solution. I implemented new method:
+
+@Override
+public boolean dispatchTouchEvent(MotionEvent event) {
+
+    View v = getCurrentFocus();
+    boolean ret = super.dispatchTouchEvent(event);
+
+
+and now it all works fine!
+
+Edit:
+
+My final code:
+
+@Override
+public boolean dispatchTouchEvent(MotionEvent event) {
+    View v = getCurrentFocus();
+    if (v instanceof EditText) {
+        View w = getCurrentFocus();
+        int scrcoords[] = new int[2];
+        w.getLocationOnScreen(scrcoords);
+        float x = event.getRawX() + w.getLeft() - scrcoords[0];
+        float y = event.getRawY() + w.getTop() - scrcoords[1];
+        if (event.getAction() == MotionEvent.ACTION_UP
+                && (x < w.getLeft() || x >= w.getRight() || y < w.getTop() || y > w
+                        .getBottom())) {
+
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            imm.hideSoftInputFromWindow(getWindow().getCurrentFocus()
+                    .getWindowToken(), 0);
+        }
+    }
+    boolean ret = super.dispatchTouchEvent(event);
+    return ret;
+}
+
+    

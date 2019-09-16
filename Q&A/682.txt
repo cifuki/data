@@ -1,0 +1,131 @@
+199
+Q:I have an activity that when started needs access to two different ArrayLists.  Both Lists are different Objects I have created myself. 
+
+Basically I need a way to pass these objects to the activity from an Intent.  I can use addExtras() but this requires a Parceable compatible class.  I could make my classes to be passed serializable but as I understand this slows down the program.
+
+What are my options?
+
+Can I pass an Enum?
+
+As an an aside: is there a way to pass parameters to an Activity Constructor from an Intent?
+    
+===============================================================================================
+511
+A:This is an old question but everybody fails to mention that Enums are actually Serializable and therefore can perfectly be added to an Intent as an extra. Like this:
+
+public enum AwesomeEnum {
+  SOMETHING, OTHER;
+}
+
+intent.putExtra("AwesomeEnum", AwesomeEnum.SOMETHING);
+
+AwesomeEnum result = (AwesomeEnum) intent.getSerializableExtra("AwesomeEnum");
+
+
+The suggestion to use static or application wide variables is a really bad idea. This really couples your activities to a state managing system and it is hard to maintain, debug and problem bound. 
+
+
+
+ALTERNATIVES:
+
+A good point was noted by tedzyc about the fact that the solution provided by Oderik gives you an error. However, the alternative provided is a bit crumble-some to use (even using generics).
+
+If you are really worried about the performance of adding the enum to an intent I propose these alternatives instead:
+
+OPTION 1:
+
+public enum AwesomeEnum {
+  SOMETHING, OTHER;
+  private static final String name = AwesomeEnum.class.getName();
+  public void attachTo(Intent intent) {
+    intent.putExtra(name, ordinal());
+  }
+  public static AwesomeEnum detachFrom(Intent intent) {
+    if(!intent.hasExtra(name)) throw new IllegalStateException();
+    return values()[intent.getIntExtra(name, -1)];
+  }
+}
+
+
+Usage:
+
+// Sender usage
+AwesomeEnum.SOMETHING.attachTo(intent);
+// Receiver usage
+AwesomeEnum result = AwesomeEnum.detachFrom(intent);
+
+
+OPTION 2:
+(generic, reusable and decoupled from the enum)
+
+public final class EnumUtil {
+    public static class Serializer<T extends Enum<T>> extends Deserializer<T> {
+        private T victim;
+        @SuppressWarnings("unchecked") 
+        public Serializer(T victim) {
+            super((Class<T>) victim.getClass());
+            this.victim = victim;
+        }
+        public void to(Intent intent) {
+            intent.putExtra(name, victim.ordinal());
+        }
+    }
+    public static class Deserializer<T extends Enum<T>> {
+        protected Class<T> victimType;
+        protected String name;
+        public Deserializer(Class<T> victimType) {
+            this.victimType = victimType;
+            this.name = victimType.getName();
+        }
+        public T from(Intent intent) {
+            if (!intent.hasExtra(name)) throw new IllegalStateException();
+            return victimType.getEnumConstants()[intent.getIntExtra(name, -1)];
+        }
+    }
+    public static <T extends Enum<T>> Deserializer<T> deserialize(Class<T> victim) {
+        return new Deserializer<T>(victim);
+    }
+    public static <T extends Enum<T>> Serializer<T> serialize(T victim) {
+        return new Serializer<T>(victim);
+    }
+}
+
+
+Usage:
+
+// Sender usage
+EnumUtil.serialize(AwesomeEnum.Something).to(intent);
+// Receiver usage
+AwesomeEnum result = 
+EnumUtil.deserialize(AwesomeEnum.class).from(intent);
+
+
+OPTION 3 (with Kotlin):
+
+It's been a while, but since now we have Kotlin, I thought I would add another option for the new paradigm. Here we can make use of extension functions and reified types (which retains the type when compiling).
+
+inline fun <reified T : Enum<T>> Intent.putExtra(victim: T): Intent =
+    putExtra(T::class.qualifiedName, victim.ordinal)
+
+inline fun <reified T: Enum<T>> Intent.getEnumExtra(): T? =
+    getIntExtra(T::class.qualifiedName, -1)
+        .takeUnless { it == -1 }
+        ?.let { T::class.java.enumConstants[it] }
+
+
+There are a few benefits of doing it this way. 
+
+
+We don't require the "overhead" of an intermediary object to do the serialization as it's all done in place thanks to inline which will replace the calls with the code inside the function.
+The functions are more familiar as they are similar to the SDK ones.
+The IDE will autocomplete these functions which means there is no need to have previous knowledge of the utility class.
+
+
+Usage:
+
+// Sender usage
+intent.putExtra(AwesomeEnum.SOMETHING)
+// Receiver usage
+val result = intent.getEnumExtra<AwesomeEnum>()
+
+    

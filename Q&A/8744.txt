@@ -1,0 +1,210 @@
+31
+Q:I am making a vertical EditText for traditional Mongolian. I have successfully implemented it by embedding a slightly modified EditText inside of a rotated ViewGroup. I need to create a completely custom context menu because the system one does not support vertical text and is also not rotated when the ViewGroup is rotated. So I want to disable the system context menu altogether.
+
+Note that this is different than these questions that are just trying to disable copy/paste/etc.:
+
+
+How to disable copy/paste from/to EditText
+EditText: Disable Paste/Replace menu pop-up on Text Selection Handler click event
+how to disable paste option in android EditText
+Android: How to TOTALLY disable copy and paste function in Edittext
+
+
+Although I don't get the context menu appearing in the simulator, I get it appearing in my Android 5.0.2 Xiaomi phone. 
+
+I have tried:
+
+
+the setCustomSelectionActionModeCallback "solution"
+the setLongClickable(false); "solution"
+the onTouchEvent "solution"
+
+
+I'm open to hacks but I need it to consistently work across devices. Mark Murphy (a Commons Guy) wrote some time back in reply to another user trying to do something similar:
+
+
+  I suspect that even if you come up with an answer, it will not work
+  across devices. Device manufacturers have had a tendency to roll their
+  own "context menu" for EditText, defeating developers' attempts to add
+  items into that context menu. My guess is that trying to block that
+  context menu will have similar results.
+
+
+Am I out of luck? 
+
+The only thing I can think of now is to completely rewrite TextView and EditText from scratch (well, by modifying the Android source). I know someone else who did something similar, but his code isn't open source. Before I take this major step, I want to try asking for a simpler solution here on Stack Overflow. 
+
+Update: I've been trying modify the TextView source code for the past two days and it looks like a 6 month project. It is a mass of interrelated classes. I need another solution, but I am out of ideas.
+
+MVCE
+
+This is the simplest way I could think of to recreate the problem. There is nothing necessary from my custom EditText. The layout has a single EditText made by replacing the default project Hello World's TextView. I changed the min API to 11 to avoid dealing with deprecated methods.
+
+public class MainActivity extends AppCompatActivity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        EditText editText = (EditText) findViewById(R.id.edit_text);
+        editText.setCustomSelectionActionModeCallback(new ActionMode.Callback() {
+            @Override
+            public boolean onCreateActionMode(ActionMode actionMode, Menu menu) { return false; }
+            @Override
+            public boolean onPrepareActionMode(ActionMode actionMode, Menu menu) { return false; }
+            @Override
+            public boolean onActionItemClicked(ActionMode actionMode, MenuItem menuItem) { return false; }
+            @Override
+            public void onDestroyActionMode(ActionMode actionMode) { }
+        });
+    }
+}
+
+
+The context menu in the simulator (running API 24) still shows when I click on the cursor handle (but not on a long click or double click). Here is an image:
+
+
+
+On my Xiaomi MIUI phone running Android 5.0, I get the context menu in all situations (cursor handle click, long click, double click).
+
+Update
+
+Aritra Roy's solution is working in the simulator, on some other devices that he has tested, and on my device. I have accepted his answer because it solves my original problem. The only negative side effect is that text selection is also disabled.
+    
+===============================================================================================
+25
+A:There are three things you need to do. 
+
+STEP 1
+
+You can disable the context menus from appearing by returning false from these methods,
+
+mEditEext.setCustomSelectionActionModeCallback(new ActionMode.Callback() {
+
+            public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+                return false;
+            }
+
+            public void onDestroyActionMode(ActionMode mode) {                  
+            }
+
+            public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+                return false;
+            }
+
+            public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+                return false;
+            }
+        });
+
+
+STEP 2
+
+It is necessary to disable the long-click in the EditText as well.
+
+mEditText.setLongClickable(false);
+
+
+or doing this, android:longClickable="false" in XML.
+
+STEP 3
+
+Now, you need to prevent the menus from appearing when the handles are clicked. The solution is simple,
+
+1) Extend the EditText class,
+
+2) Override isSuggestionsEnabled() and return false,
+
+3) Create a canPaste() method and return false. This is method hiding.
+
+QUICK SOLUTION
+
+If you don't want to do all these manually. Here is a custom EditText class you can use to get this done quickly. But I still recommend you to go through the steps once to understand how things work.
+
+public class MenuHidingEditText extends EditText {
+    private final Context mContext;
+
+    public MenuHidingEditText(Context context) {
+        super(context);
+        this.mContext = context;
+
+        blockContextMenu();
+    }
+
+    public MenuHidingEditText(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        this.mContext = context;
+
+        blockContextMenu();
+    }
+
+    public MenuHidingEditText(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+        this.mContext = context;
+
+        blockContextMenu();
+    }
+
+    private void blockContextMenu() {
+        this.setCustomSelectionActionModeCallback(new BlockedActionModeCallback());
+        this.setLongClickable(false);
+        this.setOnTouchListener(new OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                MenuHidingEditText.this.clearFocus();
+                return false;
+            }
+        });
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (event.getAction() == MotionEvent.ACTION_DOWN) {
+            // setInsertionDisabled when user touches the view
+            this.setInsertionDisabled();
+        }
+        return super.onTouchEvent(event);
+    }
+
+    private void setInsertionDisabled() {
+        try {
+            Field editorField = TextView.class.getDeclaredField("mEditor");
+            editorField.setAccessible(true);
+            Object editorObject = editorField.get(this);
+
+            Class editorClass = Class.forName("android.widget.Editor");
+            Field mInsertionControllerEnabledField = editorClass.getDeclaredField("mInsertionControllerEnabled");
+            mInsertionControllerEnabledField.setAccessible(true);
+            mInsertionControllerEnabledField.set(editorObject, false);
+        }
+        catch (Exception ignored) {
+            // ignore exception here
+        }
+    }
+
+    @Override
+    public boolean isSuggestionsEnabled() {
+        return false;
+    }
+
+    private class BlockedActionModeCallback implements ActionMode.Callback {
+
+        public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+            return false;
+        }
+
+        public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+            return false;
+        }
+
+        public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+            return false;
+        }
+
+        public void onDestroyActionMode(ActionMode mode) {
+        }
+    }
+}
+
+    

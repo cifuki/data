@@ -1,0 +1,94 @@
+136
+Q:Is it possible to change an application icon directly from the program?
+I mean, change icon.png in the res\\drawable folder.
+I would like to let users to change application's icon from the program so next time they would see the previously selected icon in the launcher.
+    
+===============================================================================================
+70
+A:It's an old question, but still active as there is no explicit Android feature. And the guys from facebook found a work around - somehow. Today, I found a way that works for me. Not perfect (see remarks at the end of this answer) but it works!
+
+Main idea is, that I update the icon of my app's shortcut, created by the launcher on my home screen. When I want to change something on the shortcut-icon, I remove it first and recreate it with a new bitmap.
+
+Here is the code. It has a button increment. When pressed, the shortcut is replaced with one that has a new counting number.
+
+First you need these two permissions in your manifest:
+
+<uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
+<uses-permission android:name="com.android.launcher.permission.UNINSTALL_SHORTCUT" />
+
+
+Then you need this two methods for installing and uninstalling shortcuts. The shortcutAdd method creates a bitmap with a number in it. This is just to demonstrate that it actually changes. You probably want to change that part with something, you want in your app.
+
+private void shortcutAdd(String name, int number) {
+    // Intent to be send, when shortcut is pressed by user ("launched")
+    Intent shortcutIntent = new Intent(getApplicationContext(), Play.class);
+    shortcutIntent.setAction(Constants.ACTION_PLAY);
+
+    // Create bitmap with number in it -> very default. You probably want to give it a more stylish look
+    Bitmap bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
+    Paint paint = new Paint();
+    paint.setColor(0xFF808080); // gray
+    paint.setTextAlign(Paint.Align.CENTER);
+    paint.setTextSize(50);
+    new Canvas(bitmap).drawText(""+number, 50, 50, paint);
+    ((ImageView) findViewById(R.id.icon)).setImageBitmap(bitmap);
+
+    // Decorate the shortcut
+    Intent addIntent = new Intent();
+    addIntent.putExtra(Intent.EXTRA_SHORTCUT_INTENT, shortcutIntent);
+    addIntent.putExtra(Intent.EXTRA_SHORTCUT_NAME, name);
+    addIntent.putExtra(Intent.EXTRA_SHORTCUT_ICON, bitmap);
+
+    // Inform launcher to create shortcut
+    addIntent.setAction("com.android.launcher.action.INSTALL_SHORTCUT");
+    getApplicationContext().sendBroadcast(addIntent);
+}
+
+private void shortcutDel(String name) {
+    // Intent to be send, when shortcut is pressed by user ("launched")
+    Intent shortcutIntent = new Intent(getApplicationContext(), Play.class);
+    shortcutIntent.setAction(Constants.ACTION_PLAY);
+
+    // Decorate the shortcut
+    Intent delIntent = new Intent();
+    delIntent.putExtra(Intent.EXTRA_SHORTCUT_INTENT, shortcutIntent);
+    delIntent.putExtra(Intent.EXTRA_SHORTCUT_NAME, name);
+
+    // Inform launcher to remove shortcut
+    delIntent.setAction("com.android.launcher.action.UNINSTALL_SHORTCUT");
+    getApplicationContext().sendBroadcast(delIntent);
+}
+
+
+And finally, here are two listener to add the first shortcut and update the shortcut with an incrementing counter.
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    setContentView(R.layout.test);
+    findViewById(R.id.add).setOnClickListener(new OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            shortcutAdd("changeIt!", count);
+        }
+    });
+    findViewById(R.id.increment).setOnClickListener(new OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            shortcutDel("changeIt!");
+            count++;
+            shortcutAdd("changeIt!", count);
+        }
+    });
+}
+
+
+Remarks:
+
+
+This way works also if your App controls more shortcuts on the home screen, e.g. with different extra's in the Intent. They just need different names so that the right one is uninstalled and reinstalled.
+The programmatical handling of shortcuts in Android is a well known, widely used but not officially supported Android feature. It seems to work on the default launcher and I never tried it anywhere else. So dont blame me, when you get this user-emails "It does not work on my XYZ, double rooted, super blasted phone"
+The launcher writes a Toast when a shortcut was installad and one when a shortcut was uninstalled. So I get two Toasts every time I change the icon. This is not perfect, but well, as long as the rest of my app is perfect...
+
+    

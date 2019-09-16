@@ -1,0 +1,232 @@
+96
+Q:I have a service which is checking for new task all the time. If there is new task, I want to refresh the activity UI to show that info. 
+I did find https://github.com/commonsguy/cw-andtutorials/tree/master/18-LocalService/ this example. Is that a good approch ? Any other examples?
+
+Thanks.
+    
+===============================================================================================
+218
+A:See below for my original answer - that pattern has worked well, but recently I've started using a different approach to Service/Activity communication:
+
+
+Use a bound service which enables the Activity to get a direct
+reference to the Service, thus allowing direct calls on it, rather
+than using Intents.
+Use RxJava to execute asynchronous operations.
+If the Service needs to continue background operations even when no
+Activity is running, also start the service from the Application
+class so that it does not get stopped when unbound.
+
+
+The advantages I have found in this approach compared to the startService()/LocalBroadcast technique are
+
+
+No need for data objects to implement Parcelable - this is particularly important to me as I am now sharing code between Android and iOS (using RoboVM)
+RxJava provides canned (and cross-platform) scheduling, and easy composition of sequential asynchronous operations.
+This should be more efficient than using a LocalBroadcast, though the overhead of using RxJava may outweigh that.
+
+
+Some example code. First the service:
+
+public class AndroidBmService extends Service implements BmService {
+
+    private static final int PRESSURE_RATE = 500000;   // microseconds between pressure updates
+    private SensorManager sensorManager;
+    private SensorEventListener pressureListener;
+    private ObservableEmitter<Float> pressureObserver;
+    private Observable<Float> pressureObservable;
+
+    public class LocalBinder extends Binder {
+        public AndroidBmService getService() {
+            return AndroidBmService.this;
+        }
+    }
+
+    private IBinder binder = new LocalBinder();
+
+    @Nullable
+    @Override
+    public IBinder onBind(Intent intent) {
+        logMsg("Service bound");
+        return binder;
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        return START_NOT_STICKY;
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+
+        sensorManager = (SensorManager)getSystemService(SENSOR_SERVICE);
+        Sensor pressureSensor = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
+        if(pressureSensor != null)
+            sensorManager.registerListener(pressureListener = new SensorEventListener() {
+                @Override
+                public void onSensorChanged(SensorEvent event) {
+                    if(pressureObserver != null) {
+                        float lastPressure = event.values[0];
+                        float lastPressureAltitude = (float)((1 - Math.pow(lastPressure / 1013.25, 0.190284)) * 145366.45);
+                        pressureObserver.onNext(lastPressureAltitude);
+                    }
+                }
+
+                @Override
+                public void onAccuracyChanged(Sensor sensor, int accuracy) {
+
+                }
+            }, pressureSensor, PRESSURE_RATE);
+    }
+
+    @Override
+    public Observable<Float> observePressure() {
+        if(pressureObservable == null) {
+            pressureObservable = Observable.create(emitter -> pressureObserver = emitter);
+            pressureObservable = pressureObservable.share();
+        }
+         return pressureObservable;
+    }
+
+    @Override
+    public void onDestroy() {
+        if(pressureListener != null)
+            sensorManager.unregisterListener(pressureListener);
+    }
+} 
+
+
+And an Activity that binds to the service and receives pressure altitude updates:
+
+public class TestActivity extends AppCompatActivity {
+
+    private ContentTestBinding binding;
+    private ServiceConnection serviceConnection;
+    private AndroidBmService service;
+    private Disposable disposable;
+
+    @Override
+    protected void onDestroy() {
+        if(disposable != null)
+            disposable.dispose();
+        unbindService(serviceConnection);
+        super.onDestroy();
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        binding = DataBindingUtil.setContentView(this, R.layout.content_test);
+        serviceConnection = new ServiceConnection() {
+            @Override
+            public void onServiceConnected(ComponentName componentName, IBinder iBinder) {
+                logMsg("BlueMAX service bound");
+                service = ((AndroidBmService.LocalBinder)iBinder).getService();
+                disposable = service.observePressure()
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(altitude ->
+                        binding.altitude.setText(
+                            String.format(Locale.US,
+                                "Pressure Altitude %d feet",
+                                altitude.intValue())));
+            }
+
+            @Override
+            public void onServiceDisconnected(ComponentName componentName) {
+                logMsg("Service disconnected");
+            }
+        };
+        bindService(new Intent(
+            this, AndroidBmService.class),
+            serviceConnection, BIND_AUTO_CREATE);
+    }
+}
+
+
+The layout for this Activity is:
+
+<?xml version="1.0" encoding="utf-8"?>
+<layout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    >
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        tools:context="com.controlj.mfgtest.TestActivity">
+
+        <TextView
+            tools:text="Pressure"
+            android:id="@+id/altitude"
+            android:gravity="center_horizontal"
+            android:layout_gravity="center_vertical"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+    </LinearLayout>
+</layout>
+
+
+If the service needs to run in the background without a bound Activity it can be started from the Application class as well in OnCreate() using Context#startService().
+
+
+
+My Original Answer (from 2013):
+
+In your service: (using COPA as service in example below).
+
+Use a LocalBroadCastManager. In your service's onCreate, set up the broadcaster:
+
+broadcaster = LocalBroadcastManager.getInstance(this);
+
+
+When you want to notify the UI of something:
+
+static final public String COPA_RESULT = "com.controlj.copame.backend.COPAService.REQUEST_PROCESSED";
+
+static final public String COPA_MESSAGE = "com.controlj.copame.backend.COPAService.COPA_MSG";
+
+public void sendResult(String message) {
+    Intent intent = new Intent(COPA_RESULT);
+    if(message != null)
+        intent.putExtra(COPA_MESSAGE, message);
+    broadcaster.sendBroadcast(intent);
+}
+
+
+In your Activity: 
+
+Create a listener on onCreate:
+
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    super.setContentView(R.layout.copa);
+    receiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String s = intent.getStringExtra(COPAService.COPA_MESSAGE);
+            // do something here.
+        }
+    };
+}
+
+
+and register it in onStart:
+
+@Override
+protected void onStart() {
+    super.onStart();
+    LocalBroadcastManager.getInstance(this).registerReceiver((receiver), 
+        new IntentFilter(COPAService.COPA_RESULT)
+    );
+}
+
+@Override
+protected void onStop() {
+    LocalBroadcastManager.getInstance(this).unregisterReceiver(receiver);
+    super.onStop();
+}
+
+    

@@ -1,0 +1,75 @@
+28
+Q:I'd like to intercept all responses received by the retrofit engine, and scan for HTTP error code, for example error 403.
+
+I'm aware I can use the failure(RetrofitError error) callback of every request and check for 403's but I'd like to wrap the response globally.
+
+I can see that request interception is possible, but I do not see a similar option for response.
+
+Any suggestions?
+    
+===============================================================================================
+65
+A:I was able to accomplish that by adding an interceptor to the OkHttpClient that retrofit is using.
+
+Kotlin + Retrofit 2.x 
+
+val clientBuilder = OkHttpClient.Builder()
+clientBuilder.addInterceptor { chain ->
+            val request = chain.request()
+            val response = chain.proceed(request)
+            if (response.code() == 403) {
+                handleForbiddenResponse()
+            }
+            response
+        }
+
+
+Retrofit 2.x:
+
+   OkHttpClient.Builder clientBuilder = new OkHttpClient.Builder();
+   clientBuilder.
+            addInterceptor(new Interceptor() {
+                @Override
+                public Response intercept(Chain chain) throws IOException {
+                   Request request = chain.request();
+                   Response response = chain.proceed(request);
+                   if (response.code() == 403) {
+                         handleForbiddenResponse();
+                   }
+                   return response;
+                }
+            });
+
+
+    Retrofit retrofit = new Retrofit.Builder()
+            .baseUrl(API_BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .client(clientBuilder.build();)
+            .build();
+
+
+Retrofit 1.x:
+
+public class ForbiddenInterceptor implements Interceptor {
+
+    @Override
+    public Response intercept(Chain chain) throws IOException {
+        Request request = chain.request();
+        Response response = chain.proceed(request);
+        if (response.code() == 403) {
+             handleForbiddenResponse();
+        }
+        return response;
+    }
+}
+
+
+
+OkHttpClient okHttpClient = Utils.createUnsafeOkHttpClient();
+okHttpClient.interceptors().add(new ForbiddenInterceptor());
+
+RestAdapter.Builder restAdapterBuilder = new RestAdapter.Builder()
+        .setEndpoint(API_BASE_URL)
+        .setClient(new OkClient(okHttpClient));
+
+    

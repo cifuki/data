@@ -1,0 +1,45 @@
+65
+Q:I sometimes get the following exception when working with Fragments:
+
+FATAL EXCEPTION: main
+java.lang.NullPointerException
+    at android.support.v4.app.BackStackRecord.run(BackStackRecord.java:591)
+    at android.support.v4.app.FragmentManagerImpl.execPendingActions(FragmentManager.java:1416)
+    at android.support.v4.app.FragmentManagerImpl$1.run(FragmentManager.java:420)
+    at android.os.Handler.handleCallback(Handler.java:615)
+    at android.os.Handler.dispatchMessage(Handler.java:92)
+    at android.os.Looper.loop(Looper.java:137)
+    at android.app.ActivityThread.main(ActivityThread.java:4745)
+    at java.lang.reflect.Method.invokeNative(Native Method)
+    at java.lang.reflect.Method.invoke(Method.java:511)
+    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:786)
+    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:553)
+    at dalvik.system.NativeStart.main(Native Method)
+
+
+The exception occurs when run() of BackStackRecord is called through execPendingTransactions(), when it tries to remove a fragment from the manager.
+
+case OP_REMOVE: {
+  Fragment f = op.fragment;
+  f.mNextAnim = op.exitAnim; <----
+  mManager.removeFragment(f, mTransition, mTransitionStyle);
+}
+break;
+
+
+I can't seem to figure out what exactly is causing this? I think it has to do with the backstack of fragments not being cleaned up right when removing fragments.
+    
+===============================================================================================
+160
+A:Answering my own question:
+
+This exception is (eventually) thrown when you call FragmentTransaction.remove(null); and FragmentTransaction.commit();
+
+EDIT: And also, like Twice Circled and shinyuX point out in the comment; when calling the show(null) or add(null), attach(null) and detach(null) methods, and probably also hide(null)
+
+After calling commit(), the transaction will be queued in the FragmentManager. As a result, when the operation is being processed after you explicitly call FragmentManager.executePendingTransactions(), or when the FragmentManager queue thread calls it, it throws a NullPointerException.
+
+In my case, I was maintaining fragment states in a global object. There I checked if the fragment was showing or not, and then removed visible fragments. But because I started a new FragmentActivity, these states were still set to true while they were not visible. So this is a design error.
+
+Other than fixing the design error, the solution was simple: check whether FragmentManager.findFragmentByTag() returned null before removing the fragment.
+    

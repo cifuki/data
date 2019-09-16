@@ -1,0 +1,136 @@
+65
+Q:I have my class ClassMultiPoint with subclasses.
+
+public class ClassMultiPoints
+ {
+   public String message;
+   public List<ClassPoints> data;
+
+   public class ClassPoints
+    {
+      public String id;
+      public List<ClassPoint> points;
+      public class ClassPoint
+       {
+         public String speed;
+         public String bearing;
+       }
+    }
+ }
+
+
+I will get value of object oPoints from parse GSON:
+
+oPoints = gson.fromJson( jsonString, ClassMultiPoints.class);
+
+I try use oPoints.message.
+
+When I run my application without proguard app run success.
+When I run my app with proguard my app crash.
+
+I think problem is: proguard rename attribute 'oPoints.message' of my class to short 'a'. 
+
+I try keep the names of the methods and attributes is constant, but proguard rename its:
+
+proguard.cfg:
+
+-injars      bin/classes
+-injars      libs
+-outjars     bin/classes-processed.jar
+-dontpreverify
+-repackageclasses ''
+-allowaccessmodification
+-optimizations !code/simplification/arithmetic
+-keepattributes *Annotation*
+-dontskipnonpubliclibraryclasses
+-optimizationpasses 5
+-printmapping map.txt
+-flattenpackagehierarchy
+
+-keep public class * extends android.app.Activity
+-keep public class * extends android.app.Application
+-keep public class * extends android.app.MapActivity
+-keep public class * extends android.app.Service
+-keep public class * extends android.content.BroadcastReceiver
+-keep public class * extends android.content.ContentProvider
+
+-libraryjars  libs/commons-io-2.2.jar
+-libraryjars  libs/ftp4j-1.7.1.jar
+-libraryjars  libs/gson-2.2.2.jar
+
+-keep public class org.apache.commons.io.**
+-keep public class it.sauronsoftware.ftp4j.**
+-keep public class com.google.gson.**
+
+-keep public class com.mypackagename.ActivityMonitor$*
+
+-keep public class * extends android.view.View {
+    public <init>(android.content.Context);
+    public <init>(android.content.Context, android.util.AttributeSet);
+    public <init>(android.content.Context, android.util.AttributeSet, int);
+    public void set*(...);
+}
+
+-keepclasseswithmembers class * {
+    public <init>(android.content.Context, android.util.AttributeSet);
+}
+
+-keepclasseswithmembers class * {
+    public <init>(android.content.Context, android.util.AttributeSet, int);
+}
+
+-keepclassmembers class * extends android.content.Context {
+   public void *(android.view.View);
+   public void *(android.view.MenuItem);
+}
+
+-keepclassmembers class * implements android.os.Parcelable {
+    static android.os.Parcelable$Creator CREATOR;
+}
+
+-keepclassmembers class **.R$* {
+    public static <fields>;
+}
+
+
+What is right way to keep names of the methods and attributes of the my one (static) class?
+    
+===============================================================================================
+65
+A:If you dont want your class members to be obfuscated then use SerializedName annotation provided by Gson. For example:
+
+public class ClassMultiPoints
+{
+   @SerializedName("message")
+   public String message;
+   @SerializedName("data")
+   public List<ClassPoints> data;
+
+   ...
+
+}
+
+
+Moreover, make sure you do add proper proguard configuration for Gson library too. For example:
+
+##---------------Begin: proguard configuration for Gson ----------
+# Gson uses generic type information stored in a class file when working with
+#fields. Proguard removes such information by default, so configure it to keep
+#all of it.
+-keepattributes Signature
+
+# For using GSON @Expose annotation
+-keepattributes *Annotation*
+
+# Gson specific classes
+-keep class sun.misc.Unsafe { *; }
+#-keep class com.google.gson.stream.** { *; }
+
+# Application classes that will be serialized/deserialized over Gson
+-keep class com.google.gson.examples.android.model.** { *; }
+
+##---------------End: proguard configuration for Gson ----------
+
+
+For more info read this.
+    

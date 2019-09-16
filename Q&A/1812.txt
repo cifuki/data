@@ -1,0 +1,54 @@
+106
+Q:I'd like to handle situations when there is no internet connection. Usually I'd run:
+
+ConnectivityManager cm =
+    (ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);
+
+NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+boolean isConnected = activeNetwork != null &&
+                  activeNetwork.isConnectedOrConnecting();
+
+
+(from here) before sending the requests to the network and notify user if there were no internet connection.
+
+From what I saw Retrofit does not handle this situation specifically. If there is no internet connection I'll just get RetrofitError with timeout as a reason. 
+
+If I'd like to incorporate this kind of check into every HTTP request with Retrofit, how should I do it? Or should I do it at all.
+
+Thanks
+
+Alex
+    
+===============================================================================================
+59
+A:What I ended up doing is creating a custom Retrofit client that checks for connectivity before executing a request and throws an exception.
+
+public class ConnectivityAwareUrlClient implements Client {
+
+    Logger log = LoggerFactory.getLogger(ConnectivityAwareUrlClient.class);
+
+    public ConnectivityAwareUrlClient(Client wrappedClient, NetworkConnectivityManager ncm) {
+        this.wrappedClient = wrappedClient;
+        this.ncm = ncm;
+    }
+
+    Client wrappedClient;
+    private NetworkConnectivityManager ncm;
+
+    @Override
+    public Response execute(Request request) throws IOException {
+        if (!ncm.isConnected()) {
+            log.debug("No connectivity %s ", request);
+            throw new NoConnectivityException("No connectivity");
+        }
+        return wrappedClient.execute(request);
+    }
+}
+
+
+and then use it when configuring RestAdapter
+
+RestAdapter.Builder().setEndpoint(serverHost)
+                     .setClient(new ConnectivityAwareUrlClient(new OkHttpClient(), ...))
+
+    

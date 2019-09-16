@@ -1,0 +1,95 @@
+43
+Q:Per the Android Documentation it states:
+
+
+  There is normally no need to subclass Application. In most situation,
+  static singletons can provide the same functionality in a more modular
+  way. If your singleton needs a global context (for example to register
+  broadcast receivers), the function to retrieve it can be given a
+  Context which internally uses Context.getApplicationContext() when
+  first constructing the singleton.
+
+
+How do I go about creating a static singleton that has global context so that it survives the running activity changing in my app?  Is it enough to have a static context which references the getApplicationContext()?
+    
+===============================================================================================
+83
+A:another edit to the question:
+
+lately (as of most of 2016 and forward) what I've been doing, and would be my suggestion to any developer to do it as:
+
+Use Dagger2, just use Dagger 2. Wherever you need a Context you do:
+
+@Inject Context context;
+
+
+and that's it. While at it, inject all the other stuff that would be a singleton.
+
+edited/improved answer:
+
+because this answer is getting kinda-of popular, I'll improve my own answer with example code of what I've been using lately (as of Jul/2014).
+
+Start by having the application keeping a reference to itself.
+
+public class App extends Application {
+   private static App instance;
+   public static App get() { return instance; }
+
+   @Override
+   public void onCreate() {
+      super.onCreate();
+      instance = this;
+   }
+}
+
+
+then on any singleton that needs access to the context I lazy load the singles in a thread safe manner using double check synchronization as explained here https://stackoverflow.com/a/11165926/906362
+
+private static SingletonDemo instance;
+
+public static SingletonDemo get() {
+   if(instance == null) instance = getSync();
+   return instance;
+}
+
+private static synchronized SingletonDemo getSync() {
+   if(instance == null) instance = new SingletonDemo();
+   return instance;
+}
+
+private SingletonDemo(){
+   // here you can directly access the Application context calling
+   App.get();
+}
+
+
+original answer:
+
+what the documentation is suggesting is to use a normal singleton pattern 
+
+ public class SingletonDemo {
+    private static SingletonDemo instance = null;
+
+    private SingletonDemo() {       }
+
+    public static SingletonDemo getInstance() {
+            if (instance == null) {
+                 instance = new SingletonDemo ();
+            }
+            return instance;
+    }
+}
+
+
+and include inside it a method like this:
+
+ private Context context;
+ init(Context context){
+    this.context = context.getApplicationContext();
+ }
+
+
+and remember to call this to initialise the singleton.
+
+The difference between the Application approach and the Singleton approach and why the Singleton is better is on the documentation same functionality in a more modular way
+    

@@ -1,0 +1,126 @@
+37
+Q:UPDATE
+
+A bug has been filed for this issue here:
+https://youtrack.jetbrains.com/issue/KT-17951
+
+UPDATE 2
+
+The bug has been fixed in Android Studio 3.0 Canary 3
+
+Original Post
+
+I just started playing around with Android Studio 3.0 I enabled kotlin support from the get-go. I wrote a really simple Kotlin class in my project:
+
+data class Wallet(val coins: Int) {
+    fun add(value: Int): Wallet = Wallet(coins + value)
+    fun substract(value: Int): Wallet = if (coins > value) Wallet(coins + value) else throw InsufficientFundsException()
+}
+
+
+Now I wanted to test the class, first I wrote a locally running unittest (test directory) in Kotlin:
+
+class WalletTestKotlin {
+
+    @Throws(Exception::class)
+    @Test
+    fun add() {
+        Assert.assertEquals(22, Wallet(20).add(2).coins.toLong())
+        Assert.assertNotEquals(5, Wallet(2).add(13).coins.toLong())
+    }
+}
+
+
+It compiles and runs but with the error message:
+
+
+  Class not found:
+  "com.agentknopf.hachi.repository.model.WalletTestKotlin"Empty test
+  suite.
+
+
+I thus re-wrote the test in Java:
+
+public class WalletTest {
+
+    @Throws(exceptionClasses = Exception.class)
+    @Test
+    public void add() {
+        Assert.assertEquals(22, new Wallet(20).add(2).getCoins());
+        Assert.assertNotEquals(5, new Wallet(2).add(13).getCoins());
+    }
+}
+
+
+However that test failed as well - this time the Kotlin class "Wallet" couldn't be found:
+
+
+  java.lang.NoClassDefFoundError: com/example/repository/model/Wallet
+
+
+I wonder if I am missing something ... Running a Java Test, that does not refer to Kotlin classes, but to Java classes only successfully completes.
+
+My project build.gradle file is the default one:
+
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    ext.kotlin_version = '1.1.2-4'
+    repositories {
+        maven { url 'https://maven.google.com' }
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:3.0.0-alpha1'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+}
+
+allprojects {
+    repositories {
+        jcenter()
+        maven { url 'https://maven.google.com' }
+        mavenCentral()
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+
+The dependencies of my Module-specific build.gradle:
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    //Kotlin support
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jre7:$kotlin_version"
+    //Testing libraries
+    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    })
+    testCompile 'junit:junit:4.12'
+    testCompile "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    testCompile "org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version"
+}
+
+    
+===============================================================================================
+15
+A:Workaround (for now):
+
+Put this into your (app-level) build.gradle:
+
+task copyTestClasses(type: Copy) {
+    from "build/tmp/kotlin-classes/debugUnitTest"
+    into "build/intermediates/classes/debug"
+}
+
+
+Then modify the test JUnit Run/Debug configuration in the bottom down 'before launch', there's 'Gradle-aware make' in it, + another section, select gradle task, select project build.gradle file it is in, and type copyTestClasses. Click here for screenshots of different test framework, but where the plumbing works the same way.
+
+You may need to change/add more directory plumbing depending on your build type. The way you find those odd places is by brute search the project tree for the relevant .class files.
+    

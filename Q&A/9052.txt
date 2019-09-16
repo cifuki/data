@@ -1,0 +1,102 @@
+30
+Q:I've got this activity, which holds a fragment. This fragment layout consists of a view pager with several fragments (two, actually).
+
+When the view pager is created, its adapter is created, getItem gets called and my sub fragments are created. Great.
+
+Now when I rotate the screen, the framework handles the fragment re-creation, the adapter is created again in my onCreate from the main fragment, but getItem never gets called, so my adapter holds wrong references (actually nulls) instead of the two fragments.
+
+What I have found is that the fragment manager (that is, the child fragment manager) contains an array of fragments called mActive, which is of course not accessible from code. However there's this getFragment method:
+
+@Override
+public Fragment getFragment(Bundle bundle, String key) {
+    int index = bundle.getInt(key, -1);
+    if (index == -1) {
+        return null;
+    }
+    if (index >= mActive.size()) {
+        throwException(new IllegalStateException("Fragement no longer exists for key "
+                + key + ": index " + index));
+    }
+    Fragment f = mActive.get(index);
+    if (f == null) {
+        throwException(new IllegalStateException("Fragement no longer exists for key "
+                + key + ": index " + index));
+    }
+    return f;
+}
+
+
+I won't comment the typo :)
+This is the hack I have implemented in order to update the references to my fragments, in my adapter constructor:
+
+// fm holds a reference to a FragmentManager
+Bundle hack = new Bundle();
+try {
+    for (int i = 0; i < mFragments.length; i++) {
+        hack.putInt("hack", i);
+        mFragments[i] = fm.getFragment(hack, "hack");
+    }
+} catch (Exception e) {
+    // No need to fail here, likely because it's the first creation and mActive is empty
+}
+
+
+I am not proud. This works, but it's ugly. What's the actual way of having a valid adapter after a screen rotation?
+
+PS: here's the full code
+    
+===============================================================================================
+28
+A:I had the same issue - I assume you're subclassing FragmentPagerAdapter for your pager adapter (as getItem() is specific to FragmentPagerAdapter).
+
+My solution was to instead subclass PagerAdapter and handle the fragment creation/deletion yourself (reimplementing some of the FragmentPagerAdapter code):
+
+public class ListPagerAdapter extends PagerAdapter {
+    FragmentManager fragmentManager;
+    Fragment[] fragments;
+
+    public ListPagerAdapter(FragmentManager fm){
+        fragmentManager = fm;
+        fragments = new Fragment[5];
+    }
+
+    @Override
+    public void destroyItem(ViewGroup container, int position, Object object) {
+        assert(0 <= position && position < fragments.length);
+        FragmentTransaction trans = fragmentManager.beginTransaction();
+        trans.remove(fragments[position]);
+        trans.commit();
+        fragments[position] = null;
+}
+
+    @Override
+    public Fragment instantiateItem(ViewGroup container, int position){
+        Fragment fragment = getItem(position);
+        FragmentTransaction trans = fragmentManager.beginTransaction();
+        trans.add(container.getId(),fragment,"fragment:"+position);
+        trans.commit();
+        return fragment;
+    }
+
+    @Override
+    public int getCount() {
+        return fragments.length;
+    }
+
+    @Override
+    public boolean isViewFromObject(View view, Object fragment) {
+        return ((Fragment) fragment).getView() == view;
+    }
+
+    public Fragment getItem(int position){
+        assert(0 <= position && position < fragments.length);
+        if(fragments[position] == null){
+            fragments[position] = ; //make your fragment here
+        }
+        return fragments[position];
+    }
+}
+
+
+Hope this helps.
+    

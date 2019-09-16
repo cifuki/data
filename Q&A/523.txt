@@ -1,0 +1,83 @@
+241
+Q:I've successfully implemented onRetainNonConfigurationInstance() for my main Activity to save and restore certain critical components across screen orientation changes. 
+
+But it seems, my custom views are being re-created from scratch when the orientation changes. This makes sense, although in my case it's inconvenient because the custom view in question is an X/Y plot and the plotted points are stored in the custom view. 
+
+Is there a crafty way to implement something similar to onRetainNonConfigurationInstance() for a custom view, or do I need to just implement methods in the custom view which allow me to get and set its "state"?
+    
+===============================================================================================
+407
+A:You do this by implementing View#onSaveInstanceState and View#onRestoreInstanceState and extending the View.BaseSavedState class.
+
+public class CustomView extends View {
+
+  private int stateToSave;
+
+  ...
+
+  @Override
+  public Parcelable onSaveInstanceState() {
+    //begin boilerplate code that allows parent classes to save state
+    Parcelable superState = super.onSaveInstanceState();
+
+    SavedState ss = new SavedState(superState);
+    //end
+
+    ss.stateToSave = this.stateToSave;
+
+    return ss;
+  }
+
+  @Override
+  public void onRestoreInstanceState(Parcelable state) {
+    //begin boilerplate code so parent classes can restore state
+    if(!(state instanceof SavedState)) {
+      super.onRestoreInstanceState(state);
+      return;
+    }
+
+    SavedState ss = (SavedState)state;
+    super.onRestoreInstanceState(ss.getSuperState());
+    //end
+
+    this.stateToSave = ss.stateToSave;
+  }
+
+  static class SavedState extends BaseSavedState {
+    int stateToSave;
+
+    SavedState(Parcelable superState) {
+      super(superState);
+    }
+
+    private SavedState(Parcel in) {
+      super(in);
+      this.stateToSave = in.readInt();
+    }
+
+    @Override
+    public void writeToParcel(Parcel out, int flags) {
+      super.writeToParcel(out, flags);
+      out.writeInt(this.stateToSave);
+    }
+
+    //required field that makes Parcelables from a Parcel
+    public static final Parcelable.Creator<SavedState> CREATOR =
+        new Parcelable.Creator<SavedState>() {
+          public SavedState createFromParcel(Parcel in) {
+            return new SavedState(in);
+          }
+          public SavedState[] newArray(int size) {
+            return new SavedState[size];
+          }
+    };
+  }
+}
+
+
+The work is split between the View and the View's SavedState class. You should do all the work of reading and writing to and from the Parcel in the SavedState class. Then your View class can do the work of extracting the state members and doing the work necessary to get the class back to a valid state.
+
+Notes: View#onSavedInstanceState and View#onRestoreInstanceState are called automatically for you if View#getId returns a value >= 0. This happens when you give it an id in xml or call setId manually. Otherwise you have to call View#onSaveInstanceState and write the Parcelable returned to the parcel you get in Activity#onSaveInstanceState to save the state and subsequently read it and pass it to View#onRestoreInstanceState from Activity#onRestoreInstanceState.
+
+Another simple example of this is the CompoundButton
+    

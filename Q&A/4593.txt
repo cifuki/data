@@ -1,0 +1,46 @@
+52
+Q:I'm developing an Android App which uses JSON for the server communication and I've got a weird problem when I'm trying to parse my json file.
+
+This is my json from the server
+
+{
+    "street2": null,
+    "province": null,
+    "street1": null,
+    "postalCode": null,
+    "country": null,
+    "city": null
+}
+
+
+I'm getting the value for City by calling String city = address.optString("city", "") on my address Json-object. For this situation I'm expecting cityto be empty (that's what optString is here for isn't it?) but in fact it contains the String "null". So further null- or isEmpty-checks will return false as the String contains text. If I call address.isNull("city") it returns true which is correct. Only optString fails.
+
+I couldn't find anything on Google or Stackoverflow for this problem. I don't really understand how it can happen as I thought optString would do exactly what I expected. Anybody knows what's going wrong here?
+    
+===============================================================================================
+85
+A:You're not alone in running into this problem and scratching your head, thinking "Could they really have meant this?" According to an AOSP issue, the Google engineers did consider this a bug, but they had to be compatible with the org.json implementation, even bug-compatible. 
+
+If you think about it, it makes sense, because if the same code which uses the same libraries run in other Java environments behaves differently in Android, there would be major compatibility problems when using 3rd party libraries. Even if the intentions were good and it truly fixed bugs, it would open up a whole new can of worms.
+
+According to the AOSP issue:
+
+
+  The behavior is intentional; we went out of our way to be bug-compatible with org.json. Now that that's fixed, it's unclear whether we should fix our code as well. Applications may have come to rely on this buggy behavior.
+  
+  If this is causing you grief, I recommend you workaround by using a different mechanism to test for null, such as json.isNull().
+
+
+Here's a simple method to help you out:
+
+/** Return the value mapped by the given key, or {@code null} if not present or null. */
+public static String optString(JSONObject json, String key)
+{
+    // http://code.google.com/p/android/issues/detail?id=13830
+    if (json.isNull(key))
+        return null;
+    else
+        return json.optString(key, null);
+}
+
+    

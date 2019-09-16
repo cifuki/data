@@ -1,0 +1,123 @@
+37
+Q:The new Facebook SDK for Android (v4.0) that was released recently caused strange behavior for a customized LoginButton I'm using. Below is a comparison of how the same XML is rendered in different SDK versions. 
+
+The problem seems to be that the FB icon in SDK 4.x doesn't stretch properly to fit a custom-sized button, and at 4.0.1 the android:layout_height property is ignored altogether.
+
+My question is how do I make the button appear in SDK 4.x like it did in SDK 3.x? Both XML and Java solutions are perfectly acceptable.
+
+XML for SDK 3.x:
+
+<com.facebook.widget.LoginButton
+        android:background="@color/com_facebook_blue"
+        android:id="@+id/login_btn_facebook"
+        android:layout_width="225dp"
+        android:layout_height="50dp"
+        android:layout_marginBottom="5dp"
+        android:layout_marginTop="5dp"
+        android:layout_gravity="center"
+        android:onClick="onFacebookLoginClick"
+            />
+
+
+How it looks on SDK 3.x (screenshot taken on a OnePlus One, running CM11S):
+
+
+XML for SDK 4.x (the button's package was renamed + I had to change the width & font a bit to match the g+ button):
+
+<com.facebook.login.widget.LoginButton
+        android:background="@color/com_facebook_blue"
+        android:id="@+id/login_btn_facebook"
+        android:layout_width="221dp"
+        android:layout_height="50dp"
+        android:layout_marginBottom="5dp"
+        android:layout_marginTop="5dp"
+        android:layout_gravity="center"
+        android:textSize="7pt"
+        android:onClick="onFacebookLoginClick"
+            />
+
+
+How it looks on SDK 4.0 (Screenshot taken on a Genymotion Nexus 5, running unmodified 4.4.4):
+
+
+How it looks on SDK 4.0.1 (Same Genymotion Nexus 5):
+
+
+Additional information
+
+
+Excerpt from the 4.0 -> 4.0.1 SDK change log:
+
+
+
+  Login button is updated to properly measure its size.
+
+
+
+Related posts:
+
+
+Custom Facebook login button image in Facebook Android SDK 3.5
+
+To support different screen sizes, above the login buttons I have a ViewPagerIndicator and a ViewPager that is configured to take up all available vertical space which remains after positioning elements with defined height.
+
+
+
+    
+===============================================================================================
+61
+A:I managed to get the desired result by following the following steps:
+
+
+Opened the Facebook SDK 3.x LoginButton code and saw how the button was styled there:
+
+this.setBackgroundResource(R.drawable.com_facebook_button_blue);
+this.setCompoundDrawablesWithIntrinsicBounds(
+             R.drawable.com_facebook_inverse_icon, 0, 0, 0);
+this.setCompoundDrawablePadding(getResources().getDimensionPixelSize(
+             R.dimen.com_facebook_loginview_compound_drawable_padding));
+this.setPadding(getResources().getDimensionPixelSize(
+                R.dimen.com_facebook_loginview_padding_left),
+            getResources().getDimensionPixelSize(
+                R.dimen.com_facebook_loginview_padding_top),
+            getResources().getDimensionPixelSize(
+                R.dimen.com_facebook_loginview_padding_right),
+            getResources().getDimensionPixelSize(
+                R.dimen.com_facebook_loginview_padding_bottom));
+
+Based on the solution presented in this answer, I changed the button parameters during onPostCreate() as follows:
+
+float fbIconScale = 1.45F;
+Drawable drawable = hostActivity.getResources().getDrawable(
+                               com.facebook.R.drawable.com_facebook_button_icon);
+drawable.setBounds(0, 0, (int)(drawable.getIntrinsicWidth()*fbIconScale),
+                         (int)(drawable.getIntrinsicHeight()*fbIconScale));
+authButton.setCompoundDrawables(drawable, null, null, null); 
+authButton.setCompoundDrawablePadding(hostActivity.getResources().
+                  getDimensionPixelSize(R.dimen.fb_margin_override_textpadding));
+authButton.setPadding(
+        hostActivity.getResources().getDimensionPixelSize(
+                                                  R.dimen.fb_margin_override_lr),
+        hostActivity.getResources().getDimensionPixelSize(
+                                                 R.dimen.fb_margin_override_top),
+        hostActivity.getResources().getDimensionPixelSize(
+                                                  R.dimen.fb_margin_override_lr),
+        hostActivity.getResources().getDimensionPixelSize(
+                                             R.dimen.fb_margin_override_bottom));
+
+
+Where my custom dimensions are as follows:
+
+<dimen name="fb_margin_override_top">13dp</dimen>
+<dimen name="fb_margin_override_bottom">13dp</dimen>
+<!--The next value changes the margin between the FB icon and the left border:-->
+<dimen name="fb_margin_override_lr">10dp</dimen>
+<!--The next value changes the margin between the FB icon and the login text:-->
+<dimen name="fb_margin_override_textpadding">17dp</dimen>
+
+
+
+This results in the desired layout:
+
+
+    

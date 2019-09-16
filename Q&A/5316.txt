@@ -1,0 +1,54 @@
+46
+Q:Please have a look at the code below:
+
+public class MyGridFragment extends Fragment{
+
+     Handler myhandler = new Handler() {
+    @Override
+    public void handleMessage(Message message) {
+        switch (message.what) {
+        case 2: {
+
+            ArrayList<HashMap<String,String>> theurls = (ArrayList<HashMap<String,String>>) message.obj;
+            urls.addAll(theurls);
+            theimageAdapter.notifyDataSetChanged();
+            dismissBusyDialog();
+            break;
+        }}}};
+         }
+
+
+When I use handler like this I get a warning "handler should be static, else it is prone to memory leaks." Can someone tell me what is the best way to do this?
+    
+===============================================================================================
+100
+A:I recently updated something similar in my own code.  I just made the anonymous Handler class a protected inner class and the Lint warning went away. See if something like the below code will work for you:
+
+public class MyGridFragment extends Fragment{
+
+    static class MyInnerHandler extends Handler{
+        WeakReference<MyGridFragment> mFrag;
+
+        MyInnerHandler(MyGridFragment aFragment) {
+            mFrag = new WeakReference<MyGridFragment>(aFragment);
+        }
+
+        @Override
+        public void handleMessage(Message message) {
+            MyGridFragment theFrag = mFrag.get();
+            switch (message.what) {
+            case 2:
+                ArrayList<HashMap<String,String>> theurls = (ArrayList<HashMap<String,String>>) message.obj;
+                theFrag.urls.addAll(theurls);
+                theFrag.theimageAdapter.notifyDataSetChanged();
+                theFrag.dismissBusyDialog();
+                break;
+            }//end switch
+        }
+    }
+    MyInnerHandler myHandler = new MyInnerHandler(this);
+}
+
+
+You may have to change where I put "theFrag." as I could only guess as to what those referenced.
+    

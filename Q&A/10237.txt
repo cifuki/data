@@ -1,0 +1,191 @@
+27
+Q:After having read this article about Memory Leaks, I am wondering whether using lambdas in Kotlin Android project is safe. It's true that lambda syntax makes me program with more ease, but what about the Memory Leaks ?
+
+As an example of the problematic, I've taken a piece of code from one of my projects, where I build an AlertDialog. This code is inside the MainActivity class of my project.
+
+fun deleteItemOnConfirmation(id: Long) : Unit {
+        val item = explorerAdapter.getItemAt(id.toInt())
+        val stringId = if (item.isDirectory) R.string.about_to_delete_folder else R.string.about_to_delete_file
+
+        val dialog = AlertDialog.Builder(this).
+                setMessage(String.format(getString(stringId), item.name)).setPositiveButton(
+                R.string.ok, {dialog: DialogInterface, id: Int ->
+                        val success = if (item.isDirectory) ExplorerFileManager.deleteFolderRecursively(item.name)
+                        else ExplorerFileManager.deleteFile(item.name)
+                        if (success) {
+                            explorerAdapter.deleteItem(item)
+                            explorerRecyclerView.invalidate()
+                        }
+                        else Toast.makeText(this@MainActivity, R.string.file_deletion_error, Toast.LENGTH_SHORT).show()
+                    }).setNegativeButton(
+                R.string.cancel, {dialog: DialogInterface, id: Int ->
+                    dialog.cancel()
+        })
+
+        dialog.show()
+}
+
+
+My question is very simple : can the two lambdas set for positive and negative buttons lead to Memory Leaks ? (I also mean, are kotlin lambdas simply converted to Java Anonymous functions ?)
+
+Edit : Maybe I've got my answer in this Jetbrains Topic.
+    
+===============================================================================================
+26
+A:Edit (February 19, 2017): I received a very comprehensive reply from Mike Hearn regarding this issue:
+
+
+  Like in Java, what happens in Kotlin varies in different cases.
+  
+  
+  If the lambda is passed to an inline function and isn't marked noinline, then the whole thing boils away and no additional classes or
+  objects are created.
+  If the lambda doesn't capture, then it'll be emitted as a singleton class whose instance is reused again and again (one class+one object
+  allocation).
+  If the lambda captures then a new object is created each time the lambda is used.
+  
+  
+  Thus it is similar behaviour to Java except for the inlining case
+  where it's even cheaper. This efficient approach to encoding lambdas
+  is one reason why functional programming in Kotlin is more attractive
+  than in Java.
+
+
+
+
+Edit (February 17, 2017): I've posted a question regarding this topic in the Kotlin discussions. Maybe Kotlin engineers will bring something new to the table.
+
+
+
+
+  are kotlin lambdas simply converted to Java Anonymous functions ?
+
+
+I was asking this question myself (one simple correction here: these are called Anonymous Classes, not functions). There is no clear answer in the Koltin documentation. They just state that
+
+
+  Using higher-order functions imposes certain runtime penalties: each
+  function is an object, and it captures a closure, i.e. those variables
+  that are accessed in the body of the function.
+
+
+It is a bit confusing what they mean by variables that are accessed in the body of the function. Is the reference to the instance of the enclosing class also counted?
+
+I've seen the topic you are referencing in your question but it seems it is outdated as for now. I've found more up-to-date information here:
+
+
+  Lambda expression or anonymous function keep an implicit reference of
+  the enclosing class
+
+
+So, unfortunately, it seems that Kotlin's lambdas have the same problems as Java's Anonymous Inner Classes.
+
+Why Anonymous Inner Classes are bad?
+
+From the Java specs:
+
+
+  An instance i of a direct inner class C of a class O is associated
+  with an instance of O, known as the immediately enclosing instance of
+  i. The immediately enclosing instance of an object, if any, is
+  determined when the object is created
+
+
+What this means is that the anonymous class will always have an implicit reference to the instance of the enclosing class. And since the reference is implicit there is no way to get rid of it.
+
+Look at the trivial example
+
+public class YourActivity extends Activity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        new Thread(new Runnable() {
+                 // the inner class will keep the implicit reference to the outer activity
+                @Override
+                public void run() {
+                 // long-running task
+                }
+        }).start();
+   }
+}
+
+
+As you can see, in this case there will be the memory leak until the long-running task is executed. One workaround for this is to use static nested class.
+
+Since Kotlin's non-inlined lambdas hold the reference to the instance of the enclosing class they have similar issues regarding memory leaks.
+
+Bonus: Quick Comparison With Other Lambda Implementations
+
+Java 8 Lambdas
+
+Syntax: 
+
+
+Declare SAM (single abstract method) interface
+
+interface Runnable { void run(); }
+
+Use this interface as a type for a lambda
+
+public void canTakeLambda(Runnable r) { ... }
+
+Pass your lambda
+
+canTakeLambda(() -> System.out.println("Do work in lambda..."));
+
+
+
+Memory leak issues: As stated in specs:
+
+
+  References to this -- including implicit references through
+  unqualified field references or method invocations -- are,
+  essentially, references to a final local variable. Lambda bodies that
+  contain such references capture the appropriate instance of this. In
+  other cases, no reference to this is retained by the object.
+
+
+Simply put, if you do not use any fields / methods from the enclosing class there is no implicit reference to this as in the case of anonymous classes. 
+
+Retrolambda
+
+From the docs
+
+
+  Lambda expressions are backported by converting them to anonymous
+  inner classes. This includes the optimization of using a singleton
+  instance for stateless lambda expressions to avoid repeated object
+  allocation.
+
+
+I guess, it's self-explanatory.
+
+Apple's Swift
+
+Syntax: 
+
+
+Declaration is similar to Kotlin, in Swift lambdas are called closures:
+
+func someFunctionThatTakesAClosure(closure: (String) -> Void) {}
+
+Pass the closure
+
+someFunctionThatTakesAClosure { print($0) }
+
+
+Here, $0 refer to the closure\xe2\x80\x99s first String argument. This corresponds to it in Kotlin. Note: Unlike Kotlin, in Swift we can refer also to the other arguments like $1, $2 etc.
+
+
+Memory leak issues: 
+
+In Swift, just like in Java 8, the closure captures a strong reference to self (this in Java and Kotlin) only if it accesses a property of the instance, such as self.someProperty, or if the closure calls a method on the instance, such as self.someMethod().
+
+Also developers can easily specify that they want to capture only the weak reference:
+
+   someFunctionThatTakesAClosure { [weak self] in print($0) }
+
+
+I wish it were possible in Kotlin too :)
+    

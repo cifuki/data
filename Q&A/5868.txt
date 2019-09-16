@@ -1,0 +1,150 @@
+43
+Q:I have implemented the FragmentPagerAdapter and and using a List<Fragment> to hold all fragments for my ViewPager to display. On addItem() I simply add an instantiated Fragment and then call notifyDataSetChanged(). I am not sure if this is necessary or not. 
+
+My problem simply...
+start with fragment 1 
+
+[Fragment 1] 
+
+
+add new Fragment 2    
+
+[Fragment 1] [Fragment 2]
+
+
+remove Fragment 2     
+
+[Fragment 1]
+
+
+add new Fragment 3    
+
+[Fragment 1] [Fragment 2]
+
+
+When adding new fragments everything seems great. Once I remove a fragment and then add a newly instantiated fragment the old fragment is still displayed. When i go a .getClass.getName() it is giving me Fragment 3's name however I still see Fragment 2. 
+
+I believe this might be an issue with instantiateItem() or such but I thought the adapter was to handle that for us. Any suggestions would be great. 
+
+adapter code...
+
+public class MyPagerAdapter extends FragmentPagerAdapter {
+public final ArrayList<Fragment> screens2 = new ArrayList<Fragment>();
+
+
+private Context context;
+
+public MyPagerAdapter(FragmentManager fm, Context context) {
+    super(fm);
+    this.context = context;
+}
+
+public void removeType(String name){
+    for(Fragment f: screens2){
+        if(f.getClass().getName().contains(name)){ screens2.remove(f); return; }
+    }
+    this.notifyDataSetChanged();
+}
+
+public boolean addSt(String tag, Class<?> clss, Bundle args){
+    if(clss==null) return false;
+    if(!clss.getName().contains("St")) return false; 
+    if(!args.containsKey("cId")) return false;
+    boolean has = false;
+    boolean hasAlready = false;
+    for(Fragment tab: screens2){
+        if(tab.getClass().getName().contains("St")){
+            has = true;
+            if(tab.getArguments().containsKey("cId"))
+                if(tab.getArguments().getLong("cId") == args.getLong("cId")){
+                    hasAlready = true;
+                }
+            if(!hasAlready){
+                // exists but is different so replace
+                screens2.remove(tab);
+                this.addScreen(tag, clss, args, C.PAGE_ST);
+                // if returned true then it notifies dataset
+                return true;
+            }
+        }
+        hasAlready = false;
+    }
+
+    if(!has){ 
+        // no st yet exist in adapter
+        this.addScreen(tag, clss, args, C.PAGE_ST);
+        return true;
+    }
+
+    return false;
+}
+
+public boolean removeCCreate(){
+    this.removeType("Create");  
+    return false;
+}
+
+@Override
+public int getItemPosition(Object object) {
+
+   return POSITION_NONE; //To make notifyDataSetChanged() do something
+  }
+
+public void addCCreate(){
+    this.removeCCreate();
+    Log.w("addding c", " ");
+    this.addScreen("Create C",  CreateCFragment.class, null, C.PAGE_CREATE_C);
+}
+
+public void addScreen(String tag, Class<?> clss, Bundle args, int type){
+    if(clss!=null){
+        screens2.add(Fragment.instantiate(context, clss.getName(), args));
+    }
+}
+
+@Override
+public int getCount() {
+    return screens2.size();
+}
+
+
+@Override
+public Fragment getItem(int position) {
+    return screens2.get(position); 
+}
+
+}
+
+
+I realize the code uses some "ghetto" means of determining the fragment type however I wrote this code strictly for testing functionality. Any help or ideas would be great as it seems that not many people ventured into the world of FragmentPagerAdapters.
+    
+===============================================================================================
+34
+A:I got same problem,and my solution was overring the method "destroyItem" as following.
+
+@Override
+public void destroyItem(ViewGroup container, int position, Object object) {
+    FragmentManager manager = ((Fragment)object).getFragmentManager();
+    FragmentTransaction trans = manager.beginTransaction();
+    trans.remove((Fragment)object);
+    trans.commit();
+}
+
+
+It's work for me,does anybody have another solutions?
+
+Updated:
+
+I found those code made Fragment removed unnecessary,so I added a condition to avoid it.
+
+@Override
+public void destroyItem(ViewGroup container, int position, Object object) {
+    if (position >= getCount()) {
+        FragmentManager manager = ((Fragment) object).getFragmentManager();
+        FragmentTransaction trans = manager.beginTransaction();
+        trans.remove((Fragment) object);
+        trans.commit();
+    }
+}
+
+    

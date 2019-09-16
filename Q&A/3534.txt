@@ -1,0 +1,101 @@
+64
+Q:Just recently context.getResources().updateConfiguration() has been deprecated in Android API 25 and it is advised to use context.createConfigurationContext() instead.
+
+Does anyone know how createConfigurationContext can be used to override android system locale?
+
+before this would be done by:
+
+Configuration config = getBaseContext().getResources().getConfiguration();
+config.setLocale(locale);
+context.getResources().updateConfiguration(config,
+                                 context.getResources().getDisplayMetrics());
+
+    
+===============================================================================================
+100
+A:Inspired by Calligraphy, I ended up creating a context wrapper.
+In my case, I need to overwrite system language to provide my app users with the option of changing app language but this can be customized with any logic that you need to implement.
+
+    import android.annotation.TargetApi;
+    import android.content.Context;
+    import android.content.ContextWrapper;
+    import android.content.res.Configuration;
+    import android.os.Build;
+
+    import java.util.Locale;
+
+    public class MyContextWrapper extends ContextWrapper {
+
+    public MyContextWrapper(Context base) {
+        super(base);
+    }
+
+    @SuppressWarnings("deprecation")
+    public static ContextWrapper wrap(Context context, String language) {
+        Configuration config = context.getResources().getConfiguration();
+        Locale sysLocale = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            sysLocale = getSystemLocale(config);
+        } else {
+            sysLocale = getSystemLocaleLegacy(config);
+        }
+        if (!language.equals("") && !sysLocale.getLanguage().equals(language)) {
+            Locale locale = new Locale(language);
+            Locale.setDefault(locale);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                setSystemLocale(config, locale);
+            } else {
+                setSystemLocaleLegacy(config, locale);
+            }
+
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+             context = context.createConfigurationContext(config);
+        } else {
+             context.getResources().updateConfiguration(config, context.getResources().getDisplayMetrics());
+            }
+        return new MyContextWrapper(context);
+    }
+
+    @SuppressWarnings("deprecation")
+    public static Locale getSystemLocaleLegacy(Configuration config){
+        return config.locale;
+    }
+
+    @TargetApi(Build.VERSION_CODES.N)
+    public static Locale getSystemLocale(Configuration config){
+        return config.getLocales().get(0);
+    }
+
+    @SuppressWarnings("deprecation")
+    public static void setSystemLocaleLegacy(Configuration config, Locale locale){
+        config.locale = locale;
+    }
+
+    @TargetApi(Build.VERSION_CODES.N)
+    public static void setSystemLocale(Configuration config, Locale locale){
+        config.setLocale(locale);
+    }
+}
+
+
+and to inject your wrapper, in every activity add the following code:
+
+@Override
+protected void attachBaseContext(Context newBase) {
+    super.attachBaseContext(MyContextWrapper.wrap(newBase,"fr"));
+}
+
+
+UPDATE 10/19/2018
+Sometimes after orientation change, or activity pause/resume the Configuration object resets to default system Configuration and in result we will see the app displaying English "en" text even though we wrapped the context with French "fr" locale. Therefore and as a good practice, never retain the Context/Activity object in a global variable in activities or fragments.
+
+furthermore, create and use the following in a MyBaseFragment or MyBaseActivity:
+
+public Context getMyContext(){
+    return MyContextWrapper.wrap(getContext(),"fr");
+}
+
+
+This practice will provide you with 100% bug free solution. 
+    

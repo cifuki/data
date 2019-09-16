@@ -1,0 +1,286 @@
+38
+Q:For my 10,000 points, i've decided to contibute something with this cool website: a mechanism to cache bitmaps on native memory.
+
+Background
+
+Android devices have a very limited amount of memory for each app- the heap ranges from 16MB to 128MB , depending on various parameters .
+
+If you pass this limit, you get OOM , and this can occur many times when you use bitmaps.
+
+Many times, an app might need to overcome those limitations, perform heavy operations on huge bitmaps or just store them for later use, and you need to 
+
+What i've come up with, is a simple java class that would make things a bit easier for those purposes.
+
+It's using JNI in order to store the bitmap data , and be able to restore it when needed.
+
+In order to support multiple instances of the class, i had to use a trick i've found (here) . 
+
+Important notes
+
+
+The data is still stored on the RAM, so if the device doesn't have enough RAM, the app might be killed.
+Remember to free the memory as soon as you can. it's not only to avoid memory leaks, but it's also in order to avoid being prioritized by the system to be killed first, once your app comes to the background.
+If you don't want to forget freeing the memory, you can either free it each time you restore the bitmap, or make the class implement Closable . 
+As a safety measure, i've made it automatically free its native memory in the finalize() method, but don't let it be responsible of the job. it's too risky. i've also made it write to the log when such a thing occurs.
+The way it works is by copying the entire data into JNI objects, and in order to restore, it creates the bitmap from scratch and puts the data inside.
+Bitmaps being used and restored are in ARGB_8888 format. of course, you can change it to whatever you wish, just don't forget to change the code...
+Large bitmaps could take time to store and restore, so it might be wise to do it on a background thread.
+This is not a full OOM solution, but it could help. for example, you could use it in conjunction with your own LruCache, while avoiding using the heap memory for the cache itself.
+Code is only for storing and restoring. if you need to perform some operations, you will need to perform some research. openCV might be the answer, but if you wish to perform some basic stuff, you could implement them by yourself (here's an example of rotatign large images using JNI). if you know other alternatives, please let me know, here .
+
+
+Hope this will be useful for some people. please write down your comments.
+
+Also, if you find any problem with the code or a suggestion for impovement, please let me know.
+
+
+
+Better solution
+
+If you wish to perform even more operations on the JNI side, you can use this post that I've made. it's based on the code I've written here, but allows you to do more operations and you can easily add more of your own.
+    
+===============================================================================================
+14
+A:explanation
+
+the sample code shows how to store 2 different bitmaps (small ones, but it's just a demo), recycle the original java ones, and later restore them to java instances and use them.
+
+as you might guess, the layout has 2 imageViews. i didn't include it in the code since it's quite obvious. 
+
+do remember to change the code to your own package if you need, otherwise things won't work.
+
+MainActivity.java - how to use:
+
+package com.example.jnibitmapstoragetest;
+...
+public class MainActivity extends Activity
+  {
+  @Override
+  protected void onCreate(final Bundle savedInstanceState)
+    {
+    super.onCreate(savedInstanceState);
+    //
+    Bitmap bitmap=BitmapFactory.decodeResource(getResources(),R.drawable.ic_launcher);
+    final JniBitmapHolder bitmapHolder=new JniBitmapHolder(bitmap);
+    bitmap.recycle();
+    //
+    Bitmap bitmap2=BitmapFactory.decodeResource(getResources(),android.R.drawable.sym_action_call);
+    final JniBitmapHolder bitmapHolder2=new JniBitmapHolder(bitmap2);
+    bitmap2.recycle();
+    //
+    setContentView(R.layout.activity_main);
+      {
+      bitmap=bitmapHolder.getBitmapAndFree();
+      final ImageView imageView=(ImageView)findViewById(R.id.imageView1);
+      imageView.setImageBitmap(bitmap);
+      }
+      {
+      bitmap2=bitmapHolder2.getBitmapAndFree();
+      final ImageView imageView=(ImageView)findViewById(R.id.imageView2);
+      imageView.setImageBitmap(bitmap2);
+      }
+    }
+  }
+
+
+JniBitmapHolder.java - the "bridge" between JNI and JAVA :
+
+package com.example.jnibitmapstoragetest;
+...
+public class JniBitmapHolder
+  {
+  ByteBuffer _handler =null;
+  static
+    {
+    System.loadLibrary("JniBitmapStorageTest");
+    }
+
+  private native ByteBuffer jniStoreBitmapData(Bitmap bitmap);
+
+  private native Bitmap jniGetBitmapFromStoredBitmapData(ByteBuffer handler);
+
+  private native void jniFreeBitmapData(ByteBuffer handler);
+
+  public JniBitmapHolder()
+    {}
+
+  public JniBitmapHolder(final Bitmap bitmap)
+    {
+    storeBitmap(bitmap);
+    }
+
+  public void storeBitmap(final Bitmap bitmap)
+    {
+    if(_handler!=null)
+      freeBitmap();
+    _handler=jniStoreBitmapData(bitmap);
+    }
+
+  public Bitmap getBitmap()
+    {
+    if(_handler==null)
+      return null;
+    return jniGetBitmapFromStoredBitmapData(_handler);
+    }
+
+  public Bitmap getBitmapAndFree()
+    {
+    final Bitmap bitmap=getBitmap();
+    freeBitmap();
+    return bitmap;
+    }
+
+  public void freeBitmap()
+    {
+    if(_handler==null)
+      return;
+    jniFreeBitmapData(_handler);
+    _handler=null;
+    }
+
+  @Override
+  protected void finalize() throws Throwable
+    {
+    super.finalize();
+    if(_handler==null)
+      return;
+    Log.w("DEBUG","JNI bitmap wasn't freed nicely.please rememeber to free the bitmap as soon as you can");
+    freeBitmap();
+    }
+  }
+
+
+Android.mk - the properties file of JNI:
+
+LOCAL_PATH := $(call my-dir)
+
+include $(CLEAR_VARS)
+
+LOCAL_MODULE    := JniBitmapStorageTest
+LOCAL_SRC_FILES := JniBitmapStorageTest.cpp
+LOCAL_LDLIBS := -llog
+LOCAL_LDFLAGS += -ljnigraphics
+
+include $(BUILD_SHARED_LIBRARY)
+APP_OPTIM := debug
+LOCAL_CFLAGS := -g
+
+
+JniBitmapStorageTest.cpp - the "magical" stuff goes here :
+
+#include <jni.h>
+#include <jni.h>
+#include <android/log.h>
+#include <stdio.h>
+#include <android/bitmap.h>
+#include <cstring>
+#include <unistd.h>
+
+#define  LOG_TAG    "DEBUG"
+#define  LOGD(...)  __android_log_print(ANDROID_LOG_DEBUG,LOG_TAG,__VA_ARGS__)
+#define  LOGE(...)  __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
+
+extern "C"
+  {
+  JNIEXPORT jobject JNICALL Java_com_example_jnibitmapstoragetest_JniBitmapHolder_jniStoreBitmapData(JNIEnv * env, jobject obj, jobject bitmap);
+  JNIEXPORT jobject JNICALL Java_com_example_jnibitmapstoragetest_JniBitmapHolder_jniGetBitmapFromStoredBitmapData(JNIEnv * env, jobject obj, jobject handle);
+  JNIEXPORT void JNICALL Java_com_example_jnibitmapstoragetest_JniBitmapHolder_jniFreeBitmapData(JNIEnv * env, jobject obj, jobject handle);
+  }
+
+class JniBitmap
+  {
+  public:
+    uint32_t* _storedBitmapPixels;
+    AndroidBitmapInfo _bitmapInfo;
+    JniBitmap()
+      {
+      _storedBitmapPixels = NULL;
+      }
+  };
+
+JNIEXPORT void JNICALL Java_com_example_jnibitmapstoragetest_JniBitmapHolder_jniFreeBitmapData(JNIEnv * env, jobject obj, jobject handle)
+  {
+  JniBitmap* jniBitmap = (JniBitmap*) env->GetDirectBufferAddress(handle);
+  if (jniBitmap->_storedBitmapPixels == NULL)
+    return;
+  delete[] jniBitmap->_storedBitmapPixels;
+  jniBitmap->_storedBitmapPixels = NULL;
+  delete jniBitmap;
+  }
+
+JNIEXPORT jobject JNICALL Java_com_example_jnibitmapstoragetest_JniBitmapHolder_jniGetBitmapFromStoredBitmapData(JNIEnv * env, jobject obj, jobject handle)
+  {
+  JniBitmap* jniBitmap = (JniBitmap*) env->GetDirectBufferAddress(handle);
+  if (jniBitmap->_storedBitmapPixels == NULL)
+    {
+    LOGD("no bitmap data was stored. returning null...");
+    return NULL;
+    }
+  //
+  //creating a new bitmap to put the pixels into it - using Bitmap Bitmap.createBitmap (int width, int height, Bitmap.Config config) :
+  //
+  //LOGD("creating new bitmap...");
+  jclass bitmapCls = env->FindClass("android/graphics/Bitmap");
+  jmethodID createBitmapFunction = env->GetStaticMethodID(bitmapCls, "createBitmap", "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;");
+  jstring configName = env->NewStringUTF("ARGB_8888");
+  jclass bitmapConfigClass = env->FindClass("android/graphics/Bitmap$Config");
+  jmethodID valueOfBitmapConfigFunction = env->GetStaticMethodID(bitmapConfigClass, "valueOf", "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;");
+  jobject bitmapConfig = env->CallStaticObjectMethod(bitmapConfigClass, valueOfBitmapConfigFunction, configName);
+  jobject newBitmap = env->CallStaticObjectMethod(bitmapCls, createBitmapFunction, jniBitmap->_bitmapInfo.height, jniBitmap->_bitmapInfo.width, bitmapConfig);
+  //
+  // putting the pixels into the new bitmap:
+  //
+  int ret;
+  void* bitmapPixels;
+  if ((ret = AndroidBitmap_lockPixels(env, newBitmap, &bitmapPixels)) < 0)
+    {
+    LOGE("AndroidBitmap_lockPixels() failed ! error=%d", ret);
+    return NULL;
+    }
+  uint32_t* newBitmapPixels = (uint32_t*) bitmapPixels;
+  int pixelsCount = jniBitmap->_bitmapInfo.height * jniBitmap->_bitmapInfo.width;
+  memcpy(newBitmapPixels, jniBitmap->_storedBitmapPixels, sizeof(uint32_t) * pixelsCount);
+  AndroidBitmap_unlockPixels(env, newBitmap);
+  //LOGD("returning the new bitmap");
+  return newBitmap;
+  }
+
+JNIEXPORT jobject JNICALL Java_com_example_jnibitmapstoragetest_JniBitmapHolder_jniStoreBitmapData(JNIEnv * env, jobject obj, jobject bitmap)
+  {
+  AndroidBitmapInfo bitmapInfo;
+  uint32_t* storedBitmapPixels = NULL;
+  //LOGD("reading bitmap info...");
+  int ret;
+  if ((ret = AndroidBitmap_getInfo(env, bitmap, &bitmapInfo)) < 0)
+    {
+    LOGE("AndroidBitmap_getInfo() failed ! error=%d", ret);
+    return NULL;
+    }
+  LOGD("width:%d height:%d stride:%d", bitmapInfo.width, bitmapInfo.height, bitmapInfo.stride);
+  if (bitmapInfo.format != ANDROID_BITMAP_FORMAT_RGBA_8888)
+    {
+    LOGE("Bitmap format is not RGBA_8888!");
+    return NULL;
+    }
+  //
+  //read pixels of bitmap into native memory :
+  //
+  //LOGD("reading bitmap pixels...");
+  void* bitmapPixels;
+  if ((ret = AndroidBitmap_lockPixels(env, bitmap, &bitmapPixels)) < 0)
+    {
+    LOGE("AndroidBitmap_lockPixels() failed ! error=%d", ret);
+    return NULL;
+    }
+  uint32_t* src = (uint32_t*) bitmapPixels;
+  storedBitmapPixels = new uint32_t[bitmapInfo.height * bitmapInfo.width];
+  int pixelsCount = bitmapInfo.height * bitmapInfo.width;
+  memcpy(storedBitmapPixels, src, sizeof(uint32_t) * pixelsCount);
+  AndroidBitmap_unlockPixels(env, bitmap);
+  JniBitmap *jniBitmap = new JniBitmap();
+  jniBitmap->_bitmapInfo = bitmapInfo;
+  jniBitmap->_storedBitmapPixels = storedBitmapPixels;
+  return env->NewDirectByteBuffer(jniBitmap, 0);
+  }
+
+    

@@ -1,0 +1,177 @@
+69
+Q:It seems that it is quite complicated to implement In-App Billing in an Android app. How could I do this? The sample app from the SDK only has one Activity, which kind of over-simplifies it for an application like mine that has multiple Activities.
+    
+===============================================================================================
+41
+A:Well, I'll try to explain what I experienced. I don't consider myself an expert on this but I broke my head several days. 
+
+For starters, I had a very bad time trying to understand the workflow of the example and the application. I thought it should be better to start with a simple example however its much difficult to separate the code in small pieces and not knowing if you are breaking anything. I'll tell you what I have and what I changed from the example to make it work. 
+
+I have a single Activity where all my purchases come from. It's called Pro. 
+
+First, you should update the variable base64EncodedPublicKey in your Security class with your public Market developer key or you will see a nice Exception. 
+
+Well, I bind my Activity to my BillingService like so:
+
+      public class Pro extends TrackedActivity implements OnItemClickListener {
+
+            private BillingService mBillingService;
+            private BillingPurchaseObserver mBillingPurchaseObserver;
+            private Handler mHandler;
+
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {    
+                super.onCreate(savedInstanceState);     
+                setContentView(R.layout.pro);
+
+
+                //Do my stuff
+
+                mBillingService = new BillingService();
+                mBillingService.setContext(getApplicationContext());
+
+                mHandler = new Handler();
+                mBillingPurchaseObserver = new BillingPurchaseObserver(mHandler);
+
+            }
+
+        }
+
+
+
+    @Override
+    protected void onStart() {
+       //Register the observer to the service
+        super.onStart();
+        ResponseHandler.register(mBillingPurchaseObserver);   
+    }
+
+
+    @Override
+    protected void onStop() {
+        //Unregister the observer since you dont need anymore
+        super.onStop();
+        ResponseHandler.unregister(mBillingPurchaseObserver);
+    }
+
+    @Override
+    protected void onDestroy() {
+       //Unbind the service
+        super.onDestroy();
+        mBillingService.unbind();
+    }
+
+
+That way, all the purchases talk to this service, that will then, send the JSON requests to the market. You might think that the purchases are made on the same instant but no. You send the request and the purchase might come minutes or hours later. I think this is mainly to server overload and approval of the credit cards. 
+
+Then I have a ListView with my items, and I open a AlertDialog on each one, inviting them to buy the item. When they click on an item, I do this:
+
+  private class BuyButton implements DialogInterface.OnClickListener {
+
+       private BillingItem item = null;
+       private String developerPayload;
+
+       public BuyButton(BillingItem item, String developerPayload) {
+        this.item = item;
+        this.developerPayload = developerPayload;
+        }
+
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+
+                if (GeneralHelper.isOnline(getApplicationContext())){
+                    //I track the buy here with GA SDK. 
+
+        mBillingService.requestPurchase(this.item.getSku(), this.developerPayload);             
+                } else {                
+                    Toast.makeText(getApplicationContext(), R.string.msg_not_online, Toast.LENGTH_SHORT).show();
+                }
+
+            }
+
+        }
+
+
+Alright, you should see that the Market opens and the user either finishes or cancels the buy. 
+
+Whats then important is my PurChaseObserver, which handles all the events that market sends. This is a stripped version of it but you should get the point (See my comments throught the code):
+
+private class BillingPurchaseObserver extends PurchaseObserver {
+        public BillingPurchaseObserver(Handler handler) {
+            super(Pro.this, handler);
+        }
+
+        @Override
+        public void onBillingSupported(boolean supported) {
+
+            if (supported) {
+                //Enable buy functions. Not required, but you can do stuff here. The market first checks if billing is supported. Maybe your country is not supported, for example. 
+            } else {
+                Toast.makeText(getApplicationContext(), R.string.billing_not_supported, Toast.LENGTH_LONG).show();
+            }
+        }
+
+        @Override
+        public void onPurchaseStateChange(PurchaseState purchaseState, String itemId,
+                int quantity, long purchaseTime, String developerPayload) {
+
+//This is the method that is called when the buy is completed or refunded I believe. 
+// Here you can do something with the developerPayload. Its basically a Tag you can use to follow your transactions. i dont use it. 
+
+        BillingItem item = BillingItem.getBySku(getApplicationContext(), itemId);
+
+        if (purchaseState == PurchaseState.PURCHASED) {
+            if (item != null){
+//This is my own implementation that sets the item purchased in my database. BillingHelper is a class with methods I use to check if the user bought an option and update the UI. You should also check for refunded. You can see the Consts class to find what you need to check for. 
+
+                    boolean resu = item.makePurchased(getApplicationContext());
+                    if (resu){                      
+                        Toast.makeText(getApplicationContext(), R.string.billing_item_purchased, Toast.LENGTH_LONG).show();
+                    }
+                }
+            }
+        }
+
+        private void trackPurchase(BillingItem item, long purchaseTime) {           
+            //My code to track the purchase in GA
+        }
+
+        @Override
+        public void onRequestPurchaseResponse(RequestPurchase request,
+                ResponseCode responseCode) {
+
+               //This is the callback that happens when you sent the request. It doesnt mean you bought something. Just that the Market received it. 
+
+            if (responseCode == ResponseCode.RESULT_OK) {               
+
+                Toast.makeText(getApplicationContext(), R.string.billing_item_request_sent, Toast.LENGTH_SHORT).show();
+
+            } else if (responseCode == ResponseCode.RESULT_USER_CANCELED) {
+                //The user canceled the item. 
+            } else {
+            //If it got here, the Market had an unexpected problem. 
+            }
+        }
+
+        @Override
+        public void onRestoreTransactionsResponse(RestoreTransactions request,
+                ResponseCode responseCode) {
+            if (responseCode == ResponseCode.RESULT_OK) {
+//Restore transactions should only be run once in the lifecycle of your application unless you reinstalled the app or wipe the data. 
+
+                SharedPreferences.Editor edit = PreferencesHelper.getInstance().getDefaultSettings(getApplicationContext()).edit();
+                edit.putBoolean(Consts.DB_INITIALIZED, true);
+                edit.commit();
+
+            } else {
+    //Something went wrong
+            }
+        }
+    }
+
+
+And I believe you shouldn't need to edit anything else. The rest of the code "works". 
+You can try using the sample SKU at first in your own items "android.test.purchased". So far I have tested this and it works however I still need to cover everything like the refunded state. In this case, I am letting the user keep the features but I want to make sure it works perfect before modyfing it. 
+
+I hope it helps you and others. 
+    

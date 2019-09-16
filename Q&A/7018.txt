@@ -1,0 +1,92 @@
+37
+Q:Using Ant, I'm trying to build an Android application in release mode for distribution. My problem is at the signing process. I've created a keystore and alias via Eclipse using the Export Android Application wizard and the app is correctly signed if export it via Eclipse. When I try to complete the same process via Ant I reference my keystore and alias in my build.properties file:
+
+key.store=C:\\\\Users\\\\a512091\\\\.android\\\\release.keystore
+key.alias=application
+key.store.password=android
+key.alias.password=android
+
+
+The build process is successful and I get an Application-release.apk file. I veryfied this APK with jarsigner and all files have "sm" tags. This is the tail of the output:
+
+jar verified.
+Warning:
+This jar contains entries whose certificate chain is not validated.
+
+
+When I try to install this APK into an emulator or device I get the following:
+
+Failure [INSTALL_PARSE_FAILED_NO_CERTIFICATES]
+
+
+Logcat shows signing problems on my CSS file and image assets:
+
+11-07 11:06:20.060: WARN/PackageParser(58): Exception reading assets/www/css/base.css in /data/app/vmdl48898.tmp
+11-07 11:06:20.060: WARN/PackageParser(58): java.lang.SecurityException: META-INF/XXXXX.SF has invalid digest for assets/www/res/droidhdpi/favorite_off.png in /data/app/vmdl48898.tmp
+11-07 11:06:20.060: WARN/PackageParser(58):     at java.util.jar.JarVerifier.verifyCertificate(JarVerifier.java:369)
+11-07 11:06:20.060: WARN/PackageParser(58):     at java.util.jar.JarVerifier.readCertificates(JarVerifier.java:272)
+11-07 11:06:20.060: WARN/PackageParser(58):     at java.util.jar.JarFile.getInputStream(JarFile.java:392)
+11-07 11:06:20.060: WARN/PackageParser(58):     at android.content.pm.PackageParser.loadCertificates(PackageParser.java:337)
+11-07 11:06:20.060: WARN/PackageParser(58):     at android.content.pm.PackageParser.collectCertificates(PackageParser.java:508)
+11-07 11:06:20.060: WARN/PackageParser(58):     at com.android.server.PackageManagerService.installPackageLI(PackageManagerService.java:5885)
+11-07 11:06:20.060: WARN/PackageParser(58):     at com.android.server.PackageManagerService.access$2100(PackageManagerService.java:134)
+11-07 11:06:20.060: WARN/PackageParser(58):     at com.android.server.PackageManagerService$5.run(PackageManagerService.java:4743)
+11-07 11:06:20.060: WARN/PackageParser(58):     at android.os.Handler.handleCallback(Handler.java:587)
+11-07 11:06:20.060: WARN/PackageParser(58):     at android.os.Handler.dispatchMessage(Handler.java:92)
+11-07 11:06:20.060: WARN/PackageParser(58):     at android.os.Looper.loop(Looper.java:123)
+11-07 11:06:20.060: WARN/PackageParser(58):     at android.os.HandlerThread.run(HandlerThread.java:60)
+11-07 11:06:20.069: ERROR/PackageParser(58): Package com.xxxxx.xxxxx has no certificates at entry assets/www/css/base.css; ignoring!
+
+    
+===============================================================================================
+49
+A:If you have Ant version < 1.8.3 (ant -version) try this approach for the issue with JDK 7 (based on the previous answer):
+
+
+Add signjarjdk7 to ANDROID_SDK\\tools\\ant\\build.xml
+
+<macrodef name="signjarjdk7">
+    <attribute name="jar" />
+    <attribute name="signedjar" />
+    <attribute name="keystore" />
+    <attribute name="storepass" />
+    <attribute name="alias" />
+    <attribute name="keypass" />
+    <attribute name="verbose" />
+    <sequential>
+        <exec executable="jarsigner" failonerror="true">
+            <!-- Magic key, always verbose -->
+            <arg line="-verbose -digestalg SHA1 -sigalg MD5withRSA" />
+            <arg line="-keystore @{keystore} -storepass @{storepass} -keypass @{keypass}" />
+            <arg line="-signedjar &quot;@{signedjar}&quot;" />
+            <arg line="&quot;@{jar}&quot; @{alias}" />
+        </exec>
+    </sequential>
+</macrodef>
+
+Replace 'signjar' to 'signjarjdk7' in 'release' target in the same build.xml.
+
+
+NOTE: You have to define 'key.store.password' and 'key.alias.password' propeties for your project (in project.properties or in local.properties).
+
+UPDATE 1:
+
+If your have installed Ant 1.8.3 (or later) you have a better solution:
+
+Open your ANDROID_SDK\\tools\\ant\\build.xml and add two new parameters - sigalg and digestalg - in the original 'signjar' invocation:
+
+<signjar
+    sigalg="MD5withRSA"
+    digestalg="SHA1"
+    jar="${out.packaged.file}"
+    signedjar="${out.unaligned.file}"
+    keystore="${key.store}"
+    storepass="${key.store.password}"
+    alias="${key.alias}"
+    keypass="${key.alias.password}"
+    verbose="${verbose}" />
+
+
+UPDATE 2:
+It seems this answer is deprecated after 'signjar' was replaced to 'signapk' in latest version of Android SDK tools.
+    

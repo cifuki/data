@@ -1,0 +1,87 @@
+59
+Q:So I have a bit of confusion with trying to set the background drawable of a view as it is displayed. The code relies upon knowing the height of the view, so I can't call it from onCreate() or onResume(), because getHeight() returns 0. onResume() seems to be the closest I can get though. Where should I put code such as the below so that the background changes upon display to the user?
+
+    TextView tv = (TextView)findViewById(R.id.image_test);
+    LayerDrawable ld = (LayerDrawable)tv.getBackground();
+    int height = tv.getHeight(); //when to call this so as not to get 0?
+    int topInset = height / 2;
+    ld.setLayerInset(1, 0, topInset, 0, 0);
+    tv.setBackgroundDrawable(ld);
+
+    
+===============================================================================================
+69
+A:I didn't know about ViewTreeObserver.addOnPreDrawListener(), and I tried it in a test project.
+
+With your code it would look like this:
+
+public void onCreate() {
+setContentView(R.layout.main);
+
+final TextView tv = (TextView)findViewById(R.id.image_test);
+final LayerDrawable ld = (LayerDrawable)tv.getBackground();
+final ViewTreeObserver obs = tv.getViewTreeObserver();
+obs.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+    @Override
+    public boolean onPreDraw () {
+        Log.d(TAG, "onPreDraw tv height is " + tv.getHeight()); // bad for performance, remove on production
+        int height = tv.getHeight();
+        int topInset = height / 2;
+        ld.setLayerInset(1, 0, topInset, 0, 0);
+        tv.setBackgroundDrawable(ld);
+
+        return true;
+   }
+});
+}
+
+
+In my test project onPreDraw() has been called twice, and I think in your case it may cause an infinite loop.
+
+You could try to call the setBackgroundDrawable() only when the height of the TextView changes :
+
+private int mLastTvHeight = 0;
+
+public void onCreate() {
+setContentView(R.layout.main);
+
+final TextView tv = (TextView)findViewById(R.id.image_test);
+final LayerDrawable ld = (LayerDrawable)tv.getBackground();
+final ViewTreeObserver obs = mTv.getViewTreeObserver();
+obs.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+    @Override
+    public boolean onPreDraw () {
+        Log.d(TAG, "onPreDraw tv height is " + tv.getHeight()); // bad for performance, remove on production
+        int height = tv.getHeight();
+        if (height != mLastTvHeight) {
+            mLastTvHeight = height;
+            int topInset = height / 2;
+            ld.setLayerInset(1, 0, topInset, 0, 0);
+            tv.setBackgroundDrawable(ld);
+        }
+
+        return true;
+   }
+});
+}
+
+
+But that sounds a bit complicated for what you are trying to achieve and not really good for performance.
+
+EDIT by kcoppock
+
+Here's what I ended up doing from this code. Gautier's answer got me to this point, so I'd rather accept this answer with modification than answer it myself. I ended up using the ViewTreeObserver's addOnGlobalLayoutListener() method instead, like so (this is in onCreate()):
+
+final TextView tv = (TextView)findViewById(R.id.image_test);
+ViewTreeObserver vto = tv.getViewTreeObserver();
+vto.addOnGlobalLayoutListener(new OnGlobalLayoutListener() {
+    @Override
+    public void onGlobalLayout() {
+        LayerDrawable ld = (LayerDrawable)tv.getBackground();
+        ld.setLayerInset(1, 0, tv.getHeight() / 2, 0, 0);
+    }
+});
+
+
+Seems to work perfectly; I checked LogCat and didn't see any unusual activity. Hopefully this is it! Thanks!
+    

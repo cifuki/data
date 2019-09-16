@@ -1,0 +1,376 @@
+29
+Q:I'm trying to implement a simple firewall for android with VpnService for BS project. I choose VpnService because it will be working on non-rooted devices. It will log connections and let you filter connection. (Based on IP)
+
+There is an application doing this so it is possible.
+
+Google play app store
+
+I did some research and found that VpnService creates a Tun interface. Nothing more. (No VPN implementation just a tunnel) It lets you give an adress to this interface and add routes. It returns a file descriptor. You can read outgoing packages and write incoming packages.
+
+I created a VpnService derived class and I started service. I can configure tun0 with VpnService.Builder class. When I look at mobiwol's connection with adb shell netcfg it creates a tun0 interface with 10.2.3.4/32 address. It routes all packages to this private network and send to internet. I'm trying the same. Created an interface with 10.0.0.2/32 address. Added a route with addRoute function. 0.0.0.0/0 so I can capture all packages from all network as far as I understand. (Im pretty new to this subject and still learning. I found pieces over internet so I'm not really sure. Correct me if I'm wrong.)
+
+I created 2 threads in service. One reads from file descriptor and writes it to 127.0.0.1 with a protected socket. ( Im not really sure if I should read/write to 127.0.0.1. Maybe this is the problem. )
+
+I analyzed packets that I read from file descriptor. For example:
+
+01000101    byte:69     //ipv4 20byte header
+00000000    byte:0      //TOS
+00000000    byte:0      //Total Length
+00111100    byte:60     //Total Length
+11111100    byte:-4     //ID
+11011011    byte:-37    //ID
+01000000    byte:64     //fragment
+00000000    byte:0      //"
+01000000    byte:64     //TTL
+00000110    byte:6      //Protocol 6 -> TCP
+01011110    byte:94     //Header checksum
+11001111    byte:-49    //Header checksum
+00001010    byte:10     //10.0.0.2
+00000000    byte:0
+00000000    byte:0
+00000010    byte:2
+10101101    byte:-83    //173.194.39.78 //google
+00111110    byte:-62
+00100111    byte:39
+********    byte:78
+
+10110100    byte:-76    // IP option
+01100101    byte:101
+00000001    byte:1
+10111011    byte:-69
+                //20byte IP haeder
+01101101    byte:109
+.       .       //40byte data (i couldnt parse TCP header, 
+                    I think its not needed when I route this in IP layer)
+.       .
+.       .
+00000110    byte:6
+
+
+I didnt find any other IP header in the rest of data. I think there should be an encapsulation between 10.0.0.2 network to local network (192.168.2.1) and internet. I'm not sure.
+
+My real problem is I stuck on the incoming packages thread. I can't read anything. No response. As you can see in screenshot no incoming data:
+
+screenshot
+
+I'm trying to read from the same connection which I'm using for writing to 127.0.0.1 with protected socket. 
+
+Android <-> Tun Interface (tun0) <-> Internet connection
+
+All packages <-> 10.0.0.2 <-> 127.0.0.1? <-> 192.168.2.1 <-> Internet?
+
+I couldnt find anything helpful about VpnService. (ToyVPN example is just useless) I read documents about Linux Tun/Tap but its about tunnelling between host and remote. I want host and remote on same device. Not like tunneling.
+
+How can I do this?
+
+Edit: Code requested. It is in very early stage. As I mentioned before it is a VpnService derived class. 2 threads (reading and writing) created in service thread.
+
+package com.git.firewall;
+
+public class GITVpnService extends VpnService implements Handler.Callback, Runnable {
+    private static final String TAG = "GITVpnService";
+
+    private String mServerAddress = "127.0.0.1";
+    private int mServerPort = 55555;
+    private PendingIntent mConfigureIntent;
+
+    private Handler mHandler;
+    private Thread mThread;
+
+    private ParcelFileDescriptor mInterface;
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        // The handler is only used to show messages.
+        if (mHandler == null) {
+            mHandler = new Handler(this);
+        }
+
+        // Stop the previous session by interrupting the thread.
+        if (mThread != null) {
+            mThread.interrupt();
+        }
+        // Start a new session by creating a new thread.
+        mThread = new Thread(this, "VpnThread");
+        mThread.start();
+        return START_STICKY;
+    }
+
+    @Override
+    public void onDestroy() {
+        if (mThread != null) {
+            mThread.interrupt();
+        }
+    }
+
+    @Override
+    public boolean handleMessage(Message message) {
+        if (message != null) {
+            Toast.makeText(this, (String)message.obj, Toast.LENGTH_SHORT).show();
+        }
+        return true;
+    }
+
+    @Override
+    public synchronized void run() {
+        try {
+            Log.i(TAG, "Starting");
+            InetSocketAddress server = new InetSocketAddress(
+                    mServerAddress, mServerPort);
+
+            run(server);
+
+              } catch (Exception e) {
+            Log.e(TAG, "Got " + e.toString());
+            try {
+                mInterface.close();
+            } catch (Exception e2) {
+                // ignore
+            }
+            Message msgObj = mHandler.obtainMessage();
+            msgObj.obj = "Disconnected";
+            mHandler.sendMessage(msgObj);
+
+        } finally {
+
+        }
+    }
+
+    DatagramChannel mTunnel = null;
+
+
+    private boolean run(InetSocketAddress server) throws Exception {
+        boolean connected = false;
+
+        android.os.Debug.waitForDebugger();
+
+        // Create a DatagramChannel as the VPN tunnel.
+        mTunnel = DatagramChannel.open();
+
+        // Protect the tunnel before connecting to avoid loopback.
+        if (!protect(mTunnel.socket())) {
+            throw new IllegalStateException("Cannot protect the tunnel");
+        }
+
+        // Connect to the server.
+        mTunnel.connect(server);
+
+        // For simplicity, we use the same thread for both reading and
+        // writing. Here we put the tunnel into non-blocking mode.
+        mTunnel.configureBlocking(false);
+
+        // Authenticate and configure the virtual network interface.
+        handshake();
+
+        // Now we are connected. Set the flag and show the message.
+        connected = true;
+        Message msgObj = mHandler.obtainMessage();
+        msgObj.obj = "Connected";
+        mHandler.sendMessage(msgObj);
+
+        new Thread ()
+        {
+            public void run ()
+                {
+                    // Packets to be sent are queued in this input stream.
+                    FileInputStream in = new FileInputStream(mInterface.getFileDescriptor());
+                    // Allocate the buffer for a single packet.
+                    ByteBuffer packet = ByteBuffer.allocate(32767);
+                    int length;
+                    try
+                    {
+                        while (true)
+                        {
+                            while ((length = in.read(packet.array())) > 0) {
+                                    // Write the outgoing packet to the tunnel.
+                                    packet.limit(length);
+                                    debugPacket(packet);    // Packet size, Protocol, source, destination
+                                    mTunnel.write(packet);
+                                    packet.clear();
+
+                                }
+                            }
+                    }
+                    catch (IOException e)
+                    {
+                            e.printStackTrace();
+                    }
+
+            }
+        }.start();
+
+        new Thread ()
+        {
+
+            public void run ()
+            {
+                    DatagramChannel tunnel = mTunnel;
+                    // Allocate the buffer for a single packet.
+                    ByteBuffer packet = ByteBuffer.allocate(8096);
+                    // Packets received need to be written to this output stream.
+                    FileOutputStream out = new FileOutputStream(mInterface.getFileDescriptor());
+
+                    while (true)
+                    {
+                        try
+                        {
+                            // Read the incoming packet from the tunnel.
+                            int length;
+                            while ((length = tunnel.read(packet)) > 0)
+                            {
+                                    // Write the incoming packet to the output stream.
+                                out.write(packet.array(), 0, length);
+
+                                packet.clear();
+
+                            }
+                        }
+                        catch (IOException ioe)
+                        {
+                                ioe.printStackTrace();
+                        }
+                    }
+            }
+        }.start();
+
+        return connected;
+    }
+
+    private void handshake() throws Exception {
+
+        if (mInterface == null)
+        {
+            Builder builder = new Builder();
+
+            builder.setMtu(1500);
+            builder.addAddress("10.0.0.2",32);
+            builder.addRoute("0.0.0.0", 0);
+            //builder.addRoute("192.168.2.0",24);
+            //builder.addDnsServer("8.8.8.8");
+
+            // Close the old interface since the parameters have been changed.
+            try {
+                mInterface.close();
+            } catch (Exception e) {
+                // ignore
+            }
+
+
+            // Create a new interface using the builder and save the parameters.
+            mInterface = builder.setSession("GIT VPN")
+                    .setConfigureIntent(mConfigureIntent)
+                    .establish();
+        }
+    }
+
+    private void debugPacket(ByteBuffer packet)
+    {
+        /*
+        for(int i = 0; i < length; ++i)
+        {
+            byte buffer = packet.get();
+
+            Log.d(TAG, "byte:"+buffer);
+        }*/
+
+
+
+        int buffer = packet.get();
+        int version;
+        int headerlength;
+        version = buffer >> 4;
+        headerlength = buffer & 0x0F;
+        headerlength *= 4;
+        Log.d(TAG, "IP Version:"+version);
+        Log.d(TAG, "Header Length:"+headerlength);
+
+        String status = "";
+        status += "Header Length:"+headerlength;
+
+        buffer = packet.get();      //DSCP + EN
+        buffer = packet.getChar();  //Total Length
+
+        Log.d(TAG, "Total Length:"+buffer);
+
+        buffer = packet.getChar();  //Identification
+        buffer = packet.getChar();  //Flags + Fragment Offset
+        buffer = packet.get();      //Time to Live
+        buffer = packet.get();      //Protocol
+
+        Log.d(TAG, "Protocol:"+buffer);
+
+        status += "  Protocol:"+buffer;
+
+        buffer = packet.getChar();  //Header checksum
+
+        String sourceIP  = "";
+        buffer = packet.get();  //Source IP 1st Octet
+        sourceIP += buffer;
+        sourceIP += ".";
+
+        buffer = packet.get();  //Source IP 2nd Octet
+        sourceIP += buffer;
+        sourceIP += ".";
+
+        buffer = packet.get();  //Source IP 3rd Octet
+        sourceIP += buffer;
+        sourceIP += ".";
+
+        buffer = packet.get();  //Source IP 4th Octet
+        sourceIP += buffer;
+
+        Log.d(TAG, "Source IP:"+sourceIP);
+
+        status += "   Source IP:"+sourceIP;
+
+        String destIP  = "";
+        buffer = packet.get();  //Destination IP 1st Octet
+        destIP += buffer;
+        destIP += ".";
+
+        buffer = packet.get();  //Destination IP 2nd Octet
+        destIP += buffer;
+        destIP += ".";
+
+        buffer = packet.get();  //Destination IP 3rd Octet
+        destIP += buffer;
+        destIP += ".";
+
+        buffer = packet.get();  //Destination IP 4th Octet
+        destIP += buffer;
+
+        Log.d(TAG, "Destination IP:"+destIP);
+
+        status += "   Destination IP:"+destIP;
+        /*
+        msgObj = mHandler.obtainMessage();
+        msgObj.obj = status;
+        mHandler.sendMessage(msgObj);
+        */
+
+        //Log.d(TAG, "version:"+packet.getInt());
+        //Log.d(TAG, "version:"+packet.getInt());
+        //Log.d(TAG, "version:"+packet.getInt());
+
+    }
+
+}
+
+    
+===============================================================================================
+17
+A:A similar question was asked a few months ago, and while the answers there aren't very insightful, the comments in the accepted answer give some insight into what may be going wrong.
+
+You should bear in mind which layer in the OSI model your logic resides:
+
+
+Incoming and outgoing streams of the VpnService are in the network layer; you are receiving (and should in turn be transmitting) raw IP packets, as you describe in your question.
+
+In your sample byte stream, you can see that the incoming byte stream is an IPv4 datagram as the first four bits are 0100 (4). Consult this packet structure specification for details on IPv4.
+When forwarding the requests, you are in the application layer; you should be transmitting the contents of the UDP or TCP payload (i.e. only their data, not the headers themselves) using respectively a DatagramSocket or a Socket.
+
+Bear in mind that this skips the transport layer as those implementations take care of constructing the UDP header (in case of DatagramSocket) and the TCP header and options (in case of Socket).
+
+
+Your application will essentially need to be able to interpret and construct IPv4 and IPv6 headers and options, and as the IP payload, the UDP headers and TCP headers and options.
+    

@@ -1,0 +1,85 @@
+55
+Q:I understand Enum is Serializable. Hence, it is safe to do so. (selectedCountry is enum Country)
+
+Original enum without customer member variables
+
+public enum Country {
+    Australia,
+    Austria,
+    UnitedState;
+}
+
+
+Fragment
+
+@Override
+public void onActivityCreated (Bundle savedInstanceState) {
+    super.onActivityCreated(savedInstanceState);
+    if (savedInstanceState != null) {
+        selectedCountry = (Country)savedInstanceState.getSerializable(SELECTED_COUNTRY_KEY);
+    }
+}
+
+@Override
+public void onSaveInstanceState(Bundle savedInstanceState) {
+    savedInstanceState.putSerializable(SELECTED_COUNTRY_KEY, selectedCountry);
+}
+
+
+However, what if I have non-serializable members in custom enum class? For instance,
+
+Original enum customer member variables
+
+package org.yccheok;
+
+import org.yccheok.R;
+
+/**
+ *
+ * @author yccheok
+ */
+public enum Country {
+    Australia(R.drawable.flag_au),
+    Austria(R.drawable.flag_at),
+    UnitedState(R.drawable.flag_us);
+
+    Country(int icon) {
+        this.icon = icon;
+        nonSerializableClass = new NonSerializableClass(this.toString());
+    }
+
+    public int getIcon() {
+        return icon;
+    }
+
+    public static class NonSerializableClass {
+        public NonSerializableClass(String dummy) { this.dummy = dummy; }
+        public String dummy;
+    }
+
+    private final int icon;
+
+    public NonSerializableClass nonSerializableClass;
+}
+
+
+I tested. It works. (I tested by printing out all the value of member variables before and after serialization. They are same before and after) 
+
+However, I do not understand why it works? As I do not provide proper readObject and writeObject, as required by Serializable interface.
+
+As pointed in Effective Java Item 75: Consider using a custom serialized form, do I need to provide my own readObject and writeObject, if I have custom member variables in my enum?
+    
+===============================================================================================
+89
+A:The reason it works is that serialization process for Enum's is different from serialization process for other classes. From the official documentation:
+
+
+  1.12 Serialization of Enum Constants 
+  
+  Enum constants are serialized differently than ordinary serializable or externalizable objects. The serialized form of an enum constant consists solely of its name; field values of the constant are not present in the form. To serialize an enum constant, ObjectOutputStream writes the value returned by the enum constant's name method. To deserialize an enum constant, ObjectInputStream reads the constant name from the stream; the deserialized constant is then obtained by calling the java.lang.Enum.valueOf method, passing the constant's enum type along with the received constant name as arguments. Like other serializable or externalizable objects, enum constants can function as the targets of back references appearing subsequently in the serialization stream.
+
+
+That means, all your custom fields won't be serialized. In your case everything works well because your application process is still running and you are getting the same Enum instance that you passed to savedInstanceState.putSerializable.
+
+But imagine a situation where your app get killed because Android has no enough memory. The next time user opens the app you will get a new Enum instance and all custom fields will have been lost and reinitialized by the constructor. Thus, mutable fields in an enum are always effectively transient.
+    

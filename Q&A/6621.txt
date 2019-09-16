@@ -1,0 +1,67 @@
+39
+Q:Following the Google developer instructions on implementing Firebase in my app, I notice that android lint complains. 
+
+The idea is that we have to implement two services which inherit from Firebase services: 
+
+public class MyFirebaseInstanceIDService extends FirebaseInstanceIdService { ... }
+
+public class MyFirebaseMessagingService extends FirebaseMessagingService { ... }
+
+
+and then register those services in the manifest. But, it's not quite perfect. In particular, these two recommended AndroidManifest.xml service entries do not contain any special permissions: 
+
+<service android:name=".MyFirebaseMessagingService">
+    <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+    </intent-filter>
+</service>
+
+<service android:name=".MyFirebaseInstanceIDService">
+    <intent-filter>
+        <action android:name="com.google.firebase.INSTANCE_ID_EVENT"/>
+    </intent-filter>
+</service>
+
+
+and so the linter says: 
+
+
+  Exported services (services which either set exported=true or contain an intent-filter and do not specify exported=false) should define a permission that an entity must have in order to launch the service or bind to it. Without this, any application can use this service.
+
+
+Should I just add this attribute to each service tag and be done with it 
+
+tools:ignore="ExportedService"
+
+
+or is there a better approach in this situation? I mean, is it safe to expose these particular Firebase derived services like this?
+    
+===============================================================================================
+50
+A:You ask:  ...is it safe to expose these particular Firebase derived services like this?  It is if you trust the comments in the manifest files for these services.
+
+In Android Studio, open your app's AndroidManifest.xml file.  At the bottom of the window, select the tab for Merged Manifest.  Scroll to find the entry for FirebaseMessagingService.  Double-click on the line that contains the service name.  The manifest file for the service should open and you will see this:
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.google.firebase.messaging">
+    <uses-sdk android:minSdkVersion="14"/>
+
+    <application>
+
+        <!-- FirebaseMessagingService performs security checks at runtime,
+             no need for explicit permissions despite exported="true" -->
+        <service android:name="com.google.firebase.messaging.FirebaseMessagingService" android:exported="true">
+            <intent-filter android:priority="-500">
+                <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+            </intent-filter>
+        </service>
+
+    </application>
+</manifest>
+
+
+Note the comment: FirebaseMessagingService performs security checks at runtime, no need for explicit permissions despite exported="true"
+
+You can do the same for FirebaseInstanceIdService and see the same comment.
+
+If you trust the comments (I do), you can safely ignore the lint warnings or disable the checks.
+    

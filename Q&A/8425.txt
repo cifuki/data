@@ -1,0 +1,458 @@
+32
+Q:I am trying to integrate signalR in android app but no luck. I've been looking at various links but none of them provide proper information about implementation.
+
+I've the following questions.
+
+
+SignalR integration has to be done inside Service/Intent Service?
+If we want to receive response via same calling method then how to get?
+
+
+I've added three libraries i.e signalr android,signalr client and gson but unable to understand how code works, no proper documentation is available to understand the code.
+
+Some of the questions asked but not much information
+
+SignalR in Android Studio
+Unable to implement p2p chat using SignalR in Android
+
+If anyone experienced in signal for native apps, it would be very helpful for me.
+
+Update
+
+    public class SignalRService extends Service {
+
+
+    private static final String TAG = "Service";
+    private HubConnection mHubConnection;
+    private HubProxy mHubProxy;
+    private Handler mHandler; // to display Toast message
+    private final IBinder mBinder = new LocalBinder(); 
+
+    private SharedPreferences sp;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+
+        Utility.showLog(TAG, "Service Created");
+
+        sp = getSharedPreferences(Utility.SHARED_PREFS, MODE_PRIVATE);
+        mHandler = new Handler(Looper.myLooper());
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+
+        int result = super.onStartCommand(intent, flags, startId);
+        startSignalR();
+        return result;
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+
+        startSignalR();
+        return mBinder;
+    }
+
+    /**
+     * Class used for the client Binder.  Because we know this service always
+     * runs in the same process as its clients, we don't need to deal with IPC.
+     */
+    public class LocalBinder extends Binder {
+        public SignalRService getService() {
+            // Return this instance of SignalRService so clients can call public methods
+            return SignalRService.this;
+        }
+    }
+
+    /**
+     * method for clients (activities)
+     */
+    public void sendMessage() {
+
+        String SERVER_METHOD_SEND = "iAmAvailable";
+        final String string = new String();
+
+        mHubProxy.invoke(new String(), SERVER_METHOD_SEND, sp.getString("user_id", null), sp.getString("pass", null), "TransMedic").done(new Action() {
+            @Override
+            public void run(Object o) throws Exception {
+
+                Utility.showLog(TAG, o.toString());
+
+            }
+
+
+        }).onError(new ErrorCallback() {
+            @Override
+            public void onError(Throwable throwable) {
+
+            }
+        });
+    }
+
+    private void startSignalR() {
+
+        Platform.loadPlatformComponent(new AndroidPlatformComponent());
+
+        String serverUrl = "http://transit.alwaysaware.org/signalr";
+
+        mHubConnection = new HubConnection(serverUrl);
+
+        String SERVER_HUB_CHAT = "ChatHub";
+
+        mHubProxy = mHubConnection.createHubProxy(SERVER_HUB_CHAT);
+
+        ClientTransport clientTransport = new ServerSentEventsTransport(mHubConnection.getLogger());
+
+        SignalRFuture<Void> signalRFuture = mHubConnection.start(clientTransport);
+
+
+        try {
+
+            signalRFuture.get();
+
+        } catch (InterruptedException | ExecutionException e) {
+
+            e.printStackTrace();
+            return;
+
+        }
+
+        sendMessage();
+    }
+
+    @Override
+    public void onDestroy() {
+
+        mHubConnection.stop();
+        super.onDestroy();
+
+    }
+}
+
+    
+===============================================================================================
+31
+A:UPDATE 2018: 
+
+If you are using SignalR.net Core use this library otherwise you will get error on connection.
+
+SERVER SIDE:
+
+The following is my sample server-side code, you can pay attention to public void Send(string message) and public void SendChatMessage(string to, string message). 
+
+
+  
+  Server-side app: public void SendChatMessage(string to, string    message)
+  
+  
+  Android client app: mHubProxy.invoke("SendChatMessage",    receiverName, message);
+  
+  Server-side app: public void Send(string message) 
+  
+  
+  Android client app: mHubProxy.invoke("Send", message);
+  
+  
+
+
+namespace SignalRDemo
+{
+    public class ChatHub : Hub
+    {
+        private static ConcurrentDictionary<string, string> FromUsers = new ConcurrentDictionary<string, string>();         // <connectionId, userName>
+        private static ConcurrentDictionary<string, string> ToUsers = new ConcurrentDictionary<string, string>();           // <userName, connectionId>
+        private string userName = "";
+
+    public override Task OnConnected()
+    {
+        DoConnect();
+        Clients.AllExcept(Context.ConnectionId).broadcastMessage(new ChatMessage() { UserName = userName, Message = "I'm Online" });
+        return base.OnConnected();
+    }
+
+    public override Task OnDisconnected(bool stopCalled)
+    {
+        if (stopCalled) // Client explicitly closed the connection
+        {
+            string id = Context.ConnectionId;
+            FromUsers.TryRemove(id, out userName);
+            ToUsers.TryRemove(userName, out id);
+            Clients.AllExcept(Context.ConnectionId).broadcastMessage(new ChatMessage() { UserName = userName, Message = "I'm Offline" });
+        }
+        else // Client timed out
+        {
+            // Do nothing here...
+            // FromUsers.TryGetValue(Context.ConnectionId, out userName);            
+            // Clients.AllExcept(Context.ConnectionId).broadcastMessage(new ChatMessage() { UserName = userName, Message = "I'm Offline By TimeOut"});                
+        }
+
+        return base.OnDisconnected(stopCalled);
+    }
+
+    public override Task OnReconnected()
+    {
+        DoConnect();
+        Clients.AllExcept(Context.ConnectionId).broadcastMessage(new ChatMessage() { UserName = userName, Message = "I'm Online Again" });
+        return base.OnReconnected();
+    }
+
+    private void DoConnect()
+    {
+        userName = Context.Request.Headers["User-Name"];
+        if (userName == null || userName.Length == 0)
+        {
+            userName = Context.QueryString["User-Name"]; // for javascript clients
+        }
+        FromUsers.TryAdd(Context.ConnectionId, userName);
+        String oldId; // for case: disconnected from Client
+        ToUsers.TryRemove(userName, out oldId);
+        ToUsers.TryAdd(userName, Context.ConnectionId);
+    }
+
+    public void Send(string message)
+    {
+        // Call the broadcastMessage method to update clients.            
+        string fromUser;
+        FromUsers.TryGetValue(Context.ConnectionId, out fromUser);
+        Clients.AllExcept(Context.ConnectionId).broadcastMessage(new ChatMessage() { UserName = fromUser, Message = message });
+    }
+
+    public void SendChatMessage(string to, string message)
+    {
+        FromUsers.TryGetValue(Context.ConnectionId, out userName);
+        string receiver_ConnectionId;
+        ToUsers.TryGetValue(to, out receiver_ConnectionId);
+
+        if (receiver_ConnectionId != null && receiver_ConnectionId.Length > 0)
+        {
+            Clients.Client(receiver_ConnectionId).broadcastMessage(new ChatMessage() { UserName = userName, Message = message });
+        }
+    }        
+}
+
+public class ChatMessage
+{
+    public string UserName { get; set; }
+    public string Message { get; set; }
+}
+}
+
+
+CLIENT SIDE:
+
+If you have not read my answer at the following question: 
+
+SignalR integration in android studio
+
+Then, here is my working basic code:
+
+public class SignalRService extends Service {
+    private HubConnection mHubConnection;
+    private HubProxy mHubProxy;
+    private Handler mHandler; // to display Toast message
+    private final IBinder mBinder = new LocalBinder(); // Binder given to clients
+
+public SignalRService() {
+}
+
+@Override
+public void onCreate() {
+    super.onCreate();
+    mHandler = new Handler(Looper.getMainLooper());
+}
+
+@Override
+public int onStartCommand(Intent intent, int flags, int startId) {
+    int result = super.onStartCommand(intent, flags, startId);
+    startSignalR();
+    return result;
+}
+
+@Override
+public void onDestroy() {
+    mHubConnection.stop();
+    super.onDestroy();
+}
+
+@Override
+public IBinder onBind(Intent intent) {
+    // Return the communication channel to the service.
+    startSignalR();
+    return mBinder;
+}
+
+/**
+ * Class used for the client Binder.  Because we know this service always
+ * runs in the same process as its clients, we don't need to deal with IPC.
+ */
+public class LocalBinder extends Binder {
+    public SignalRService getService() {
+        // Return this instance of SignalRService so clients can call public methods
+        return SignalRService.this;
+    }
+}
+
+/**
+ * method for clients (activities)
+ */
+public void sendMessage(String message) {
+    String SERVER_METHOD_SEND = "Send";
+    mHubProxy.invoke(SERVER_METHOD_SEND, message);
+}    
+
+private void startSignalR() {
+    Platform.loadPlatformComponent(new AndroidPlatformComponent());
+
+    Credentials credentials = new Credentials() {
+        @Override
+        public void prepareRequest(Request request) {
+            request.addHeader("User-Name", "BNK");
+        }
+    };
+
+    String serverUrl = "http://192.168.1.100";
+    mHubConnection = new HubConnection(serverUrl);
+    mHubConnection.setCredentials(credentials);
+    String SERVER_HUB_CHAT = "ChatHub";
+    mHubProxy = mHubConnection.createHubProxy(SERVER_HUB_CHAT);
+    ClientTransport clientTransport = new ServerSentEventsTransport(mHubConnection.getLogger());
+    SignalRFuture<Void> signalRFuture = mHubConnection.start(clientTransport);
+
+    try {
+        signalRFuture.get();
+    } catch (InterruptedException | ExecutionException e) {
+        e.printStackTrace();
+        return;
+    }
+
+    String HELLO_MSG = "Hello from Android!";
+    sendMessage(HELLO_MSG);
+
+    String CLIENT_METHOD_BROADAST_MESSAGE = "broadcastMessage";
+    mHubProxy.on(CLIENT_METHOD_BROADAST_MESSAGE,
+            new SubscriptionHandler1<CustomMessage>() {
+                @Override
+                public void run(final CustomMessage msg) {
+                    final String finalMsg = msg.UserName + " says " + msg.Message;
+                    // display Toast message
+                    mHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(getApplicationContext(), finalMsg, Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
+            }
+            , CustomMessage.class);
+}
+}
+
+
+Activity:
+
+public class MainActivity extends AppCompatActivity {
+
+private final Context mContext = this;
+private SignalRService mService;
+private boolean mBound = false;
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    Intent intent = new Intent();
+    intent.setClass(mContext, SignalRService.class);
+    bindService(intent, mConnection, Context.BIND_AUTO_CREATE);
+}
+
+@Override
+protected void onStop() {
+    // Unbind from the service
+    if (mBound) {
+        unbindService(mConnection);
+        mBound = false;
+    }
+    super.onStop();
+}    
+
+public void sendMessage(View view) {
+    if (mBound) {
+        // Call a method from the SignalRService.
+        // However, if this call were something that might hang, then this request should
+        // occur in a separate thread to avoid slowing down the activity performance.
+        EditText editText = (EditText) findViewById(R.id.edit_message);            
+        if (editText != null && editText.getText().length() > 0) {                
+            String message = editText.getText().toString();
+            mService.sendMessage(message);
+        }
+    }
+}
+
+/**
+ * Defines callbacks for service binding, passed to bindService()
+ */
+private final ServiceConnection mConnection = new ServiceConnection() {
+
+    @Override
+    public void onServiceConnected(ComponentName className,
+                                   IBinder service) {
+        // We've bound to SignalRService, cast the IBinder and get SignalRService instance
+        SignalRService.LocalBinder binder = (SignalRService.LocalBinder) service;
+        mService = binder.getService();
+        mBound = true;
+    }
+
+    @Override
+    public void onServiceDisconnected(ComponentName arg0) {
+        mBound = false;
+    }
+};
+}
+
+
+CustomMessage Class:
+
+public class CustomMessage {
+    public String UserName;
+    public String Message;
+}
+
+
+You can also see my sample client project at this GitHub link
+
+
+
+UPDATE FOR RESPONSE FROM INVOKE:
+
+I have just added new sample methods:
+
+Server side:
+
+public string iAmAvailable(string username, string password, string message)
+{            
+     return "BNK Response for testing Android INVOKE";
+}
+
+
+Client side:
+
+mHubProxy.invoke(String.class, "iAmAvailable", "username", "password", "TransMedic").done(new Action<String>() {
+            @Override
+            public void run(String s) throws Exception {
+                Log.w("SimpleSignalR", s);
+            }
+        }).onError(new ErrorCallback() {
+            @Override
+            public void onError(Throwable throwable) {
+                Log.e("SimpleSignalR", throwable.toString());
+            }
+        });
+
+
+And here is the screenshot:
+
+
+    

@@ -1,0 +1,540 @@
+32
+Q:TL;DR: How do you successfuly use the command-line tools (or anything else) to test the Android 6.0 backup and restore behavior, as I cannot get them to restore anything?
+
+
+
+Since I was running into problems earlier with a sample app from my book trying to get this working, I started from scratch for the purposes of this question.
+
+I created a brand-new project from the Android Studio 1.4.1 new-project wizard, accepting all relevant defaults, except I went with the "Empty Activity" template and added a 2 to the application ID and display name. I then added a bit of code to the activity to give me some data on internal storage:
+
+package com.commonsware.myapplication2;
+
+import android.os.Bundle;
+import android.preference.PreferenceManager;
+import android.support.v7.app.AppCompatActivity;
+
+public class MainActivity extends AppCompatActivity {
+
+  @Override
+  protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    PreferenceManager
+      .getDefaultSharedPreferences(this)
+      .edit()
+      .putBoolean("foo", true)
+      .apply();
+  }
+}
+
+
+I ran the app and confirmed, using adb shell run-as com.commonsware.myapplication2 ... that the SharedPreferences file existed.
+
+I then ran adb shell setprop log.tag.BackupXmlParserLogging VERBOSE, per the docs. No obvious problems.
+
+I then ran adb shell bmgr run, per the docs, which generated a lot of logging messages but nothing pertaining to my app, as expected (and also not suggesting any particular problems with the backup engine).
+
+I then ran adb shell bmgr fullbackup com.commonsware.myapplication2, per the docs, which generated:
+
+11-16 15:09:15.246 10372-10372/? D/AndroidRuntime: Calling main entry com.android.commands.bmgr.Bmgr
+11-16 15:09:15.248 783-793/? D/BackupManagerService: fullTransportBackup()
+11-16 15:09:15.249 783-10419/? I/PFTBT: Initiating full-data transport backup of com.commonsware.myapplication2
+11-16 15:09:15.250 1406-1418/? I/GmsBackupTransport: Attempt to do full backup on com.commonsware.myapplication2
+11-16 15:09:15.251 783-10419/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:09:15.257 1325-1325/? V/GLSActivity: AuthDelegateWrapperCreated with selected intent: Intent { cmp=com.google.android.gms/.auth.DefaultAuthDelegateService }
+11-16 15:09:15.259 783-2127/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:09:15.262 1325-1325/? V/GLSActivity: AuthDelegateWrapperCreated with selected intent: Intent { cmp=com.google.android.gms/.auth.DefaultAuthDelegateService }
+11-16 15:09:15.264 1325-1325/? V/GLSActivity: AuthDelegateWrapperCreated with selected intent: Intent { cmp=com.google.android.gms/.auth.DefaultAuthDelegateService }
+11-16 15:09:15.284 1406-1418/? V/GmsBackupTransport: create full backup for : com.commonsware.myapplication2
+11-16 15:09:15.286 1406-10421/? V/GmsBackupTransport: Start scotty uploading.
+11-16 15:09:15.287 783-10422/? D/BackupManagerService: Binding to full backup agent : com.commonsware.myapplication2
+11-16 15:09:15.291 783-10422/? D/BackupManagerService: awaiting agent for ApplicationInfo{75f37e2 com.commonsware.myapplication2}
+11-16 15:09:15.292 783-1544/? D/BackupManagerService: agentConnected pkg=com.commonsware.myapplication2 agent=android.os.BinderProxy@e073ad3
+11-16 15:09:15.293 783-10422/? I/BackupManagerService: got agent android.app.IBackupAgent$Stub$Proxy@f328610
+11-16 15:09:15.299 783-1552/? D/VoldConnector: SND -> {8 volume mkdirs /storage/emulated/0/Android/data/com.commonsware.myapplication2/files/}
+11-16 15:09:15.302 783-878/? D/VoldConnector: RCV <- {200 8 Command succeeded}
+11-16 15:09:15.302 7953-7965/com.commonsware.myapplication2 V/BackupXmlParserLogging: android:fullBackupContent - "true"
+11-16 15:09:15.309 783-10422/? I/BackupRestoreController: Getting widget state for user: 0
+11-16 15:09:15.312 783-10425/? I/file_backup_helper:    Name: apps/com.commonsware.myapplication2/_manifest
+11-16 15:09:15.313 783-10425/? D/BackupManagerService: Calling doFullBackup() on com.commonsware.myapplication2
+11-16 15:09:15.320 7953-7967/com.commonsware.myapplication2 I/file_backup_helper:    Name: apps/com.commonsware.myapplication2/sp/com.commonsware.myapplication2_preferences.xml
+11-16 15:09:15.325 7953-7953/com.commonsware.myapplication2 I/Process: Sending signal. PID: 7953 SIG: 9
+11-16 15:09:15.337 783-2131/? D/GraphicsStats: Buffer count: 4
+11-16 15:09:15.337 783-2131/? I/WindowState: WIN DEATH: Window{d0be7fd u0 com.commonsware.myapplication2/com.commonsware.myapplication2.MainActivity}
+11-16 15:09:15.357 783-2124/? I/ActivityManager: Process com.commonsware.myapplication2 (pid 7953) has died
+11-16 15:09:15.357 783-2124/? W/ActivityManager: Force removing ActivityRecord{d9c7ab7 u0 com.commonsware.myapplication2/.MainActivity t1146}: app died, no saved state
+11-16 15:09:15.374 783-2124/? I/ActivityManager: Config changes=480 {1.0 310mcc?mnc en_US ldltr sw360dp w360dp h568dp 480dpi nrml port finger -keyb/v/h -nav/h s.9}
+11-16 15:09:15.414 783-876/? I/InputReader: Reconfiguring input devices.  changes=0x00000004
+11-16 15:09:15.414 783-876/? I/InputReader: Device reconfigured: id=4, name='touch_dev', size 1080x1920, orientation 0, mode 1, display id 0
+11-16 15:09:15.441 917-1161/? E/Surface: getSlotFromBufferLocked: unknown buffer: 0x9cfd78f0
+11-16 15:09:15.446 783-1649/? W/InputMethodManagerService: Got RemoteException sending setActive(false) notification to pid 7953 uid 10193
+11-16 15:09:15.447 1477-1477/? I/Keyboard.Facilitator: onFinishInput()
+11-16 15:09:15.513 3287-3287/? W/LocationOracle: Best location was null
+11-16 15:09:15.551 3287-10448/? I/MicroRecognitionRnrImpl: Starting detection.
+11-16 15:09:15.556 3287-10452/? I/MicrophoneInputStream: mic_starting com.google.android.apps.gsa.speech.audio.aa@5e3e5da
+11-16 15:09:15.564 783-801/? I/WindowManager: Screen frozen for +201ms due to Window{48728f7 u0 com.android.systemui.ImageWallpaper}
+11-16 15:09:15.566 199-10454/? I/AudioFlinger: AudioFlinger's thread 0xb2600000 ready to run
+11-16 15:09:15.570 3287-10452/? I/MicrophoneInputStream: mic_started com.google.android.apps.gsa.speech.audio.aa@5e3e5da
+11-16 15:09:15.579 199-10454/? D/audio_hw_primary: select_devices: out_snd_device(0: none) in_snd_device(61: voice-rec-mic)
+11-16 15:09:15.580 199-10454/? D/msm8974_platform: platform_send_audio_calibration: sending audio calibration for snd_device(61) acdb_id(62)
+11-16 15:09:15.580 199-10454/? D/: Failed to fetch the lookup information of the device 0000003E 
+11-16 15:09:15.580 199-10454/? E/ACDB-LOADER: Error: ACDB AudProc vol returned = -19
+11-16 15:09:15.580 199-10454/? D/audio_hw_primary: enable_snd_device: snd_device(61: voice-rec-mic)
+11-16 15:09:15.583 199-10454/? D/audio_hw_primary: enable_audio_route: apply and update mixer path: audio-record
+11-16 15:09:15.641 1406-1593/? D/GCoreFlp: FLP HAL exists but batch size is <= 0.  Disabling FLP HAL.
+11-16 15:09:15.649 783-2126/? D/WifiService: acquireWifiLockLocked: WifiLock{NlpWifiLock type=2 binder=android.os.BinderProxy@6b83dff}
+11-16 15:09:15.651 783-897/? D/wifi: Initialized common fields 10000, 16, 100, 10
+11-16 15:09:15.651 783-897/? D/wifi: bucket[0] = 2:3:10000:2
+11-16 15:09:15.670 3287-3287/? W/MicroDetectionWorkerImp: Tag [MicroDetectionWorkerImpl] is too long; truncated to [MicroDetectionWorkerImp]
+11-16 15:09:15.670 3287-3287/? I/MicroDetectionWorkerImp: onReady
+11-16 15:09:15.971 3456-3476/? W/OpenGLRenderer: Incorrectly called buildLayer on View: ShortcutAndWidgetContainer, destroying layer...
+11-16 15:09:16.065 1406-10421/? V/GmsBackupTransport: Scotty response: res=200 raw=2560 up=2560
+11-16 15:09:16.069 783-10419/? I/PFTBT: Transport suggested backoff=0
+11-16 15:09:16.083 783-10419/? I/PFTBT: Full backup completed.
+11-16 15:09:16.084 783-793/? D/BackupManagerService: Done with full transport backup.
+
+
+Nothing seems indicative of an error or other failure in the backup.
+
+I then deleted the SharedPreferences file manually, via:
+
+adb shell run-as com.commonsware.myapplication2 rm /data/data/com.commonsware.myapplication2/shared_prefs/com.commonsware.myapplication2_preferences.xml
+
+
+and confirmed that the SharedPreferences file no longer exists.
+
+I then ran adb shell bmgr restore com.commonsware.myapplication2, per the docs. This generated another set of logging messages, with some apparent errors:
+
+11-16 15:13:01.692 10593-10593/? D/AndroidRuntime: Calling main entry com.android.commands.bmgr.Bmgr
+11-16 15:13:01.694 783-941/? V/BackupManagerService: beginRestoreSession: pkg=com.commonsware.myapplication2 transport=null
+11-16 15:13:01.696 783-794/? V/RestoreSession: restorePackage pkg=com.commonsware.myapplication2 obs=android.app.backup.IRestoreObserver$Stub$Proxy@b011dce
+11-16 15:13:01.696 783-794/? V/RestoreSession: restorePackage pkg=com.commonsware.myapplication2 token=3dd6ad03f250d4cb
+11-16 15:13:01.696 783-900/? D/BackupManagerService: MSG_RUN_RESTORE observer=android.app.backup.IRestoreObserver$Stub$Proxy@b011dce
+11-16 15:13:01.700 783-900/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:13:01.703 1325-1325/? V/GLSActivity: AuthDelegateWrapperCreated with selected intent: Intent { cmp=com.google.android.gms/.auth.DefaultAuthDelegateService }
+11-16 15:13:01.705 783-1552/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:13:01.707 1325-1325/? V/GLSActivity: AuthDelegateWrapperCreated with selected intent: Intent { cmp=com.google.android.gms/.auth.DefaultAuthDelegateService }
+11-16 15:13:01.708 1325-1325/? V/GLSActivity: AuthDelegateWrapperCreated with selected intent: Intent { cmp=com.google.android.gms/.auth.DefaultAuthDelegateService }
+11-16 15:13:01.991 1406-1682/? I/GmsBackupTransport: Http Response Code : 200
+11-16 15:13:01.995 1406-1887/? I/GmsBackupTransport: Current restore package : PackageInfo{f7f23bd @pm@}
+11-16 15:13:01.996 783-900/? D/BackupManagerService: initiateOneRestore packageName=@pm@
+11-16 15:13:02.008 1406-1417/? I/GmsBackupTransport: Current restore package : PackageInfo{733fdb2 com.commonsware.myapplication2}
+11-16 15:13:02.009 783-900/? I/BackupManagerService: Next restore package: RestoreDescription{com.commonsware.myapplication2 : STREAM}
+11-16 15:13:02.023 783-10612/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:13:02.213 1406-1418/? I/GmsBackupTransport: Drive download http response status : 401
+11-16 15:13:02.282 783-10612/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:13:02.311 783-10612/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:13:02.319 1325-1325/? V/GLSActivity: AuthDelegateWrapperCreated with selected intent: Intent { cmp=com.google.android.gms/.auth.DefaultAuthDelegateService }
+11-16 15:13:02.321 783-1552/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:13:02.516 783-884/? D/WifiStateMachine: starting scan for "cw"WPA_PSK with 2427,5180
+11-16 15:13:02.517 783-886/? D/ConnectivityService: updateNetworkScore for NetworkAgentInfo [WIFI () - 100] to 60
+11-16 15:13:02.517 783-886/? D/ConnectivityService: rematching NetworkAgentInfo [WIFI () - 100]
+11-16 15:13:02.695 1406-1418/? I/GmsBackupTransport: Reading next chunk on full restore - IOException
+11-16 15:13:09.611 783-10612/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:13:09.808 1406-1418/? I/GmsBackupTransport: Drive download http response status : 401
+11-16 15:13:09.834 783-10612/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:13:09.884 783-10612/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:13:09.892 1325-1325/? V/GLSActivity: AuthDelegateWrapperCreated with selected intent: Intent { cmp=com.google.android.gms/.auth.DefaultAuthDelegateService }
+11-16 15:13:09.894 783-2126/? I/AccountManagerService: getTypesVisibleToCaller: isPermitted? true
+11-16 15:13:09.897 1325-1325/? V/GLSActivity: AuthDelegateWrapperCreated with selected intent: Intent { cmp=com.google.android.gms/.auth.DefaultAuthDelegateService }
+11-16 15:13:09.898 1325-1325/? V/GLSActivity: AuthDelegateWrapperCreated with selected intent: Intent { cmp=com.google.android.gms/.auth.DefaultAuthDelegateService }
+11-16 15:13:10.110 1406-1418/? I/GmsBackupTransport: Reading next chunk on full restore - IOException
+11-16 15:13:10.110 1406-1418/? E/GmsBackupTransport: HTTP reading error: java.io.IOException: Unauthorized full data restore request
+11-16 15:13:10.110 1406-1418/? E/GmsBackupTransport: Fail to read full backup data chunk : java.io.IOException: Unauthorized full data restore request
+11-16 15:13:10.112 783-10612/? E/StreamFeederThread: Error -1002 streaming restore for com.commonsware.myapplication2
+11-16 15:13:10.119 783-10612/? I/ActivityManager: Force stopping com.commonsware.myapplication2 appid=10193 user=0: clear data
+11-16 15:13:10.140 783-796/? I/ActivityManager: Start proc 10623:com.android.documentsui/u0a36 for broadcast com.android.documentsui/.PackageReceiver
+11-16 15:13:10.174 10623-10623/? W/System: ClassLoader referenced unknown path: /system/app/DocumentsUI/lib/arm
+11-16 15:13:10.198 1440-10637/? D/PackageBroadcastService: Received broadcast action=android.intent.action.PACKAGE_DATA_CLEARED and uri=com.commonsware.myapplication2
+11-16 15:13:10.198 1440-10637/? D/AccountUtils: Clearing selected account for com.commonsware.myapplication2
+11-16 15:13:10.203 1440-10637/? I/LocationSettingsChecker: Removing dialog suppression flag for package com.commonsware.myapplication2
+11-16 15:13:10.208 1440-2449/? I/Icing: doRemovePackageData com.commonsware.myapplication2
+11-16 15:13:10.232 783-900/? V/BackupManagerService: No more packages; finishing restore
+11-16 15:13:10.234 783-900/? I/BackupRestoreController: restoreFinished for 0
+11-16 15:13:10.234 783-900/? I/BackupManagerService: Restore complete.
+11-16 15:13:10.234 783-793/? D/RestoreSession: endRestoreSession
+11-16 15:13:10.234 10593-10593/? D/AndroidRuntime: Shutting down VM
+11-16 15:13:10.235 783-900/? V/BackupManagerService: Clearing restore session and halting timeout
+11-16 15:13:10.279 783-1544/? I/ActivityManager: Start proc 10661:com.android.externalstorage/u0a6 for content provider com.android.externalstorage/.ExternalStorageProvider
+11-16 15:13:10.301 10661-10661/? W/System: ClassLoader referenced unknown path: /system/priv-app/ExternalStorageProvider/lib/arm
+11-16 15:13:10.307 10661-10661/? D/ExternalStorage: After updating volumes, found 1 active roots
+11-16 15:13:10.336 783-1544/? I/ActivityManager: Start proc 10675:com.android.shell/2000 for content provider com.android.shell/.BugreportStorageProvider
+11-16 15:13:10.360 10675-10675/? W/System: ClassLoader referenced unknown path: /system/priv-app/Shell/lib/arm
+11-16 15:13:10.371 10623-10636/? D/Documents: Update found 7 roots in 156ms
+11-16 15:13:10.377 10623-10674/? D/Documents: Update found 7 roots in 65ms
+11-16 15:13:14.635 783-886/? D/ConnectivityService: updateNetworkScore for NetworkAgentInfo [WIFI () - 100] to 56
+11-16 15:13:14.635 783-886/? D/ConnectivityService: rematching NetworkAgentInfo [WIFI () - 100]
+11-16 15:13:17.617 783-2632/? D/NetlinkSocketObserver: NeighborEvent{elapsedMs=2866928, 192.168.3.1, [000DB9340C50], RTM_NEWNEIGH, NUD_STALE}
+11-16 15:13:22.520 783-884/? D/WifiStateMachine: starting scan for "cw"WPA_PSK with 2427,5180
+11-16 15:13:23.729 783-886/? D/ConnectivityService: updateNetworkScore for NetworkAgentInfo [WIFI () - 100] to 60
+11-16 15:13:23.731 783-886/? D/ConnectivityService: rematching NetworkAgentInfo [WIFI () - 100]
+
+
+The worrisome subset of that is:
+
+11-16 15:13:10.110 1406-1418/? I/GmsBackupTransport: Reading next chunk on full restore - IOException
+11-16 15:13:10.110 1406-1418/? E/GmsBackupTransport: HTTP reading error: java.io.IOException: Unauthorized full data restore request
+11-16 15:13:10.110 1406-1418/? E/GmsBackupTransport: Fail to read full backup data chunk : java.io.IOException: Unauthorized full data restore request
+11-16 15:13:10.112 783-10612/? E/StreamFeederThread: Error -1002 streaming restore for com.commonsware.myapplication2
+
+
+And, sure enough, the file is not restored. I have no idea what an "Unauthorized full data restore request" means.
+
+So, I uninstalled the app (via gradle uninstallDebug) and installed it again without running it (via gradle installDebug). According to the docs, "You can test automatic restore for your app by uninstalling and reinstalling your app. The app data is automatically restored from the cloud once the app installation is complete." However, a few minutes after reinstalling it, the SharedPreferences file still does not exist.
+
+I then ran adb shell bmgr restore com.commonsware.myapplication2 again, and got a similar set of logging statements, with the same "Unauthorized full data restore request" message.
+
+Are there steps to this process that I am missing or are otherwise undocumented?
+
+EDIT: I had been testing on actual hardware (a Nexus 6). Per MH's comment, I tested this procedure on an Android 6.0 emulator (sans Play Services), and it works. That suggests that the documentation isn't completely wrong, though it still begs the question of why it's not working with hardware.
+    
+===============================================================================================
+21
+A:After having discussed and tested various scenarios (refer to comments below the question), I've decided to combine and write up those results into an answer. In reality, this doesn't actually solve the problem presented, but it will answer the question of "How do you successfuly use the command-line tools (or anything else) to test the Android 6.0 backup and restore behavior?" It will do so in the form of a step-by-step guide outlining what worked for me and how I overcame the various snags I encounted along the way.
+
+Here goes. If you haven't gone through the training on "Configuring Auto Backup for Apps" yet, I'd suggest you do that first. It documents the auto-backup feature and already does a very decent job of documenting the various steps.
+
+Let's start at the beginning: we need an app to test with! Just like CommonsWare, I simply used Android Studio to create a new project with an Empty activity. Make sure you set API 23 as target SDK. Open up the auto-generated MainActivity and add some code into onCreate() to persist a value into the shared preferences (or just copy the code snippet from the question):
+
+PreferenceManager
+  .getDefaultSharedPreferences(this)
+  .edit()
+  .putBoolean("foo", true)
+  .apply();
+
+
+Build, deploy and run the app. This should trigger foo to be persisted, and will result in an xml file being created on disk. Confirm this with:
+
+adb shell run-as <package_name> ls -al shared_prefs
+
+
+My test app's packge is com.example.mh.backuptest (which is what I'll use in the example commands from here on), so my command is: 
+
+adb shell run-as com.example.mh.backuptest ls -al shared_prefs
+
+
+You should see a single line of output listing all files in the shared_prefs folder, which should be only one:
+
+com.example.mh.backuptest_preferences.xml
+
+
+This means the preference file was successfully created and foo was written to it. If you like, you can inspect the file's contents to confirm this.
+
+Now, back to testing auto-backup. First, make sure you're opted in to automatic app backups. On your Android 6.0 device, go to:
+
+Settings > Backup & reset > Back up my data > On
+
+
+After that, turn on verbose logging for the backup transport and backup xml parser so that we can see what's happening:
+
+adb shell setprop log.tag.GmsBackupTransport VERBOSE
+adb shell setprop log.tag.BackupXmlParserLogging VERBOSE
+
+
+Then, initialise the backup manager:
+
+adb shell bmgr run
+
+
+This should generate quite a bit of output in logcat. You should see at least something similar to this:
+
+D/AndroidRuntime: Calling main entry com.android.commands.bmgr.Bmgr
+V/BackupManagerService: Scheduling immediate backup pass
+V/BackupManagerService: Running a backup pass
+V/BackupManagerService: clearing pending backups
+V/PerformBackupTask: Beginning backup of 1 targets
+D/PerformBackupTask: invokeAgentForBackup on @pm@
+I/BackupRestoreController: Getting widget state for user: 0
+D/PerformBackupTask: starting key/value backup of BackupRequest{pkg=com.google.android.googlequicksearchbox}
+D/BackupManagerService: awaiting agent for ApplicationInfo{9f9289c com.google.android.googlequicksearchbox}
+D/BackupManagerService: agentConnected pkg=com.google.android.googlequicksearchbox agent=android.os.BinderProxy@dcdbafd
+I/BackupManagerService: got agent android.app.IBackupAgent$Stub$Proxy@c3fe3f2
+D/PerformBackupTask: invokeAgentForBackup on com.google.android.googlequicksearchbox
+D/BackupHelperDispatcher: handling existing helper 'L' com.android.launcher3.LauncherBackupHelper@7e2dcc3
+V/LauncherBackupHelper: lastBackupTime = 1448612678367
+W/LauncherBackupHelper: empty intent on application favorite: 223
+I/BackupRestoreController: Getting widget state for user: 0
+V/GmsBackupTransport: starting new backup session
+V/GmsBackupTransport: starting performBackup for com.google.android.googlequicksearchbox
+V/GmsBackupTransport: performBackup done for com.google.android.googlequicksearchbox
+V/GmsBackupTransport: sending request: 101667 bytes
+I/GmsBackupTransport: Http Response Code : 200
+V/GmsBackupTransport: backup finished for com.google.android.googlequicksearchbox
+I/BackupManagerService: Backup pass finished.
+
+
+Don't worry if your output contains a lot more. I intentionally removed lines not relevant to backing up. I've only only pasted in the output for when a single app is getting backed up; you will probably see a lot more entries the first time you run this command. 
+
+If instead you see something along the lines of:
+
+GmsBackupTransport: Scotty transfer exception. null
+PFTBT   : Error -1002 backing up com.example.mh.backuptest
+
+
+Or:
+
+GmsBackupTransport: Rejecting full data backup. user has not seen up to date legal text 
+
+
+Make sure you have opted in to automatic app backups (see above). If you have and you're still seeing these messages - which happened for me too - try toggling the setting a few times and rebooting the device. Still no luck? I've been there... Remove the Google account from the device, reboot, re-add it and opt in again. Others have reported that a factory reset works too, but that seems a little overboard to me. :)
+
+If you got this far, then it's time to ensure our test app gets backed up! To force a backup, run:
+
+adb shell bmgr fullbackup com.example.mh.backuptest
+
+
+This will kill your app if it's still running - don't worry, that's normal. You should see quite some output from the backup transport:
+
+D/AndroidRuntime: Calling main entry com.android.commands.bmgr.Bmgr
+D/BackupManagerService: fullTransportBackup()
+I/PFTBT: Initiating full-data transport backup of com.example.mh.backuptest
+V/GmsBackupTransport: create full backup for : com.example.mh.backuptest
+V/GmsBackupTransport: Start scotty uploading.
+D/BackupManagerService: Binding to full backup agent : com.example.mh.backuptest
+I/ActivityManager: Start proc 22032:com.example.mh.backuptest/u0a491 for backup android/FullBackupAgent
+D/BackupManagerService: awaiting agent for ApplicationInfo{dd359cd com.example.mh.backuptest}
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] wait for avaible data.
+BackupManagerService: agentConnected pkg=com.example.mh.backuptest agent=android.os.BinderProxy@9e7e282
+I/BackupManagerService: got agent android.app.IBackupAgent$Stub$Proxy@14b3d93
+V/BackupXmlParserLogging: android:fullBackupContent - "true"
+I/BackupRestoreController: Getting widget state for user: 0
+I/file_backup_helper:    Name: apps/com.example.mh.backuptest/_manifest
+V/GmsBackupTransport: [PUSH] Push 512 bytes into pipe.
+V/GmsBackupTransport: [PUSH] signal data available.
+V/GmsBackupTransport: [PUSH] Wait for data been processed.
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ] signal data processed.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] wait for avaible data.
+V/GmsBackupTransport: [PUSH] Push 2048 bytes into pipe.
+V/GmsBackupTransport: [PUSH] signal data available.
+V/GmsBackupTransport: [PUSH] Wait for data been processed.
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ] signal data processed.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] wait for avaible data.
+D/BackupManagerService: Calling doFullBackup() on com.example.mh.backuptest
+I/file_backup_helper:    Name: apps/com.example.mh.backuptest/sp/com.example.mh.backuptest_preferences.xml
+V/GmsBackupTransport: [PUSH] Push 512 bytes into pipe.
+V/GmsBackupTransport: [PUSH] signal data available.
+V/GmsBackupTransport: [PUSH] Wait for data been processed.
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ] signal data processed.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] wait for avaible data.
+V/GmsBackupTransport: [PUSH] Push 512 bytes into pipe.
+V/GmsBackupTransport: [PUSH] signal data available.
+V/GmsBackupTransport: [PUSH] Wait for data been processed.
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] Read 256 bytes data.
+V/GmsBackupTransport: [READ] signal data processed.
+V/GmsBackupTransport: [READ]
+V/GmsBackupTransport: [READ] wait for avaible data.
+V/GmsBackupTransport: [FINISH] signal no more data.
+I/Process: Sending signal. PID: 22032 SIG: 9
+I/ActivityManager: Process com.example.mh.backuptest (pid 22032) has died
+V/GmsBackupTransport: Scotty response: res=200 raw=3584 up=1047
+I/PFTBT: Transport suggested backoff=0
+I/PFTBT: Full backup completed.
+D/BackupManagerService: Done with full transport backup.
+
+
+With our test app backed up, let's see if it in fact restores data too. First, let's remove the preference file that our test app created and that is part of the default auto backup:
+
+adb shell run-as com.example.mh.backuptest rm shared_prefs/com.example.mh.backuptest_preferences.xml
+
+
+Confirm that the file is no longer there:
+
+adb shell run-as com.example.mh.backuptest ls -al shared_prefs
+
+
+If the command executes without any output, it means there were no files in the shared_prefs folder and that you successfully deleted the prefs. 
+
+Now, trigger a restore for our test app:
+
+adb shell bmgr restore com.example.mh.backuptest
+
+
+Again, backup transport will generate quite some output:
+
+V/BackupManagerService: beginRestoreSession: pkg=com.example.mh.backuptest transport=null
+V/RestoreSession: restorePackage pkg=com.example.mh.backuptest obs=android.app.backup.IRestoreObserver$Stub$Proxy@23829fa
+V/RestoreSession: restorePackage pkg=com.example.mh.backuptest token=31eda3bdfd5fddb7
+D/BackupManagerService: MSG_RUN_RESTORE observer=android.app.backup.IRestoreObserver$Stub$Proxy@23829fa
+V/GmsBackupTransport: New restore session, 2 apps
+V/GmsBackupTransport: sending request: 471 bytes
+I/GmsBackupTransport: Http Response Code : 200
+V/GmsBackupTransport: @pm@: 109 keys
+I/GmsBackupTransport: Current restore package : PackageInfo{195d280 @pm@}
+V/GmsBackupTransport: A key/value pairs restore
+D/BackupManagerService: initiateOneRestore packageName=@pm@
+I/GmsBackupTransport: Current restore package : PackageInfo{1edd0b9 com.example.mh.backuptest}
+V/GmsBackupTransport: A full restore : https://www.googleapis.com/drive/v2/files/XXXXXXXXXXXXXXXXXXXXXXXXXXXX?alt=media&sources=ANDROID_BACKUP
+I/BackupManagerService: Next restore package: RestoreDescription{com.example.mh.backuptest : STREAM}
+V/GmsBackupTransport: Read first chunk for com.example.mh.backuptest
+V/GmsBackupTransport: Create http connection for com.example.mh.backuptest
+I/GmsBackupTransport: Drive download http response status : 200
+V/GmsBackupTransport: ContentLength is 3584
+V/GmsBackupTransport: Downloaded: 808 / 3584 bytes
+V/GmsBackupTransport: Read 808 Bytes
+V/GmsBackupTransport: Read next chunk for com.example.mh.backuptest
+V/GmsBackupTransport: Downloaded: 2197 / 3584 bytes
+V/GmsBackupTransport: Read 1389 Bytes
+I/RestoreEngine: Sig + version match; taking data
+V/GmsBackupTransport: Read next chunk for com.example.mh.backuptest
+V/GmsBackupTransport: Downloaded: 3584 / 3584 bytes
+V/GmsBackupTransport: Read 1387 Bytes
+V/GmsBackupTransport: Read next chunk for com.example.mh.backuptest
+V/GmsBackupTransport: Read -1 Bytes
+D/RestoreEngine: Need to launch agent for com.example.mh.backuptest
+D/RestoreEngine: Clearing app data preparatory to full restore
+I/ActivityManager: Force stopping com.example.mh.backuptest appid=10491 user=0: clear data
+V/GmsBackupTransport: Reach end of http content -- NO MORE DATA
+D/PackageBroadcastService: Received broadcast action=android.intent.action.PACKAGE_DATA_CLEARED and uri=com.example.mh.backuptest
+D/AccountUtils: Clearing selected account for com.example.mh.backuptest
+I/LocationSettingsChecker: Removing dialog suppression flag for package com.example.mh.backuptest
+I/Icing: doRemovePackageData com.example.mh.backuptest
+I/ActivityManager: Start proc 22708:com.example.mh.backuptest/u0a491 for backup android/FullBackupAgent
+D/BackupManagerService: awaiting agent for ApplicationInfo{dd359cd com.example.mh.backuptest}
+D/BackupManagerService: agentConnected pkg=com.example.mh.backuptest agent=android.os.BinderProxy@7875d75
+I/BackupManagerService: got agent android.app.IBackupAgent$Stub$Proxy@9aa10a
+D/VoldConnector: SND -> {14 volume mkdirs /storage/emulated/0/Android/data/com.example.mh.backuptest/files/}
+D/VoldConnector: RCV <- {200 14 Command succeeded}
+V/BackupXmlParserLogging: android:fullBackupContent - "true"
+V/BackupManagerService: No more packages; finishing restore
+V/GmsBackupTransport: restore finished
+D/RestoreSession: endRestoreSession
+I/BackupRestoreController: restoreFinished for 0
+I/BackupManagerService: Restore complete.
+
+
+If everything looks like above, let's check if our preference file is back where it should be:
+
+adb shell run-as com.example.mh.backuptest ls -al shared_prefs
+
+
+The output should be what you saw the very first time you ran the command (in the early stages of this rather long story). If so, it's time for congratulations! You've managed to successfully backup and restore your app using Google's Auto Backup for Apps!
+
+Happy? Then let's do one more test! Uninstall the app:
+
+adb uninstall com.example.mh.backuptest
+
+
+Even though we see 'Success', confirm that it's gone:
+
+adb shell run-as com.example.mh.backuptest
+
+
+Expected output:
+
+run-as: Package 'com.example.mh.backuptest' is unknown
+
+
+Now, install the app again (but don't start it):
+
+adb install backuptest.apk 
+
+
+Have a look at logcat:
+
+V/BackupManagerService: restoreAtInstall pkg=com.example.mh.backuptest token=3 restoreSet=31eda3bdfd5fddb7
+D/BackupManagerService: MSG_RUN_RESTORE observer=null
+V/GmsBackupTransport: New restore session, 2 apps
+V/GmsBackupTransport: sending request: 471 bytes
+I/GmsBackupTransport: Http Response Code : 200
+V/GmsBackupTransport: @pm@: 109 keys
+I/GmsBackupTransport: Current restore package : PackageInfo{2981234 @pm@}
+V/GmsBackupTransport: A key/value pairs restore
+D/BackupManagerService: initiateOneRestore packageName=@pm@
+I/GmsBackupTransport: Current restore package : PackageInfo{883c85d com.example.mh.backuptest}
+V/GmsBackupTransport: A full restore : https://www.googleapis.com/drive/v2/files/XXXXXXXXXXXXXXXXXXXXXXXXXXXX?alt=media&sources=ANDROID_BACKUP
+I/BackupManagerService: Next restore package: RestoreDescription{com.example.mh.backuptest : STREAM}
+V/GmsBackupTransport: Read first chunk for com.example.mh.backuptest
+V/GmsBackupTransport: Create http connection for com.example.mh.backuptest
+I/GmsBackupTransport: Drive download http response status : 200
+V/GmsBackupTransport: ContentLength is 3584
+V/GmsBackupTransport: Downloaded: 808 / 3584 bytes
+V/GmsBackupTransport: Read 808 Bytes
+V/GmsBackupTransport: Read next chunk for com.example.mh.backuptest
+V/GmsBackupTransport: Downloaded: 2197 / 3584 bytes
+V/GmsBackupTransport: Read 1389 Bytes
+I/RestoreEngine: Sig + version match; taking data
+V/GmsBackupTransport: Read next chunk for com.example.mh.backuptest
+V/GmsBackupTransport: Downloaded: 3584 / 3584 bytes
+V/GmsBackupTransport: Read 1387 Bytes
+V/GmsBackupTransport: Read next chunk for com.example.mh.backuptest
+V/GmsBackupTransport: Read -1 Bytes
+D/RestoreEngine: Need to launch agent for com.example.mh.backuptest
+D/RestoreEngine: Clearing app data preparatory to full restore
+I/ActivityManager: Force stopping com.example.mh.backuptest appid=10493 user=0: clear data
+V/GmsBackupTransport: Reach end of http content -- NO MORE DATA
+D/PackageBroadcastService: Received broadcast action=android.intent.action.PACKAGE_DATA_CLEARED and uri=com.example.mh.backuptest
+D/AccountUtils: Clearing selected account for com.example.mh.backuptest
+I/LocationSettingsChecker: Removing dialog suppression flag for package com.example.mh.backuptest
+I/Icing: doRemovePackageData com.example.mh.backuptest
+I/ActivityManager: Start proc 31545:com.example.mh.backuptest/u0a493 for backup android/FullBackupAgent
+D/BackupManagerService: awaiting agent for ApplicationInfo{a84d42d com.example.mh.backuptest}
+D/BackupManagerService: agentConnected pkg=com.example.mh.backuptest agent=android.os.BinderProxy@b023d62
+I/BackupManagerService: got agent android.app.IBackupAgent$Stub$Proxy@a742ef3
+D/VoldConnector: SND -> {17 volume mkdirs /storage/emulated/0/Android/data/com.example.mh.backuptest/files/}
+D/VoldConnector: RCV <- {200 17 Command succeeded}
+V/BackupXmlParserLogging: android:fullBackupContent - "true"
+D/BackupManagerService: Restore complete, killing host process of com.example.mh.backuptest
+V/BackupManagerService: No more packages; finishing restore
+I/Process: Sending signal. PID: 31545 SIG: 9
+V/GmsBackupTransport: restore finished
+I/BackupRestoreController: restoreFinished for 0
+I/BackupManagerService: Restore complete.
+
+
+That looks promising! Did it really restore our backed up preference file when reinstalling the app?
+
+adb shell run-as com.example.mh.backuptest ls -al shared_prefs
+
+
+If you see the output that should be familiar by now, then the answer is yes!
+
+
+
+Final notes: I've successfully tested above steps on various devices:
+
+
+Default Android 6.0 Emulator (emulator64-x86) w/o Google Play Services
+Genymotion Google Nexus 5X - API 23 - PREVIEW w/ Google Play Services
+Nexus 5X (physical device) w/ Google Play Services.
+
+
+If I recall correctly, without Google Play Services installed on the device, the backup manager doesn't actually go off to Google Drive (which wouldn't be surprising), but feel free to correct me on that.
+
+
+
+Sources:
+
+
+CommonWare's great question at the very top of this page.
+Google's training on Configuring Auto Backup for Apps.
+Various issues on Google's bug tracker, including this one and this one.
+
+    

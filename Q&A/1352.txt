@@ -1,0 +1,79 @@
+128
+Q:I'm trying to update the items of a recycleview using notifyDataSetChanged().
+
+This is my onBindViewHolder() method in the recycleview adapter.
+
+@Override
+public void onBindViewHolder(ViewHolder viewHolder, int position) {
+
+     //checkbox view listener
+    viewHolder.getCheckbox().setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+        @Override
+        public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+
+            //update list items
+            notifyDataSetChanged();
+        }
+    });
+}
+
+
+What I want to do is update the list items, after I check a checkbox. I get an illegal exception though: "Cannot call this method while RecyclerView is computing a layout or scrolling"
+
+java.lang.IllegalStateException: Cannot call this method while RecyclerView is computing a layout or scrolling
+    at android.support.v7.widget.RecyclerView.assertNotInLayoutOrScroll(RecyclerView.java:1462)
+    at android.support.v7.widget.RecyclerView$RecyclerViewDataObserver.onChanged(RecyclerView.java:2982)
+    at android.support.v7.widget.RecyclerView$AdapterDataObservable.notifyChanged(RecyclerView.java:7493)
+    at android.support.v7.widget.RecyclerView$Adapter.notifyDataSetChanged(RecyclerView.java:4338)
+    at com.app.myapp.screens.RecycleAdapter.onRowSelect(RecycleAdapter.java:111)
+
+
+I also used notifyItemChanged(), same exception. Any secret way to update to notify the adapter that something changed?
+    
+===============================================================================================
+136
+A:You should move method 'setOnCheckedChangeListener()' to ViewHolder which is inner class on your adapter.
+
+onBindViewHolder() is not a method that initialize ViewHolder.
+This method is step of refresh each recycler item.
+When you call notifyDataSetChanged(), onBindViewHolder() will be called as the number of each item times.
+
+So If you notifyDataSetChanged() put into onCheckChanged() and initialize checkBox in onBindViewHolder(), you will get IllegalStateException because of circular method call.
+
+click checkbox -> onCheckedChanged() -> notifyDataSetChanged() -> onBindViewHolder() -> set checkbox -> onChecked...
+
+Simply, you can fix this by put one flag into Adapter.
+
+try this,
+
+private boolean onBind;
+
+public ViewHolder(View itemView) {
+    super(itemView);
+    mCheckBox = (CheckBox) itemView.findViewById(R.id.checkboxId);
+    mCheckBox.setOnCheckChangeListener(this);
+}
+
+@Override
+public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+    if(!onBind) {
+        // your process when checkBox changed
+        // ...
+
+        notifyDataSetChanged();
+    }
+}
+
+...
+
+@Override
+public void onBindViewHolder(YourAdapter.ViewHolder viewHolder, int position) {
+    // process other views 
+    // ...
+
+    onBind = true;
+    viewHolder.mCheckBox.setChecked(trueOrFalse);
+    onBind = false;
+}
+
+    

@@ -1,0 +1,89 @@
+32
+Q:This is self-answered question to share my knowledge.
+
+I have a project with multiple product flavors and I want to integrate Fabric using separate organizations for each product flavor.
+
+I tried to integrate Fabric using Android Studio Fabric Plugin. It adds 
+
+<meta-data
+    android:name="io.fabric.ApiKey"
+    android:value="DEFAULT_ORGANIZATION_API_KEY" />
+
+
+entry to AndroidManifest.xml of main source set.
+
+I decided to rewrite this entry in application variant specific source sets:
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <meta-data
+            android:name="io.fabric.ApiKey"
+            android:value="SECOND_ORGANIZATION_API_KEY"
+            tools:replace="android:value" />
+    </application>
+</manifest>
+
+
+Then I discovered that Fabric Gradle plugin generates crashlytics.properties file with fabric api secret (AKA build secret) during build and I should include this file to source control. But this file is overwritten each time I build specific application variant because api secret is unique for each application.
+
+How can I integrate Fabric using separate organizations for each application variant?
+    
+===============================================================================================
+27
+A:During the build fabricGenerateResources task is called and it looks for a file named fabric.properties with following content:
+
+apiSecret=YOUR_BUILD_SECRET
+apiKey=YOUR_API_KEY
+
+
+So all we need is to generate fabric.properties file before this.
+
+I found this solution and slightly modified it to fully support application variants not only build types.
+
+Add this code to android section of build.gradle:
+
+File crashlyticsProperties = new File("${project.projectDir.absolutePath}/fabric.properties")
+applicationVariants.all { variant ->
+    variant.productFlavors.each { flavor ->
+        def variantSuffix = variant.name.capitalize()
+        def generatePropertiesTask = task("fabricGenerateProperties${variantSuffix}") << {
+            Properties properties = new Properties()
+            properties.put("apiKey", flavor.fabricApiKey)
+            properties.put("apiSecret", flavor.fabricApiSecret)
+            properties.store(new FileWriter(crashlyticsProperties), "")
+        }
+
+        def generateResourcesTask = project.tasks.getByName("fabricGenerateResources${variantSuffix}")
+        generateResourcesTask.dependsOn generatePropertiesTask
+        generateResourcesTask.doLast {
+            println "Removing fabric.properties"
+            crashlyticsProperties.delete()
+        }
+    }
+}
+
+
+It iterates over application variants and for each application variant creates task that generates fabric.properties file and task that deletes this file after Fabric Gradle plugin generates application resources.
+
+All you need now is to define product flavor or build type specific fabricApiKey and fabricApiSecret:
+
+productFlavors {
+    flavor1 {
+        ext.fabricApiKey = "FLAVOR1_API_KEY"
+        ext.fabricApiSecret = "FLAVOR1_API_SECRET"
+    }
+}
+
+
+ext is an ExtraPropertiesExtention object provided by every ExtensionAware object. It allows new properties to be added to existing object. In my case flavor1 is ExtensionAware object and it can be extended with new properties by using ext.someProperty = "value" syntax and later these properties can be used as flavor.someProperty, flavor.fabricApiKey.
+
+Also it's better to include fabric.properties to .gitignore.
+
+And do not forget to remove ext.enableCrashlytics = false from debug build type if you used it to disable Crashlytics during debug. Instead of this you can disable it in Application.onCreate:
+
+Fabric.with(this, new Crashlytics.Builder().core(
+    new CrashlyticsCore.Builder().disabled(BuildConfig.DEBUG).build()).build());
+
+    

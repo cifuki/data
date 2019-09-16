@@ -1,0 +1,61 @@
+156
+Q:I've built my app, I can run it on my local simulator (and also on my android device within the same network by changing debug server).
+
+However, I want to build an apk that I can send to someone without access to development server and I want them to be able to test application.
+
+I see there is a section Using offline bundle on iOS section of the documentation. But I couldn't figure out how to accomplish same for android. Is this possible? If so, how?
+
+UPDATE: On the answer to this question (react native android failed to load JS bundle) it is said that offline bundle can be downloaded from development server. But when I obtain the bundle from development server the image files can't be loaded.
+    
+===============================================================================================
+137
+A:Following Aditya Singh's answer the generated (unsigned) apk would not install on my phone. I had to generate a signed apk using the instructions here. 
+
+The following worked for me: 
+
+$ keytool -genkey -v -keystore my-release-key.keystore -alias my-key-alias -keyalg RSA -keysize 2048 -validity 10000
+
+
+Place the my-release-key.keystore file under the android/app
+    directory in your project folder. Then edit the file
+    ~/.gradle/gradle.properties and add the following (replace ****
+    with the correct keystore password, alias and key password)
+
+MYAPP_RELEASE_STORE_FILE=my-release-key.keystore
+MYAPP_RELEASE_KEY_ALIAS=my-key-alias
+MYAPP_RELEASE_STORE_PASSWORD=****
+MYAPP_RELEASE_KEY_PASSWORD=****
+
+
+If you're using MacOS, you can store your password in the keychain using the instructions here instead of storing it in plaintext. 
+
+Then edit app/build.gradle and ensure the following are there (the sections with signingConfigs signingConfig may need to be added) : 
+
+...
+android {
+    ...
+    defaultConfig { ... }
+    signingConfigs {
+        release {
+            if (project.hasProperty('MYAPP_RELEASE_STORE_FILE')) {
+                storeFile file(MYAPP_RELEASE_STORE_FILE)
+                storePassword MYAPP_RELEASE_STORE_PASSWORD
+                keyAlias MYAPP_RELEASE_KEY_ALIAS
+                keyPassword MYAPP_RELEASE_KEY_PASSWORD
+            }
+        }
+    }
+    buildTypes {
+        release {
+            ...
+            signingConfig signingConfigs.release
+        }
+    }
+}
+...
+
+
+Then run the command cd android && ./gradlew assembleRelease ,
+
+For Windows 'cd android' and then run gradlew assembleRelease command , and find your signed apk under android/app/build/outputs/apk/app-release.apk
+    

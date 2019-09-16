@@ -1,0 +1,62 @@
+27
+Q:In Android settings users can turn off notification if they don't want to. So is there any method that like isNotificationAllowed() to check is my app is allowed to show notification? And how to open android setting page to guide my users to turn on notification?
+    
+===============================================================================================
+63
+A:EDIT - New Answer:
+
+Seems like google added the proper API call:
+NotificationManagerCompat.from(context).areNotificationsEnabled()
+
+
+
+OLD ANSWER:
+
+For anyone who is looking at this question, note that NotificationListenerService is different from "Show Notification". These two are different things! If an app has access to NotificationListenerService does not mean that its notifications are shown and vice versa. In order to check if user has blocked notification from your app or not, you can use reflection:
+
+public class NotificationsUtils {
+
+private static final String CHECK_OP_NO_THROW = "checkOpNoThrow";
+private static final String OP_POST_NOTIFICATION = "OP_POST_NOTIFICATION";
+
+public static boolean isNotificationEnabled() {
+
+    AppOpsManager mAppOps = (AppOpsManager) GlobalContext.getContext().getSystemService(Context.APP_OPS_SERVICE);
+
+    ApplicationInfo appInfo = GlobalContext.getContext().getApplicationInfo();
+
+    String pkg = GlobalContext.getContext().getApplicationContext().getPackageName();
+
+    int uid = appInfo.uid;
+
+    Class appOpsClass = null; /* Context.APP_OPS_MANAGER */
+
+    try {
+
+        appOpsClass = Class.forName(AppOpsManager.class.getName());
+
+        Method checkOpNoThrowMethod = appOpsClass.getMethod(CHECK_OP_NO_THROW, Integer.TYPE, Integer.TYPE, String.class);
+
+        Field opPostNotificationValue = appOpsClass.getDeclaredField(OP_POST_NOTIFICATION);
+        int value = (int)opPostNotificationValue.get(Integer.class);
+
+        return ((int)checkOpNoThrowMethod.invoke(mAppOps,value, uid, pkg) == AppOpsManager.MODE_ALLOWED);
+
+    } catch (ClassNotFoundException e) {
+        e.printStackTrace();
+    } catch (NoSuchMethodException e) {
+        e.printStackTrace();
+    } catch (NoSuchFieldException e) {
+        e.printStackTrace();
+    } catch (InvocationTargetException e) {
+        e.printStackTrace();
+    } catch (IllegalAccessException e) {
+        e.printStackTrace();
+    }
+    return false;
+}
+}
+
+
+Source: https://code.google.com/p/android/issues/detail?id=38482
+    

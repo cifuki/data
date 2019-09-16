@@ -1,0 +1,168 @@
+125
+Q:Recently, I read these posts:
+
+Android Design Support Library
+
+Android Support Library, revision 22.2.0
+
+FloatingActionButton
+
+But, none of them give me a detail example about creating a new FloatingActionButton. So hard to understand, I ask this question.
+
+Can anyone give me an example about it?
+
+Any help much be appreciated. Thanks in advance.
+
+EDIT
+
+I just found some issues on FloatingActionButton (FAB), and I want to improve another answer. See my answer below.
+    
+===============================================================================================
+267
+A:So in your build.gradle file, add this:
+
+compile 'com.android.support:design:27.1.1'
+
+
+AndroidX Note:  Google is introducing new AndroidX extension libraries to replace the older Support Libraries.  To use AndroidX, first make sure you've updated your gradle.properties file, edited build.gradle to set compileSdkVersion to 28 (or higher), and use the following line instead of the previous compile one.
+
+implementation 'com.google.android.material:material:1.0.0'
+
+
+Next, in your themes.xml or styles.xml or whatever, make sure you set this- it's your app's accent color-- and the color of your FAB unless you override it (see below):
+
+        <item name="colorAccent">@color/floating_action_button_color</item>
+
+
+In the layout's XML:
+
+<RelativeLayout
+ ...
+ xmlns:app="http://schemas.android.com/apk/res-auto">
+
+       <android.support.design.widget.FloatingActionButton
+            android:id="@+id/myFAB"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/ic_plus_sign"
+            app:elevation="4dp"
+            ... />
+
+</RelativeLayout>
+
+
+Or if you are using the AndroidX material library above, you'd instead use this:
+
+<RelativeLayout
+ ...
+ xmlns:app="http://schemas.android.com/apk/res-auto">
+
+       <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/myFAB"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:srcCompat="@drawable/ic_plus_sign"
+            app:elevation="4dp"
+            ... />
+
+</RelativeLayout>
+
+
+You can see more options in the docs (material docs here) (setRippleColor, etc.), but one of note is:
+
+    app:fabSize="mini"
+
+
+Another interesting one-- to change the background color of just one FAB, add:
+
+    app:backgroundTint="#FF0000"
+
+
+(for example to change it to red) to the XML above.
+
+Anyway, in code, after the Activity/Fragment's view is inflated....
+
+    FloatingActionButton myFab = (FloatingActionButton)  myView.findViewById(R.id.myFAB);
+    myFab.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+            doMyThing();
+        }
+    });
+
+
+Observations:
+
+
+If you have one of those buttons that's on a "seam" splitting two views
+(using a RelativeLayout, for example) with, say, a negative bottom
+layout margin to overlap the border, you'll notice an issue:
+the FAB's size is actually very different on lollipop vs.
+pre-lollipop.  You can actually see this in AS's visual layout editor
+when you flip between APIs-- it suddenly "puffs out" when you switch to
+pre-lollipop.  The reason for the extra size seems to be that the
+shadow expands the size of the view in every direction.  So you have to
+account for this when you're adjusting the FAB's margins if it's close to other
+stuff.
+Here's a way to remove or
+change the padding if there's too much:
+
+if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+    RelativeLayout.LayoutParams p = (RelativeLayout.LayoutParams) myFab.getLayoutParams();
+    p.setMargins(0, 0, 0, 0); // get rid of margins since shadow area is now the margin
+    myFab.setLayoutParams(p);
+}
+
+Also, I was going to programmatically place the FAB on the "seam"
+between two areas in a RelativeLayout by grabbing the FAB's height,
+dividing by two, and using that as the margin offset.  But
+myFab.getHeight() returned zero, even after the view was inflated, it
+seemed.  Instead I used a ViewTreeObserver to get the height only
+after it's laid out and then set the position. See this tip
+here.  It looked like this:
+
+    ViewTreeObserver viewTreeObserver = closeButton.getViewTreeObserver();
+    if (viewTreeObserver.isAlive()) {
+        viewTreeObserver.addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
+                    closeButton.getViewTreeObserver().removeGlobalOnLayoutListener(this);
+                } else {
+                    closeButton.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                }
+                // not sure the above is equivalent, but that's beside the point for this example...
+                RelativeLayout.LayoutParams params = (RelativeLayout.LayoutParams) closeButton.getLayoutParams();
+                params.setMargins(0, 0, 16, -closeButton.getHeight() / 2); // (int left, int top, int right, int bottom)
+                closeButton.setLayoutParams(params);
+            }
+        });
+    }
+
+
+Not sure if this is the right way to do it, but it seems to work.
+It seems you can make the shadow-space of the button smaller by
+decreasing the elevation.
+If you want the FAB on a "seam" you can use layout_anchor and layout_anchorGravity here is an example:
+
+<android.support.design.widget.FloatingActionButton
+    android:layout_height="wrap_content"
+    android:layout_width="wrap_content"
+    app:layout_anchor="@id/appbar"
+    app:layout_anchorGravity="bottom|right|end"
+    android:src="@drawable/ic_discuss"
+    android:layout_margin="@dimen/fab_margin"
+    android:clickable="true"/>
+
+
+
+Remember that you can automatically have the button jump out of the way when a Snackbar comes up by wrapping it in a CoordinatorLayout.
+
+More:
+
+
+Google's Design Support Library Page
+the FloatingActionButton docs
+"Material Now" talk from Google I/O 2015 - Support Design Library introduced at 17m22s
+Design Support Library sample/showcase
+
+    

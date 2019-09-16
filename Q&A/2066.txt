@@ -1,0 +1,55 @@
+95
+Q:I try to connect to Facebook throught Facebook API, I follow this example: https://github.com/facebook/facebook-android-sdk/tree/master/examples/simple 
+
+Everything is ok, but when I try to edit some code, I mean I want to display the dialog post message after the login is successful like this:
+
+public void onAuthSucceed() {
+        mText.setText("You have logged in! ");   
+        //This is the code to call the post message dialog.                     
+        mFacebook.dialog(Example.this, "feed",new SampleDialogListener());   
+    }
+
+
+I receive this error in the logcat:
+
+03-02 13:32:08.629: E/AndroidRuntime(14991): android.view.WindowManager$BadTokenException: Unable to add window -- token android.os.BinderProxy@405180f8 is not valid; is your activity running?
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at android.view.ViewRoot.setView(ViewRoot.java:532)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at android.view.WindowManagerImpl.addView(WindowManagerImpl.java:177)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at android.view.WindowManagerImpl.addView(WindowManagerImpl.java:91)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at android.view.Window$LocalWindowManager.addView(Window.java:424)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at android.app.Dialog.show(Dialog.java:241)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at com.facebook.android.Facebook.dialog(Facebook.java:780)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at com.facebook.android.Facebook.dialog(Facebook.java:737)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at com.facebook.android.Example$SampleAuthListener.onAuthSucceed(Example.java:113)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at com.facebook.android.SessionEvents.onLoginSuccess(SessionEvents.java:78)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at com.facebook.android.Example$LoginDialogListener.onComplete(Example.java:88)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at com.facebook.android.Facebook$1.onComplete(Facebook.java:320)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at com.facebook.android.FbDialog$FbWebViewClient.shouldOverrideUrlLoading(FbDialog.java:144)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at android.webkit.CallbackProxy.uiOverrideUrlLoading(CallbackProxy.java:218)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at android.webkit.CallbackProxy.handleMessage(CallbackProxy.java:337)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at android.os.Handler.dispatchMessage(Handler.java:99)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at android.os.Looper.loop(Looper.java:130)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at android.app.ActivityThread.main(ActivityThread.java:3687)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at java.lang.reflect.Method.invokeNative(Native Method)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at java.lang.reflect.Method.invoke(Method.java:507)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:867)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:625)
+03-02 13:32:08.629: E/AndroidRuntime(14991):    at dalvik.system.NativeStart.main(Native Method)
+
+
+Any idea? 
+    
+===============================================================================================
+110
+A:This can occur when you are showing the dialog for a context that no longer exists. A common case - if the 'show dialog' operation is after an asynchronous operation, and during that operation the original activity (that is to be the parent of your dialog) is destroyed. For a good description, see this blog post and comments:
+
+http://dimitar.me/android-displaying-dialogs-from-background-threads/
+
+From the stack trace above, it appears that the facebook library spins off the auth operation asynchronously, and you have a Handler - Callback mechanism (onComplete called on a listener) that could easily create this scenario.
+
+When I've seen this reported in my app, its pretty rare and matches the experience in the blog post. Something went wrong for the activity/it was destroyed during the work of the the AsyncTask. I don't know how your modification could result in this every time, but perhaps you are referencing an Activity as the context for the dialog that is always destroyed by the time your code executes?
+
+Also, while I'm not sure if this is the best way to tell if your activity is running, see this answer for one method of doing so:
+
+Check whether activity is active
+    

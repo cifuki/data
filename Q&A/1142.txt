@@ -1,0 +1,80 @@
+142
+Q:In Lollipop, the download functionality works fine in my app, but when I upgraded to Marshmallow, my app crashes and gives this error when I try to download from the internet into the SD card: 
+
+Neither user  nor current process has android.permission.WRITE_EXTERNAL_STORAGE
+
+
+It complains about this line of code: 
+
+DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+manager.enqueue(request);
+
+
+I have the permissions in the manifest outside application:
+
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.WAKE_LOCK" />
+
+
+I cleaned and rebuilt the project, but it still crashes.
+    
+===============================================================================================
+327
+A:You should be checking if the user has granted permission of external storage by using:
+
+if (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+    Log.v(TAG,"Permission is granted");
+    //File write logic here
+    return true;
+}
+
+
+If not, you need to ask the user to grant your app a permission: 
+
+ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CODE);
+
+
+Of course these are for marshmallow devices only so you need to check if your app is running on Marshmallow:
+
+ if (Build.VERSION.SDK_INT >= 23) {
+      //do your check here
+ }
+
+
+Be also sure that your activity implements OnRequestPermissionResult
+
+The entire permission looks like this:
+
+public  boolean isStoragePermissionGranted() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                == PackageManager.PERMISSION_GRANTED) {
+            Log.v(TAG,"Permission is granted");
+            return true;
+        } else {
+
+            Log.v(TAG,"Permission is revoked");
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1);
+            return false;
+        }
+    }
+    else { //permission is automatically granted on sdk<23 upon installation
+        Log.v(TAG,"Permission is granted");
+        return true;
+    }
+}
+
+
+Permission result callback:
+
+@Override
+public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    if(grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED){
+        Log.v(TAG,"Permission: "+permissions[0]+ "was "+grantResults[0]);
+        //resume tasks needing this permission
+    }
+}
+
+    

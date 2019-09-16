@@ -1,0 +1,156 @@
+29
+Q:I want to send an Article from and Android client to a REST server. Here is the Python model from the server:
+
+class Article(models.Model):
+    author = models.CharField(max_length=256, blank=False)
+    photo = models.ImageField()
+
+
+The following interface describes the former implementation:
+
+@POST("/api/v1/articles/")
+public Observable<CreateArticleResponse> createArticle(
+        @Body Article article
+);
+
+
+Now I want to send an image with the Article data. The photo is not part of the Article model on the Android client.
+
+@Multipart
+@POST("/api/v1/articles/")
+public Observable<CreateArticleResponse> createArticle(
+        @Part("article") Article article,
+        @Part("photo") TypedFile photo
+);
+
+
+The API is prepared and successfully tested with cURL.
+
+$ curl -vX POST http://localhost:8000/api/v1/articles/ \\
+    -H "Content-Type: multipart/form-data" \\
+    -H "Accept:application/json" \\
+    -F "author=cURL" \\
+    -F "photo=@/home/user/Desktop/article-photo.png"
+
+
+When I send data through createArticle() from the Android client I receive an HTTP 400 status stating that the fields are required/missing.
+
+D  <--- HTTP 400 http://192.168.1.1/articles/ (2670ms)
+D  Date: Mon, 20 Apr 2015 12:00:00 GMT
+D  Server: WSGIServer/0.1 Python/2.7.8
+D  Vary: Accept, Cookie
+D  X-Frame-Options: SAMEORIGIN
+D  Content-Type: application/json
+D  Allow: GET, POST, HEAD, OPTIONS
+D  OkHttp-Selected-Protocol: http/1.0
+D  OkHttp-Sent-Millis: 1429545450469
+D  OkHttp-Received-Millis: 1429545453120
+D  {"author":["This field is required."],"photo":["No file was submitted."]}
+D  <--- END HTTP (166-byte body)
+E  400 BAD REQUEST
+
+
+This is what is received as request.data on the server side:
+
+ipdb> print request.data  
+  <QueryDict: {u'article': [u'{"author":"me"}'], \\
+  u'photo': [<TemporaryUploadedFile: IMG_1759215522.jpg \\
+  (multipart/form-data)>]}>
+
+
+How can convert the Article object in a multipart conform data type? I read that Retrofit might allow to use Converters for this. It should be something that implements a retrofit.mime.TypedOutput as far as I understood for the documentation.
+
+
+  Multipart parts use the RestAdapter's converter or they can implement TypedOutput to handle their own serialization.
+
+
+Related
+
+
+HTML 4.01 Specification - Form submission - multipart/form-data
+Retrofit Annotation Type Part documentation
+Upload multipart image data in JSON with Retrofit?
+REST - HTTP Post Multipart with JSON
+Retrofit Multipart Upload Image failed
+Retrofit issue #178: Create manual for sending files with retrofit
+Retrofit issue #531: Problem uploading file via POST/Multipart
+Retrofit issue #658: Not able to send string parameters with image when using Multipart
+Retrofit issue #662: Retrofit Form Encoded and Multipart in single request
+
+    
+===============================================================================================
+26
+A:According to your curl request you are trying to create smth like this:
+
+POST http://localhost:8000/api/v1/articles/ HTTP/1.1
+User-Agent: curl/7.30.0
+Host: localhost
+Connection: Keep-Alive
+Accept: application/json
+Content-Length: 183431
+Expect: 100-continue
+Content-Type: multipart/form-data; boundary=----------------------------23473c7acabb
+
+------------------------------23473c7acabb
+Content-Disposition: form-data; name="author"
+
+cURL
+------------------------------23473c7acabb
+Content-Disposition: form-data; name="photo"; filename="article-photo.png"
+Content-Type: application/octet-stream
+
+\xe2\x80\xb0PNG
+
+<!RAW BYTES HERE!>
+
+M\\UU\xc3\x95+4qUUU\xc2\xaf\xc2\xb0WUUU\xc2\xbf\xc3\x97\xc3\x9f\xc2\xbf\xc3\xbe Naa\xe2\x80\xa6k\xc2\xbf    IEND\xc2\xaeB`\xe2\x80\x9a
+------------------------------23473c7acabb--
+
+
+With retrofit adapter this request can be created in a next way:
+
+@Multipart
+@POST("/api/v1/articles/")
+Observable<Response> uploadFile(@Part("author") TypedString authorString,
+                                @Part("photo") TypedFile photoFile);
+
+
+Usage:
+
+TypedString author = new TypedString("cURL");
+File photoFile = new File("/home/user/Desktop/article-photo.png");
+TypedFile photoTypedFile = new TypedFile("image/*", photoFile);
+retrofitAdapter.uploadFile(author, photoTypedFile)
+               .subscribe(<...>);
+
+
+Which creates similar output:
+
+POST http://localhost:8000/api/v1/articles/ HTTP/1.1
+Content-Type: multipart/form-data; boundary=32230279-83af-4480-abfc-88a880b21b19
+Content-Length: 709
+Host: localhost
+Connection: Keep-Alive
+Accept-Encoding: gzip
+User-Agent: okhttp/2.3.0
+
+--32230279-83af-4480-abfc-88a880b21b19
+Content-Disposition: form-data; name="author"
+Content-Type: text/plain; charset=UTF-8
+Content-Length: 4
+Content-Transfer-Encoding: binary
+
+cUrl
+--32230279-83af-4480-abfc-88a880b21b19
+Content-Disposition: form-data; name="photo"; filename="article-photo.png"
+Content-Type: image/*
+Content-Length: 254
+Content-Transfer-Encoding: binary
+
+<!RAW BYTES HERE!>
+
+--32230279-83af-4480-abfc-88a880b21b19--
+
+
+The key difference here is that you used POJO Article article as multipart param, which by default is converted by Converter into json. And your server expects plain string instead. With curl you are sending cURL, not {"author":"cURL"}.
+    

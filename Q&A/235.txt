@@ -1,0 +1,70 @@
+371
+Q:According to Google, I must "deactivate any calls to Log methods in the source code" before publishing my Android app to Google Play. Extract from section 3 of the publication checklist:
+
+
+  Make sure you deactivate logging and disable the debugging option before you build your application for release. You can deactivate logging by removing calls to Log methods in your source files.
+
+
+My open-source project is large and it is a pain to do it manually every time I release. Additionally, removing a Log line is potentially tricky, for instance:
+
+if(condition)
+  Log.d(LOG_TAG, "Something");
+data.load();
+data.show();
+
+
+If I comment the Log line, then the condition applies to the next line, and chances are load() is not called. Are such situations rare enough that I can decide it should not exist?
+
+So, is there a better source code-level way to do that? Or maybe some clever ProGuard syntax to efficiently but safely remove all Log lines?
+    
+===============================================================================================
+464
+A:I find a far easier solution is to forget all the if checks all over the place and just use ProGuard to strip out any Log.d() or Log.v() method calls when we call our Ant release target.
+
+That way, we always have the debug info being output for regular builds and don't have to make any code changes for release builds.  ProGuard can also do multiple passes over the bytecode to remove other undesired statements, empty blocks and can automatically inline short methods where appropriate.
+
+For example, here's a very basic ProGuard config for Android:
+
+-dontskipnonpubliclibraryclasses
+-dontobfuscate
+-forceprocessing
+-optimizationpasses 5
+
+-keep class * extends android.app.Activity
+-assumenosideeffects class android.util.Log {
+    public static *** d(...);
+    public static *** v(...);
+}
+
+
+So you would save that to a file, then call ProGuard from Ant, passing in your just-compiled JAR and the Android platform JAR you're using.
+
+See also the examples in the ProGuard manual.
+
+
+
+Update (4.5 years later): Nowadays I used Timber for Android logging.
+
+Not only is it a bit nicer than the default Log implementation \xe2\x80\x94 the log tag is set automatically, and it's easy to log formatted strings and exceptions \xe2\x80\x94 but you can also specify different logging behaviours at runtime.
+
+In this example, logging statements will only be written to logcat in debug builds of my app:
+
+Timber is set up in my Application onCreate() method:
+
+if (BuildConfig.DEBUG) {
+  Timber.plant(new Timber.DebugTree());
+}
+
+
+Then anywhere else in my code I can log easily:
+
+Timber.d("Downloading URL: %s", url);
+try {
+  // ...
+} catch (IOException ioe) {
+  Timber.e(ioe, "Bad things happened!");
+}
+
+
+See the Timber sample app for a more advanced example, where all log statements are sent to logcat during development and, in production, no debug statements are logged, but errors are silently reported to Crashlytics.
+    

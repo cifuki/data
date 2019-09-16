@@ -1,0 +1,179 @@
+97
+Q:Is it possible to set any custom font in every control of the application? And not necessarily runtime ? (i.e. from xml if possible or only once for whole application in JAVA file)
+
+I can set the font for one control from this code.
+
+public static void setFont(TextView textView) {
+    Typeface tf = Typeface.createFromAsset(textView.getContext()
+            .getAssets(), "fonts/BPreplay.otf");
+
+    textView.setTypeface(tf);
+
+}
+
+
+And the problem with this code is it should be called for every control. And i want to call this or any similar method once, or if possible set the property in xml.  Is it possible?
+    
+===============================================================================================
+122
+A:EDIT: So it's been a while, and I'd like to add what I think is the best way to do this, and through XML no less!
+
+So first, you're going to want to make a new class that overrides whatever View you want to customize. (e.g. want a Button with a custom typeface? Extend Button). Let's make an example:
+
+public class CustomButton extends Button {
+    private final static int ROBOTO = 0;
+    private final static int ROBOTO_CONDENSED = 1;
+
+    public CustomButton(Context context) {
+        super(context);
+    }
+
+    public CustomButton(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        parseAttributes(context, attrs); //I'll explain this method later
+    }
+
+    public CustomButton(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+        parseAttributes(context, attrs);
+    }
+}
+
+
+Now, if you don't have one, add an XML document under res/values/attrs.xml, and add:
+
+<resources>
+    <!-- Define the values for the attribute -->
+    <attr name="typeface" format="enum">
+        <enum name="roboto" value="0"/>
+        <enum name="robotoCondensed" value="1"/>
+    </attr>
+
+    <!-- Tell Android that the class "CustomButton" can be styled, 
+         and which attributes it supports -->
+    <declare-styleable name="CustomButton">
+        <attr name="typeface"/>
+    </declare-styleable>
+</resources>
+
+
+Okay, so with that out of the way, let's get back to the parseAttributes() method from earlier:
+
+private void parseAttributes(Context context, AttributeSet attrs) {
+    TypedArray values = context.obtainStyledAttributes(attrs, R.styleable.CustomButton);
+
+    //The value 0 is a default, but shouldn't ever be used since the attr is an enum
+    int typeface = values.getInt(R.styleable.CustomButton_typeface, 0);
+
+    switch(typeface) {
+        case ROBOTO: default:
+            //You can instantiate your typeface anywhere, I would suggest as a 
+            //singleton somewhere to avoid unnecessary copies
+            setTypeface(roboto); 
+            break;
+        case ROBOTO_CONDENSED:
+            setTypeface(robotoCondensed);
+            break;
+    }
+
+    values.recycle();
+}
+
+
+Now you're all set. You can add more attributes for about anything (you could add another one for typefaceStyle -- bold, italic, etc.) but now let's see how to use it:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:custom="http://schemas.android.com/apk/res/com.yourpackage.name"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical" >
+
+    <com.yourpackage.name.CustomButton
+        android:id="@+id/button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Click Me!"
+        custom:typeface="roboto" />
+
+</LinearLayout>
+
+
+The xmlns:custom line can really be anything, but the convention is what's shown above. What matters is that it is unique, and that's why the package name is used. Now you just use the custom: prefix for your attributes, and the android: prefix for android attributes.
+
+One last thing: if you want to use this in a style (res/values/styles.xml), you should not add the xmlns:custom line. Just reference the name of the attribute with no prefix:
+
+<style name="MyStyle>
+    <item name="typeface">roboto</item>
+</style>
+
+
+
+
+                               (PREVIOUS ANSWER)
+
+
+Using a custom typeface in Android 
+
+This should help. Basically, there's no way to do this in XML, and as far as I can tell, no easier way to do it in code. You could always have a setLayoutFont() method that creates the typeface once, then runs setTypeface() for each. You'd just have to update it each time you add a new item to a layout. Something like below:
+
+public void setLayoutFont() {
+    Typeface tf = Typeface.createFromAsset(
+        getBaseContext().getAssets(), "fonts/BPreplay.otf");
+    TextView tv1 = (TextView)findViewById(R.id.tv1);
+    tv1.setTypeface(tf);
+
+    TextView tv2 = (TextView)findViewById(R.id.tv2);
+    tv2.setTypeface(tf);
+
+    TextView tv3 = (TextView)findViewById(R.id.tv3);
+    tv3.setTypeface(tf);
+}
+
+
+EDIT: So I just got around to implementing something like this myself, and how I ended up doing it was making a function such as this:
+
+public static void setLayoutFont(Typeface tf, TextView...params) {
+    for (TextView tv : params) {
+        tv.setTypeface(tf);
+    }
+}
+
+
+Then, just use this method from onCreate(), and pass all the TextViews you want to update:
+
+Typeface tf = Typeface.createFromAsset(getAssets(), "fonts/BPreplay.otf");
+//find views by id...
+setLayoutFont(tf, tv1, tv2, tv3, tv4, tv5);
+
+
+EDIT 9/5/12:
+
+So since this is still getting views and votes, I'd like to add a much better and more complete method:
+
+Typeface mFont = Typeface.createFromAsset(getAssets(), "fonts/BPreplay.otf");
+ViewGroup root = (ViewGroup)findViewById(R.id.myrootlayout);
+setFont(root, mFont);
+
+/*
+ * Sets the font on all TextViews in the ViewGroup. Searches
+ * recursively for all inner ViewGroups as well. Just add a
+ * check for any other views you want to set as well (EditText,
+ * etc.)
+ */
+public void setFont(ViewGroup group, Typeface font) {
+    int count = group.getChildCount();
+    View v;
+    for(int i = 0; i < count; i++) {
+        v = group.getChildAt(i);
+        if(v instanceof TextView || v instanceof Button /*etc.*/)
+            ((TextView)v).setTypeface(font);
+        else if(v instanceof ViewGroup)
+            setFont((ViewGroup)v, font);
+    }
+}
+
+
+If you pass it the root of your layout, it will recursively check for TextView or Button views  (or any others you add to that if statement) within that layout, and set the font without you having to specify them by ID. This of course is assuming you want to set the font to every view.
+    

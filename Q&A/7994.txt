@@ -1,0 +1,194 @@
+33
+Q:The new Google Calendar app has an animation I would like to do in my app.  When you create a new event you can choose a color for the event.  When you do, the statusbar and toolbar change to that color with a circular effect that covers both of them.
+
+Here's an example of what I'd like to do:
+
+
+
+I can change the color of the statusbar and toolbar, but how can I apply the circular animation effect (or similar) to both of them as the color is changed?
+    
+===============================================================================================
+39
+A:I don't know if this is the exact way the Calendar app does it, but it's close enough for me.
+
+Caveats
+
+
+The method uses the ViewAnimationUtils.createCircularReveal method introduced in Lollipop.
+It requires knowing the height of the status bar and your toolbar actionbar. You can still use ?attr/actionBarSize for your actionbar and get both dynamically, but for simplicity here I've assumed 56dp for the actionbar height and 24dp for the status bar height.
+
+
+General Idea
+
+The general idea is to set your actionbar and status bar to transparent.  This will shift your actionbar up under the statusbar so you have to adjust the size and padding of the actionbar to compensate.  You then use a view behind it and ViewAnimationUtils.createCircularReveal to reveal the new background color.  You need one more view behind that to show the old background color as the middle view is revealing the new one.
+
+The Animation
+
+The animation requires:
+
+
+The transparent toolbar actionbar that covers the space of the regular actionbar and the statusbar. The hard-coded height, in this case, is 56dp (actionbar) + 24dp (statusbar) = 80dp.  You also need to set the top padding to 24dp to keep the actionbar content our from under the statusbar.
+A middle view (I'll call it the reveal view) that's the same size (80dp height) but just behind the actionbar. This will be the view the ViewAnimationUtils.createCircularReveal acts on.
+A bottom view (I'll call it the reveal background view) that's the same size as the reveal view but behind it. This view is there to show the old background color while the reveal view is revealing the new color on top of it.
+
+
+Code
+
+Here are the key pieces of code I used. See the example project at https://github.com/shaun-blake-experiments/example-toolbar-animation.
+
+activity_main.xml
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <View
+        android:id="@+id/revealBackground"
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:paddingTop="24dp"
+        android:background="@color/primary"
+        android:elevation="4dp">
+    </View>
+
+    <View
+        android:id="@+id/reveal"
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:paddingTop="24dp"
+        android:background="@color/primary"
+        android:elevation="4dp">
+    </View>
+
+    <Toolbar
+        android:id="@+id/appbar"
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:paddingTop="24dp"
+        android:background="@android:color/transparent"
+        android:elevation="4dp"
+        android:theme="@style/TranslucentActionBar">
+        </Toolbar>
+
+    <ToggleButton
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Invert Toolbar Colors"
+        android:textOn="Invert Toolbar Colors On"
+        android:textOff="Invert Toolbar Colors Off"
+        android:id="@+id/toggleButton"
+        android:layout_centerVertical="true"
+        android:layout_centerHorizontal="true" />
+
+</RelativeLayout>
+
+
+styles.xml
+
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+
+    <style name="TranslucentActionBar" parent="@android:style/Widget.Material.ActionBar">
+        <item name="android:textColorPrimary">@color/primary_text_dark_background</item>
+    </style>
+</resources>
+
+
+colors.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#2196F3</color>
+    <color name="primary_dark">#1976D2</color>
+    <color name="primary_light">#BBDEFB</color>
+    <color name="accent">#009688</color>
+    <color name="primary_text">#DD000000</color>
+    <color name="primary_text_dark_background">#FFFFFF</color>
+    <color name="secondary_text">#89000000</color>
+    <color name="icons">#FFFFFF</color>
+    <color name="divider">#30000000</color>
+</resources>
+
+
+MainActivity.java
+
+package com.example.android.toolbaranimation;
+
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.app.Activity;
+import android.os.Bundle;
+import android.view.View;
+import android.view.ViewAnimationUtils;
+import android.widget.ToggleButton;
+import android.widget.Toolbar;
+
+
+public class MainActivity extends Activity {
+
+    private View mRevealView;
+    private View mRevealBackgroundView;
+    private Toolbar mToolbar;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        mToolbar = (Toolbar) findViewById(R.id.appbar);
+        mToolbar.setTitle(getString(R.string.app_name));
+
+        mRevealView = findViewById(R.id.reveal);
+        mRevealBackgroundView = findViewById(R.id.revealBackground);
+
+        ToggleButton toggleButton = (ToggleButton) findViewById(R.id.toggleButton);
+        toggleButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                boolean on = ((ToggleButton) v).isChecked();
+
+                if (on) {
+                    animateAppAndStatusBar(R.color.primary, R.color.accent);
+                } else {
+                    animateAppAndStatusBar(R.color.accent, R.color.primary);
+                }
+            }
+        });
+
+        setActionBar(mToolbar);
+    }
+
+    private void animateAppAndStatusBar(int fromColor, final int toColor) {
+        Animator animator = ViewAnimationUtils.createCircularReveal(
+                mRevealView,
+                mToolbar.getWidth() / 2,
+                mToolbar.getHeight() / 2, 0,
+                mToolbar.getWidth() / 2);
+
+        animator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationStart(Animator animation) {
+                mRevealView.setBackgroundColor(getResources().getColor(toColor));
+            }
+        });
+
+        mRevealBackgroundView.setBackgroundColor(getResources().getColor(fromColor));
+        animator.setStartDelay(200);
+        animator.setDuration(125);
+        animator.start();
+        mRevealView.setVisibility(View.VISIBLE);
+    }
+}
+
+
+Notes
+
+
+Be careful of the android:elevation property on the toolbar, reveal, and reveal background views.  If the elevation is lower on the toolbar, the others will cover the buttons and text.
+
+    

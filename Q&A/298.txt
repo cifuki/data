@@ -1,0 +1,71 @@
+326
+Q:Ok everyone knows that to hide a keyboard you need to implement:
+
+InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
+
+
+But the big deal here is how to hide the keyboard when the user touches or selects any other place that is not an EditText or the softKeyboard?
+
+I tried to use the onTouchEvent() on my parent Activity but that only works if user touches outside any other view and there is no scrollview.
+
+I tried to implement a touch, click, focus listener without any success.
+
+I even tried to implement my own scrollview to intercept touch events but I can only get the coordinates of the event and not the view clicked.
+
+Is there a standard way to do this?? in iPhone it was really easy.
+    
+===============================================================================================
+547
+A:The following snippet simply hides the keyboard:
+
+public static void hideSoftKeyboard(Activity activity) {
+    InputMethodManager inputMethodManager = 
+        (InputMethodManager) activity.getSystemService(
+            Activity.INPUT_METHOD_SERVICE);
+    inputMethodManager.hideSoftInputFromWindow(
+        activity.getCurrentFocus().getWindowToken(), 0);
+}
+
+
+You can put this up in a utility class, or if you are defining it within an activity, avoid the activity parameter, or call hideSoftKeyboard(this).
+
+The trickiest part is when to call it. You can write a method that iterates through every View in your activity, and check if it is an instanceof EditText if it is not register a setOnTouchListener to that component and everything will fall in place. In case you are wondering how to do that, it is in fact quite simple. Here is what you do, you write a recursive method like the following, in fact you can use this to do anything, like setup custom typefaces etc... Here is the method
+
+public void setupUI(View view) {
+
+    // Set up touch listener for non-text box views to hide keyboard.
+    if (!(view instanceof EditText)) {
+        view.setOnTouchListener(new OnTouchListener() {
+            public boolean onTouch(View v, MotionEvent event) {
+                hideSoftKeyboard(MyActivity.this);
+                return false;
+            }
+        });
+    }
+
+    //If a layout container, iterate over children and seed recursion.
+    if (view instanceof ViewGroup) {
+        for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) {
+            View innerView = ((ViewGroup) view).getChildAt(i);
+            setupUI(innerView);
+        }
+    }
+}
+
+
+That is all, just call this method after you setContentView in your activity. In case you are wondering what parameter you would pass, it is the id of the parent container. Assign an id to your parent container like
+
+<RelativeLayoutPanel android:id="@+id/parent"> ... </RelativeLayout>
+
+and call setupUI(findViewById(R.id.parent)), that is all.
+
+If you want to use this effectively, you may create an extended Activity and put this method in, and make all other activities in your application extend this activity and call its setupUI() in the onCreate() method.
+
+Hope it helps.
+
+If you use more than 1 activity define common id to parent layout like 
+<RelativeLayout android:id="@+id/main_parent"> ... </RelativeLayout>
+
+Then extend a class from Activity and define setupUI(findViewById(R.id.main_parent)) Within its OnResume() and extend this class instead of ``Activityin your program
+    

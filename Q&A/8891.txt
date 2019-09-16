@@ -1,0 +1,76 @@
+30
+Q:I have a small android problem (google maps v2 api)
+
+This is my code:
+
+GoogleMaps mMap;
+Marker marker =  mMap.addMarker(new MarkerOptions().position(new LatLng(20, 20)));
+
+
+I am trying to find a way to get the current screen coordinates (x,y) for this marker object.
+
+Perhaps someone has an idea? I tried getProjection but it does not see to work.
+Thanks! :)
+    
+===============================================================================================
+79
+A:Yes, use Projection class. More specifically:
+
+
+Get Projection of the map:
+
+Projection projection = map.getProjection();
+
+Get location of your marker:
+
+LatLng markerLocation = marker.getPosition();
+
+Pass location to the Projection.toScreenLocation() method:
+
+Point screenPosition = projection.toScreenLocation(markerLocation);
+
+
+
+That's all. Now screenPosition will contain the position of the marker relative to the top-left corner of the whole Map container :)
+
+Edit
+
+Remember, that the Projection object will only return valid values after the map has passed the layout process (i.e. it has valid width and height set). You're probably getting (0, 0) because you're trying to access position of the markers too soon, like in this scenario:
+
+
+Create the map from layout XML file by inflating it
+Initialize the map.
+Add markers to the map.
+Query Projection of the map for marker positions on the screen.
+
+
+This is not a good idea since the the map doesn't have valid width and height set. You should wait until these values are valid. One of the solutions is attaching a OnGlobalLayoutListener to the map view and waiting for layout process to settle. Do it after inflating the layout and initializing the map - for example in onCreate():
+
+// map is the GoogleMap object
+// marker is Marker object
+// ! here, map.getProjection().toScreenLocation(marker.getPosition()) will return (0, 0)
+// R.id.map is the ID of the MapFragment in the layout XML file
+View mapView = getSupportFragmentManager().findFragmentById(R.id.map).getView();
+if (mapView.getViewTreeObserver().isAlive()) {
+    mapView.getViewTreeObserver().addOnGlobalLayoutListener(new OnGlobalLayoutListener() {
+        @Override
+        public void onGlobalLayout() {
+            // remove the listener
+            // ! before Jelly Bean:
+            mapView.getViewTreeObserver().removeGlobalOnLayoutListener(this);
+            // ! for Jelly Bean and later:
+            //mapView.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+            // set map viewport
+            // CENTER is LatLng object with the center of the map
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(CENTER, 15));
+            // ! you can query Projection object here
+            Point markerScreenPosition = map.getProjection().toScreenLocation(marker.getPosition());
+            // ! example output in my test code: (356, 483)
+            System.out.println(markerScreenPosition);
+        }
+    });
+}
+
+
+Please read through the comments for additional informations.
+    

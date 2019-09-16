@@ -1,0 +1,155 @@
+40
+Q:When I display a WebView, I don't see the soft keyboard popping up. The hard keyboard also doesn't work!
+
+What are the usual shortcomings.
+
+The code which I use to access the WebView is:
+
+package com.example.blahblah;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.Bundle;
+import android.os.Handler;
+import android.preference.PreferenceManager;
+import android.util.Log;
+import android.view.KeyEvent;
+import android.view.Window;
+import android.webkit.JsResult;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.Toast;
+
+public class createAccount extends Activity {
+
+private static final String LOG_TAG = "Create Account";
+private WebView mWebView;
+private static final String URL = blah_app.urlSelected+"createAccount.html";    
+private Handler mHandler = new Handler();
+
+@Override
+public void onCreate(Bundle icicle) {
+    super.onCreate(icicle);
+    Toast.makeText(createAccount.this, "URL = " +URL, Toast.LENGTH_SHORT).show();
+    getWindow().requestFeature(Window.FEATURE_PROGRESS);
+    setContentView(R.layout.webview);
+    getWindow().setFeatureInt(Window.FEATURE_PROGRESS, Window.PROGRESS_VISIBILITY_ON);
+
+    mWebView = (WebView) findViewById(R.id.webview);
+
+    WebSettings webSettings = mWebView.getSettings();
+    webSettings.setSavePassword(true);
+    webSettings.setSaveFormData(true);
+    webSettings.setJavaScriptEnabled(true);
+    webSettings.setSupportZoom(true);
+
+
+    final Activity activity = this;
+    mWebView.setWebChromeClient(new WebChromeClient() {
+    public void onProgressChanged(WebView view, int progress) {
+
+        activity.setProgress(progress * 1000);
+      }
+    });
+
+    mWebView.addJavascriptInterface(new DemoJavaScriptInterface(), "demo");
+    mWebView.clearCache(true);
+    setProgressBarVisibility(true);
+    mWebView.setWebViewClient(new WebViewClient() {
+          public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+            Toast.makeText(activity, "Oh no! " + description, Toast.LENGTH_SHORT).show();
+          }
+
+           @Override  
+           public void onPageFinished(WebView view, String url)  
+           {  
+               mWebView.loadUrl("javascript:(function () { " +
+                       "setVariables("+blah_app.numberSelected+",'"+blah_app.urlSelected+"');" +
+                       "})()");
+           }
+        });
+
+    mWebView.loadUrl(URL);
+}
+
+final class DemoJavaScriptInterface {
+
+    public void setData(String fname, String lname, String gacct, String phone) {
+
+        SharedPreferences prefCreateAccount = PreferenceManager.getDefaultSharedPreferences(createAccount.this);
+        SharedPreferences.Editor editor = prefCreateAccount.edit();
+        editor.putString("FirstName", fname);
+        editor.putString("LastName", lname);
+        editor.putString("GmailAcct", gacct);
+        editor.putString("Phone", phone);
+        editor.commit();    
+
+    }
+    DemoJavaScriptInterface() {
+
+    }
+
+    /**
+     * This is not called on the UI thread. Post a runnable to invoke
+     * loadUrl on the UI thread.
+     */
+    public void clickOnAndroid() {
+        mHandler.post(new Runnable() {
+            public void run() {
+                mWebView.loadUrl("javascript:wave()");
+            }
+        });
+    }
+}
+
+/**
+ * Provides a hook for calling "alert" from javascript. Useful for
+ * debugging your javascript.
+ */
+final class MyWebChromeClient extends WebChromeClient {
+    @Override
+    public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
+        Log.d(LOG_TAG, message);
+        result.confirm();
+        return true;
+    }
+}
+
+public boolean onKeyDown(int keyCode, KeyEvent event) {
+    if ((keyCode == KeyEvent.KEYCODE_BACK) && mWebView.canGoBack()) {
+        startActivity(new Intent(getApplication(), blah_app.class));
+        return true;
+    }
+    return super.onKeyDown(keyCode, event);
+}
+}
+
+    
+===============================================================================================
+46
+A:The full solution is a bit more than what Sana had.  It is documented as a bug over at the Android site ( http://code.google.com/p/android/issues/detail?id=7189 ):
+
+webView.requestFocus(View.FOCUS_DOWN);
+webView.setOnTouchListener(new View.OnTouchListener()
+{
+    @Override
+    public boolean onTouch(View v, MotionEvent event)
+    {
+        switch (event.getAction())
+        {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_UP:
+                if (!v.hasFocus())
+                {
+                    v.requestFocus();
+                }
+                break;
+        }
+        return false;
+    }
+});
+
+    

@@ -1,0 +1,276 @@
+56
+Q:my RecyclerView do not call onCreateViewHolder, onBindViewHolder, therefore, does not appear nothing in recyclerview. I put logs for debugging, and no log is shown. What can be? 
+
+My adapter:
+
+public class CommentListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>{
+private static final int EMPTY_VIEW = 10 ;
+private ArrayList<comment> mItems;
+Boolean firstTime = true;
+private Typeface mTf = null;
+Context mContext;
+public CommentListAdapter(Context context,ArrayList<comment> items){
+    Log.e("Adapter", "constructor Called");
+    this.mItems = items;
+    mContext = context;
+}
+public class EmptyViewHolder extends RecyclerView.ViewHolder {
+    public EmptyViewHolder(View itemView) {
+        super(itemView);
+    }
+}
+public class ViewHolder extends RecyclerView.ViewHolder{
+    TextView mAuthorName;
+    TextView mMessage;
+    NetworkImageView mThumbnail;
+    public ViewHolder(View itemView) {
+        super(itemView);
+        mAuthorName = (TextView)itemView.findViewById(R.id.author_name);
+        mMessage = (TextView)itemView.findViewById(R.id.message);
+        mThumbnail = (NetworkImageView)itemView.findViewById(R.id.author_avatar);
+    }
+
+}
+
+public void add(comment item, int position) {
+    mItems.add(position, item);
+    notifyItemInserted(position);
+}
+
+public void remove(comment item) {
+    int position = mItems.indexOf(item);
+    mItems.remove(position);
+    notifyItemRemoved(position);
+}
+@Override
+public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType){
+    Log.e("Adapter", "onCreateViewHolder Called");
+    View v;
+    if(firstTime){
+        mTf = BBcTypeFace.getTypeFace(parent.getContext().getApplicationContext(),"font/bbc.ttf");
+        firstTime = false;
+    }
+    if( viewType == EMPTY_VIEW){
+        v = LayoutInflater.from(parent.getContext())
+                .inflate(R.layout.comment_empty_row,parent,false);
+        EmptyViewHolder evh = new EmptyViewHolder(v);
+        return evh;
+    }else {
+        v = LayoutInflater.from(parent.getContext())
+                .inflate(R.layout.comment_row, parent, false);
+        ViewHolder vh = new ViewHolder(v);
+        return vh;
+    }
+}
+@Override
+public void onBindViewHolder(RecyclerView.ViewHolder viewHolder, int position) {
+    Log.e("Adapter", "onBindViewHolder Called");
+    if(viewHolder instanceof ViewHolder) {
+        ViewHolder holder = (ViewHolder)viewHolder;
+        comment c = mItems.get(position);
+        Log.e("Adapter", "Comment is\
+: " + c.toString());
+        final ViewHolder finalHolder = holder;
+        ImageRequest request = new ImageRequest(c.author_img_link, new Response.Listener<Bitmap>() {
+            @Override
+            public void onResponse(Bitmap bitmap) {
+                if (bitmap != null) {
+                    finalHolder.mThumbnail.setImageBitmap(bitmap);
+                }
+            }
+        }, 0, 0, null,
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError volleyError) {
+                        VolleyLog.e("ImageLoader", volleyError.getMessage());
+                        VolleyLog.e("ImageLoader", volleyError.getStackTrace());
+                    }
+                });
+        GetVideoInfo.getInstance(mContext.getApplicationContext()).addToRequestQueue(request);
+        holder.mAuthorName.setText(c.author_name);
+        holder.mMessage.setText(c.Message);
+        holder.mMessage.setTypeface(mTf);
+        holder.mAuthorName.setTypeface(mTf);
+    }
+}
+@Override
+public int getItemCount() {
+    Log.e("Adapter", "getItemCount() Called");
+    return (mItems.size() > 0 ? mItems.size() : 1);
+}
+@Override
+public int getItemViewType(int position) {
+    Log.e("Adapter", "getItemViewType() Called");
+    if (mItems.size() == 0) {
+        return EMPTY_VIEW;
+    }
+    return super.getItemViewType(position);
+}}
+
+
+I will use public void add(comment item, int position){...} to add item in RecyclerView.
+
+in Fragment :
+
+private RecyclerView mRecyclerView;
+private CommentListAdapter mAdapter;
+private LayoutManager mLayoutManager;
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                         Bundle savedInstanceState) {
+    View rootView = inflater.inflate(R.layout.fragment_item_detail, container, false);
+....
+
+    mLayoutManager = new LinearLayoutManager(getActivity());
+    mAdapter = new CommentListAdapter(getActivity(),new ArrayList<comment>());
+    mRecyclerView = (RecyclerView)rootView.findViewById(R.id.comment_list);
+    mRecyclerView.setHasFixedSize(true);
+    mRecyclerView.setLayoutManager(mLayoutManager);
+    mRecyclerView.setAdapter(mAdapter);
+    mRecyclerView.setItemAnimator(new DefaultItemAnimator());
+
+    makeJsonObjectRequest(mItem.url);
+    return rootView;
+}
+
+
+XML Files :
+
+<ScrollView
+xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:id="@+id/scrollView"
+    android:background="@android:color/white"
+    android:layout_alignParentLeft="true"
+    android:layout_alignParentStart="true"
+
+    android:layout_alignParentBottom="true">
+
+    ....
+        <RelativeLayout
+            xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+.....
+
+            <android.support.v7.widget.RecyclerView
+                android:id="@+id/comment_list"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+            </android.support.v7.widget.RecyclerView>
+....
+        </RelativeLayout>
+    ....
+</ScrollView>
+
+
+comment_row xml file :
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    android:orientation="horizontal"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+android:gravity="right"
+android:background="@android:color/darker_gray">
+
+<LinearLayout
+        android:orientation="vertical"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+    android:gravity="right">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:id="@+id/author_name"
+            android:layout_alignParentTop="true"
+            android:layout_toLeftOf="@+id/author_avatar"
+            android:layout_toStartOf="@+id/author_avatar"
+            android:gravity="right" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:id="@+id/message"
+            android:layout_below="@+id/author_name"
+            android:layout_toLeftOf="@+id/author_avatar"
+            android:layout_toStartOf="@+id/author_avatar"
+            android:gravity="right" />
+        </LinearLayout>
+
+<com.android.volley.toolbox.NetworkImageView
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:id="@+id/author_avatar"
+    android:layout_alignParentTop="true"
+    android:layout_alignParentRight="true"
+    android:layout_alignParentEnd="true"
+    android:minHeight="150dp"
+    android:minWidth="150dp" /></LinearLayout>
+
+
+I will add item to RecyclerView with this code :
+
+JsonObjectRequest jsonObjReqComment = new
+             JsonObjectRequest(Request.Method.GET,urlJsonObj+"#comment", null,
+                     new Response.Listener<JSONObject>() {
+                         @Override
+                         public void onResponse(JSONObject response) {
+                             try {
+                                 JSONArray res = response.getJSONArray("response");
+                                 //Log.e("Comment","Count:"+response.toString());
+                                 //Log.e("Comment","Count:"+res.length());
+                                 for (int i = 0; i < res.length(); i++) {
+                                     JSONObject thread = res.getJSONObject(i);
+                                     JSONObject author_json = thread.getJSONObject("author");
+                                     int dislikes = thread.getInt("dislikes");
+                                     int likes = thread.getInt("likes");
+                                     String Message = thread.getString("message");
+                                     //get Author info
+                                     String author_img_link = author_json.getJSONObject("avatar").getString("permalink");
+                                     String author_name = author_json.getString("name");
+                                     comment c = new comment(dislikes,likes,Message,author_img_link,author_name);
+                                     //Log.e("Comment",c.toString());
+                                     //commentsList.add(c);
+                                     mAdapter.add(c,0);
+                                 }
+
+                             } catch (JSONException e) {
+                                 Log.e("OnResponse","Error JSON");
+                                 e.printStackTrace();
+                             } catch (Exception e){
+                                 Log.e("OnResponse","Error Exception");
+                                 e.printStackTrace();
+                             }
+
+
+                         }
+                     }
+                     , new Response.ErrorListener() {
+                 @Override
+                 public void onErrorResponse(VolleyError error) {
+                     VolleyLog.d("vOLLEY", "Error: " + error.getMessage());
+                     // hide the progress dialog
+
+                 }
+             }
+             ){
+                 @Override
+                 public Map<String, String> getHeaders(){
+                     Map<String, String> headers = new HashMap<String, String>();
+                     headers.put("User-agent", "Comment");
+                     return headers;
+                 }
+             };
+
+    
+===============================================================================================
+36
+A:As @yigit guess  the combination of ScrollView, RelativeLayout causes this problem,
+Just make more room for RecyclerView.
+    

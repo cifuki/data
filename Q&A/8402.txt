@@ -1,0 +1,67 @@
+32
+Q:According to LiveData documentation:
+
+
+  The LiveData class provides the following advantages:
+  
+  ...
+  
+  Always up to date data: If a Lifecycle starts again (like an activity going back to started state from the back stack) it receives the latest location data (if it didn\xe2\x80\x99t already).
+
+
+But sometimes I don't need this feature. 
+
+For example, I have following LiveData in ViewModel and Observer in Activity:
+
+//LiveData
+val showDialogLiveData = MutableLiveData<String>()
+
+//Activity
+viewModel.showMessageLiveData.observe(this, android.arch.lifecycle.Observer { message ->
+        AlertDialog.Builder(this)
+                .setMessage(message)
+                .setPositiveButton("OK") { _, _ -> }
+                .show()
+    })
+
+
+Now after every rotation old dialog will appear.
+
+Is there a way to clear stored value after it's handled or is it wrong usage of LiveData at all?
+    
+===============================================================================================
+36
+A:Update
+
+There are actually a few ways to resolve this issue. They are summarized nicely in the article LiveData with SnackBar, Navigation and other events (the SingleLiveEvent case). This is written by a fellow Googler who works with the Architecture Components team.
+
+TL;DR A more robust approach is to use an Event wrapper class, which you can see an example of at the bottom of the article.
+
+This pattern has made it's way into numerous Android samples, for example:
+
+
+Plaid
+Architecture Blueprints
+IOSched
+
+
+Why is an Event wrapper preferred over SingleLiveEvent?
+
+One issue with SingleLiveEvent is that if there are multiple observers to a SingleLiveEvent, only one of them will be notified when that data has changed - this can introduce subtle bugs and is hard to work around. 
+
+Using an Event wrapper class, all of your observers will be notified as normal.  You can then choose to either explicitly "handle" the content (content is only "handled" once) or peek at the content, which always returns whatever the latest "content" was. In the dialog example, this means you can always see what the last message was with peek, but ensure that for every new message, the dialog only is triggered once, using getContentIfNotHandled.
+
+Old Response
+
+Alex's response in the comments is I think exactly what you're looking for. There's sample code for a class called SingleLiveEvent. The purpose of this class is described as:
+
+
+  A lifecycle-aware observable that sends only new updates after
+  subscription, used for events like navigation and Snackbar messages.
+  
+  This avoids a common problem with events: on configuration change
+  (like rotation) an update can be emitted if the observer is active.
+  This LiveData only calls the observable if there's an explicit call to
+  setValue() or call().
+
+    

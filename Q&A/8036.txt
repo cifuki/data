@@ -1,0 +1,233 @@
+33
+Q:Problem:
+
+So the problem is that I have an app which sends a request to our backend whenever WiFi is connected (with the connected SSID and other info) or when it is disconnected (over the mobile network). However with the changes in Android 7/N and above, CONNECTIVITY_CHANGE and CONNECTIVITY_ACTION no longer work in the background. Now in most cases people misuse this broadcast and as such I can completely understand why the change was made. However, I have no idea how to solve this problem in the current state.
+
+Now I'm not at all much of an Android developer (this is for a Cordova plugin) so I'm counting on you guys!
+
+Expected behavior:
+App is woken up and request is sent whenever WiFi switches connectivity, even when app is killed/in background.
+
+Current behavior:
+App only sends request when the app is in the foreground.
+
+Tried so far:
+So far I've moved the implicit intent to listen to CONNECTIVITY_ACTION from the manifest to manually registering it in the main part of the app (plugin). This makes it work as long as the app is in memory but not on cold boot or actual background
+
+Already looked at:
+Most answers talk about using scheduled jobs to substitute for the missing broadcast. I see how this works for, for example, retrying a download or similar, but not for my case (but please correct me if I'm wrong). Below are the SO posts I've already looked at:
+
+Detect connectivity changes on Android 7.0 Nougat when app is in foreground
+
+ConnectivityManager.CONNECTIVITY_ACTION deprecated
+
+Detect Connectivity change using JobScheduler
+
+Android O - Detect connectivity change in background
+    
+===============================================================================================
+54
+A:Nougat and Above:
+We have to use JobScheduler and JobService for Connection Changes. 
+
+All I can divide this into three steps. 
+
+
+  Register JobScheduler inside activity. Also, Start JobService( 
+  Service to handle callbacks from the JobScheduler. Requests scheduled
+  with the JobScheduler ultimately land on this service's "onStartJob"
+  method.)
+
+
+public class NetworkConnectionActivity extends AppCompatActivity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_network_connection);
+        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+
+        scheduleJob();
+
+    }
+
+
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    private void scheduleJob() {
+        JobInfo myJob = new JobInfo.Builder(0, new ComponentName(this, NetworkSchedulerService.class))
+                .setRequiresCharging(true)
+                .setMinimumLatency(1000)
+                .setOverrideDeadline(2000)
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setPersisted(true)
+                .build();
+
+        JobScheduler jobScheduler = (JobScheduler) getSystemService(Context.JOB_SCHEDULER_SERVICE);
+        jobScheduler.schedule(myJob);
+    }
+
+    @Override
+    protected void onStop() {
+        // A service can be "started" and/or "bound". In this case, it's "started" by this Activity
+        // and "bound" to the JobScheduler (also called "Scheduled" by the JobScheduler). This call
+        // to stopService() won't prevent scheduled jobs to be processed. However, failing
+        // to call stopService() would keep it alive indefinitely.
+        stopService(new Intent(this, NetworkSchedulerService.class));
+        super.onStop();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // Start service and provide it a way to communicate with this class.
+        Intent startServiceIntent = new Intent(this, NetworkSchedulerService.class);
+        startService(startServiceIntent);
+    }
+}
+
+
+
+  The service to start and finish the job.
+
+
+public class NetworkSchedulerService extends JobService implements
+        ConnectivityReceiver.ConnectivityReceiverListener {
+
+    private static final String TAG = NetworkSchedulerService.class.getSimpleName();
+
+    private ConnectivityReceiver mConnectivityReceiver;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Log.i(TAG, "Service created");
+        mConnectivityReceiver = new ConnectivityReceiver(this);
+    }
+
+
+
+    /**
+     * When the app's NetworkConnectionActivity is created, it starts this service. This is so that the
+     * activity and this service can communicate back and forth. See "setUiCallback()"
+     */
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        Log.i(TAG, "onStartCommand");
+        return START_NOT_STICKY;
+    }
+
+
+    @Override
+    public boolean onStartJob(JobParameters params) {
+        Log.i(TAG, "onStartJob" + mConnectivityReceiver);
+        registerReceiver(mConnectivityReceiver, new IntentFilter(Constants.CONNECTIVITY_ACTION));
+        return true;
+    }
+
+    @Override
+    public boolean onStopJob(JobParameters params) {
+        Log.i(TAG, "onStopJob");
+        unregisterReceiver(mConnectivityReceiver);
+        return true;
+    }
+
+    @Override
+    public void onNetworkConnectionChanged(boolean isConnected) {
+        String message = isConnected ? "Good! Connected to Internet" : "Sorry! Not connected to internet";
+        Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show();
+
+    }
+}
+
+
+
+  Finally, The receiver class which checks the network connection
+  changes.
+
+
+public class ConnectivityReceiver extends BroadcastReceiver {
+
+    private ConnectivityReceiverListener mConnectivityReceiverListener;
+
+    ConnectivityReceiver(ConnectivityReceiverListener listener) {
+        mConnectivityReceiverListener = listener;
+    }
+
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        mConnectivityReceiverListener.onNetworkConnectionChanged(isConnected(context));
+
+    }
+
+    public static boolean isConnected(Context context) {
+        ConnectivityManager cm = (ConnectivityManager)
+                context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+        return activeNetwork != null && activeNetwork.isConnectedOrConnecting();
+    }
+
+    public interface ConnectivityReceiverListener {
+        void onNetworkConnectionChanged(boolean isConnected);
+    }
+}
+
+
+
+  Don't forget to add permission and service inside manifest file.
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          package="com.yourpackagename">
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+
+    <!-- Always required on api < 21, needed to keep a wake lock while your job is running -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Required on api < 21 if you are using setRequiredNetworkType(int) -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- Required on all api levels if you are using setPersisted(true) -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+        <activity
+            android:name=".connectivity.NetworkConnectionActivity"
+            android:theme="@style/AppTheme.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+
+        <!-- Define your service, make sure to add the permision! -->
+        <service
+            android:name=".connectivity.NetworkSchedulerService"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE"/>
+    </application>
+
+</manifest>
+
+
+Please refer below links for more info. 
+
+https://github.com/jiteshmohite/Android-Network-Connectivity
+
+https://github.com/evant/JobSchedulerCompat
+
+https://github.com/googlesamples/android-JobScheduler
+
+https://medium.com/@iiro.krankka/its-time-to-kiss-goodbye-to-your-implicit-broadcastreceivers-eefafd9f4f8a
+    

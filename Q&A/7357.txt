@@ -1,0 +1,138 @@
+36
+Q:Problem
+Rotating a device from a one-pane portrait PreferenceScreen to a two-pane landscape PreferenceScreen, causes landscape to only show as one-pane. Does NOT occur when viewing the headers screen.
+
+Setup
+This is for ICS and up only. I have a PreferenceActivity which loads preference-headers. Each header links with a Fragment, which in turn loads a PreferenceScreen. Pretty run of the mil. 
+
+Details
+Everything worked well until I noticed that Android will only auto-switch to a two-pane look for certain screens. After some research I learned from a Commonsware post that Android will only do so for sw720dp. Bit of a waste if you ask me since many devices def have plenty of room for two-panes.  So I overrided the onIsMultiPane() method to return true for w600dp and up.  Worked like a charm....kinda.
+
+Given a device which will show single-pane in portrait and dual-pane in landscape; viewing the headers in portrait and rotating to landscape, works fine.  However if one selects a header and loads it's subsequent screen in portrait mode, then rotate to landscape the device will stay single-pane instead of switching back to dual-pane. If you then back navigate to the headers screen, it'll return to a dual-pane look except that it won't pre-select a header. As a result the detailed pane stays blank.
+
+Is this intended behavior? Anyway to work around it?  I tried overriding onIsHidingHeaders() as well but that just caused everything to show a blank screen.
+
+Code
+Preference Activity: 
+
+public class SettingsActivity extends PreferenceActivity {
+@Override
+public void onBuildHeaders(List<Header> target) {
+    super.onBuildHeaders(target);
+    loadHeadersFromResource(R.xml.preference, target);
+}
+
+@Override
+public boolean onIsMultiPane() {
+    return getResources().getBoolean(R.bool.pref_prefer_dual_pane);
+}
+}
+
+
+
+A Preference Header Frag:
+
+public class ExpansionsFragment extends PreferenceFragment {
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    addPreferencesFromResource(R.xml.pref_expansions);
+}
+
+public static ExpansionsFragment newInstance() {
+    ExpansionsFragment frag = new ExpansionsFragment();
+
+    return frag;
+}
+}
+
+    
+===============================================================================================
+2
+A:Problem Solved
+With how popular this question has become, I decided to revisit this issue again and see if I could find a resolution...and I did.  Found a nice little work around that solves the single pane showing instead of dual pane and ensuring a header is always pre-selected when in dual pane mode.
+
+If you don't care about an explanation, you can just skip on down to the code.  If you don't care about ICS, a lot of the header tracking code can be removed as JB added a getter for the headers array list.
+
+Dual Pane Issue
+When viewing the preference header list in single pane mode or dual pane mode, there is only ever one PreferenceActivity created and it's the same activity for both cases. As a result, there's never a problem in handling screen rotations that will switch the pane mode. 
+
+However, in single pane mode when you click on a header, the corresponding fragment is attached to a NEW PreferenceActivity.  This new fragment containing PreferenceActivity never invokes onBuildHeaders().  And why would it? It doesn't need to display them.  This lie ins the problem.
+
+When rotating that fragment into a dual pane mode, it doesn't have any header list to show so it just continues to show the fragment only. Even if it did show the header's list, you'll have some backstack issues as you would now have two copies of the PreferenceActivity showing headers. Keep clicking enough headers and you'll get quite a lengthy stack of activities for the user to navigate back through. As a result, the answer is simple.  Just finish() the activity.  It'll then load the original PreferenceActivity which DOES have the header list and will properly show the dual pane mode.
+
+Auto Selecting Header
+The next issue that needed tackling was that switching between single to dual pane mode with the new fix didn't auto select a header. You were left with a headers list and no details fragment loaded.  This fix isn't quite as simple.  Basically you just have to keep track of which header was last clicked and ensure during PreferenceActivity creation...a header is always selected.
+
+This ends up being a bit annoying in ICS since the API does not expose a getter for the internally tracked headers list.  Android does already persist that list and you could technically retrieve it by using the same privately stored internal string key however that's just a bad design choice.  Instead, I suggest manually persisting it again yourself.
+
+If you don't care about ICS, then you can just use the getHeaders() method exposed in JB and not worry about any of this saved/restore state stuff.
+
+Code
+
+public class SettingsActivity extends PreferenceActivity {
+private static final String STATE_CUR_HEADER_POS = "Current Position";
+private static final String STATE_HEADERS_LIST   = "Headers List";
+
+private int mCurPos = AdapterView.INVALID_POSITION;  //Manually track selected header position for dual pane mode
+private ArrayList<Header> mHeaders;  //Manually track headers so we can select one. Required to support ICS.  Otherwise JB exposes a getter instead.
+
+@Override
+public void onBuildHeaders(List<Header> target) {
+    loadHeadersFromResource(R.xml.preference, target);
+    mHeaders = (ArrayList<Header>) target;  //Grab a ref of the headers list
+}
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    //This is the only code required for ensuring a dual pane mode shows after rotation of a single paned preference screen
+    if (onIsMultiPane() && onIsHidingHeaders()) {
+        finish();
+    }
+}
+
+@Override
+public boolean onIsMultiPane() {
+    //Override this if you want dual pane to show up on smaller screens
+    return getResources().getBoolean(R.bool.pref_prefer_dual_pane);
+}
+
+@Override
+protected void onListItemClick(ListView l, View v, int position, long id) {
+    super.onListItemClick(l, v, position, id);
+
+    //Intercept a header click event to record its position.
+    mCurPos = position;
+}
+
+@Override
+protected void onRestoreInstanceState(Bundle state) {
+    super.onRestoreInstanceState(state);
+
+    //Retrieve our saved header list and last clicked position and ensure we switch to the proper header.
+    mHeaders = state.getParcelableArrayList(STATE_HEADERS_LIST);
+    mCurPos = state.getInt(STATE_CUR_HEADER_POS);
+    if (mHeaders != null) {
+        if (mCurPos != AdapterView.INVALID_POSITION) {
+            switchToHeader(mHeaders.get(mCurPos));
+        } else {
+            switchToHeader(onGetInitialHeader());
+        }
+    }
+}
+
+@Override
+protected void onSaveInstanceState(Bundle outState) {
+    super.onSaveInstanceState(outState);
+
+    //Persist our list and last clicked position
+    if (mHeaders != null && mHeaders.size() > 0) {
+        outState.putInt(STATE_CUR_HEADER_POS, mCurPos);
+        outState.putParcelableArrayList(STATE_HEADERS_LIST, mHeaders);
+    }
+}
+}
+
+    

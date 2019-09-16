@@ -1,0 +1,183 @@
+52
+Q:edit 4/15: Catching nullpointer in IabHelper appears to have stopped this problem.  I am no longer seeing the exceptions being thrown, I'm going to accept this as an answer.
+
+
+
+edit 4/04: A little bit of a deeper dive.  There are try catch blocks that handle RemoteExceptions and JSONExceptions for the queryPurchases method, but no NullPointerException handling.  What I am going to try is include NullPointer Exception handling so IabHelper looks like this when trying to querySkuDetails:
+
+    catch (NullPointerException e) {
+        throw new IabException(IABHELPER_UNKNOWN_ERROR, "NullPointer while refreshing inventory.", e);
+    }
+
+
+I just filed a bug on this:
+
+https://code.google.com/p/marketbilling/issues/detail?id=114
+
+
+
+edit 3/25:  well, still receiving this crash... now it happens while trying to get a context at line 3 of the following excerpt from IabHelper:
+
+int queryPurchases(Inventory inv, String itemType) throws JSONException, RemoteException {
+    logDebug("Querying owned items, item type: " + itemType);
+    logDebug("Package name: " + mContext.getPackageName());
+
+
+This is frustrating because in my manifest I always use the full path name of my app for "name".
+
+Example "com.myappname.blah.ClassName"
+
+I've also tried passing this, MyClass.this, getApplicationContext() to mHelper.  However they all produce the same NullPointer results randomly from devices in the wild.  I also tried name=".MyClass" in the manifest.  This is what it looks like currently:
+
+mHelper = new IabHelper(MyClass.this, myKey);
+
+
+
+
+edit 3/18/13: I am still receiving exceptions, even with the new IabHelper version deployed on 3/17.  
+
+I am starting to see a pattern here, that the crashes are all when trying to get a context when executing mContext.getPackageName().  I'm curious why this works on all of my test devices, and I can't reproduce this crash, and only seems to be on a small number of devices.
+
+Here is the new crash:
+
+java.lang.NullPointerException
+    at com.myapp.util.IabHelper.queryPurchases(SourceFile:836)
+    at com.myapp.util.IabHelper.queryInventory(SourceFile:558)
+    at com.myapp.util.IabHelper.queryInventory(SourceFile:522)
+    at com.myapp.util.IabHelper$2.run(SourceFile:617)
+    at java.lang.Thread.run(Thread.java:1019)
+
+
+Caused by IabHelper...
+
+line 836: logDebug("Package name: " + mContext.getPackageName());
+
+
+
+
+edit 3/17/13: I see that there have been many bug fixes published over the past several months, I will try the latest code available here and see if this resolves the problem:
+
+https://code.google.com/p/marketbilling/source/browse/v3/src/com/example/android/trivialdrivesample/util
+
+
+
+In one of my apps, I am using the billing API and the boilerplate code included with it.
+
+I am using the latest version of billing API available via the SDK manager as of 3/16/2013.
+
+In my activity, I query the inventory using the following:
+
+final List<String> skuList = new ArrayList<String>();
+skuList.add("sku1");
+skuList.add("sku2");
+skuList.add("sku3");
+if (skuList != null) {
+    if (skuList.size() > 0) {
+        try {
+            mHelper.queryInventoryAsync(true, skuList, mGotInventoryListener);
+        } catch (Exception e) { 
+            ACRA.getErrorReporter().handleException(e);
+        }
+    }
+}
+
+
+I am receiving multiple NullPointerException reports in the wild from the IabHelper class for the following devices.  I can't reproduce the issue and can't find any information regarding these crashes, and is the reason why I am posting this question.
+
+I have countless other checks for nulls and try/catch blocks in the "developer facing" part of the billing API, including within onQueryInventoryFinished, so I know this exception is not being thrown from "my code" (because I'm not capturing crashes from any of my app's classes), but instead is being thrown from within the IabHelper itself.  I have not modified the IabHelper other than this recommended fix: https://stackoverflow.com/a/14737699
+
+Crash #1 Galaxy Nexus
+
+java.lang.NullPointerException
+    at com.myapp.util.IabHelper.querySkuDetails(SourceFile:802)
+    at com.myapp.util.IabHelper.queryInventory(SourceFile:471)
+    at com.myapp.util.IabHelper$2.run(SourceFile:521)
+    at java.lang.Thread.run(Thread.java:856)
+
+
+Caused by IabHelper...
+
+line 802: Bundle skuDetails = mService.getSkuDetails(3, mContext.getPackageName(), ITEM_TYPE_INAPP, querySkus);    
+
+
+Crash #2 Samsung GT-S5570L
+
+java.lang.NullPointerException
+    at com.myapp.util.IabHelper.queryPurchases(SourceFile:735)
+    at com.myapp.util.IabHelper.queryInventory(SourceFile:465)
+    at com.myapp.util.IabHelper$2.run(SourceFile:521)
+    at java.lang.Thread.run(Thread.java:1019)
+
+
+Caused by IabHelper...
+
+line 735: Bundle ownedItems = mService.getPurchases(3, mContext.getPackageName(), ITEM_TYPE_INAPP, continueToken);
+
+    
+===============================================================================================
+24
+A:edit 4/15: Catching nullpointer in IabHelper appears to have stopped this problem.  I am no longer seeing the exceptions being thrown, I'm going to accept this as an answer.
+
+
+
+edit 4/04: A little bit of a deeper dive.  There are try catch blocks that handle RemoteExceptions and JSONExceptions for the queryPurchases method, but no NullPointerException handling.  What I am going to try is include NullPointer Exception handling so IabHelper looks like this when trying to querySkuDetails:
+
+    catch (NullPointerException e) {
+        throw new IabException(IABHELPER_UNKNOWN_ERROR, "NullPointer while refreshing inventory.", e);
+    }
+
+
+I just filed a bug on this:
+
+https://code.google.com/p/marketbilling/issues/detail?id=114
+
+
+
+Change
+
+        if (querySkuDetails) {
+            r = querySkuDetails(ITEM_TYPE_INAPP, inv, moreItemSkus);
+            if (r != BILLING_RESPONSE_RESULT_OK) {
+                throw new IabException(r, "Error refreshing inventory (querying prices of items).");
+            }
+        }
+
+
+to
+
+        if (querySkuDetails) {
+            try {
+                r = querySkuDetails(ITEM_TYPE_INAPP, inv, moreItemSkus);
+                if (r != BILLING_RESPONSE_RESULT_OK) {
+                    throw new IabException(r, "Error refreshing inventory (querying prices of items).");
+                }
+            } catch (NullPointerException e) {
+                throw new IabException(IABHELPER_UNKNOWN_ERROR, "NPE while refreshing inventory.", e);
+            }
+        }
+
+
+Change
+
+            if (querySkuDetails) {
+                r = querySkuDetails(ITEM_TYPE_SUBS, inv, moreSubsSkus);
+                if (r != BILLING_RESPONSE_RESULT_OK) {
+                    throw new IabException(r, "Error refreshing inventory (querying prices of subscriptions).");
+                }
+            }
+
+
+to
+
+            if (querySkuDetails) {
+                try {
+                    r = querySkuDetails(ITEM_TYPE_SUBS, inv, moreSubsSkus);
+                    if (r != BILLING_RESPONSE_RESULT_OK) {
+                        throw new IabException(r, "Error refreshing inventory (querying prices of subscriptions).");
+                    }
+                } catch (NullPointerException e) {
+                    throw new IabException(IABHELPER_UNKNOWN_ERROR, "NPE while refreshing inventory.", e);
+                }
+            }
+
+    

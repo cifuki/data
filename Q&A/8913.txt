@@ -1,0 +1,92 @@
+30
+Q:I want to implement an AsyncTaskLoader in my project using the Compatibility Package, so I followed the Loader manual in Android Docs.
+
+The problem is that the Loader does nothing, it seems loadInBackground() is never called
+
+Any idea of what's wrong in my code? 
+(ExpandableListFragment extends Fragment,but doesn't override any critical method )
+
+Thank you :-)
+
+/**EDIT:
+
+I realized (late, I'm a moron) that AsyncTaskLoader is an abstract class so I need to subclass it... m(__)m
+I leave the question in case someone comes here behind me, who knows...
+
+public class AgendaListFragment extends ExpandableListFragment implements
+        LoaderManager.LoaderCallbacks<JSONArray> {
+
+    private TreeMap<Integer, ArrayList<Evento>> mItems = new TreeMap<Integer, ArrayList<Evento>>();
+    private AgendaListAdapter mAdapter;
+    private ProgressBar mProgressBar;
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState) {
+        View root = inflater.inflate(R.layout.fragment_agenda, container);
+        mProgressBar = (ProgressBar) root.findViewById(R.id.loading);
+        return root;
+
+    }
+
+    @Override
+    public void onActivityCreated(Bundle savedInstanceState) {
+        super.onActivityCreated(savedInstanceState);
+
+        mAdapter = new AgendaListAdapter(getActivity());
+        setListAdapter(mAdapter);
+
+        getLoaderManager().initLoader(0, null, this);
+
+    }
+
+    @Override
+    public Loader<JSONArray> onCreateLoader(int arg0, Bundle arg1) {
+        mProgressBar.setVisibility(View.VISIBLE);
+        return new AsyncTaskLoader<JSONArray>(getActivity()) {
+            @Override
+            public JSONArray loadInBackground() {
+
+                return getDataFromService(AgendaServices.LISTADO_MES);
+
+            }
+
+        };
+    }
+
+    @Override
+    public void onLoadFinished(Loader<JSONArray> loader, JSONArray data) {
+
+        // Some stuff to turn JSONArray into TreeMap
+
+        mProgressBar.setVisibility(View.GONE);
+        mAdapter.setItems(mItems);
+
+    }
+
+    @Override
+    public void onLoaderReset(Loader<JSONArray> arg0) {
+        mAdapter.setItems(null);
+        mProgressBar.setVisibility(View.VISIBLE);
+
+    }
+
+}
+
+    
+===============================================================================================
+63
+A:I think the best solution for the Compatibility package is to override the AsyncTaskLoader.onStartLoading method.
+
+e.g.
+
+@Override
+protected void onStartLoading() {
+  if(dataIsReady) {
+    deliverResult(data);
+  } else {
+    forceLoad();
+  }
+}
+
+    

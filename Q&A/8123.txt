@@ -1,0 +1,71 @@
+33
+Q:I've been working with AsyncTasks in Android and I am dealing with an issue.
+
+Take a simple example, an Activity with one AsyncTask. The task on the background does not do anything spectacular, it just sleeps for 8 seconds.
+
+At the end of the AsyncTask in the onPostExecute() method I am just setting a button visibility status to View.VISIBLE, only to verify my results.
+
+Now, this works great until the user decides to change his phones orientation while the AsyncTask is working (within the 8 second sleep window).
+
+I understand the Android activity life cycle and I know the activity gets destroyed and recreated.
+
+This is where the problem comes in. The AsyncTask is referring to a button and apparently holds a reference to the context that started the AsyncTask in the first place.
+
+I would expect, that this old context (since the user caused an orientation change) to either become null and the AsyncTask to throw an NPE for the reference to the button it is trying to make visible.
+
+Instead, no NPE is thrown, the AsyncTask thinks that the button reference is not null, sets it to visible. The result? Nothing is happening on the screen! 
+
+Update: I have tackled this by keeping a WeakReference to the activity and switching when a configuration change happens. This is cumbersome.
+
+Here's the code:
+
+public class Main extends Activity {
+
+    private Button mButton = null;
+    private Button mTestButton = null;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        mButton = (Button) findViewById(R.id.btnStart);
+        mButton.setOnClickListener(new OnClickListener () {
+            @Override
+            public void onClick(View v) {
+                new taskDoSomething().execute(0l);
+            }
+        });
+        mTestButton = (Button) findViewById(R.id.btnTest);   
+    }
+
+    private class TaskDoSomething extends AsyncTask<Long, Integer, Integer> 
+    {
+        @Override
+        protected Integer doInBackground(Long... params) {
+            Log.i("LOGGER", "Starting...");
+            try {
+                Thread.sleep(8000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            return 0;
+        }
+
+        @Override
+        protected void onPostExecute(Integer result) {
+            Log.i("LOGGER", "...Done");
+            mTestButton.setVisibility(View.VISIBLE);
+        }
+    }
+}
+
+
+Try executing it and while the AsyncTask is working change your phones orientation.
+    
+===============================================================================================
+23
+A:AsyncTask is not designed to be reused once an Activity has been torn down and restarted.  The internal Handler object becomes stale, just like you stated.  In the Shelves example by Romain Guy, he simple cancels any currently running AsyncTask's and then restarts new ones post-orientation change.
+
+It is possible to hand off your Thread to the new Activity, but it adds a lot of plumbing. There is no generally agreed on way to do this, but you can read about my method here : http://foo.jasonhudgins.com/2010/03/simple-progressbar-tutorial.html
+    

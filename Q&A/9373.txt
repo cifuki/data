@@ -1,0 +1,97 @@
+29
+Q:I'm using Android SDK 4.0.3 API15 and I want to run multiple AsyncTasks parallely. I'm getting my data from web server and animating(10 fps) it real-time. But depending on user operations I need to send some data to web server also. When this occurs my animation pauses for a short time (sending data gets into queue and getting data waits it to finish ) and therefore I can't catch the real-time.
+
+This answer is quite explaining but I couldn't make it work. So any help will be very appreciated.
+
+I think I need to use this function to achieve that:
+
+AsyncTask.executeOnExecutor(Executor exec, Params... params)
+
+
+But I can't pass an executor as a parameter and I can't instantiate an executor. This is my AsyncTask class:
+
+public class GetPlayers extends AsyncTask<String, Void, String> {
+    @Override
+    protected String doInBackground(String... urls) {
+
+        Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
+
+        rawData="";
+        for (String url : urls) {
+            DefaultHttpClient client = new DefaultHttpClient();
+            HttpGet httpGet = new HttpGet(url);
+            try {
+                HttpResponse execute = client.execute(httpGet);
+                InputStream content = execute.getEntity().getContent();
+
+                BufferedReader buffer = new BufferedReader(new InputStreamReader(content));
+                if((rawData = buffer.readLine()) == null){
+                    rawData = "error";
+                }
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        return rawData; 
+    }
+
+    @Override
+    protected void onPostExecute(String result) {
+        manipulate();
+    }
+}
+
+
+And I execute it like this:
+
+GetPlayers task = new GetPlayers();
+requestString = "web adress is here...";
+task.execute(new String[] { requestString });
+
+    
+===============================================================================================
+56
+A:This is how I do that:
+
+if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB ) {
+    new MyAsyncTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+} else {
+    new MyAsyncTask().execute();
+}
+
+
+where MyAsyncTask is regular AsyncTask subclass. Or you can wrap this all in helper class:
+
+class TaskHelper {
+
+    public static <P, T extends AsyncTask<P, ?, ?>> void execute(T task) {
+        execute(task, (P[]) null);
+    }
+
+    @SuppressLint("NewApi")
+    public static <P, T extends AsyncTask<P, ?, ?>> void execute(T task, P... params) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+            task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, params);
+        } else {
+            task.execute(params);
+        }
+    }
+}
+
+
+and then just do:
+
+TaskHelper.execute( new MyTask() );
+
+
+or
+
+TaskHelper.execute( new MyTask(), args );
+
+
+or 
+
+TaskHelper.execute( new MyTask(constructorParams), args );
+
+    

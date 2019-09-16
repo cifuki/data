@@ -1,0 +1,58 @@
+53
+Q:I want to display an arrow at my location on a google map view that displays my direction relative to a destination location (instead of north).
+
+a) I have calculated north using the sensor values from the magnetometer and accelerometer. I know this is correct because it lines up with the compass used on the Google Map view.
+
+b) I have calculated the initial bearing from my location to the destination location by using myLocation.bearingTo(destLocation); 
+
+I'm missing the last step; from these two values (a & b) what formula do I use to get the  direction in which the phone is pointing relative to the destination location?
+
+Appreciate any help for an addled mind!   
+    
+===============================================================================================
+64
+A:Ok I figured this out. For anyone else trying to do this you need:
+
+a) heading: your heading from the hardware compass. This is in degrees east of magnetic north
+
+b) bearing: the bearing from your location to the destination location.  This is in degrees east of true north.
+
+myLocation.bearingTo(destLocation);
+
+
+c) declination: the difference between true north and magnetic north
+
+The heading that is returned from the magnetometer + accelermometer is in degrees east of true (magnetic) north (-180 to +180) so you need to get the difference between north and magnetic north for your location.  This difference is variable depending where you are on earth.  You can obtain by using GeomagneticField class.
+
+GeomagneticField geoField;
+
+private final LocationListener locationListener = new LocationListener() {
+   public void onLocationChanged(Location location) {
+      geoField = new GeomagneticField(
+         Double.valueOf(location.getLatitude()).floatValue(),
+         Double.valueOf(location.getLongitude()).floatValue(),
+         Double.valueOf(location.getAltitude()).floatValue(),
+         System.currentTimeMillis()
+      );
+      ...
+   }
+}
+
+
+Armed with these you calculate the angle of the arrow to draw on your map to show where you are facing in relation to your destination object rather than true north.
+
+First adjust your heading with the declination:
+
+heading += geoField.getDeclination();
+
+
+Second, you need to offset the direction in which the phone is facing (heading) from the target destination rather than true north. This is the part that I got stuck on. The heading value returned from the compass gives you a value that describes where magnetic north is (in degrees east of true north) in relation to where the phone is pointing. So e.g. if the value is -10 you know that magnetic north is 10 degrees to your left.  The bearing gives you the angle of your destination in degrees east of true north. So after you've compensated for the declination you can use the formula below to get the desired result:
+
+heading = myBearing - (myBearing + heading); 
+
+
+You'll then want to convert from degrees east of true north (-180 to +180) into normal degrees (0 to 360):
+
+Math.round(-heading / 360 + 180)
+
+    

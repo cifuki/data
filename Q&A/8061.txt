@@ -1,0 +1,189 @@
+33
+Q:My understanding on LiveData is that, it will trigger observer on the current state change of data, and not a series of history state change of data.
+
+Currently, I have a MainFragment, which perform Room write operation, to change non-trashed data, to trashed data.
+
+I also another TrashFragment, which observes to trashed data.
+
+Consider the following scenario.
+
+
+There are currently 0 trashed data.
+MainFragment is the current active fragment. TrashFragment is not created yet.
+MainFragment added 1 trashed data.
+Now, there are 1 trashed data
+We use navigation drawer, to replace MainFragment with TrashFragment.
+TrashFragment's observer will first receive onChanged, with 0 trashed data
+Again, TrashFragment's observer will secondly receive onChanged, with 1 trashed data 
+
+
+What is out of my expectation is that, item (6) shouldn't happen. TrashFragment should only receive latest trashed data, which is 1.
+
+Here's my codes
+
+
+
+TrashFragment.java
+
+public class TrashFragment extends Fragment {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        noteViewModel = ViewModelProviders.of(getActivity()).get(NoteViewModel.class);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        ...
+
+        noteViewModel.getTrashedNotesLiveData().removeObservers(this);
+        noteViewModel.getTrashedNotesLiveData().observe(this, notesObserver);
+
+
+MainFragment.java
+
+public class MainFragment extends Fragment {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        noteViewModel = ViewModelProviders.of(getActivity()).get(NoteViewModel.class);
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        ...
+
+        noteViewModel.getNotesLiveData().removeObservers(this);
+        noteViewModel.getNotesLiveData().observe(this, notesObserver);
+
+
+NoteViewModel .java
+
+public class NoteViewModel extends ViewModel {
+    private final LiveData<List<Note>> notesLiveData;
+    private final LiveData<List<Note>> trashedNotesLiveData;
+
+    public LiveData<List<Note>> getNotesLiveData() {
+        return notesLiveData;
+    }
+
+    public LiveData<List<Note>> getTrashedNotesLiveData() {
+        return trashedNotesLiveData;
+    }
+
+    public NoteViewModel() {
+        notesLiveData = NoteplusRoomDatabase.instance().noteDao().getNotes();
+        trashedNotesLiveData = NoteplusRoomDatabase.instance().noteDao().getTrashedNotes();
+    }
+}
+
+
+
+
+Code which deals with Room
+
+public enum NoteRepository {
+    INSTANCE;
+
+    public LiveData<List<Note>> getTrashedNotes() {
+        NoteDao noteDao = NoteplusRoomDatabase.instance().noteDao();
+        return noteDao.getTrashedNotes();
+    }
+
+    public LiveData<List<Note>> getNotes() {
+        NoteDao noteDao = NoteplusRoomDatabase.instance().noteDao();
+        return noteDao.getNotes();
+    }
+}
+
+@Dao
+public abstract class NoteDao {
+    @Transaction
+    @Query("SELECT * FROM note where trashed = 0")
+    public abstract LiveData<List<Note>> getNotes();
+
+    @Transaction
+    @Query("SELECT * FROM note where trashed = 1")
+    public abstract LiveData<List<Note>> getTrashedNotes();
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    public abstract long insert(Note note);
+}
+
+@Database(
+        entities = {Note.class},
+        version = 1
+)
+public abstract class NoteplusRoomDatabase extends RoomDatabase {
+    private volatile static NoteplusRoomDatabase INSTANCE;
+
+    private static final String NAME = "noteplus";
+
+    public abstract NoteDao noteDao();
+
+    public static NoteplusRoomDatabase instance() {
+        if (INSTANCE == null) {
+            synchronized (NoteplusRoomDatabase.class) {
+                if (INSTANCE == null) {
+                    INSTANCE = Room.databaseBuilder(
+                            NoteplusApplication.instance(),
+                            NoteplusRoomDatabase.class,
+                            NAME
+                    ).build();
+                }
+            }
+        }
+
+        return INSTANCE;
+    }
+}
+
+
+Any idea how I can prevent from receiving onChanged twice, for a same data?
+
+
+
+Demo
+
+I created a demo project to demonstrate this problem.
+
+As you can see, after I perform write operation (Click on ADD TRASHED NOTE button) in MainFragment, when I switch to TrashFragment, I expect onChanged in TrashFragment will only be called once. However, it is being called twice.
+
+
+
+Demo project can be downloaded from https://github.com/yccheok/live-data-problem
+    
+===============================================================================================
+11
+A:I forked your project and tested it a bit. From all I can tell you discovered a serious bug.
+
+To make the reproduction and the investigation easier, I edited your project a bit. You can find updated project here: https://github.com/techyourchance/live-data-problem . I also opened a pull request back to your repo. 
+
+To make sure that this doesn't go unnoticed, I also opened an issue in Google's issue tracker:
+
+
+  Steps to reproduce:
+  
+  
+  Ensure that REPRODUCE_BUG is set to true in MainFragment
+  Install the app
+  Click on "add trashed note" button
+  Switch to TrashFragment
+  Note that there was just one notification form LiveData with correct value
+  Switch to MainFragment
+  Click on "add trashed note" button
+  Switch to TrashFragment
+  Note that there were two notifications from LiveData, the first one with incorrect value
+  
+  
+  Note that if you set REPRODUCE_BUG  to false then the bug doesn't
+  reproduce. It demonstrates that subscription to LiveData in
+  MainFragment changed the behavior in TrashFragment.
+  
+  Expected result: Just one notification with correct value in any case.
+  No change in behavior due to previous subscriptions.
+  
+  More info: I looked at the sources a bit, and it looks like
+  notifications being triggered due to both LiveData activation and new
+  Observer subscription. Might be related to the way ComputableLiveData
+  offloads onActive() computation to Executor.
+
+    

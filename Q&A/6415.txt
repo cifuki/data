@@ -1,0 +1,52 @@
+40
+Q:I switched part of my App from Activities to Fragments so that I can use the neat ActionBar tabs.
+
+However, after completing the transition I ran into an issue: whenever I switch to another tab, that Fragment gets created all over again. Both onCreate and onCreateView get called every time I get to a tab.
+
+I have 4 tabs, each of which is meant to open one of these fragments:
+
+Fragment ShopFragment = new WebActivity();
+Fragment SearchFragment = new SearchActivity(context);
+Fragment StoreFragment = new StoreLocatorActivity(context, this);
+Fragment BlogsFragment = new BlogsActivity(context, this);
+
+
+Here's my code for the listener:
+
+    class MyTabsListener implements ActionBar.TabListener {
+        public Fragment fragment;
+
+        public MyTabsListener(Fragment fragment) {
+            this.fragment = fragment;
+        }
+
+        @Override
+        public void onTabReselected(Tab tab, FragmentTransaction ft) {
+            ft.hide(fragment);
+        }
+
+        @Override
+        public void onTabSelected(Tab tab, FragmentTransaction ft) {
+            ft.replace(R.id.fragment_container, fragment);
+        }
+
+        @Override
+        public void onTabUnselected(Tab tab, FragmentTransaction ft) {          
+
+        }
+
+    }
+
+
+Could someone please point me in the right direction?
+    
+===============================================================================================
+47
+A:When you call FragmentTransaction.replace(...), Android will effectively perform a sequence of FragmentTransaction.remove(...) (for all Fragments currently added to that container) and FragmentTransaction.add(...) (for your supplied Fragment). Removing a Fragment from the FragmentManager will cause the Fragment to be destroyed and its state will no longer be managed. Most noticeably, when you re-add the Fragment all of the views will have been reset. Note: since you are reusing the same Fragment instance, the Fragment will still keep the value any instance variables.
+
+One solution to this problem would be to use FragmentTransaction.detach(Fragment) and FragmentTransaction.attach(Fragment) when switching. This will cause the Fragment views to be recreated (onDestroyView() & onCreateView() will be called), but the instance state bundle will be saved and given back to you between calls and so the view state can be maintained. This is the approach taken by FragmentPagerAdapter when it tries to switch between Fragments.
+
+Alternatively, you could allow the Fragments to be destroyed, but maintain their saved state for them independently. This would use less memory, at the expense of a slower switching time. Methods of note would be FragmentManager.saveFragmentInstanceState(Fragment) and FragmentManager.setInitialSavedState(Fragment.SavedState), in conjuction with adding/removing. This is the approach taken by FragmentStatePagerAdapter.
+
+You can have a look at the source for FragmentPagerAdapter and the source for FragmentStatePagerAdapter for implementation hints.
+    

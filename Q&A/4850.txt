@@ -1,0 +1,53 @@
+50
+Q:The project I'm currently working on requires me to code up the android portion of a cross platform program implementation.
+
+A core set of functionality is built and included in my app through android-ndk. I've found that any exception/crash which happens in the native code is only reported now and again at best. When an error occurs I get one of the following behaviours:
+
+
+A stacktrace / memory dump occurs and is written to the log file. The program disappears (no indication is given on the device as to why suddenly the app is no longer there).
+No stacktrace / dump or other indication is given that the native code has crashed. The program disappears.
+The java code crashes with a NullPointerException (usually in the same place per native code exception which is a massive pain). Usually causing me to spend quite a while trying to debug why the Java code has thrown an error only to discover the Java code is fine & the native code error has been entirely masked.
+
+
+I can't seem to find any way to "insulate" my code against errors which occur in native code. Try/catch statements are resoundingly ignored. Apart from when my code is fingered as the culprit I don't even get a chance to warn the user than an error has occurred.
+
+Can someone please help me out as to how to respond to the situation of crashing native code?
+    
+===============================================================================================
+48
+A:I used to have the same problem, it is true that in android (inside any VM in general when executing native code) if you throw a C++ exception and this one is not caught, the VM dies (If I understood correctly, I think it is your problem). The solution I adopted was to catch any exception in C++ and throw a java exception instead of using JNI. The next code it is a simplified example of my solution. First of all you have a JNI method that catches a C++ exception and then in the try clause the Java exception is annotated.
+
+JNIEXPORT void JNICALL Java_com_MyClass_foo (JNIEnv *env, jobject o,jstring param)
+{
+    try
+    {
+        // Your Stuff
+        ...
+    }
+    // You can catch std::exception for more generic error handling
+    catch (MyCxxException e)
+    {
+        throwJavaException (env, e.what());
+    }
+}
+
+
+void throwJavaException(JNIEnv *env, const char *msg)
+{
+    // You can put your own exception here
+    jclass c = env->FindClass("company/com/YourException");
+
+    if (NULL == c)
+    {
+        //B plan: null pointer ...
+        c = env->FindClass("java/lang/NullPointerException");
+    }
+
+    env->ThrowNew(c, msg);
+}
+
+
+Note that after a ThrowNew, the native method does not abruptly terminate automatically. That is, control flow returns to your native method, and the new exception is pending at this point. The exception will be thrown after your JNI method is finished. 
+
+I hope it was the solution you are looking for. 
+    

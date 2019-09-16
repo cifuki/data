@@ -1,0 +1,222 @@
+34
+Q:I'm stumped regarding how to implement a "personal compass", ie a compass that points to a specific bearing  instead of the standard "north pole"... unfortunatly, my current attempt has come out wrong (doesn't point at the given bearing). It's also hooked up with the accelerator to be able to dynamically adjust itself based on which way the user is turning.
+
+Here's my current attempt at it (the onSensorChanged()-method that updates the arrow):
+
+public void onSensorChanged( SensorEvent event ) {
+
+            // If we don't have a Location, we break out
+            if ( LocationObj == null ) return;
+
+            float azimuth = event.values[0];
+                            float baseAzimuth = azimuth;
+
+            GeomagneticField geoField = new GeomagneticField( Double
+                    .valueOf( LocationObj.getLatitude() ).floatValue(), Double
+                    .valueOf( LocationObj.getLongitude() ).floatValue(),
+                    Double.valueOf( LocationObj.getAltitude() ).floatValue(),
+                    System.currentTimeMillis() );
+            azimuth += geoField.getDeclination(); // converts magnetic north into true north
+
+            //Correct the azimuth
+            azimuth = azimuth % 360;
+
+            //This is where we choose to point it
+            float direction = azimuth + LocationObj.bearingTo( destinationObj );
+            rotateImageView( arrow, R.drawable.arrow, direction );
+
+            //Set the field
+            if( baseAzimuth > 0 && baseAzimuth < 45 ) fieldBearing.setText("S");
+            else if( baseAzimuth >= 45 && baseAzimuth < 90 ) fieldBearing.setText("SW");
+            else if( baseAzimuth > 0 && baseAzimuth < 135 ) fieldBearing.setText("W");
+            else if( baseAzimuth > 0 && baseAzimuth < 180 ) fieldBearing.setText("NW");
+            else if( baseAzimuth > 0 && baseAzimuth < 225 ) fieldBearing.setText("N");
+            else if( baseAzimuth > 0 && baseAzimuth < 270 ) fieldBearing.setText("NE");
+            else if( baseAzimuth > 0 && baseAzimuth < 315 ) fieldBearing.setText("E");
+            else if( baseAzimuth > 0 && baseAzimuth < 360 ) fieldBearing.setText("SE");
+            else fieldBearing.setText("?"); 
+
+        }
+
+
+And here's the method that rotates the ImageView (rotateImageView()):
+
+private void rotateImageView( ImageView imageView, int drawable, float rotate ) {
+
+    // Decode the drawable into a bitmap
+    Bitmap bitmapOrg = BitmapFactory.decodeResource( getResources(),
+            drawable );
+
+    // Get the width/height of the drawable
+    DisplayMetrics dm = new DisplayMetrics(); getWindowManager().getDefaultDisplay().getMetrics(dm);
+    int width = bitmapOrg.getWidth(), height = bitmapOrg.getHeight();
+
+    // Initialize a new Matrix
+    Matrix matrix = new Matrix();
+
+    // Decide on how much to rotate
+    rotate = rotate % 360;
+
+    // Actually rotate the image
+    matrix.postRotate( rotate, width, height );
+
+    // recreate the new Bitmap via a couple conditions
+    Bitmap rotatedBitmap = Bitmap.createBitmap( bitmapOrg, 0, 0, width, height, matrix, true );
+    //BitmapDrawable bmd = new BitmapDrawable( rotatedBitmap );
+
+    //imageView.setImageBitmap( rotatedBitmap );
+    imageView.setImageDrawable(new BitmapDrawable(getResources(), rotatedBitmap));
+    imageView.setScaleType( ScaleType.CENTER );
+}
+
+
+Any help would be much appreciated, as I don't quite know how to proceed. The "readings" I'm getting while trying it out is somewhat inaccurate and points in the wrong direction. Am I doing something really off, or did I just have a really bad test-run? 
+    
+===============================================================================================
+54
+A:Your rotateImageView function should work just fine, however there are some things that needs to be changed in your rotation calculations.
+
+//This is where we choose to point it
+float direction = azimuth + LocationObj.bearingTo( destinationObj );
+rotateImageView( arrow, R.drawable.arrow, direction );
+
+
+The problem is that bearingTo will give you a range from -180 to 180, which will confuse things a bit. We will need to convert this value into a range from 0 to 360 to get the correct rotation.
+
+This is a table of what we really want, comparing to what bearingTo gives us
+
+
++-----------+--------------+
+| bearingTo | Real bearing |
++-----------+--------------+
+| 0         | 0            |
++-----------+--------------+
+| 90        | 90           |
++-----------+--------------+
+| 180       | 180          |
++-----------+--------------+
+| -90       | 270          |
++-----------+--------------+
+| -135      | 225          |
++-----------+--------------+
+| -180      | 180          |
++-----------+--------------+
+
+
+Even though the bearingTo is in the range -180 to 180, 0 is still true north which will leave us to this calculation:
+
+// Store the bearingTo in the bearTo variable
+float bearTo = LocationObj.bearingTo( destinationObj );
+
+// If the bearTo is smaller than 0, add 360 to get the rotation clockwise.
+if (bearTo < 0) {
+    bearTo = bearTo + 360;
+}
+
+
+If we add some dummy values to test our new formula:
+
+float bearTo = -100;
+// This will now equal to true
+if (-100 < 0) {
+    bearTo = -100 + 360 = 360 - 100 = 260;
+}
+
+
+We've now sorted out the bearingTo, lets head on to the azimuth!
+
+You need to substract the declination instead of adding it, as we want azimuth to be 0 when we point the phone directly at true north instead of having the declination added to the azimuth, which will then give us double the declination when we point the phone to true north. Correct this by subtracting the declination instead of adding it.
+
+azimuth -= geoField.getDeclination(); // converts magnetic north into true north
+
+
+When we turn the phone to true north now, azimuth will then equal to 0
+
+Your code for correcting the azimuth is no longer necessary.
+
+// Remove / uncomment this line
+azimuth = azimuth % 360;
+
+
+We will now continue to the point of where we calculate the real rotation. But first i will summarize what type of values we have now and explaining what they really are:
+
+bearTo = The angle from true north to the destination location from the point we're your currently standing.
+
+azimuth = The angle that you've rotated your phone from true north.
+
+By saying this, if you point your phone directly at true north, we really want the arrow to rotate the angle that bearTo is set as. If you point your phone 45 degrees from true north, we want the arrow to rotate 45 degrees less than what bearTo is. This leaves us to the following calculations:
+
+float direction = bearTo - azimuth;
+
+
+However, if we put in some dummy values:
+    bearTo = 45;
+    azimuth = 180;
+
+direction = 45 - 180 = -135;
+
+
+This means that the arrow should rotate 135 degrees counter clockwise. We will need to put in a similiar if-condition as we did with the bearTo!
+
+// If the direction is smaller than 0, add 360 to get the rotation clockwise.
+if (direction < 0) {
+    direction = direction + 360;
+}
+
+
+Your bearing text, the N, E, S and W is off, so i've corrected them in the final method below.
+
+Your onSensorChanged method should look like this:
+
+public void onSensorChanged( SensorEvent event ) {
+
+    // If we don't have a Location, we break out
+    if ( LocationObj == null ) return;
+
+    float azimuth = event.values[0];
+    float baseAzimuth = azimuth;
+
+    GeomagneticField geoField = new GeomagneticField( Double
+        .valueOf( LocationObj.getLatitude() ).floatValue(), Double
+        .valueOf( LocationObj.getLongitude() ).floatValue(),
+        Double.valueOf( LocationObj.getAltitude() ).floatValue(),
+        System.currentTimeMillis() );
+
+    azimuth -= geoField.getDeclination(); // converts magnetic north into true north
+
+    // Store the bearingTo in the bearTo variable
+    float bearTo = LocationObj.bearingTo( destinationObj );
+
+    // If the bearTo is smaller than 0, add 360 to get the rotation clockwise.
+    if (bearTo < 0) {
+        bearTo = bearTo + 360;
+    }
+
+    //This is where we choose to point it
+    float direction = bearTo - azimuth;
+
+    // If the direction is smaller than 0, add 360 to get the rotation clockwise.
+    if (direction < 0) {
+        direction = direction + 360;
+    }
+
+    rotateImageView( arrow, R.drawable.arrow, direction );
+
+    //Set the field
+    String bearingText = "N";
+
+    if ( (360 >= baseAzimuth && baseAzimuth >= 337.5) || (0 <= baseAzimuth && baseAzimuth <= 22.5) ) bearingText = "N";
+    else if (baseAzimuth > 22.5 && baseAzimuth < 67.5) bearingText = "NE";
+    else if (baseAzimuth >= 67.5 && baseAzimuth <= 112.5) bearingText = "E";
+    else if (baseAzimuth > 112.5 && baseAzimuth < 157.5) bearingText = "SE";
+    else if (baseAzimuth >= 157.5 && baseAzimuth <= 202.5) bearingText = "S";
+    else if (baseAzimuth > 202.5 && baseAzimuth < 247.5) bearingText = "SW";
+    else if (baseAzimuth >= 247.5 && baseAzimuth <= 292.5) bearingText = "W";
+    else if (baseAzimuth > 292.5 && baseAzimuth < 337.5) bearingText = "NW";
+    else bearingText = "?";
+
+    fieldBearing.setText(bearingText);
+
+}
+
+    

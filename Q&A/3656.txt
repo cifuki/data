@@ -1,0 +1,89 @@
+62
+Q:I have an app that I want to be able to use to get a connection status report from a remote query.
+
+I want to know if WiFi is connected, and if data access is enabled over mobile network.
+
+If the WiFi goes out of range I want to know if I can rely on the mobile network.
+
+The problem is that data enabled is always returned as true when I am connected by WiFi, and I can only properly query the mobile network when not connected by WiFi.
+
+all the answers I have seen suggest polling to see what the current connection is, but I want to know if mobile network is available should I need it, even though I might be connected by WiFi at present.
+
+Is there anyway of telling whether mobile network data is enabled without polling to see if is connected?
+
+EDIT
+
+So when connected by WiFi If I go to settings and deselect 'Data Enabled' and then in my app I do this:
+
+ boolean mob_avail = 
+ conMan.getNetworkInfo(ConnectivityManager.TYPE_MOBILE).isAvailable();
+
+
+mob_avail is returned as 'true', but I have disabled Mobile Network Data, so I would expect it to be 'false'
+
+If I turn off the WiFi, there is (rightly) no connection as I have disabled mobile network data. 
+
+so how do I check if mobile network data is enabled when I am connected by WiFi?
+
+UPDATE
+
+I took a look at getAllNetworkInfo() as suggested in the comments by ss1271
+
+I outputted the info returned about the mobile network under the following 3 conditions
+
+WiFi Off - Mobile Data on
+
+WiFi On - Mobile Data off
+
+WiFi On - Mobile Data on 
+
+and got the following results:
+
+
+  With WiFi OFF:
+  
+  mobile[HSUPA],  state: CONNECTED/CONNECTED,  reason: unknown,  extra:
+  internet,  roaming: false,  failover: false,  isAvailable: true, 
+  featureId: -1,  userDefault: false
+  
+  With WiFi On / Mobile OFF
+  
+  NetworkInfo: type: mobile[HSUPA],  state: DISCONNECTED/DISCONNECTED, 
+  reason: connectionDisabled,  extra: (none),  roaming: false, 
+  failover: false,  isAvailable: true,  featureId: -1,  userDefault:
+  false
+  
+  With WiFi On / Mobile On
+  
+  NetworkInfo: type: mobile[HSPA],  state: DISCONNECTED/DISCONNECTED, 
+  reason: connectionDisabled,  extra: (none),  roaming: false, 
+  failover: false,  isAvailable: true,  featureId: -1,  userDefault:
+  false
+
+
+So as you can see isAvailable returned true each time, and state only showed as Disconnected when WiFi was in affect.
+
+CLARIFICATION
+
+I am NOT looking to see if my phone is currently connected by Mobile Network. I AM trying to establish whether or not the user has enabled / disabled Data access over mobile network. They can turn this on and off by going to Settings -> Wireless and Network Settings ->Mobile Network Settings -> Data enabled
+    
+===============================================================================================
+112
+A:The following code will tell you if "mobile data" is enabled or not, regardless of whether or not there is a mobile data connection active at the moment or whether or not wifi is enabled/active or not. This code only works on Android 2.3 (Gingerbread) and later. Actually this code also works on earlier versions of Android as well ;-)
+
+    boolean mobileDataEnabled = false; // Assume disabled
+    ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+    try {
+        Class cmClass = Class.forName(cm.getClass().getName());
+        Method method = cmClass.getDeclaredMethod("getMobileDataEnabled");
+        method.setAccessible(true); // Make the method callable
+        // get the setting for "mobile data"
+        mobileDataEnabled = (Boolean)method.invoke(cm);
+    } catch (Exception e) {
+        // Some problem accessible private API
+        // TODO do whatever error handling you want here
+    }
+
+
+Note: you will need to have permission android.permission.ACCESS_NETWORK_STATE to be able to use this code.
+    

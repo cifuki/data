@@ -1,0 +1,63 @@
+27
+Q:EDIT: The real problem was that my LinearLayout was wrapped in another layout, which caused the incorrect behavior. The accepted answer by Sanvywell has a better, more complete example of how to draw a color under swiped view than the code snippet I provided in the question.
+
+Now that RecyclerView widget has native support for row swiping with the help of ItemTouchHelper class, I'm attempting to use it in an app where rows will behave similarly to Google's Inbox app. That is, swiping to the left side performs one action and swiping to the right does another. 
+
+Implementing the actions themselves was easy using ItemTouchHelper.SimpleCallback's onSwiped method. However, I was unable to find a simple way to set color and icon that should appear under the view that's currently being swiped (like in Google's Inbox app).
+
+To do that, I'm trying to override ItemTouchHelper.SimpleCallback's onChildDraw method like this:
+
+@Override
+public void onChildDraw(Canvas c, RecyclerView recyclerView,
+                        RecyclerView.ViewHolder viewHolder, float dX, float dY,
+                        int actionState, boolean isCurrentlyActive) {
+    RecyclerViewAdapter.ViewHolder vh = (RecyclerViewAdapter.ViewHolder) viewHolder;
+    LinearLayout ll = vh.linearLayout;
+
+    Paint p = new Paint();
+    if(dX > 0) {
+        p.setARGB(255, 255, 0, 0);
+    } else {
+        p.setARGB(255, 0, 255, 0);
+    }
+
+    c.drawRect(ll.getLeft(), ll.getTop(), ll.getRight(), ll.getBottom(), p);
+
+    super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive);
+}
+
+
+Determining the swipe direction from dX and setting the appropriate color works as intended, but the coordinates I get from the ViewHolder always correspond to the place where the first LinearLayout was inflated.
+
+How do I get the correct coordinates for the LinearLayout that's in the currently swiped row? Is there an easier way (that doesn't require to override onChildDraw) to set the background color and icon?
+    
+===============================================================================================
+49
+A:I was struggling to implement this feature as well, but you steered me in the right direction.
+
+@Override
+public void onChildDraw(Canvas c, RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, float dX, float dY, int actionState, boolean isCurrentlyActive) {
+    if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE) {
+        // Get RecyclerView item from the ViewHolder
+        View itemView = viewHolder.itemView;
+
+        Paint p = new Paint();
+        if (dX > 0) {
+            /* Set your color for positive displacement */
+
+            // Draw Rect with varying right side, equal to displacement dX
+            c.drawRect((float) itemView.getLeft(), (float) itemView.getTop(), dX,
+                    (float) itemView.getBottom(), p);
+        } else {
+            /* Set your color for negative displacement */
+
+            // Draw Rect with varying left side, equal to the item's right side plus negative displacement dX
+            c.drawRect((float) itemView.getRight() + dX, (float) itemView.getTop(),
+                    (float) itemView.getRight(), (float) itemView.getBottom(), p);
+        }
+
+        super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive);
+    }
+}
+
+    

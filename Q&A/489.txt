@@ -1,0 +1,219 @@
+250
+Q:I'm working on networking for my app. So I decided to try out Square's Retrofit. I see that they support simple Callback
+
+@GET("/user/{id}/photo")
+void getUserPhoto(@Path("id") int id, Callback<Photo> cb);
+
+
+and RxJava's Observable
+
+@GET("/user/{id}/photo")
+Observable<Photo> getUserPhoto(@Path("id") int id);
+
+
+Both look pretty similar at first glance, but when it gets to implementation it gets interesting...
+
+While with simple callback implementation would look similar to this:
+
+api.getUserPhoto(photoId, new Callback<Photo>() {
+    @Override
+    public void onSuccess() {
+    }
+});
+
+
+which is quite simple and straightforward. And with Observable it quickly gets verbose and quite complicated.
+
+public Observable<Photo> getUserPhoto(final int photoId) {
+    return Observable.create(new Observable.OnSubscribeFunc<Photo>() {
+        @Override
+        public Subscription onSubscribe(Observer<? super Photo> observer) {
+            try {
+                observer.onNext(api.getUserPhoto(photoId));
+                observer.onCompleted();
+            } catch (Exception e) {
+                observer.onError(e);
+            }
+
+            return Subscriptions.empty();
+        }
+    }).subscribeOn(Schedulers.threadPoolForIO());
+}
+
+
+And that is not it. You still have to do something like this:
+
+Observable.from(photoIdArray)
+        .mapMany(new Func1<String, Observable<Photo>>() {
+            @Override
+            public Observable<Photo> call(Integer s) {
+                return getUserPhoto(s);
+            }
+        })
+        .subscribeOn(Schedulers.threadPoolForIO())
+        .observeOn(AndroidSchedulers.mainThread())
+        .subscribe(new Action1<Photo>() {
+            @Override
+            public void call(Photo photo) {
+                //save photo?
+            }
+        });
+
+
+Am I missing something here? Or is this a wrong case to use Observables?
+When would/should one prefer Observable over simple Callback?
+
+Update
+
+Using retrofit is much simpler than example above as @Niels showed in his answer or in Jake Wharton's example project U2020. But essentially the question stays the same - when should one use one way or the other?
+    
+===============================================================================================
+338
+A:For simple networking stuff, the advantages of RxJava over Callback is very limited. The simple getUserPhoto example:
+
+RxJava:
+
+api.getUserPhoto(photoId)
+    .observeOn(AndroidSchedulers.mainThread())
+    .subscribe(new Action1<Photo>() {
+            @Override
+            public void call(Photo photo) {
+               // do some stuff with your photo 
+            }
+     });
+
+
+Callback:
+
+api.getUserPhoto(photoId, new Callback<Photo>() {
+    @Override
+    public void onSuccess(Photo photo, Response response) {
+    }
+});
+
+
+The RxJava variant is not much better than the Callback variant. For now, let's ignore the error handling.
+Let's take a list of photos:
+
+RxJava:
+
+api.getUserPhotos(userId)
+.subscribeOn(Schedulers.io())
+.observeOn(AndroidSchedulers.mainThread())
+.flatMap(new Func1<List<Photo>, Observable<Photo>>() {
+    @Override
+    public Observable<Photo> call(List<Photo> photos) {
+         return Observable.from(photos);
+    }
+})
+.filter(new Func1<Photo, Boolean>() {
+    @Override
+    public Boolean call(Photo photo) {
+         return photo.isPNG();
+    }
+})
+.subscribe(
+    new Action1<Photo>() {
+    @Override
+        public void call(Photo photo) {
+            list.add(photo)
+        }
+    });
+
+
+Callback:
+
+api.getUserPhotos(userId, new Callback<List<Photo>>() {
+    @Override
+    public void onSuccess(List<Photo> photos, Response response) {
+        List<Photo> filteredPhotos = new ArrayList<Photo>();
+        for(Photo photo: photos) {
+            if(photo.isPNG()) {
+                filteredList.add(photo);
+            }
+        }
+    }
+});
+
+
+Now, the RxJava variant still isn't smaller, although with Lambdas it would be getter closer to the Callback variant.
+Furthermore, if you have access to the JSON feed, it would be kind of weird to retrieve all photos when you're only displaying the PNGs. Just adjust the feed to it only displays PNGs.
+
+First conclusion 
+
+It doesn't make your codebase smaller when you're loading a simple JSON that you prepared to be in the right format.
+
+Now, let's make things a bit more interesting. Let's say you not only want to retrieve the userPhoto, but you have an Instagram-clone, and you want to retrieve 2 JSONs:
+1. getUserDetails()
+2. getUserPhotos()
+
+You want to load these two JSONs in parallel, and when both are loaded, the page should be displayed.
+The callback variant will become a bit more difficult: you have to create 2 callbacks, store the data in the activity, and if all the data is loaded, display the page:
+
+Callback:
+
+api.getUserDetails(userId, new Callback<UserDetails>() {
+    @Override
+    public void onSuccess(UserDetails details, Response response) {
+        this.details = details;
+        if(this.photos != null) {
+            displayPage();
+        }
+    }
+});
+
+api.getUserPhotos(userId, new Callback<List<Photo>>() {
+    @Override
+    public void onSuccess(List<Photo> photos, Response response) {
+        this.photos = photos;
+        if(this.details != null) {
+            displayPage();
+        }
+    }
+});
+
+
+RxJava:
+
+private class Combined {
+    UserDetails details;
+    List<Photo> photos;
+}
+
+
+Observable.zip(api.getUserDetails(userId), api.getUserPhotos(userId), new Func2<UserDetails, List<Photo>, Combined>() {
+            @Override
+            public Combined call(UserDetails details, List<Photo> photos) {
+                Combined r = new Combined();
+                r.details = details;
+                r.photos = photos;
+                return r;
+            }
+        }).subscribe(new Action1<Combined>() {
+            @Override
+            public void call(Combined combined) {
+            }
+        });
+
+
+We are getting somewhere! The code of RxJava is now as big as the callback option. The RxJava code is more robust; 
+Think of what would happen if we needed a third JSON to be loaded (like the latest Videos)? The RxJava would only need a tiny adjustment, while the Callback variant needs to be adjusted in multiple places (on each callback we need to check if all data is retrieved).
+
+Another example; we want to create an autocomplete field, which loads data using Retrofit.
+We don't want to do a webcall every time an EditText has a TextChangedEvent. When typing fast, only the last element should trigger the call.
+On RxJava we can use the debounce operator:
+
+inputObservable.debounce(1, TimeUnit.SECONDS).subscribe(new Action1<String>() {
+            @Override
+            public void call(String s) {
+                // use Retrofit to create autocompletedata
+            }
+        });
+
+
+I won't create the Callback variant but you will understand this is much more work.
+
+Conclusion:
+RxJava is exceptionally good when data is sent as a stream. The Retrofit Observable pushes all elements on the stream at the same time. 
+This isn't particularly useful in itself compared to Callback. But when there are multiple elements pushed on the stream and different times, and you need to do timing-related stuff, RxJava makes the code a lot more maintainable.
+    

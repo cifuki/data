@@ -1,0 +1,196 @@
+52
+Q:I have upgraded my Android Studio and I found many problems in the latest version.
+
+Although many similar questions exist, I checked the answers to all and none of them worked for me!
+
+Here is the error I'm facing while compiling the code:  
+
+
+  Program type already present:
+  android.support.v4.app.BackStackRecord$Op
+          Message{kind=ERROR, text=Program type already present: 
+          android.support.v4.app.BackStackRecord$Op, sources=[Unknown source file], tool 
+      name=Optional.of(D8)}
+
+
+Here is my gradle file:
+
+project:
+
+// Top-level build file where you can add configuration options common to 
+
+all sub-projects/modules.
+
+buildscript {
+
+repositories {
+    google()
+    jcenter()
+}
+dependencies {
+    classpath 'com.android.tools.build:gradle:3.1.0'
+
+
+    // NOTE: Do not place your application dependencies here; they belong
+    // in the individual module build.gradle files
+    }
+ }
+
+ allprojects {
+ repositories {
+    google()
+    jcenter()
+    maven {
+        url "https://jitpack.io"
+          }
+     }
+}
+
+task clean(type: Delete) {
+delete rootProject.buildDir
+}
+
+
+app:
+
+apply plugin: 'com.android.application'
+
+android {
+compileSdkVersion 27
+defaultConfig {
+    applicationId "com.alcantara.bugismart"
+    minSdkVersion 15
+    targetSdkVersion 27
+    versionCode 1
+    versionName "1.0"
+    testInstrumentationRunner 
+"android.support.test.runner.AndroidJUnitRunner"
+}
+buildTypes {
+    release {
+        minifyEnabled false
+        proguardFiles getDefaultProguardFile('proguard-android.txt'), 
+'proguard-rules.pro'
+            }
+           }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation 'com.android.support:appcompat-v7:27.1.1'
+    implementation 'com.android.support.constraint:constraint-layout:1.0.2'
+    testImplementation 'junit:junit:4.12'
+    androidTestImplementation 'com.android.support.test:runner:1.0.1'
+    androidTestImplementation 'com.android.support.test.espresso:espresso- 
+    core:3.0.1'
+    implementation 'com.github.ViksaaSkool:AwesomeSplash:v1.0.0'
+}
+
+
+You can tell me if there is anything else to add to understand what I'm doing or where I'm wrong.
+    
+===============================================================================================
+84
+A:Program type already present:
+  android.support.v4.app.BackStackRecord$Op
+          Message{kind=ERROR, text=Program type already present: 
+          android.support.v4.app.BackStackRecord$Op, sources=[Unknown source file], tool 
+      name=Optional.of(D8)}
+
+
+The problem is happened because of duplicated support library. This dependency:
+
+implementation 'com.github.ViksaaSkool:AwesomeSplash:v1.0.0'
+
+
+is using old version of support library. Try excluding the support library if you already have it with:
+
+// support libraries we want to use
+implementation 'com.android.support:appcompat-v7:27.1.1'
+implementation 'com.android.support:support-v4:27.1.1'
+
+// we already have the specific support libraries. So, exclude it
+implementation ('com.github.ViksaaSkool:AwesomeSplash:v1.0.0') {    
+    exclude group: 'com.android.support'
+    exclude module: 'appcompat-v7'
+    exclude module: 'support-v4'
+}
+
+
+You need to check your dependencies with the following command:
+
+./gradlew app:dependencies
+
+
+Or alternatively, you can always override the support libraries version by adding the conflicted libraries with the exact version that you want.
+
+
+
+UPDATE
+
+There is a full step to fixing the dependency resolution errors at the Add build dependencies documentation. Here the excerpts:
+
+Fix dependency resolution errors
+
+When you add multiple dependencies to your app project, those direct and transitive dependencies might conflict with one another. The Android Gradle Plugin tries to resolve these conflicts gracefully, but some conflicts may lead to compile time or runtime errors.
+
+To help you investigate which dependencies are contributing to errors, inspect your app's dependency tree and look for dependencies that appear more than once or with conflicting versions.
+
+If you can't easily identify the duplicate dependency, try using Android Studio's UI to search for dependencies that include the duplicate class as follows:
+
+
+Select Navigate > Class from the menu bar.  
+In the pop-up search dialog, make sure that the box next to Include non-project items is checked.  
+Type the name of the class that appears in the build error.  
+Inspect the results for the dependencies that include the class.
+
+
+The following sections describe the different types of dependency resolution errors you may encounter and how to fix them.
+
+Fix duplicate class errors
+
+If a class appears more than once on the runtime classpath, you get an error similar to the following:
+
+Program type already present com.example.MyClass
+
+
+This error typically occurs due to one of the following circumstances:
+
+
+A binary dependency includes a library that your app also includes as a direct dependency. For example, your app declares a direct dependency on Library A and Library B, but Library A already includes Library B in its binary.  
+
+
+To resolve this issue, remove Library B as a direct dependency.
+
+Your app has a local binary dependency and a remote binary dependency on the same library.  
+
+
+To resolve this issue, remove one of the binary dependencies.
+
+
+
+Fix conflicts between classpaths
+
+When Gradle resolves the compile classpath, it first resolves the runtime classpath and uses the result to determine what versions of dependencies should be added to the compile classpath. In other words, the runtime classpath determines the required version numbers for identical dependencies on downstream classpaths.
+
+Your app's runtime classpath also determines the version numbers that Gradle requires for matching dependencies in the runtime classpath for the app's test APK. The hierarchy of classpaths is described in figure below:
+
+
+
+A conflict where different versions of the same dependency appears across multiple classpaths migh occur when, for example, your app includes a version of a dependency using the implementation dependency configuration and a library module includes a different version of the dependency using the runtimeOnly configuration.
+
+When resolving dependencies on your runtime and compile time classpaths, Android Gradle plugin 3.3.0 and higher attempt to automatically fix certain downstream version conflicts. For example, if the runtime classpath includes Library A version 2.0 and the compile classpath includes Library A version 1.0, the plugin automatically updates the dependency on the compile classpath to Library A version 2.0 to avoid errors.
+
+However, if the runtime classpath includes Library A version 1.0 and the compile classpath includes Library A version 2.0, the plugin does not downgrade the dependency on the compile classpath to Library A version 1.0, and you still get an error similar to the following:
+
+Conflict with dependency 'com.example.library:some-lib:2.0' in project 'my-library'.
+Resolved versions for runtime classpath (1.0) and compile classpath (2.0) differ.
+
+
+To resolve this issue, do one of the following:
+
+
+Include the desired version of the dependency as an api dependency to your library module. That is, only your library module declares the dependency, but the app module will also have access to its API, transitively.  
+Alternatively, you can declare the dependency in both modules, but you should make sure that each module uses the same version of the dependency. Consider configuring project-wide properties to ensure versions of each dependency remain consistent throughout your project.
+
+    

@@ -1,0 +1,279 @@
+131
+Q:I'm trying to dynamically add and remove Fragments from a ViewPager, adding works without any problems, but removing doesn't work as expected.
+
+Everytime I want to remove the current item, the last one gets removed.
+
+I also tried to use an FragmentStatePagerAdapter or return POSITION_NONE in the adapter's getItemPosition method.
+
+What am I doing wrong?
+
+Here's a basic example:
+
+MainActivity.java
+
+public class MainActivity extends FragmentActivity implements TextProvider {
+
+    private Button mAdd;
+    private Button mRemove;
+    private ViewPager mPager;
+
+    private MyPagerAdapter mAdapter;
+
+    private ArrayList<String> mEntries = new ArrayList<String>();
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        mEntries.add("pos 1");
+        mEntries.add("pos 2");
+        mEntries.add("pos 3");
+        mEntries.add("pos 4");
+        mEntries.add("pos 5");
+
+        mAdd = (Button) findViewById(R.id.add);
+        mRemove = (Button) findViewById(R.id.remove);
+        mPager = (ViewPager) findViewById(R.id.pager);
+
+        mAdd.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                addNewItem();
+            }
+        });
+
+        mRemove.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                removeCurrentItem();
+            }
+        });
+
+        mAdapter = new MyPagerAdapter(this.getSupportFragmentManager(), this);
+
+        mPager.setAdapter(mAdapter);
+
+    }
+
+    private void addNewItem() {
+        mEntries.add("new item");
+        mAdapter.notifyDataSetChanged();
+    }
+
+    private void removeCurrentItem() {
+        int position = mPager.getCurrentItem();
+        mEntries.remove(position);
+        mAdapter.notifyDataSetChanged();
+    }
+
+    @Override
+    public String getTextForPosition(int position) {
+        return mEntries.get(position);
+    }
+    @Override
+    public int getCount() {
+        return mEntries.size();
+    }
+
+
+    private class MyPagerAdapter extends FragmentPagerAdapter {
+
+        private TextProvider mProvider;
+
+        public MyPagerAdapter(FragmentManager fm, TextProvider provider) {
+            super(fm);
+            this.mProvider = provider;
+        }
+
+        @Override
+        public Fragment getItem(int position) {
+            return MyFragment.newInstance(mProvider.getTextForPosition(position));
+        }
+
+        @Override
+        public int getCount() {
+            return mProvider.getCount();
+        }
+
+    }
+
+}
+
+
+TextProvider.java
+
+public interface TextProvider {
+    public String getTextForPosition(int position);
+    public int getCount();
+}
+
+
+MyFragment.java
+
+public class MyFragment extends Fragment {
+
+    private String mText;
+
+    public static MyFragment newInstance(String text) {
+        MyFragment f = new MyFragment(text);
+        return f;
+    }
+
+    public MyFragment() {
+    }
+
+    public MyFragment(String text) {
+        this.mText = text;
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState) {
+
+        View root = inflater.inflate(R.layout.fragment, container, false);
+
+        ((TextView) root.findViewById(R.id.position)).setText(mText);
+
+        return root;
+    }
+
+}
+
+
+activity_main.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical" >
+
+    <Button
+        android:id="@+id/add"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="add new item" />
+
+    <Button
+        android:id="@+id/remove"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="remove current item" />
+
+    <android.support.v4.view.ViewPager
+        android:id="@+id/pager"
+        android:layout_width="match_parent"
+        android:layout_height="0dip"
+        android:layout_weight="1" />
+
+</LinearLayout>
+
+
+fragment.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical" >
+
+    <TextView
+        android:id="@+id/position"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:textSize="35sp" />
+
+</LinearLayout>
+
+    
+===============================================================================================
+91
+A:The solution by Louth was not enough to get things working for me, as the existing fragments were not getting destroyed. Motivated by this answer, I found that the solution is to override the getItemId(int position) method of FragmentPagerAdapter to give a new unique ID whenever there has been a change in the expected position of a Fragment.
+
+Source Code:
+
+private class MyPagerAdapter extends FragmentPagerAdapter {
+
+    private TextProvider mProvider;
+    private long baseId = 0;
+
+    public MyPagerAdapter(FragmentManager fm, TextProvider provider) {
+        super(fm);
+        this.mProvider = provider;
+    }
+
+    @Override
+    public Fragment getItem(int position) {
+        return MyFragment.newInstance(mProvider.getTextForPosition(position));
+    }
+
+    @Override
+    public int getCount() {
+        return mProvider.getCount();
+    }
+
+
+    //this is called when notifyDataSetChanged() is called
+    @Override
+    public int getItemPosition(Object object) {
+        // refresh all fragments when data set changed
+        return PagerAdapter.POSITION_NONE;
+    }
+
+
+    @Override
+    public long getItemId(int position) {
+        // give an ID different from position when position has been changed
+        return baseId + position;
+    }
+
+    /**
+     * Notify that the position of a fragment has been changed.
+     * Create a new ID for each position to force recreation of the fragment
+     * @param n number of items which have been changed
+     */
+    public void notifyChangeInPosition(int n) {
+        // shift the ID returned by getItemId outside the range of all previous fragments
+        baseId += getCount() + n;
+    }
+}
+
+
+Now, for example if you delete a single tab or make some change to the order, you should call notifyChangeInPosition(1) before calling notifyDataSetChanged(), which will ensure that all the Fragments will be recreated.
+
+Why this solution works
+
+Overriding getItemPosition():
+
+When notifyDataSetChanged() is called, the adapter calls the notifyChanged() method of the ViewPager which it is attached to. The ViewPager then checks the value returned by the adapter's getItemPosition() for each item, removing those items which return POSITION_NONE (see the source code) and then repopulating. 
+
+Overriding getItemId():
+
+This is necessary to prevent the adapter from reloading the old fragment when the ViewPager is repopulating. You can easily understand why this works by looking at the source code for instantiateItem() in FragmentPagerAdapter.
+
+    final long itemId = getItemId(position);
+
+    // Do we already have this fragment?
+    String name = makeFragmentName(container.getId(), itemId);
+    Fragment fragment = mFragmentManager.findFragmentByTag(name);
+    if (fragment != null) {
+        if (DEBUG) Log.v(TAG, "Attaching item #" + itemId + ": f=" + fragment);
+        mCurTransaction.attach(fragment);
+    } else {
+        fragment = getItem(position);
+        if (DEBUG) Log.v(TAG, "Adding item #" + itemId + ": f=" + fragment);
+        mCurTransaction.add(container.getId(), fragment,
+                makeFragmentName(container.getId(), itemId));
+    }
+
+
+As you can see, the getItem() method is only called if the fragment manager finds no existing fragments with the same Id. To me it seems like a bug that the old fragments are still attached even after notifyDataSetChanged() is called, but the documentation for ViewPager does clearly state that:
+
+
+  Note this class is currently under early design and development. The API will likely change in later updates of the compatibility library, requiring changes to the source code of apps when they are compiled against the newer version.
+
+
+So hopefully the workaround given here will not be necessary in a future version of the support library.
+    

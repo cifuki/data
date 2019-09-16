@@ -1,0 +1,46 @@
+34
+Q:In my ongoing learning process (dialog boxes this time), I discovered that this works:
+
+  AlertDialog.Builder builder = new AlertDialog.Builder(this);
+
+
+While the following doesn't work (fails at runtime with WindowManager$BadTokenException):
+
+  AlertDialog.Builder builder = new AlertDialog.Builder(this.getApplicationContext());
+
+
+I don't understand why, because the constructor for AlertDialog.Builder is defined to accept Context as a parameter, not Activity:
+
+
+  public AlertDialog.Builder (Context
+  context)
+  
+  Constructor using a context for this
+  builder and the AlertDialog it
+  creates.
+
+
+What am I missing?
+    
+===============================================================================================
+25
+A:An Activity inherits a Context.  AlertDialog.Builder specifies a Context argument because it can then be used by ANY class that is a subclass of Context, including an Activity, ListActivity, Service, ...   (There is a common coding idiom behind this - you can learn more about it by reading Item I8 (on Interfaces and Abstract classes) in Joshua Bloch's fantastic Effective Java). 
+
+getApplicationContext() returns the context for your application, which is mostly the same as your activities context - and the "mostly" is what is throwing you off.  The details are unclear but this is a widely encountered issue, and the typical answer is to use the context that will be writing the alert to the screen.  Note that that is not the one returned by getApplicationContext().
+
+Now if you're like me, you may say "but I am working in a class that does not inherit from Activity - which is why I want to use getApplicationContext() for this in the first place - duh!"  I'm actually don't speak as rudely as that ;p .. the point was I've been here too.  I fixed it like so: 1) ask yourself "do I have my UI AlertDialog code in a non-activity class because I want to share it across activities .. or even across ListActivities, Services, ...?".   If not, hmmm... do you really have AlertDialog UI calls in code that you can't guarantee will have access to the UI (and thus context)?  If so, reconsider your design.
+
+Presuming you do want to share this class across Activities, ... the answer becomes clear.  You want your class to be usable by a variety of callers, each probably with its own context: so the caller must pass its context into your class as an argument:  
+
+myClass(Context theContext, ...) { ... }
+
+Each activity, service, etc. then makes calls like so:
+
+myClass(this, ...);
+
+Look familiar?
+
+Do be careful! that if you are sharing code, you must consider the possibility of different calls coming into your shared code in parallel, with all the many ramifications.  Thats beyond our scope here...
+
+Have fun :)
+    

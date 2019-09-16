@@ -1,0 +1,37 @@
+71
+Q:Is the behavior similar to the way Activities work?  For example with Activities it works like this:
+
+Activity A starts Activity B, while B is on screen, the system is able to remove A from memory if it is needed by the system.  Upon pressing BACK, A will be recreated into memory as if it never left in the first place.
+
+I have looked for a clear explanation of what happens memory wise with Fragments and haven't found anything.  Does it work the same way?  For example:
+
+Activity C has Fragment F in its layout.  Then, at some point F is replaced by Fragment G, but F is kept in its back stack.
+
+Will F stay in memory until the C is killed or can it be removed by the system as needed?
+
+Really what I am asking is whether or not I run the risk of running out of memory if I have a back stack of complicated Fragments in a single Activity?
+    
+===============================================================================================
+101
+A:Take a look at this: BackStackRecord.Op.fragment
+
+That is how fragments are stored in the back stack. Note the live reference, neither WeakReference nor SoftReference are used there.
+
+Now this: FragmentManagerImpl.mBackStack
+
+That is where manager stores the back stack. Simple ArrayList, also, no WRs or SRs.
+
+And finally this: Activity.mFragments
+
+That is the reference to the fragment manager.
+
+GC can only collect objects that have no live references (are not reachable from any thread). That means, until your Activity is destroyed (and so, FragmentManager reference is gone), GC will not be able to collect any of the Fragments in the back stack.
+
+Note that when Activity is destroyed and retains state (like when you turn the device to landscape mode), it doesn't retain actual Fragment objects in the stack, only their states - Fragment.FragmentState objects, i.e. actual fragments in the back stack are re-created every time activity gets re-created with retained state.
+
+Hope this helps.
+
+PS So, in short: Yes, you can run out of memory by adding Fragments to back stack as well as by adding too many views to view hierarchy.
+
+UPD Considering your example, F will stay in memory until C is killed. If C is killed and then resurrected with different configuration - F will be destroyed and reincarnated in a different object as well. So, F's memory footprint is around until C loses state or back stack is cleared.
+    

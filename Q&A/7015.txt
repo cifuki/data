@@ -1,0 +1,101 @@
+37
+Q:I'm currently using Retrofit by Square for Android network communications. Is there a way to get its progress during a task to create a progress notification, something similar to that which Facebook uses when uploading an image?
+
+Use Case would be to load an image hopefully of full image quality without compression or scaling.
+
+I see how it is possible with an asynctask but that would defeat the purpose of using Retrofit. However that might be the route I would have to take.
+    
+===============================================================================================
+68
+A:This answer is for Retrofit 1. For solution compatible with Retrofit 2 see  this answer.
+
+
+
+I had the same problem and finally managed to do it. I was using spring lib before and what I show below kind worked for Spring but was inconsistent since I made a mistake on using it for the InputStream. I moved all my API's to use retrofit and upload was the last one on the list, I just override TypedFile writeTo() to update me on the bytes read to the OutputStream. Maybe this can be improved but as I said I made it when I was using Spring so I just reused it.
+This is the code for upload and it's working for me on my app, if you want download feedback then you can use @Streaming and read the inputStream.
+
+ProgressListener
+
+public interface ProgressListener {
+ void transferred(long num);
+}
+
+
+CountingTypedFile 
+
+public class CountingTypedFile extends TypedFile {
+
+ private static final int BUFFER_SIZE = 4096;
+
+ private final ProgressListener listener;
+
+ public CountingTypedFile(String mimeType, File file, ProgressListener listener) {
+    super(mimeType, file);
+    this.listener = listener;
+ }
+
+ @Override public void writeTo(OutputStream out) throws IOException {
+    byte[] buffer = new byte[BUFFER_SIZE];
+    FileInputStream in = new FileInputStream(super.file());
+    long total = 0;
+    try {
+        int read;
+        while ((read = in.read(buffer)) != -1) {
+            total += read;
+            this.listener.transferred(total);
+            out.write(buffer, 0, read);
+        }
+    } finally {
+        in.close();
+    }
+ }
+}
+
+
+MyApiService 
+
+public interface MyApiService {
+ @Multipart
+ @POST("/files")
+ ApiResult uploadFile(@Part("file") TypedFile resource, @Query("path") String path);
+}
+
+
+SendFileTask 
+
+private class SendFileTask extends AsyncTask<String, Integer, ApiResult> {
+    private ProgressListener listener;
+    private String filePath;
+    private FileType fileType;
+
+    public SendFileTask(String filePath, FileType fileType) {
+        this.filePath = filePath;
+        this.fileType = fileType;
+    }
+
+    @Override
+    protected ApiResult doInBackground(String... params) {
+        File file = new File(filePath);
+        totalSize = file.length();
+        Logger.d("Upload FileSize[%d]", totalSize);
+        listener = new ProgressListener() {
+            @Override
+            public void transferred(long num) {
+                publishProgress((int) ((num / (float) totalSize) * 100));
+            }
+        };
+        String _fileType = FileType.VIDEO.equals(fileType) ? "video/mp4" : (FileType.IMAGE.equals(fileType) ? "image/jpeg" : "*/*");
+        return MyRestAdapter.getService().uploadFile(new CountingTypedFile(_fileType, file, listener), "/Mobile Uploads");
+    }
+
+    @Override
+    protected void onProgressUpdate(Integer... values) {
+        Logger.d(String.format("progress[%d]", values[0]));
+        //do something with values[0], its the percentage so you can easily do
+        //progressBar.setProgress(values[0]);
+    }
+}
+
+
+The CountingTypedFile is just a copy of TypedFile but including the ProgressListener.
+    

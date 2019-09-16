@@ -1,0 +1,209 @@
+36
+Q:I've got a datepicker in my Android app, but now I want to change the color of the blue dividers into green (see the image below this text). There are some other discussions on Stackoverflow that talk about the same, but none of them gives an answer which leads to a solution.
+
+So I went looking myself and found there is actually an android:datePickerStyle and there is also an android:divider. I don't know however, whether the divider is actually referring to the divider in the datepicker at all. I tried a multitude of combinations of the two, but I don't seem to get it to work. So my first question: Does the android:divider refer to the divider in the datepicker, and how could I use it to change color?
+
+So another option is supposedly to create a fully new custom datepicker. If that enables me to just change the color of the divider I'm down for it. So I had a look at some of the tutorials on creating a custom datepicker, but none of them seem to define the color of the dividers. The dividers are simply not listed in the xml files or in the java files.
+
+It would be great if there would be some kind of boilerplate code to recreate the datepicker as it currently displays, including the code that sets the color of the dividers. Hopefully that would enable me to copy it and simply change the color setting of the divider somewhere. So my second question: Would anybody know any boilerplate code which simply implements the datepicker as it is now (including a definition of the dividers)?
+
+
+    
+===============================================================================================
+100
+A:Unfortunately, this is not a trivial task.
+
+DatePickers use widgets NumberPicker and CalendarView internally. For instance, the image you have posted is using 3 NumberPickers. And the dividers you are talking about come from NumberPicker's attribute: selectionDivider. The problem is that this attribute is not public, and neither is numberPickerStyle, through which, this attribute is set. 
+
+I recently back-ported CalendarView and NumberPicker to API 8, mostly for fun. Since the code is readily available(look up android.widget.NumberPicker and others in android's source), all this task takes is time, and some digging through android's source-code. Examples:
+
+
+Easy ==> You'll have to change the private variable from View class to their accessor methods
+
+mLeft (protected variable in View class) ==> getLeft() (public accessor method)
+The most time-consuming task was restoring the Accessibility methods.
+
+
+In any case, if you do decide on writing custom implementation of DatePicker, you'll have to write them for NumberPicker and CalendarView (optionally) as well.
+
+Easier way:
+
+Backported DatePicker is available as a library here: Android-DatePicker. As mentioned above, you'll be using backported CalendarView and NumberPicker in conjunction with this DatePicker.
+
+What you need to change:
+
+Use {library-numberpicker} / res / drawable-xxxx / np_numberpicker_selection_divider.9.png as a template, and change the 'bluish' color to green (I used pixlr). You can either save it with the same name, if you want to be done with the blue divider altogether, or use a different name and make changes in {library-numberpicker} / res / values / themes.xml. 
+
+The changes required in themes.xml if you choose a different name:
+
+<style name="NPWidget.Holo.NumberPicker" parent="NPWidget.NumberPicker">
+    ....
+    <item name="selectionDivider">@drawable/new_nine_path_drawable_name</item>
+    ....
+</style>
+
+
+And that's it.
+
+Output using the libraries:
+
+
+
+Edit:
+
+
+  Does the android:divider refer to the divider in the datepicker, and
+  how could I use it to change color?
+
+
+The attribute divider actually comes from LinearLayout. NumberPicker inherits this attribute as NumberPicker extends LinearLayout. But this divider serves a different purpose. The drawable passed to this attribute is placed between child views of LinearLayout. 
+
+The attribute android:showDividers is used to change the placement of this divider, possible values being:
+
+
+none: No dividers shown
+beginning: Divider is shown before the first child view
+middle: Divider is shown after each child view, not not after the last child view
+end: Divider is shown after the last child view
+
+
+The attribute android:dividerPadding is self-explanatory.
+
+Even though NumberPicker inherits this attribute, it does not use it. This is evident from your own research & trials: I tried a multitude of combinations of the two, but I don't seem to get it to work.
+
+To see the divider attribute in action:
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:divider="@android:drawable/ic_media_play"
+    android:showDividers="middle" >
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hello" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="World," />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Again" />
+
+</LinearLayout>
+
+
+Hack-ish workaround using java reflection:
+
+This answer here gave me the idea. I hate using refection in general, mostly for reasons listed in this answer: Link. Although I'm listing it here for completeness sake, I suggest you don't use it.
+
+public class CDP extends android.widget.DatePicker {
+
+    public CDP(Context context, AttributeSet attrs) {
+        super(context, attrs);
+
+        Class<?> internalRID = null;
+        try {
+            internalRID = Class.forName("com.android.internal.R$id");
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+
+        Field month = null;
+        try {
+            month = internalRID.getField("month");
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        }
+
+        NumberPicker npMonth = null;
+        try {
+            npMonth = (NumberPicker) findViewById(month.getInt(null));
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+
+        Field day = null;
+        try {
+            day = internalRID.getField("day");
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        }
+
+        NumberPicker npDay = null;
+        try {
+            npDay = (NumberPicker) findViewById(day.getInt(null));
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+
+        Field year = null;
+        try {
+            year = internalRID.getField("year");
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        }
+
+        NumberPicker npYear = null;
+        try {
+            npYear = (NumberPicker) findViewById(year.getInt(null));
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+
+        Class<?> numberPickerClass = null;
+        try {
+            numberPickerClass = Class.forName("android.widget.NumberPicker");
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+
+        Field selectionDivider = null;
+        try {
+            selectionDivider = numberPickerClass.getDeclaredField("mSelectionDivider");
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            selectionDivider.setAccessible(true);
+            selectionDivider.set(npMonth, getResources().getDrawable(
+                       R.drawable.np_numberpicker_selection_divider_green));
+            selectionDivider.set(npDay, getResources().getDrawable(
+                       R.drawable.np_numberpicker_selection_divider_green));
+            selectionDivider.set(npYear, getResources().getDrawable(
+                       R.drawable.np_numberpicker_selection_divider_green));
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
+        } catch (NotFoundException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+
+What we do here:
+
+
+Extend DatePicker
+If you open date_picker.xml in sdk/platforms/android-xx/res/layout, you'll see that the three NumberPickers have ids month, day, year. We access android.internal.R.id to get resource ids for these NumberPickers.
+We create three NumberPicker objects using these ids with findViewById(int) method.
+Then, access and retrieve the Field mSelectionDivider using relection.
+Set the field to accessible (as its declared final), set its value using Field#set(Object, Object) method. The first argument is the Object that we perform this operation on. Second argument is the Object that we want to set.
+
+
+The drawable I have used can be downloaded from: here.
+    

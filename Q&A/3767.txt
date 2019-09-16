@@ -1,0 +1,175 @@
+61
+Q:I am trying to get the users current location using the LocationManager.  I have done a lot of research and can't seem to find anyone with the same problem.  The OnLocationChanged callback never seems to be called. Below is my various code and the logcat.
+
+protected LocationListener locationListener;
+protected LocationManager locationManager;
+protected Context context;
+
+
+My OnCreate() method
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    Log.v(TAG, "IN ON CREATE");
+
+    this.context = getActivity();
+
+    registerLocationUpdates();
+}
+
+
+My registerLocationUpdates method
+
+void registerLocationUpdates() {
+    Criteria criteria = new Criteria();
+    criteria.setAccuracy(Criteria.ACCURACY_LOW);
+    criteria.setPowerRequirement(Criteria.POWER_LOW);
+    criteria.setAltitudeRequired(false);
+    criteria.setBearingRequired(false);
+
+    locationManager = (LocationManager)getActivity().getSystemService(LOCATION_SERVICE);
+
+    provider = locationManager.getBestProvider(criteria, true);
+
+    // Cant get a hold of provider
+    if (provider == null) {
+        Log.v(TAG, "Provider is null");
+        showNoProvider();
+        return;
+    } else {
+        Log.v(TAG, "Provider: " + provider);
+    }
+
+    locationListener = new MyLocationListener();
+
+    locationManager.requestLocationUpdates(provider, 1L, 1f, locationListener);
+
+    // connect to the GPS location service
+    Location oldLocation = locationManager.getLastKnownLocation(provider);
+
+    if (oldLocation != null)  {
+        Log.v(TAG, "Got Old location");
+        latitude = Double.toString(oldLocation.getLatitude());
+        longitude = Double.toString(oldLocation.getLongitude());
+        waitingForLocationUpdate = false;
+        getNearbyStores();
+    } else {
+        Log.v(TAG, "NO Last Location found");
+    }
+}
+
+
+My LocationListener
+
+private class MyLocationListener implements LocationListener {
+
+    public void onLocationChanged(Location location) {
+        latitude = Double.toString(location.getLatitude());
+        longitude = Double.toString(location.getLongitude());
+
+        Log.v(TAG, "IN ON LOCATION CHANGE");
+
+        if (waitingForLocationUpdate) {
+            getNearbyStores();
+            waitingForLocationUpdate = false;
+        }
+
+        locationManager.removeUpdates(this);
+    }
+
+    public void onStatusChanged(String s, int i, Bundle bundle) {
+        Log.v(TAG, "Status changed: " + s);
+    }
+
+    public void onProviderEnabled(String s) {
+        Log.e(TAG, "PROVIDER DISABLED: " + s);
+    }
+
+    public void onProviderDisabled(String s) {
+        Log.e(TAG, "PROVIDER DISABLED: " + s);
+    }
+}
+
+
+My permissions in the AndroidManifest
+
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+
+And finally the logcat after I run my app
+
+01-25 09:43:10.963: VERBOSE/NearbyListFragment(3060): IN ON CREATE
+01-25 09:43:10.963: VERBOSE/LocationManagerService(1329): getProviders
+01-25 09:43:10.963: VERBOSE/LocationManagerService(1329): getProviders
+01-25 09:43:10.973: VERBOSE/LocationManagerService(1329): getProviders
+01-25 09:43:10.983: VERBOSE/NearbyListFragment(3060): Provider: gps
+01-25 09:43:10.983: DEBUG/LocationManager(3060): requestLocationUpdates: provider = gps, listener = co.fusionweb.dealsplus.app.NearbyItems$NearbyListFragment$MyLocationListener@46ef4680
+01-25 09:43:10.983: DEBUG/GpsLocationProvider(1329): setMinTime 1
+01-25 09:43:10.983: VERBOSE/NearbyListFragment(3060): NO Last Location found
+01-25 09:43:10.983: VERBOSE/LocationManagerService(1329): _requestLocationUpdates: listener = Receiver{47421e68 Listener android.os.BinderProxy@47421a68}
+01-25 09:43:11.003: VERBOSE/countingFragment(3060): IN ON CREATE VIEW
+01-25 09:43:11.003: WARN/GpsLocationProvider(1329): Duplicate add listener for co.fusionweb.dealsplus
+01-25 09:43:11.013: VERBOSE/ScrollListener(3060): In Constructor
+01-25 09:43:11.013: VERBOSE/ScrollListener(3060): Scrolling
+01-25 09:43:11.033: DEBUG/GpsLocationProvider(1329): startNavigating
+01-25 09:43:11.043: DEBUG/lib_locapi(1329): loc_eng_set_qos_time_out(standalone = 60, agps = 89)
+01-25 09:43:11.043: DEBUG/lib_locapi(1329): loc_eng_set_qos_accuracy(accuracy = 50)
+01-25 09:43:11.043: VERBOSE/lib_locapi(1329): persist.radio.agps.mode: []
+01-25 09:43:11.043: DEBUG/lib_locapi(1329): loc_eng_set_position mode, client = 1, interval = 1, mode = 1
+01-25 09:43:11.043: VERBOSE/lib_locapi(1329): loc_eng_ioctl called: client = 1, ioctl_type = 2
+01-25 09:43:11.043: VERBOSE/locapi_rpc_glue(1329): loc_ioctl
+01-25 09:43:11.043: DEBUG/RPC(1329): written RPC packet size: [96]
+01-25 09:43:11.043: DEBUG/RPC(1329): read RPC packet
+01-25 09:43:11.043: DEBUG/RPC(1329): read RPC packet size: [28]
+01-25 09:43:11.043: VERBOSE/locapi_rpc_glue(1329): loc_api_sync_ioctl: select_id = 0, loc_ioctl returned 0
+01-25 09:43:11.043: DEBUG/RPC(1329): read RPC packet
+01-25 09:43:11.043: DEBUG/RPC(1329): read RPC packet size: [80]
+01-25 09:43:11.043: VERBOSE/locapi_rpc_glue(1329): Callback received: 80 (cb_id=0x5310000 handle=1)
+01-25 09:43:11.043: DEBUG/RPC(1329): written RPC packet size: [28]
+01-25 09:43:11.043: VERBOSE/lib_locapi(1329): loc_eng_ioctl result: client = 1, ioctl_type = 2, SUCCESS
+01-25 09:43:11.043: DEBUG/lib_locapi(1329): loc_eng_start
+01-25 09:43:11.043: DEBUG/locapi_rpc_glue(1329): loc_start_fix
+01-25 09:43:11.043: DEBUG/RPC(1329): written RPC packet size: [44]
+01-25 09:43:11.043: DEBUG/RPC(1329): read RPC packet
+01-25 09:43:11.053: DEBUG/RPC(1329): read RPC packet size: [28]
+01-25 09:43:11.103: DEBUG/RPC(1329): read RPC packet
+01-25 09:43:11.103: DEBUG/RPC(1329): read RPC packet size: [80]
+01-25 09:43:11.113: VERBOSE/locapi_rpc_glue(1329): Callback received: 100 (cb_id=0x5310000 handle=1)
+01-25 09:43:11.113: VERBOSE/lib_locapi(1329): process_deferred_action: pthread_cond_wait returned
+01-25 09:43:11.113: DEBUG/lib_locapi(1329): loc_eng_report_status: GPS_STATUS_SESSION_BEGIN
+01-25 09:43:11.113: DEBUG/lib_locapi(1329): loc_eng_report_status: update status
+01-25 09:43:11.113: VERBOSE/GpsLocationProvider(1329): reportStatus status: 1
+01-25 09:43:11.113: DEBUG/GpsLocationProvider(1329): Acquiring wakelock
+01-25 09:43:11.123: DEBUG/RPC(1329): written RPC packet size: [28]
+01-25 09:43:11.183: DEBUG/PowerManagerService(1329): New lightsensor value:40, lcdValue:77
+01-25 09:43:11.273: DEBUG/RPC(1329): read RPC packet
+01-25 09:43:11.273: DEBUG/RPC(1329): read RPC packet size: [80]
+01-25 09:43:11.273: VERBOSE/locapi_rpc_glue(1329): Callback received: 100 (cb_id=0x5310000 handle=1)
+01-25 09:43:11.273: VERBOSE/lib_locapi(1329): process_deferred_action: pthread_cond_wait returned
+01-25 09:43:11.273: DEBUG/lib_locapi(1329): loc_eng_report_status: GPS_STATUS_ENGINE_ON
+01-25 09:43:11.273: DEBUG/lib_locapi(1329): loc_eng_report_status: update status
+01-25 09:43:11.273: VERBOSE/GpsLocationProvider(1329): reportStatus status: 3
+
+
+And the android SDK location parts of the logcat keep repeating them selves.  I have tried everything that i can think of and have seen on google and stackoverflow.  Als just as a side note i have been able to get it to work on a 2.3 device using the requestSingleUpdate which is available in API 9 and by following the guide  A Deep Dive into Location  but i need it to work on 2.1 or 2.2 and higher using the old SDK. SO if you have any hints or would like to know more please let me know.  Thanks in advance.
+    
+===============================================================================================
+59
+A:It looks like you setup should work, since it doesn't, I would make your example as simple as possible in order to troubleshoot. I would make your request look like 
+
+requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, locationListener);
+requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 0, locationListener);
+
+
+This way you get ALL the updates possible. And comment out the part about getting the last known location. It's not needed yet. 
+
+Then in onLocationChanged(), just have 
+
+Log.v(TAG, "IN ON LOCATION CHANGE, lat=" + latitude + ", lon=" + longitude);
+
+
+Comment out the rest so that you keep your listener active. This should give you a stream of updates on a real device. On the emulator, you'll need to use DDMS, and you'll get one GPS update each time you press send.
+    

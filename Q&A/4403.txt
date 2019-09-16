@@ -1,0 +1,41 @@
+54
+Q:I am currently investigating the possibility of rendering vector graphics from an SVG file using OpenGL and OpenGL ES. I intend to target Windows and Android. My ideal solution would be to have a minimal C library that generates a polygon triangulation from a given SVG file. This would then generate standard OpenGL or OpenGL ES calls, and use a display list or vbo for optimization when redrawing. I would simply draw a display list to draw the vector image after translating and rotating, allowing me to mix this with other OpenGL calls.
+
+So far I see that the suggestions are to firstly use QT or Cairo. - This is not an option given that I wish to manage my own OpenGL context without bloated libraries (in the context of what I am trying to achieve). Nor is this suitable for Android.
+
+Second option is to use libraries that render to a texture. While this might be ok for static vector graphics, it's not an efficient or feasible option for games where scaling and rotations occur frequently.
+
+Thirdly there is the possibility of using OpenVG. There are some opensource implementations of the OpenVG specification (ShivaVG etc), but I am yet to find a library that is capable of generating the appropriate OpenVG calls from a given SVG file at runtime, and I can't see how to optimize this as we might wish to with a display list or vbo.
+
+All three methods suffer limitations. I think the most promising option is using an OpenVG implementation if no other solution exists. So my question is, are there any libraries out there that do what I want, or close to what I want? If not, is there a good reason why not? And would it be better to attempt to do this from the ground up instead?
+    
+===============================================================================================
+3
+A:From http://shivavg.svn.sourceforge.net/viewvc/shivavg/trunk/src/shPipeline.c?revision=14&view=markup : 
+
+static void shDrawVertices(SHPath *p, GLenum mode)
+{
+int start = 0;
+int size = 0;
+
+/* We separate vertex arrays by contours to properly
+handle the fill modes */
+glEnableClientState(GL_VERTEX_ARRAY);
+glVertexPointer(2, GL_FLOAT, sizeof(SHVertex), p->vertices.items);
+
+while (start < p->vertices.size) {
+size = p->vertices.items[start].flags;
+glDrawArrays(mode, start, size);
+start += size;
+}
+
+glDisableClientState(GL_VERTEX_ARRAY);
+}
+
+
+So it does use a VBO. So I'd suggest making your own SVG parser / use a pre-made one, and forward the calls to ShivaVG.
+
+You still have the problem that ShivaVG is in C (and not in Java) and creates an opengl context (and not opengles, if I read the code correctly). So even if you compile it using Android's NDK, you'll have to modify the code ( for instance, I've seen a few glVertex3f around, but they don't seem to be much needed... hope for the best). The other option, of course, it to port the code from C to Java. Maybe not as painful as you could imagine.
+
+Good luck !
+    

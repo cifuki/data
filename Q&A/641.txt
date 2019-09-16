@@ -1,0 +1,102 @@
+210
+Q:If I run gradle assembleDebug from the command line, I am suddenly getting this error:
+
+UNEXPECTED TOP-LEVEL EXCEPTION:
+com.android.dx.util.DexException: Multiple dex files define Landroid/support/v4/accessibilityservice/AccessibilityServiceInfoCompat$AccessibilityServiceInfoVersionImpl;
+    at com.android.dx.merge.DexMerger.readSortableTypes(DexMerger.java:592)
+    at com.android.dx.merge.DexMerger.getSortedTypes(DexMerger.java:550)
+    at com.android.dx.merge.DexMerger.mergeClassDefs(DexMerger.java:531)
+    at com.android.dx.merge.DexMerger.mergeDexBuffers(DexMerger.java:168)
+    at com.android.dx.merge.DexMerger.merge(DexMerger.java:186)
+    at com.android.dx.command.dexer.Main.mergeLibraryDexBuffers(Main.java:300)
+    at com.android.dx.command.dexer.Main.run(Main.java:232)
+    at com.android.dx.command.dexer.Main.main(Main.java:174)
+    at com.android.dx.command.Main.main(Main.java:91)
+
+
+If I grep for v4 I see two files inside my build folder.
+
+Binary file build/pre-dexed/debug/support-v4-19.0.0-2ba5fdd60a6c3836b3104a863fe42897da1fa9d1.jar matches
+Binary file build/pre-dexed/debug/support-v4-r7-227d905d79b23b20866531d4f700446c040a2ccb.jar matches
+
+
+My gradle file includes only this support library:
+
+compile 'com.android.support:support-v13:19.0.0'
+
+
+I am stumped as to how the r7 library is included somehow. I've run gradle clean and it always appears there when I rerun assembleDebug.
+
+If I grep for r7 inside the build directory, I see it inside the file: 
+
+Binary file build/exploded-bundles/ComGoogleAndroidGmsPlayServices4030.aar/classes.jar matches
+
+
+If I don't include v13, then other things don't compile.
+
+But doesn't v13 include v4 support library?
+
+Is this an incompatibility between play services AAR bundle and the v13 library?
+
+I grabbed the gradle file from gradleplease.appspot.com.
+
+Removing play services does not fix it; same error.
+
+My dependencies inside build.gradle:
+
+ dependencies {
+
+
+ // Google Play Services
+//compile 'com.google.android.gms:play-services:4.0.30'
+
+// Support Libraries
+//compile 'com.android.support:support-v4:19.0.0'
+///compile 'com.android.support:appcompat-v7:19.0.0'
+//compile 'com.android.support:gridlayout-v7:19.0.0'
+compile 'com.android.support:support-v13:19.0.0'
+compile 'org.eclipse.mylyn.github:org.eclipse.egit.github.core:2.1.5'
+compile 'commons-codec:commons-codec:1.9'
+compile 'com.madgag:markdownj-core:0.4.1'
+compile 'com.wu-man:android-oauth-client:0.0.2'
+compile 'com.google.http-client:google-http-client-jackson2:1.17.0-rc'
+compile 'org.apache.commons:commons-lang3:3.2'
+compile 'com.google.code.gson:gson:2.2.4'
+}
+
+    
+===============================================================================================
+304
+A:Run gradle -q dependencies (or gradle -q :projectName:dependencies) to generate a dependency report. You should see where r7 is coming from, such as:
+
+compile - Classpath for compiling the main sources.
++--- com.commonsware.cwac:camera-v9:0.5.4
+|    +--- com.actionbarsherlock:actionbarsherlock:4.4.0
+|    |    \\--- com.google.android:support-v4:r7
+|    +--- com.commonsware.cwac:camera:0.5.4
+|    \\--- com.android.support:support-v4:18.0.+ -> 18.0.0
+\\--- com.android.support:support-v4:18.0.+ -> 18.0.0
+
+
+Then, use the exclude directive to block that dependency. In my case, it is coming from my CWAC-Camera library, and so I use:
+
+dependencies {
+    compile('com.commonsware.cwac:camera-v9:0.5.4') {
+      exclude module: 'support-v4'
+    }
+
+    compile 'com.android.support:support-v4:18.0.+'
+}
+
+
+(where the second compile statement indicates what version you actually want)
+
+That should clear matters up, as you will see if you run the dependency report again:
+
+compile - Classpath for compiling the main sources.
++--- com.commonsware.cwac:camera-v9:0.5.4
+|    +--- com.actionbarsherlock:actionbarsherlock:4.4.0
+|    \\--- com.commonsware.cwac:camera:0.5.4
+\\--- com.android.support:support-v4:18.0.+ -> 18.0.0
+
+    

@@ -1,0 +1,132 @@
+91
+Q:From everything I've seen on Stack Exchange and elsewhere, I have everything set up correctly to start an IntentService when Android OS boots. Unfortunately it is not starting on boot, and I'm not getting any errors. Maybe the experts can help...
+
+Manifest:
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="com.phx.batterylogger"
+  android:versionCode="1"
+  android:versionName="1.0"
+  android:installLocation="internalOnly">
+
+<uses-sdk android:minSdkVersion="8" />
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.BATTERY_STATS" />
+
+<application android:icon="@drawable/icon" android:label="@string/app_name">
+    <service android:name=".BatteryLogger"/>
+    <receiver android:name=".StartupIntentReceiver">  
+        <intent-filter>  
+            <action android:name="android.intent.action.BOOT_COMPLETED" />  
+        </intent-filter>  
+    </receiver>
+</application>
+
+</manifest>
+
+
+BroadcastReceiver for Startup:
+
+package com.phx.batterylogger;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+
+public class StartupIntentReceiver extends BroadcastReceiver {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        Intent serviceIntent = new Intent(context, BatteryLogger.class);
+        context.startService(serviceIntent);
+    }
+}
+
+
+UPDATE: I tried just about all of the suggestions below, and I added logging such as Log.v("BatteryLogger", "Got to onReceive, about to start service"); to the onReceive handler of the StartupIntentReceiver, and nothing is ever logged. So it isn't even making it to the BroadcastReceiver.
+
+I think I'm deploying the APK and testing correctly, just running Debug in Eclipse and the console says it successfully installs it to my Xoom tablet at \\BatteryLogger\\bin\\BatteryLogger.apk. Then to test, I reboot the tablet and then look at the logs in DDMS and check the Running Services in the OS settings. Does this all sound correct, or am I missing something? Again, any help is much appreciated.
+    
+===============================================================================================
+269
+A:Well here is a complete example of an AutoStart Application
+
+AndroidManifest file
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="pack.saltriver" android:versionCode="1" android:versionName="1.0">
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application android:icon="@drawable/icon" android:label="@string/app_name">
+
+        <receiver android:name=".autostart">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <activity android:name=".hello"></activity>
+        <service android:enabled="true" android:name=".service" />
+    </application>
+</manifest>
+
+
+autostart.java
+
+public class autostart extends BroadcastReceiver 
+{
+    public void onReceive(Context context, Intent arg1) 
+    {
+        Intent intent = new Intent(context,service.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent);
+        } else {
+            context.startService(intent);
+        }
+        Log.i("Autostart", "started");
+    }
+}
+
+
+service.java
+
+public class service extends Service
+{
+    private static final String TAG = "MyService";
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+    public void onDestroy() {
+        Toast.makeText(this, "My Service Stopped", Toast.LENGTH_LONG).show();
+        Log.d(TAG, "onDestroy");
+    }
+
+    @Override
+    public void onStart(Intent intent, int startid)
+    {
+        Intent intents = new Intent(getBaseContext(),hello.class);
+        intents.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intents);
+        Toast.makeText(this, "My Service Started", Toast.LENGTH_LONG).show();
+        Log.d(TAG, "onStart");
+    }
+}
+
+
+hello.java - This will pop-up everytime you start the device after executing the Applicaton once.
+
+public class hello extends Activity 
+{   
+    public void onCreate(Bundle savedInstanceState) 
+    {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        Toast.makeText(getBaseContext(), "Hello........", Toast.LENGTH_LONG).show();
+    }
+}
+
+    

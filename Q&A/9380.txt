@@ -1,0 +1,52 @@
+29
+Q:Theoretically both IOS and ANDROID will play h.264 files, but I can't figure out a setting to encode them so they actually work cross platform. Does anybody know how to encode for both Android and IOS using one file? 
+
+p.s. I know all about html5 video and the fallback sources, I just don't want to encode and host a new video for every device that comes down the pike.
+    
+===============================================================================================
+52
+A:Here's the ffmpeg command line we use to transcode to MPEG-4 h.264 in our production environment.  We've tested the output on several Android devices, as well as iOS.  You can use this as a starting point, just tweaking things like frame size/frame rate and qfactor.
+
+ffmpeg -y 
+-i #{input_file} 
+-s 432x320 
+-b 384k 
+-vcodec libx264 
+-flags +loop+mv4 
+-cmp 256 
+-partitions +parti4x4+parti8x8+partp4x4+partp8x8 
+-subq 6 
+-trellis 0 
+-refs 5 
+-bf 0 
+-flags2 +mixed_refs 
+-coder 0 
+-me_range 16 
+-g 250 
+-keyint_min 25 
+-sc_threshold 40 
+-i_qfactor 0.71 
+-qmin 10 -qmax 51 
+-qdiff 4 
+-acodec libfaac 
+-ac 1 
+-ar 16000 
+-r 13 
+-ab 32000 
+-aspect 3:2 
+#{output_file}
+
+
+Some of the important options affecting Android compatibility are:
+
+-coder 0      Uses CAVLAC rather than CABAC entropy encoding (CABAC not supported on Android)
+-trellis 0    Should be shut off, requires CABAC
+-bf 0         Turns off B-frames, not supported on Android or other h.264 Baseline Profile devices
+-subq 6       Determines what algorithms are used for subpixel motion searching. 7 applies to B-frames, not supported on Android.
+-refs 5       Determines how many frames are referenced prior to the current frame.  Increasing this number could affect compatibility
+
+
+After we encode our video with this ffmpeg recipe, we also pass the video through qt-faststart. This step rechunks the video for streaming. We stream it over HTTP to an embedded VideoView within our Android app. No problems streaming to any Android device we're aware of.
+
+Update 2013-06-17: I just wanted to add a note that it's best to stick with "baseline" profile for H.264 encoding for maximum compatibility across all Android devices.  The above command line doesn't explicitly specify an H.264 profile, but ffmpeg does have a -profile command line flag that is useful if you are using its presets. You probably shouldn't mess with -profile.  I have encoded videos for my ASUS Transformer 300 tablet (Android 4.2) using "main" rather than "baseline" profile (via Handbrake). The "main" profile gave problems with audio getting out of sync with video on playback.
+    

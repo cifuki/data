@@ -1,0 +1,97 @@
+41
+Q:Say I have a class Util that takes in a object - an instance of class Validator. 
+
+Since I want to avoid instantiating the Validator class within Util, I pass it in via a constructor: 
+
+public class Util {
+
+   @Inject
+   public Util(Validator validator) {
+
+   }
+
+
+}
+
+
+I have a module that provides the Validator instance:
+
+@Provides
+@Singleton
+Validator provideValidator() {
+    return Validator.getInstance();
+}
+
+
+and an instance of the Util class:
+
+@Provides
+Util provideUtil(Validator validator) {
+    return new Util(validator);
+}
+
+
+I have a component wired up that would give me an instance of Util:
+
+Util getUtil()
+
+
+so within my activity, I could call it like: 
+
+Util myUtil = getComponent.getUtil();
+
+
+All of that works fine - myUtil has a proper instance of Validator class when instantiated. 
+
+Now I want to pass in a String variable named address (which is user input via a UI). I want to change the constructor so I pass in both an instance of Validator and the user inputted String:
+
+@Inject
+public Util(Validator validator, String address) {
+
+}
+
+
+I just can't get my head around how to pass that 2nd parameter. Can someone tell me how? 
+
+Ideally, I want to instantiate Util like:
+
+Util myUtil = getComponent.getUtil(txtAddress.getText());
+
+    
+===============================================================================================
+84
+A:I had the same question as you when I started looking into Dagger 2 a couple of weeks ago. I found information on this (and most other Dagger 2-related issues) difficult to come by, so I hope this helps!
+
+The most basic answer is that you cannot. What you are looking for is something that is called assisted injection, and it is not part of Dagger 2. Some other dependency injection (DI) frameworks, such as Guice, do offer this feature, so you might look into those. Of course, there are still ways to do what you want to do using Dagger 2.
+
+Factories factories factories
+
+The standard way to do what you want to do in combination with DI is by using the Factory pattern. Basically, you create an injectable factory class that takes runtime parameters such as address as arguments to the object creation methods that it provides.
+
+In your case, you would need a UtilFactory into which Dagger 2 injects a Validator upon instantation and which offers a method create(String address) that creates instances of Util. UtilFactory should keep a reference to the injected instance of Validator so that it has everything it needs to create an instance of Util in the create method.
+
+Wring code for many such factories can be cumbersome. You should definitely take a look at AutoFactory, which eases some of the burden. Guice's assisted injection seems to work quite similar to Dagger 2 + AutoFactory (albeit with even nicer syntactic sugar).
+
+More modules / components
+
+I doubt this is something that you would like to do in this case, but you could just create a module that provides the address (and instantiate a new component). You do not have to create a new @Module class for every possible address. Instead, you can just pass the address as an argument to the constructor of the module. You could use the @BindsInstance-annotation as suggested by teano to achieve a similar result.
+
+I am not sure if this is an anti-pattern or not. To me, this seems like an acceptable route in some cases, but only when you are actually using the same e.g. address for the initialisation of "many" objects. You definitely do not want to instantiate a new component and a new model for each object that requires injection. It is not efficient, and if you are not careful you will end up with more boilerplate code than without Dagger.
+
+Do not (always) use DI: Injectables versus newables
+
+Something that was immensely useful to me when learning about DI frameworks was the realisation that using a DI framework does not mean that you have to DI to initialise all of your objects. As a rule of thumb: inject objects that you know of at compile time and that have static relations to other objects; do not inject runtime information.
+
+I think this is a good post on the subject. It introduces the concept of 'newables' and 'injectables'.
+
+
+Injectables are the classes near the root of your DI graph. Instances of these classes are the kind of objects that you expect your DI framework to provide and inject. Manager- or service-type objects are typical examples of injectables.
+Newables are objects at the fringes of your DI graph, or that are not even really part of your DI graph at all. Integer, Address etc. are examples of newables.
+
+
+Broadly speaking, newables are passive objects, and there is no point in injecting or mocking them. They typically contain the "data" that is in your application and that is only available at runtime (e.g. your address). Newables should not keep references to injectables or vice versa (something the author of the post refers to as "injectable/newable-separation").
+
+In reality, I have found that it is not always easy or possible to make a clear distinction between injectables and newables. Still, I think that they are nice concepts to use as part of your thinking process. Definitely think twice before adding yet another factory to your project!
+
+In your case, I think it would make sense to treat Util as an injectable and the address as a newable. This means that the address should not be part of the Util class. If you want to use instance of Util for e.g. validating/... addresses, just pass the address that you want to validate as an argument to the validation/... method.
+    

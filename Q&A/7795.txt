@@ -1,0 +1,114 @@
+34
+Q:On an Android application which must works offline most of the time I need, when it's online, to do some synchronous operations for i.e. :
+
+User myUser =  MyclientFacade.getUser();
+If (myUser.getScore > 10) {
+    DoSomething() 
+}
+
+
+Where User is a POJO filled by Firebase;
+
+The problem occurs when the Firebase cache is activated 
+
+Firebase.getDefaultConfig().setPersistenceEnabled(true);
+
+
+and the user is already in cache and the data are updated on Firebase DB by a third party (or even by another device). Indeed when I query Firebase to get the User I obtain first the data from the cache and later a second change event with the latest data from the Firebase server, but it's too late!
+
+Let's see the synchronous method MyclientFacade.getUser() :
+
+Public User  getUser()  {
+  Firebase ref = myFireBaseroot.child("User").child(uid);
+  ref.keepSynced(true);
+  /* try {
+    Thread.sleep(3000);
+ } catch (InterruptedException e) {
+    e.printStackTrace();
+ }*/
+final CountDownLatch signal = new CountDownLatch(1);
+
+ref.addListenerForSingleValueEvent(new ValueEventListener() {
+//ref.addValueEventListener(new ValueEventListener() {
+    @Override
+    public void onDataChange(DataSnapshot dataSnapshot) {
+       this.user = dataSnapshot.getValue(User.class);
+       signal.countDown();
+    }
+    @Override
+    public void onCancelled(FirebaseError firebaseError) {
+       signal.countDown();
+    }
+});
+signal.await(5, TimeUnit.SECONDS);
+ref.keepSynced(false);
+return this.user;
+}
+
+
+I obtain the same behavior if I use addValueEventListener or addListenerForSingleValueEvent mixed with ref.keepSynced:
+
+Let's say my user's score value in cache is 5 and from Firebase DB is 11.
+
+When I call getUser I will obtain the score of 5 (Firebase ask cache first) so I will not call the doSomething() method.
+
+If I uncomment the Thread.sleep() code from my example, the Firebase cache will have enough time to be updated and my getUser will return the correct score value (11).
+
+So how can I directly ask the latest value directly from server side and bypass the cache? 
+    
+===============================================================================================
+33
+A:This was a problem that was causing me a lot of stress in my application too. 
+
+I tried everything, from changing .addListenerForSingleValueEvent() to .addValueEventListener() to trying to creatively use .keepSynced() to using a delay (the Thread.sleep() method you have described above) and nothing really worked consistently (even the Thread.sleep() method, which wasn't really acceptable in a production app didn't give me consistent results).
+
+So what I did was this: after creating a Query object and calling .keepSynced() on it, I then proceed to write a mock/token object in the node I'm querying  and THEN in that operation's completion listener, I do the data retrieval I want to do, after deleting the mock object.
+
+Something like:
+
+ MockObject mock = new MockObject();
+    mock.setIdentifier("delete!");
+
+    final Query query = firebase.child("node1").child("node2");
+
+    query.keepSynced(true);
+
+    firebase.child("node1").child("node2").child("refreshMock")
+            .setValue(mock, new CompletionListener() {
+
+                @Override
+                public void onComplete(FirebaseError error, Firebase afb) {
+
+                    query.addListenerForSingleValueEvent(new ValueEventListener() {
+
+                        public void onDataChange(DataSnapshot data) {
+
+                            // get identifier and recognise that this data
+                            // shouldn't be used
+                            // it's also probably a good idea to remove the
+                            // mock object
+                            // using the removeValue() method in its
+                            // speficic node so
+                            // that the database won't be saddled with a new
+                            // one in every
+                            // read operation
+
+                        }
+
+                        public void onCancelled(FirebaseError error) {
+                        }
+
+                    });
+
+                }
+
+            });
+}
+
+
+This has worked consistently so far for me! (well, for a day or so, so take this with a grain of salt). It seems like doing a write operation before reading somehow bypasses the cache, which makes sense. So the data comes back fresh. 
+
+The only downside is the extra write operation before the read operation, which may cause a small delay (obviously use a small object) but if that's the price for always fresh data, I'll take it!
+
+Hope this helps!
+    

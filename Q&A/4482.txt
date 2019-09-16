@@ -1,0 +1,62 @@
+53
+Q:I push a fragment on the fragment stack using the following code:
+
+FragmentManager fragmentManager = getActivity().getSupportFragmentManager();
+FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+fragmentTransaction.setCustomAnimations(R.anim.slide_in_right, R.anim.slide_out_right,
+     R.anim.slide_in_left, R.anim.slide_out_left);
+fragmentTransaction.replace(getId(), newFragment);
+fragmentTransaction.addToBackStack(null);
+fragmentTransaction.commit();
+
+
+This way, when the fragment stack is popped, e.g. by pressing the back button, a fragment pop animation is played. However, there are situations in which i would like to pop the fragment backstack without showing this animation, e.g. because I just returned from another activity and want to display the previous fragment at once, without animation.
+
+An example navigation could look like this:
+
+
+The user is on the start screen with the root fragment
+He selects an item on the root fragment which then displays a new fragment to show details of that item. It does so using a fragment transaction that sets animations both for the push and the pop case (so when the user presses the back button, the transition is animated)
+From this fragment he starts an activity which (for whatever reason) deletes the item that was just shown
+When this activity finishes, I would like to return to the root fragment without showing the "pop animation" of the "detail fragment"
+
+
+Is there a way to pop the fragment backstack without playing the specified pop animation?
+    
+===============================================================================================
+86
+A:So Warpzit was on the right track, he just didn't address your specific issue too well. I came across the exact same issue and here is how I solved it.
+
+First I created a static boolean variable (for simplicity's sake, lets put it in the FragmentUtils class)...
+
+public class FragmentUtils {
+    public static boolean sDisableFragmentAnimations = false;
+}
+
+
+Then, in EVERY fragment you have, you need to override the onCreateAnimation method...
+
+@Override
+public Animation onCreateAnimation(int transit, boolean enter, int nextAnim) {
+    if (FragmentUtils.sDisableFragmentAnimations) {
+        Animation a = new Animation() {};
+        a.setDuration(0);
+        return a;
+    }
+    return super.onCreateAnimation(transit, enter, nextAnim);
+}
+
+
+Then, when you need to clear the backstack from your activity simply do the following...
+
+public void clearBackStack() {
+    FragmentUtils.sDisableFragmentAnimations = true;
+    getSupportFragmentManager().popBackStackImmediate(null, FragmentManager.POP_BACK_STACK_INCLUSIVE);
+    FragmentUtils.sDisableFragmentAnimations = false;
+}
+
+
+And voila, a call to clearBackStack() will drop you back into the root fragment without any transition animations. 
+
+Hopefully the big G will add a less stupid way of doing this in the future.
+    

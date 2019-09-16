@@ -1,0 +1,207 @@
+35
+Q:I am trying to implement a a progress bar to indicate the progress of a multipart file upload.
+
+I have read from a comment on this answer - https://stackoverflow.com/a/24285633/1022454 that I have to wrap the sink passed to the RequestBody and provide a callback that tracks the bytes moved. 
+
+I have created a custom RequestBody and wrapped the sink with a CustomSink class, however through debugging I can see that the bytes are being written by RealBufferedSink ln 44 and the custom sink write method is only run once, not allowing me to track the bytes moved.
+
+    private class CustomRequestBody extends RequestBody {
+
+    MediaType contentType;
+    byte[] content;
+
+    private CustomRequestBody(final MediaType contentType, final byte[] content) {
+        this.contentType = contentType;
+        this.content = content;
+    }
+
+    @Override
+    public MediaType contentType() {
+        return contentType;
+    }
+
+    @Override
+    public long contentLength() {
+        return content.length;
+    }
+
+    @Override
+    public void writeTo(BufferedSink sink) throws IOException {
+        CustomSink customSink = new CustomSink(sink);
+        customSink.write(content);
+
+    }
+}
+
+
+private class CustomSink implements BufferedSink {
+
+    private static final String TAG = "CUSTOM_SINK";
+
+    BufferedSink bufferedSink;
+
+    private CustomSink(BufferedSink bufferedSink) {
+        this.bufferedSink = bufferedSink;
+    }
+
+    @Override
+    public void write(Buffer source, long byteCount) throws IOException {
+        Log.d(TAG, "source size: " + source.size() + " bytecount" + byteCount);
+        bufferedSink.write(source, byteCount);
+    }
+
+    @Override
+    public void flush() throws IOException {
+        bufferedSink.flush();
+    }
+
+    @Override
+    public Timeout timeout() {
+        return bufferedSink.timeout();
+    }
+
+    @Override
+    public void close() throws IOException {
+        bufferedSink.close();
+    }
+
+    @Override
+    public Buffer buffer() {
+        return bufferedSink.buffer();
+    }
+
+    @Override
+    public BufferedSink write(ByteString byteString) throws IOException {
+        return bufferedSink.write(byteString);
+    }
+
+    @Override
+    public BufferedSink write(byte[] source) throws IOException {
+        return bufferedSink.write(source);
+    }
+
+    @Override
+    public BufferedSink write(byte[] source, int offset, int byteCount) throws IOException {
+        return bufferedSink.write(source, offset, byteCount);
+    }
+
+    @Override
+    public long writeAll(Source source) throws IOException {
+        return bufferedSink.writeAll(source);
+    }
+
+    @Override
+    public BufferedSink writeUtf8(String string) throws IOException {
+        return bufferedSink.writeUtf8(string);
+    }
+
+    @Override
+    public BufferedSink writeString(String string, Charset charset) throws IOException {
+        return bufferedSink.writeString(string, charset);
+    }
+
+    @Override
+    public BufferedSink writeByte(int b) throws IOException {
+        return bufferedSink.writeByte(b);
+    }
+
+    @Override
+    public BufferedSink writeShort(int s) throws IOException {
+        return bufferedSink.writeShort(s);
+    }
+
+    @Override
+    public BufferedSink writeShortLe(int s) throws IOException {
+        return bufferedSink.writeShortLe(s);
+    }
+
+    @Override
+    public BufferedSink writeInt(int i) throws IOException {
+        return bufferedSink.writeInt(i);
+    }
+
+    @Override
+    public BufferedSink writeIntLe(int i) throws IOException {
+        return bufferedSink.writeIntLe(i);
+    }
+
+    @Override
+    public BufferedSink writeLong(long v) throws IOException {
+        return bufferedSink.writeLong(v);
+    }
+
+    @Override
+    public BufferedSink writeLongLe(long v) throws IOException {
+        return bufferedSink.writeLongLe(v);
+    }
+
+    @Override
+    public BufferedSink emitCompleteSegments() throws IOException {
+        return bufferedSink.emitCompleteSegments();
+    }
+
+    @Override
+    public OutputStream outputStream() {
+        return bufferedSink.outputStream();
+    }
+}
+
+
+Does anybody have an example of how I would go about doing this?
+    
+===============================================================================================
+60
+A:You have to create a custom RequestBody and override writeTo method, and there you have to send your files down the sink in segments. It is very important that you flush the sink after each segment, otherwise your progress bar will fill up quickly without the file being actually sent over the network, because the contents will stay in the sink (which acts like a buffer). 
+
+public class CountingFileRequestBody extends RequestBody {
+
+    private static final int SEGMENT_SIZE = 2048; // okio.Segment.SIZE
+
+    private final File file;
+    private final ProgressListener listener;
+    private final String contentType;
+
+    public CountingFileRequestBody(File file, String contentType, ProgressListener listener) {
+        this.file = file;
+        this.contentType = contentType;
+        this.listener = listener;
+    }
+
+    @Override
+    public long contentLength() {
+        return file.length();
+    }
+
+    @Override
+    public MediaType contentType() {
+        return MediaType.parse(contentType);
+    }
+
+    @Override
+    public void writeTo(BufferedSink sink) throws IOException {
+        Source source = null;
+        try {
+            source = Okio.source(file);
+            long total = 0;
+            long read;
+
+            while ((read = source.read(sink.buffer(), SEGMENT_SIZE)) != -1) {
+                total += read;
+                sink.flush();
+                this.listener.transferred(total);
+
+            }
+        } finally {
+            Util.closeQuietly(source);
+        }
+    }
+
+    public interface ProgressListener {
+        void transferred(long num);
+    }
+
+}
+
+
+You can find a complete implementation that supports displaying progress in an AdapterView and also cancelling uploads at my gist: https://gist.github.com/eduardb/dd2dc530afd37108e1ac
+    

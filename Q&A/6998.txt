@@ -1,0 +1,112 @@
+37
+Q:I have a method called switchCamera, I'm trying to switch camera from front to back on the click of a button, in one smooth transition. My application freezes when I call this method - I know I'm not doing something right. Can anyone help me out here?
+
+Any help is much appreciated.
+
+public void switchCamera(){
+    int camNum = 0;
+    camNum = Camera.getNumberOfCameras();
+    int camBackId = Camera.CameraInfo.CAMERA_FACING_BACK;
+    int camFrontId = Camera.CameraInfo.CAMERA_FACING_FRONT;
+
+    Camera.CameraInfo currentCamInfo = new Camera.CameraInfo();
+
+    //if camera is running
+    if (camera != null){
+        //and there is more than one camera
+        if (camNum > 1){
+            //stop current camera
+            camera.stopPreview();
+            camera.setPreviewCallback(null);
+            //camera.takePicture(null, null, PictureCallback);
+            camera.release();
+            camera = null;
+            //stop surfaceHolder?
+
+            if (currentCamInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT){
+                //switch camera to back camera
+                camera=Camera.open(camBackId);
+            }
+            else{
+                //switch camera to front camera
+                camera=Camera.open(camFrontId);
+            }
+            //switch camera back on
+            //specify surface?
+            try {
+                camera.setPreviewDisplay(surfaceHolder);
+                camera.setPreviewCallback((PreviewCallback) this);
+                camera.startPreview();
+            } catch (IOException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+        }
+    }
+}
+
+    
+===============================================================================================
+72
+A:Button otherCamera = (Button) findViewById(R.id.OtherCamera);
+
+otherCamera.setOnClickListener(new View.OnClickListener() {
+@Override
+public void onClick(View v) {
+if (inPreview) {
+    camera.stopPreview();
+}
+//NB: if you don't release the current camera before switching, you app will crash
+camera.release();
+
+//swap the id of the camera to be used
+if(currentCameraId == Camera.CameraInfo.CAMERA_FACING_BACK){
+    currentCameraId = Camera.CameraInfo.CAMERA_FACING_FRONT;
+}
+else {
+    currentCameraId = Camera.CameraInfo.CAMERA_FACING_BACK;
+}
+camera = Camera.open(currentCameraId);
+
+setCameraDisplayOrientation(CameraActivity.this, currentCameraId, camera);
+try {
+
+    camera.setPreviewDisplay(previewHolder);
+} catch (IOException e) {
+    e.printStackTrace();
+}
+camera.startPreview();
+}
+
+
+
+  If you want to make the camera image show in the same orientation as
+  the display, you can use the following code.
+
+
+public static void setCameraDisplayOrientation(Activity activity,
+         int cameraId, android.hardware.Camera camera) {
+     android.hardware.Camera.CameraInfo info =
+             new android.hardware.Camera.CameraInfo();
+     android.hardware.Camera.getCameraInfo(cameraId, info);
+     int rotation = activity.getWindowManager().getDefaultDisplay()
+             .getRotation();
+     int degrees = 0;
+     switch (rotation) {
+         case Surface.ROTATION_0: degrees = 0; break;
+         case Surface.ROTATION_90: degrees = 90; break;
+         case Surface.ROTATION_180: degrees = 180; break;
+         case Surface.ROTATION_270: degrees = 270; break;
+     }
+
+     int result;
+     if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+         result = (info.orientation + degrees) % 360;
+         result = (360 - result) % 360;  // compensate the mirror
+     } else {  // back-facing
+         result = (info.orientation - degrees + 360) % 360;
+     }
+     camera.setDisplayOrientation(result);
+ }
+
+    

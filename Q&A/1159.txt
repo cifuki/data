@@ -1,0 +1,113 @@
+141
+Q:So I have this problem I had before, and naturally I asked for help on here. Luksprog's answer was great because I had no idea about how ListView and GridView optimized itself with recycling Views. So with his advice I was able to change how I added Views to my GridView. Problem is now I have something that does not make sense. This is my getView from my BaseAdapter:
+
+
+
+public View getView(int position, View convertView, ViewGroup parent) {
+        if(convertView == null) {
+            LayoutInflater inflater = LayoutInflater.from(parent.getContext());
+            convertView = inflater.inflate(R.layout.day_view_item, parent, false);
+        }
+        Log.d("DayViewActivity", "Position is: "+position);
+        ((TextView)convertView.findViewById(R.id.day_hour_side)).setText(array[position]);
+        LinearLayout layout = (LinearLayout)convertView.findViewById(R.id.day_event_layout);
+
+        //layout.addView(new EventFrame(parent.getContext()));
+
+        TextView create = new TextView(DayViewActivity.this);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, (int)TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 62, getResources().getDisplayMetrics()), 1.0f);
+        params.topMargin = (int)TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1, getResources().getDisplayMetrics());
+        params.bottomMargin = (int)TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1, getResources().getDisplayMetrics());
+        create.setLayoutParams(params);
+        create.setBackgroundColor(Color.BLUE);
+        create.setText("Test"); 
+        //the following is my original LinearLayout.LayoutParams for correctly setting the TextView Height
+        //new LinearLayout.LayoutParams(0, (int)TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 60, getResources().getDisplayMetrics()), 1.0f)   
+        if(position == 0) {
+            Log.d("DayViewActivity", "This should only be running when position is 0. The position is: "+position);
+            layout.addView(create);
+        }
+
+        return convertView;
+    }
+
+}
+
+
+
+
+Problem is when I scroll, this happens, and not on position 0... Looks like position 6 and position 8, plus it puts two in position 8. Now I am still trying to get the hang of using ListView and GridView so I do not understand why this is happening. One of the main reasons I am making this question is to help others who probably don't know about ListView and GridView's recycling View, or the way this article puts it, ScrapView mechanism.
+
+
+
+Later Edit
+
+Adding link to a google IO talk that is basically all you need to understand how ListView works. Link was dead in on of the comments. So user3427079 was nice enough to update that link. Here it is for easy access.
+    
+===============================================================================================
+318
+A:Initially, I was also unaware of listview recycling and the convertview usage mechanism, but after a whole days research I pretty much understand the mechanisms of the list view by referring to an image from android.amberfog
+
+
+Whenever your listview is filled by an adapter it basically shows the number of Rows that the listview can show on screen and the number of rows doesn't increase even when you scroll through the list. This is the trick android uses so that listview works more efficiently and fast.
+Now the inside story of listview referring to the image, as you can see, initially the listview has 7 visible items, then, if you scroll up until item 1 is no longer visible, getView() passes this view (i.e item1) to the recycler and you can use
+
+System.out.println("getview:"+position+" "+convertView);
+
+
+inside your 
+
+public View getView(final int position, View convertView, ViewGroup parent)
+{
+    System.out.println("getview:"+position+" "+convertView);
+    ViewHolder holder;
+    View row=convertView;
+    if(row==null)
+    {
+        LayoutInflater inflater=((Activity)context).getLayoutInflater();
+        row=inflater.inflate(layoutResourceId, parent,false);
+
+        holder=new PakistaniDrama();
+        holder.tvDramaName=(TextView)row.findViewById(R.id.dramaName);
+        holder.cbCheck=(CheckBox)row.findViewById(R.id.checkBox);
+
+        row.setTag(holder);
+
+    }
+    else
+    {
+        holder=(PakistaniDrama)row.getTag();
+    }
+            holder.tvDramaName.setText(dramaList.get(position).getDramaName());
+    holder.cbCheck.setChecked(checks.get(position));
+            return row;
+    }
+
+
+You will notice in your logcat, initially, convertview is null for all the visible rows, because initially there were no views (i.e items) in the recycler, so your getView() creates a new view for each of the visible items, but the moment you scroll up and item 1 moves out of the screen, it will be sent to the Recycler with its present state (for example the TextView 'text' or in mine case, if checkbox is checked, it will be associated with the view and stored in recycler).
+
+Now when you scroll up/down, your listview is not going to create a new view, it will use the view which is in your recycler. In your Logcat you will notice that the 'convertView' is not null, its because your new item 8 will be drawn using convertview, i.e., basically it takes item 1 view from the recycler and inflates item 8 in its place, and you can observe that in my code. If you had a checkbox and if you check it at position 0(let's say item1 had a checkbox and you checked it) so when you scroll down you will see item 8 checkbox already checked, this is why listview is re using the same view, not creating a new for you due to performance optimization.
+
+Important things
+
+1. Never set the layout_height and layout_width of your listview to wrap_content as getView() will force your adapter to get some child for measuring the height of the views to be drawn in list view and can cause some unexpected behaviour like returning convertview even the list is not scrolled.always use match_parent or fixed width/height.
+
+2. If you want to use some Layout or view after your list view and question might came in your mind if i set the layout_height to fill_parent the view after list view will not show up as it goes down the screen, so its better to put your listview inside a layout.For example Linear Layout and set the height and width of that layout as of your requirement and make the height and width attribute of your listview to as of your layout(like if your layout width is 320 and height is 280) then your listview should have same height and width. This will tell getView() of exact height and width of views to be rendered, and getView() won't call again and again some random rows, and other problems like returning convert view even before scrolling won't happen, i have test this myself, unless my listview was inside the lineaLayout it was also having problems like repeating view call and convert view as, putting Listview inside LinearLayout worked like magic for me.(didn't know why)
+
+01-01 14:49:36.606: I/System.out(13871): getview 0 null
+01-01 14:49:36.636: I/System.out(13871): getview 0 android.widget.RelativeLayout@406082c0
+01-01 14:49:36.636: I/System.out(13871): getview 1 android.widget.RelativeLayout@406082c0
+01-01 14:49:36.646: I/System.out(13871): getview 2 android.widget.RelativeLayout@406082c0
+01-01 14:49:36.646: I/System.out(13871): getview 3 android.widget.RelativeLayout@406082c0
+01-01 14:49:36.656: I/System.out(13871): getview 4 android.widget.RelativeLayout@406082c0
+01-01 14:49:36.666: I/System.out(13871): getview 5 android.widget.RelativeLayout@406082c0
+01-01 14:49:36.666: I/System.out(13871): getview 0 android.widget.RelativeLayout@406082c0
+01-01 14:49:36.696: I/System.out(13871): getview 0 android.widget.RelativeLayout@406082c0
+01-01 14:49:36.706: I/System.out(13871): getview 1 null
+01-01 14:49:36.736: I/System.out(13871): getview 2 null
+01-01 14:49:36.756: I/System.out(13871): getview 3 null
+01-01 14:49:36.776: I/System.out(13871): getview 4 null
+
+
+But now its solved, I know, I'm not that good at explaining but as i put my whole day to understand so i thought other beginners like me can get help of my experience and i hope now you people will have a little bit understanding of ListView framework how it works, as it is really messy and tricky so beginners found too much problem understanding it
+    

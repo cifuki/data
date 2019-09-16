@@ -1,0 +1,88 @@
+61
+Q:I try to export a bitmap from my app using share intent without saving a file for a temporal location. All the examples I found are two-step 
+1) save to SD Card and create Uri for that file
+2) start the intent with this Uri
+
+Is it possible to make it without requiring WRITE_EXTERNAL_STORAGE permission, saving the file [and removing it afterwards]? How to address devices without ExternalStorage? 
+    
+===============================================================================================
+210
+A:I had this same problem. I didn't want to have to ask for the read and write external storage permissions. Also, sometimes there are problems when phones don't have SD cards or the cards get unmounted. 
+
+The following method uses a ContentProvider called FileProvider. Technically, you are still saving the bitmap (in internal storage) prior to sharing, but you don't need to request any permissions. Also, every time you share the bitmap the image file gets overwritten. And since it is in the internal cache, it will be deleted when the user uninstalls the app. So in my opinion, it is just as good as not saving the image. This method is also more secure than saving it to external storage.
+
+The documentation is pretty good (see the Further Reading below), but some parts are a little tricky. Here is a summary that worked for me.
+
+Set up the FileProvider in the Manifest
+
+<manifest>
+    ...
+    <application>
+        ...
+        <provider
+            android:name="android.support.v4.content.FileProvider"
+            android:authorities="com.example.myapp.fileprovider"
+            android:grantUriPermissions="true"
+            android:exported="false">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/filepaths" />
+        </provider>
+        ...
+    </application>
+</manifest>
+
+
+Replace com.example.myapp with your app package name.
+
+Create res/xml/filepaths.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="shared_images" path="images/"/>
+</paths>
+
+
+This tells the FileProvider where to get the files to share (using the cache directory in this case).
+
+Save the image to internal storage
+
+// save bitmap to cache directory
+try {
+
+    File cachePath = new File(context.getCacheDir(), "images");
+    cachePath.mkdirs(); // don't forget to make the directory
+    FileOutputStream stream = new FileOutputStream(cachePath + "/image.png"); // overwrites this image every time
+    bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
+    stream.close();
+
+} catch (IOException e) {
+    e.printStackTrace();
+}
+
+
+Share the image
+
+File imagePath = new File(context.getCacheDir(), "images");
+File newFile = new File(imagePath, "image.png");
+Uri contentUri = FileProvider.getUriForFile(context, "com.example.myapp.fileprovider", newFile);
+
+if (contentUri != null) {
+    Intent shareIntent = new Intent();
+    shareIntent.setAction(Intent.ACTION_SEND);
+    shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); // temp permission for receiving app to read this file
+    shareIntent.setDataAndType(contentUri, getContentResolver().getType(contentUri));
+    shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
+    startActivity(Intent.createChooser(shareIntent, "Choose an app"));
+}
+
+
+Further reading
+
+
+FileProvider
+Storage Options - Internal Storage
+Sharing Files
+Saving Files
+
+    

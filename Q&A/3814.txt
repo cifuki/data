@@ -1,0 +1,224 @@
+60
+Q:I would like to be able to use the same drawable to represent both:
+
+ and  
+
+as the same drawable, and re-color the drawable based on some programmatic values, so that the end user could re-theme the interface. 
+
+What is the best way to do this? I have tried (and reused the icons from) this previous S.O. question but I can't represent the change as a simple change of hue, since it also varies in saturation and value..
+
+Is it best to store the icon as all white in the area I want changed? or transparent? or some other solid color?
+
+Is there some method that allows you to figure out the matrix based on the difference between Color of red_icon and Color of blue_icon?
+    
+===============================================================================================
+107
+A:So after a lot of trial and error, reading different articles, and most importantly, going through the API Demos (ColorFilters.java -- found in com.example.android.apis.graphics) I found the solution.
+
+For solid images, I have found it is best to use the color filter PorterDuff.Mode.SRC_ATOP because it will overlay the color on top of the source image, allowing you to change the color to the exact color you are looking for.
+
+For images that are more complex, like the one above, I have found the best thing to do is to color the entire image WHITE (FFFFFF) so that when you do PorterDuff.Mode.MULTIPLY, you end up with the correct colors, and all of the black (000000) in your image will remain black.
+
+The colorfilters.java shows you how it's done if your drawing on a canvas, but if all you need is to color a drawable then this will work:
+
+COLOR2 = Color.parseColor("#FF"+getColor());
+Mode mMode = Mode.SRC_ATOP;
+Drawable d = mCtx.getResources().getDrawable(R.drawable.image);
+d.setColorFilter(COLOR2,mMode)
+
+
+I created a demo activity using some of the API Demo code to swap between every color filter mode to try them out for different situations and have found it to be invaluable, so I thought I would post it here.
+
+public class ColorFilters extends GraphicsActivity {
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(new SampleView(this));
+
+}
+
+private static class SampleView extends View {
+    private Activity mActivity;
+    private Drawable mDrawable;
+    private Drawable[] mDrawables;
+    private Paint mPaint;
+    private Paint mPaint2;
+    private float mPaintTextOffset;
+    private int[] mColors;
+    private PorterDuff.Mode[] mModes;
+    private int mModeIndex;
+    private Typeface futura_bold;
+    private AssetManager assets;
+
+    private static void addToTheRight(Drawable curr, Drawable prev) {
+        Rect r = prev.getBounds();
+        int x = r.right + 12;
+        int center = (r.top + r.bottom) >> 1;
+        int h = curr.getIntrinsicHeight();
+        int y = center - (h >> 1);
+
+        curr.setBounds(x, y, x + curr.getIntrinsicWidth(), y + h);
+    }
+
+    public SampleView(Activity activity) {
+        super(activity);
+        mActivity = activity;
+        Context context = activity;
+        setFocusable(true);
+
+        /**1. GET DRAWABLE, SET BOUNDS */
+        assets = context.getAssets();
+        mDrawable = context.getResources().getDrawable(R.drawable.roundrect_gray_button_bg_nine);
+        mDrawable.setBounds(0, 0, mDrawable.getIntrinsicWidth(), mDrawable.getIntrinsicHeight());
+
+        mDrawable.setDither(true);
+
+        int[] resIDs = new int[] {
+            R.drawable.roundrect_gray_button_bg,
+            R.drawable.order_button_white,
+            R.drawable.yellowbar
+        };
+        mDrawables = new Drawable[resIDs.length];
+        Drawable prev = mDrawable;
+        for (int i = 0; i < resIDs.length; i++) {
+            mDrawables[i] = context.getResources().getDrawable(resIDs[i]);
+            mDrawables[i].setDither(true);
+            addToTheRight(mDrawables[i], prev);
+            prev = mDrawables[i];
+        }
+
+        /**2. SET Paint for writing text on buttons */
+        mPaint = new Paint();
+        mPaint.setAntiAlias(true);
+        mPaint.setTextSize(16);
+        mPaint.setTextAlign(Paint.Align.CENTER);
+
+        mPaint2 = new Paint(mPaint);
+        /** Calculating size based on font */
+        futura_bold = Typeface.createFromAsset(assets,
+                "fonts/futurastd-bold.otf");
+        //Determine size and offset to write text in label based on font size.
+        mPaint.setTypeface(futura_bold);
+        Paint.FontMetrics fm = mPaint.getFontMetrics();
+        mPaintTextOffset = (fm.descent + fm.ascent) * 0.5f;
+
+        mColors = new int[] {
+            0,
+            0xFFA60017,//WE USE THESE
+            0xFFC6D405,
+            0xFF4B5B98,
+            0xFF656565,
+            0xFF8888FF,
+            0xFF4444FF,
+        };
+
+        mModes = new PorterDuff.Mode[] {
+            PorterDuff.Mode.DARKEN,
+            PorterDuff.Mode.DST,
+            PorterDuff.Mode.DST_ATOP,
+            PorterDuff.Mode.DST_IN,
+            PorterDuff.Mode.DST_OUT,
+            PorterDuff.Mode.DST_OVER,
+            PorterDuff.Mode.LIGHTEN,
+            PorterDuff.Mode.MULTIPLY,
+            PorterDuff.Mode.SCREEN,
+            PorterDuff.Mode.SRC,
+            PorterDuff.Mode.SRC_ATOP,
+            PorterDuff.Mode.SRC_IN,
+            PorterDuff.Mode.SRC_OUT,
+            PorterDuff.Mode.SRC_OVER,
+            PorterDuff.Mode.XOR
+        };
+        mModeIndex = 0;
+
+        updateTitle();
+    }
+
+    private void swapPaintColors() {
+        if (mPaint.getColor() == 0xFF000000) {
+            mPaint.setColor(0xFFFFFFFF);
+            mPaint2.setColor(0xFF000000);
+        } else {
+            mPaint.setColor(0xFF000000);
+            mPaint2.setColor(0xFFFFFFFF);
+        }
+        mPaint2.setAlpha(0);
+    }
+
+    private void updateTitle() {
+        mActivity.setTitle(mModes[mModeIndex].toString());
+    }
+
+    private void drawSample(Canvas canvas, ColorFilter filter) {
+        /** Create a rect around bounds, ensure size offset */
+        Rect r = mDrawable.getBounds();
+        float x = (r.left + r.right) * 0.5f;
+        float y = (r.top + r.bottom) * 0.5f - mPaintTextOffset;
+
+        /**Set color filter to selected color 
+         * create canvas (filled with this color)
+         * Write text using paint (new color)
+         */
+        mDrawable.setColorFilter(filter);
+        mDrawable.draw(canvas);
+        /** If the text doesn't fit in the button, make the text size smaller until it does*/
+        final float size = mPaint.measureText("Label");
+        if((int) size > (r.right-r.left)) {
+            float ts = mPaint.getTextSize();
+            Log.w("DEBUG","Text size was"+ts);
+            mPaint.setTextSize(ts-2);
+        }
+        canvas.drawText("Sausage Burrito", x, y, mPaint);
+        /** Write the text and draw it onto the drawable*/
+
+        for (Drawable dr : mDrawables) {
+            dr.setColorFilter(filter);
+            dr.draw(canvas);
+        }
+    }
+
+    @Override protected void onDraw(Canvas canvas) {
+        canvas.drawColor(0xFFCCCCCC);            
+
+        canvas.translate(8, 12);
+        for (int color : mColors) {
+            ColorFilter filter;
+            if (color == 0) {
+                filter = null;
+            } else {
+                filter = new PorterDuffColorFilter(color,
+                                                   mModes[mModeIndex]);
+            }
+            drawSample(canvas, filter);
+            canvas.translate(0, 55);
+        }
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        float x = event.getX();
+        float y = event.getY();
+        switch (event.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                break;
+            case MotionEvent.ACTION_MOVE:
+                break;
+            case MotionEvent.ACTION_UP:
+                // update mode every other time we change paint colors
+                if (mPaint.getColor() == 0xFFFFFFFF) {
+                    mModeIndex = (mModeIndex + 1) % mModes.length;
+                    updateTitle();
+                }
+                swapPaintColors();
+                invalidate();
+                break;
+            }
+        return true;
+        }
+    }
+}
+
+
+The two other dependencies, GraphicsActivity.java and PictureLayout.java, can be copied directly from the API Demos activity if you would like to test it out.
+    

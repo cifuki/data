@@ -1,0 +1,105 @@
+39
+Q:I am using Gradle with Product flavors where I set a different package name for each one.
+
+productFlavors {
+
+    appone {
+        packageName "com.dg.app1"
+    }
+
+    apptwo {
+        packageName "com.dg.app2"
+    }
+
+    appthree {
+        packageName "com.dg.app3"
+    }
+
+    appfour {
+        packageName "com.dg.app4"
+    }
+
+}
+
+
+I need to be able to replace the package name inside the manifest for each corresponding app.
+
+My manifest has this:
+
+<receiver android:name="com.parse.GcmBroadcastReceiver"
+          android:permission="com.google.android.c2dm.permission.SEND">
+  <intent-filter>
+    <action android:name="com.google.android.c2dm.intent.RECEIVE" />
+    <action android:name="com.google.android.c2dm.intent.REGISTRATION" />
+
+    <category android:name="com.dg.example" />
+  </intent-filter>
+</receiver>
+
+
+So I need to replace com.dg.example for each app flavor's package name. What is the best way to do this?
+    
+===============================================================================================
+69
+A:Gradle Plugin v0.12 and higher:
+
+Use ${applicationId} instead of ${packageName}.
+
+Gradle Plugin v0.11 and higher:
+
+As of v0.11, you no longer need to specify not to use the old manifest merger. 
+
+Gradle Plugin v0.10 and higher:
+
+Assuming you're using version 0.10 or higher, this is now officially supported:
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        // Make sure this is at least 0.10.+
+        classpath 'com.android.tools.build:gradle:0.10.+'
+    }
+}
+
+
+As of v0.10, you'll also have to manually enable the new manifest merger, although I'd expect that requirement to go away in a version or two whenever the new merger becomes the default:
+
+android {
+    useOldManifestMerger false
+}
+
+
+Then, just use ${packageName} anywhere in AndroidManifest.xml that you would normally hardcode the package name. For example: 
+
+<category android:name="my.package.name"/>
+
+
+would become 
+    <category android:name="${packageName}"/>
+
+
+
+Gradle Plugin v0.9 and below:
+
+So, referencing this post, it appears this is not yet officially supported through Gradle. A simple workaround is the following:
+
+
+Replace the package name with a custom tag (e.g. <category android:name="my.package.name"/> becomes <category android:name="_PACKAGENAME_"/>
+Add the following to your build.gradle, under the android scope:
+
+
+
+
+applicationVariants.all { variant ->
+    // After processing the manifest, replace all instances of your tag
+    // with the variant's actual package name.
+    variant.processManifest << {
+        def manifestOutFile = variant.processManifest.manifestOutputFile
+        def newFileContents = manifestOutFile.getText('UTF-8').replace("_PACKAGENAME_", variant.packageName)
+        manifestOutFile.write(newFileContents, 'UTF-8')
+    }
+}
+
+    

@@ -1,0 +1,233 @@
+27
+Q:I am looking at using ActionbarSherlock but have one query that's holding me back.
+
+So my application needs to be fully backwards compatible to API Level 7.
+
+I need to implement the new Google Maps in my application and to do that I need to use the SupportMapFragment class.
+
+** My Question ** 
+
+Is it possible to use the SupportMapFragment class alongside ActionBarSherlock?
+
+Thanks in advance
+
+EDIT
+
+I have downloaded and had a look at the library. The only changes to the extended Fragments I can see are very simple and the same for all of them.
+
+Do you think I could add support myself?
+
+here is how they are supported.
+
+package com.actionbarsherlock.app;
+
+import android.app.Activity;
+import android.support.v4.app.DialogFragment;
+import com.actionbarsherlock.internal.view.menu.MenuItemWrapper;
+import com.actionbarsherlock.internal.view.menu.MenuWrapper;
+import com.actionbarsherlock.view.Menu;
+import com.actionbarsherlock.view.MenuInflater;
+import com.actionbarsherlock.view.MenuItem;
+
+import static com.actionbarsherlock.app.SherlockFragmentActivity.OnCreateOptionsMenuListener;
+import static com.actionbarsherlock.app.SherlockFragmentActivity.OnOptionsItemSelectedListener;
+import static com.actionbarsherlock.app.SherlockFragmentActivity.OnPrepareOptionsMenuListener;
+
+public class SherlockDialogFragment extends DialogFragment implements OnCreateOptionsMenuListener, OnPrepareOptionsMenuListener, OnOptionsItemSelectedListener {
+    private SherlockFragmentActivity mActivity;
+
+public SherlockFragmentActivity getSherlockActivity() {
+    return mActivity;
+}
+
+@Override
+public void onAttach(Activity activity) {
+    if (!(activity instanceof SherlockFragmentActivity)) {
+        throw new IllegalStateException(getClass().getSimpleName() + " must be attached to a SherlockFragmentActivity.");
+    }
+    mActivity = (SherlockFragmentActivity)activity;
+
+    super.onAttach(activity);
+}
+
+@Override
+public void onDetach() {
+    mActivity = null;
+    super.onDetach();
+}
+
+@Override
+public final void onCreateOptionsMenu(android.view.Menu menu, android.view.MenuInflater inflater) {
+    onCreateOptionsMenu(new MenuWrapper(menu), mActivity.getSupportMenuInflater());
+}
+
+@Override
+public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+    //Nothing to see here.
+}
+
+@Override
+public final void onPrepareOptionsMenu(android.view.Menu menu) {
+    onPrepareOptionsMenu(new MenuWrapper(menu));
+}
+
+@Override
+public void onPrepareOptionsMenu(Menu menu) {
+    //Nothing to see here.
+}
+
+@Override
+public final boolean onOptionsItemSelected(android.view.MenuItem item) {
+    return onOptionsItemSelected(new MenuItemWrapper(item));
+}
+
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {
+    //Nothing to see here.
+    return false;
+}
+
+
+}
+    
+===============================================================================================
+61
+A:It all works like a charm, mainly thanks to Jake's great work on ActionBarSherlock
+
+Here are the steps I followed:
+
+
+Create a SherlockMapFragment class in your actiobarsherlock library project. I simply made a copy of SherlockFragment because I also needed support for setHasOptionsMenu(true)
+The activity extends SherlockFragmentActivity (as usual)
+The fragment extends the newly created SherlockMapFragment
+ActionBarSherlock requires the new google-play-services_lib library
+Your project requires the ActionBarSherlock library. No need to include the google-play-services again, or to build against Google API.
+As mentionned by Graham, you have to drop support for API 7 devices: <uses-sdk android:minSdkVersion="8" android:targetSdkVersion="17" />
+
+
+And here's some code for a more detailed explanation:
+
+SherlockMapFragment
+
+package com.actionbarsherlock.app;
+
+import com.actionbarsherlock.internal.view.menu.MenuItemWrapper;
+import com.actionbarsherlock.internal.view.menu.MenuWrapper;
+import com.actionbarsherlock.view.Menu;
+import com.actionbarsherlock.view.MenuInflater;
+import com.actionbarsherlock.view.MenuItem;
+import com.google.android.gms.maps.SupportMapFragment;
+
+import android.app.Activity;
+import android.support.v4.app.Watson.OnCreateOptionsMenuListener;
+import android.support.v4.app.Watson.OnOptionsItemSelectedListener;
+import android.support.v4.app.Watson.OnPrepareOptionsMenuListener;
+
+public class SherlockMapFragment extends SupportMapFragment
+        implements OnCreateOptionsMenuListener,
+        OnPrepareOptionsMenuListener,
+        OnOptionsItemSelectedListener {
+    private SherlockFragmentActivity mActivity;
+
+    public SherlockFragmentActivity getSherlockActivity() {
+        return mActivity;
+    }
+
+    @Override
+    public void onAttach(Activity activity) {
+        if (!(activity instanceof SherlockFragmentActivity)) {
+            throw new IllegalStateException(getClass().getSimpleName()
+                    + " must be attached to a SherlockFragmentActivity.");
+        }
+        mActivity = (SherlockFragmentActivity) activity;
+
+        super.onAttach(activity);
+    }
+
+    @Override
+    public void onDetach() {
+        mActivity = null;
+        super.onDetach();
+    }
+
+    @Override
+    public final void onCreateOptionsMenu(android.view.Menu menu, android.view.MenuInflater inflater) {
+        onCreateOptionsMenu(new MenuWrapper(menu), mActivity.getSupportMenuInflater());
+    }
+
+    @Override
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        // Nothing to see here.
+    }
+
+    @Override
+    public final void onPrepareOptionsMenu(android.view.Menu menu) {
+        onPrepareOptionsMenu(new MenuWrapper(menu));
+    }
+
+    @Override
+    public void onPrepareOptionsMenu(Menu menu) {
+        // Nothing to see here.
+    }
+
+    @Override
+    public final boolean onOptionsItemSelected(android.view.MenuItem item) {
+        return onOptionsItemSelected(new MenuItemWrapper(item));
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Nothing to see here.
+        return false;
+    }
+}
+
+
+The activity:
+
+public class MainActivity extends SherlockFragmentActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+    }
+}
+
+
+The activity XML layout:
+
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal" >
+
+    <fragment
+        android:id="@+id/fragment_map"
+        android:name=".ui.fragments.MapFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:tag="tag_fragment_map" />
+
+    <fragment
+        android:id="@+id/fragment_help"
+        android:name=".ui.fragments.HelpFragment"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:tag="tag_fragment_help" />
+</FrameLayout>
+
+
+The map fragment:
+
+public class MapFragment extends SherlockMapFragment {
+    private GoogleMap mMap;
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        View root = super.onCreateView(inflater, container, savedInstanceState);
+        mMap = getMap();
+        return root;
+    }
+}
+
+    

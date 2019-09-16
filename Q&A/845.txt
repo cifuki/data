@@ -1,0 +1,192 @@
+173
+Q:I have a DialogFragment that contains a RecyclerView (a list of cards). 
+
+Within this RecyclerView are one or more CardViews that can have any height.
+
+I want to give this DialogFragment the correct height based on the CardViews that are contained within.
+
+Normally this would be simple, I would set wrap_content on the RecyclerView like this.
+
+<android.support.v7.widget.RecyclerView ...
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/recycler_view"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"   
+    android:clickable="true"   
+    android:scrollbars="vertical" >
+
+</android.support.v7.widget.RecyclerView>
+
+
+Because I am using a RecyclerView this does not work see:
+
+https://issuetracker.google.com/issues/37001674
+
+and 
+
+Nested Recycler view height doesn't wrap its content
+
+On both of these pages people suggest to extend LinearLayoutManager and to override onMeasure() 
+
+I first used the LayoutManager that someone provided in the first link:
+
+public static class WrappingLayoutManager extends LinearLayoutManager {
+
+        public WrappingLayoutManager(Context context) {
+            super(context);
+        }
+
+        private int[] mMeasuredDimension = new int[2];
+
+        @Override
+        public void onMeasure(RecyclerView.Recycler recycler, RecyclerView.State state,
+                              int widthSpec, int heightSpec) {
+            final int widthMode = View.MeasureSpec.getMode(widthSpec);
+            final int heightMode = View.MeasureSpec.getMode(heightSpec);
+            final int widthSize = View.MeasureSpec.getSize(widthSpec);
+            final int heightSize = View.MeasureSpec.getSize(heightSpec);
+
+            measureScrapChild(recycler, 0,
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                    mMeasuredDimension);
+
+            int width = mMeasuredDimension[0];
+            int height = mMeasuredDimension[1];
+
+            switch (widthMode) {
+                case View.MeasureSpec.EXACTLY:
+                case View.MeasureSpec.AT_MOST:
+                    width = widthSize;
+                    break;
+                case View.MeasureSpec.UNSPECIFIED:
+            }
+
+            switch (heightMode) {
+                case View.MeasureSpec.EXACTLY:
+                case View.MeasureSpec.AT_MOST:
+                    height = heightSize;
+                    break;
+                case View.MeasureSpec.UNSPECIFIED:
+            }
+
+            setMeasuredDimension(width, height);
+        }
+
+        private void measureScrapChild(RecyclerView.Recycler recycler, int position, int widthSpec,
+                                       int heightSpec, int[] measuredDimension) {
+            View view = recycler.getViewForPosition(position);
+            if (view != null) {
+                RecyclerView.LayoutParams p = (RecyclerView.LayoutParams) view.getLayoutParams();
+                int childWidthSpec = ViewGroup.getChildMeasureSpec(widthSpec,
+                        getPaddingLeft() + getPaddingRight(), p.width);
+                int childHeightSpec = ViewGroup.getChildMeasureSpec(heightSpec,
+                        getPaddingTop() + getPaddingBottom(), p.height);
+                view.measure(childWidthSpec, childHeightSpec);
+                measuredDimension[0] = view.getMeasuredWidth();
+                measuredDimension[1] = view.getMeasuredHeight();
+                recycler.recycleView(view);
+            }
+        }
+    }
+
+
+However this did not work because 
+
+heightSize = View.MeasureSpec.getSize(heightSpec); 
+
+returns a very large value that appear to be related to match_parent. 
+
+By commenting  height = heightSize; (in the second switch case) I managed to make the height work but only if a TextView child inside the CardView does not wrap its own text (a long sentence). 
+
+As soon as that TextView wraps it's own text the height SHOULD increase but it doesn't. It calculated the height for that long sentence as a single line, not a wrapped line (2 or more). 
+
+Any advice on how I should improve this LayoutManager so my RecyclerView works with WRAP_CONTENT?
+
+Edit: This layout manager might work for most people, but it still has problems with scrolling and calculating heights of wrapping textviews
+
+public class MyLinearLayoutManager extends LinearLayoutManager {
+
+public MyLinearLayoutManager(Context context, int orientation, boolean reverseLayout)    {
+    super(context, orientation, reverseLayout);
+}
+
+private int[] mMeasuredDimension = new int[2];
+
+@Override
+public void onMeasure(RecyclerView.Recycler recycler, RecyclerView.State state,
+                      int widthSpec, int heightSpec) {
+    final int widthMode = View.MeasureSpec.getMode(widthSpec);
+    final int heightMode = View.MeasureSpec.getMode(heightSpec);
+    final int widthSize = View.MeasureSpec.getSize(widthSpec);
+    final int heightSize = View.MeasureSpec.getSize(heightSpec);
+    int width = 0;
+    int height = 0;
+    for (int i = 0; i < getItemCount(); i++) {
+        measureScrapChild(recycler, i,
+                View.MeasureSpec.makeMeasureSpec(i, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(i, View.MeasureSpec.UNSPECIFIED),
+                mMeasuredDimension);
+
+        if (getOrientation() == HORIZONTAL) {
+            width = width + mMeasuredDimension[0];
+            if (i == 0) {
+                height = mMeasuredDimension[1];
+            }
+        } else {
+            height = height + mMeasuredDimension[1];
+            if (i == 0) {
+                width = mMeasuredDimension[0];
+            }
+        }
+    }
+    switch (widthMode) {
+        case View.MeasureSpec.EXACTLY:
+            width = widthSize;
+        case View.MeasureSpec.AT_MOST:
+        case View.MeasureSpec.UNSPECIFIED:
+    }
+
+    switch (heightMode) {
+        case View.MeasureSpec.EXACTLY:
+            height = heightSize;
+        case View.MeasureSpec.AT_MOST:
+        case View.MeasureSpec.UNSPECIFIED:
+    }
+
+    setMeasuredDimension(width, height);
+}
+
+    private void measureScrapChild(RecyclerView.Recycler recycler, int position, int widthSpec,
+                                   int heightSpec, int[] measuredDimension) {
+        View view = recycler.getViewForPosition(position);
+        if (view != null) {
+            RecyclerView.LayoutParams p = (RecyclerView.LayoutParams) view.getLayoutParams();
+            int childWidthSpec = ViewGroup.getChildMeasureSpec(widthSpec,
+                    getPaddingLeft() + getPaddingRight(), p.width);
+            int childHeightSpec = ViewGroup.getChildMeasureSpec(heightSpec,
+                    getPaddingTop() + getPaddingBottom(), p.height);
+            view.measure(childWidthSpec, childHeightSpec);
+            measuredDimension[0] = view.getMeasuredWidth() + p.leftMargin + p.rightMargin;
+            measuredDimension[1] = view.getMeasuredHeight() + p.bottomMargin + p.topMargin;
+            recycler.recycleView(view);
+        }
+    }
+}
+
+    
+===============================================================================================
+179
+A:From Android Support Library 23.2.1 update, all WRAP_CONTENT should work correctly.
+
+Please update version of a library in gradle file OR to further :
+
+compile 'com.android.support:recyclerview-v7:23.2.1'
+
+
+solved some issue like Fixed bugs related to various measure-spec methods
+
+Check http://developer.android.com/tools/support-library/features.html#v7-recyclerview
+
+you can check Support Library revision history
+    

@@ -1,0 +1,78 @@
+79
+Q:My application shows some notifications, and depending on user preferences it might use a custom layout in a notification. It works well, but there is a small problem -- text colors. Stock Android and almost all manufacturer skins use black text against a light background for notification text, but Samsung doesn't: their notification pulldown has a dark background and the text in the default notification layout is white.
+
+So this causes a problem: the notifications that don't use any fancy layouts show up fine, but the one that uses a custom layout is hard to read because the text is black instead of the default white. Even the official documentation just sets a #000 color for a TextView, so I couldn't find any pointers there.
+
+A user was kind enough to take a screenshot of the problem:
+
+
+
+So how do I use the default notification text color from the device in my layouts? I'd rather not start dynamically altering the text color based on phone model, since that requires a lot of updating and people with custom ROM's might still get the problem, depending on the skin they're using.
+    
+===============================================================================================
+59
+A:Solution by Malcolm works fine with API>=9. Here's the solution for older API:
+
+The trick is to create the standard notification object and then traverse the default contentView created by Notification.setLatestEventInfo(...). When you find the right TextView, just get the tv.getTextColors().getDefaultColor().
+
+Here's the code that extracts the default text color and text size (in scaled density pixels - sp).
+
+private Integer notification_text_color = null;
+private float notification_text_size = 11;
+private final String COLOR_SEARCH_RECURSE_TIP = "SOME_SAMPLE_TEXT";
+
+private boolean recurseGroup(ViewGroup gp)
+{
+    final int count = gp.getChildCount();
+    for (int i = 0; i < count; ++i)
+    {
+        if (gp.getChildAt(i) instanceof TextView)
+        {
+            final TextView text = (TextView) gp.getChildAt(i);
+            final String szText = text.getText().toString();
+            if (COLOR_SEARCH_RECURSE_TIP.equals(szText))
+            {
+                notification_text_color = text.getTextColors().getDefaultColor();
+                notification_text_size = text.getTextSize();
+                DisplayMetrics metrics = new DisplayMetrics();
+                WindowManager systemWM = (WindowManager)getSystemService(Context.WINDOW_SERVICE);
+                systemWM.getDefaultDisplay().getMetrics(metrics);
+                notification_text_size /= metrics.scaledDensity;
+                return true;
+            }
+        }
+        else if (gp.getChildAt(i) instanceof ViewGroup)
+            return recurseGroup((ViewGroup) gp.getChildAt(i));
+    }
+    return false;
+}
+
+private void extractColors()
+{
+    if (notification_text_color != null)
+        return;
+
+    try
+    {
+        Notification ntf = new Notification();
+        ntf.setLatestEventInfo(this, COLOR_SEARCH_RECURSE_TIP, "Utest", null);
+        LinearLayout group = new LinearLayout(this);
+        ViewGroup event = (ViewGroup) ntf.contentView.apply(this, group);
+        recurseGroup(event);
+        group.removeAllViews();
+    }
+    catch (Exception e)
+    {
+        notification_text_color = android.R.color.black;
+    }
+}
+
+
+Call extractColors ie. in onCreate() of your service. Then when you're creating the custom notification, the color and text size you want are in notification_text_color and notification_text_size:
+
+Notification notification = new Notification();
+RemoteViews notification_view = new RemoteViews(getPackageName(), R.layout.notification);       
+notification_view.setTextColor(R.id.label, notification_text_color);
+notification_view.setFloat(R.id.label, "setTextSize", notification_text_size);
+
+    

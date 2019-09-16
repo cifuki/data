@@ -1,0 +1,52 @@
+56
+Q:I have a ListView that will allow the user to long-press an item to get a context menu. The problem I'm having is in determining which ListItem they long-pressed. I've tried doing this:
+
+myListView.setOnCreateContextMenuListener(new OnCreateContextMenuListener() {
+  @Override public void onCreateContextMenu(ContextMenu menu, final View v, ContextMenuInfo menuInfo) {
+   menu.add("Make Toast")
+    .setOnMenuItemClickListener(new OnMenuItemClickListener() {
+     @Override public boolean onMenuItemClick(MenuItem item) {
+      String toastText = "You clicked position " + ((ListView)v).getSelectedItemPosition();
+      Toast.makeText(DisplayScheduleActivity.this, toastText, Toast.LENGTH_SHORT).show();
+      return true;
+     }
+    });
+  } 
+ });
+
+
+but it just hangs until an ANR pops up. I suspect that after the menu is created the ListItem is no longer selected.
+
+It looks like you could monitor for clicks or long-clicks then record the clicked item there:
+
+ mArrivalsList.setOnItemLongClickListener(new OnItemLongClickListener() {
+  @Override public boolean onItemLongClick(AdapterView<?> parent, View v, int position, long id) {
+   // record position/id/whatever here
+   return false;
+  }
+ });
+
+
+but that feels majorly kludgey to me. Does anyone have any better solutions for this?
+    
+===============================================================================================
+75
+A:I do exactly this. In my onCreateContextMenu(...) method, I cast the ContextMenu.ContextMenuInfo to AdapterView.AdapterContextMenuInfo. From there, you can get the targetView, which you cast again to the widget. The complete code is available in HomeActivity.java, look for the onCreateContextMenu(...) method.
+
+@Override
+public void onCreateContextMenu(ContextMenu contextMenu,
+                                View v,
+                                ContextMenu.ContextMenuInfo menuInfo) {
+    AdapterView.AdapterContextMenuInfo info =
+            (AdapterView.AdapterContextMenuInfo) menuInfo;
+    selectedWord = ((TextView) info.targetView).getText().toString();
+    selectedWordId = info.id;
+
+    contextMenu.setHeaderTitle(selectedWord);
+    contextMenu.add(0, CONTEXT_MENU_EDIT_ITEM, 0, R.string.edit);
+    contextMenu.add(0, CONTEXT_MENU_DELETE_ITEM, 1, R.string.delete);
+}
+
+
+Note that I store the selected text as well as the select id in private fields. Since the UI is thread confined, I know the selectedWord and selectedWordId fields will be correct for later actions.
+    

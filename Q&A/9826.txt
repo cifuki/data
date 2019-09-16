@@ -1,0 +1,151 @@
+28
+Q:I've been racking my brains all night but can't seem to accomplish this one small thing. I would like to add a SwitchPreference into my PreferenceActivity of an app. Below is a picture. 
+
+Before I say too much, my problem is exactly this: I cannot seem to put a listener on just the Switch part of the preference. I am able to set an onPreferenceTreeClick and an onPreferenceClick on the preference, and that works fine if I press on the text portion. But When the Switch itself does nothing when I change it from OFF to ON. 
+
+I've read the documentation on SwitchPreference. I also looked at the android/packages/Settings and it looks like AOSP uses a Switch and not a SwitchPreference for Wi-Fi and Bluetooth.
+
+Here is my attempt (working if you press on the entire preference item, but not if you just press the Switch):
+
+Sample: 
+
+public class Preferences extends SherlockPreferenceActivity {
+
+public static final String PREF_THEME = "pref_theme_interface";
+public static final String PREF_ROOT = "pref_root";
+public static final String PREF_APP = "pref_app";
+
+public static SharedPreferences mTheme;
+private static SharedPreferences mUpdate;
+public static SharedPreferences.Editor mEditor;
+
+public boolean SDK_COMPAT = true;
+
+boolean pSwitch = false; 
+boolean update = true;
+
+Preference autoUpdate;
+
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {
+    switch (item.getItemId()) {
+        case android.R.id.home:
+            this.finish();
+            break;
+    }
+    return super.onOptionsItemSelected(item);
+}
+
+    @Override
+protected void onCreate(Bundle savedInstanceState) {
+    setTheme(MainActivity.THEME);
+    super.onCreate(savedInstanceState);
+    final ActionBar actionBar = getSupportActionBar();
+    actionBar.setHomeButtonEnabled(true);
+    actionBar.setDisplayHomeAsUpEnabled(true);
+    actionBar.setIcon(R.drawable.ic_preferences);
+
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
+        SDK_COMPAT = false;
+    }
+
+    mUpdate = PreferenceManager.getDefaultSharedPreferences(this);
+    update = mUpdate.getBoolean("update", false);
+
+    // Load the preferences from an XML resource
+    addPreferencesFromResource(R.xml.preferences);
+
+    setPreferenceScreen(createPreferenceSDK());
+
+}
+
+private PreferenceScreen createPreferenceSDK() {
+    // Root
+    PreferenceScreen root = (PreferenceScreen)findPreference(PREF_ROOT);
+
+    PreferenceCategory prefApp = (PreferenceCategory)findPreference(PREF_APP);
+
+    //root.addPreference(prefApp);
+
+    if (SDK_COMPAT == true) {
+        pSwitch = true;
+        autoUpdate = new SwitchPreference(this);
+        autoUpdate.setKey("auto_update_pref");
+        autoUpdate.setTitle(R.string.auto_update);
+        //autoUpdate.setSummary(update == false ? "Disabled" : "Enabled");
+        prefApp.addPreference(autoUpdate);
+    } else {
+        pSwitch = false;
+        autoUpdate = new CheckBoxPreference(this);
+        autoUpdate.setKey("auto_update_pref");
+        autoUpdate.setTitle(R.string.auto_update);
+        autoUpdate.setSummary(R.string.auto_update_summary);
+        prefApp.addPreference(autoUpdate);
+    }
+
+    autoUpdate.setOnPreferenceClickListener(new OnPreferenceClickListener() {
+
+        public boolean onPreferenceClick(Preference preference) {
+            mEditor = mUpdate.edit();
+            boolean checked = ((SwitchPreference) preference)
+                    .isChecked();
+            if (checked) {
+                update = true;
+                mEditor.putBoolean("update", true);
+                mEditor.commit();
+                autoUpdate.setSummary(update == false ? "Disabled" : "Enabled");
+            } else {
+                update = false;
+                mEditor.putBoolean("update", false);
+                mEditor.commit();
+                autoUpdate.setSummary(update == false ? "Disabled" : "Enabled");
+            }
+            return true;
+        }
+
+    });
+
+    return root;
+}
+
+
+So to reiterate my question in case I lost you. How does one set a listener on the Switch portion of the SwitchPreference? Please be kind if it is something so obvious. It was pretty late last night when I tried to add this. 
+
+Thank you so much in advance.
+
+Notes:
+1. I am not opposed to sticking with the CheckBoxPreference, but I prefer to use Switch because it looks nice.
+
+
+Yes I know there is an easier/better? way of adding dynamic preference using res/xml and res/xml-v14 instead of doing the SDK check. I just did that for testing.
+
+
+picture of preference screen
+
+EDIT
+
+Hopefully this helps someone else! Thanks Tushar for suggestion :-)
+
+autoUpdate.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
+
+        @Override
+        public boolean onPreferenceChange(Preference preference,
+                Object newValue) {
+            boolean switched = ((SwitchPreference) preference)
+                    .isChecked();
+            update = !switched;
+            mEditor = mUpdate.edit();
+            mEditor.putBoolean("update", update);
+            mEditor.commit();
+            autoUpdate.setSummary(update == false ? "Disabled" : "Enabled");
+
+            return true;
+        }
+
+    });
+
+    
+===============================================================================================
+32
+A:Use setOnPreferenceChangeListener() instead of setOnPreferenceClickListener().
+    

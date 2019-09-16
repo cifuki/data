@@ -1,0 +1,69 @@
+69
+Q:It is magical for Android to locate the proper resource just through the R.id.XXX. 
+
+AFAIK, the resources are compiled to binary format, so how does this mapping logic work under the hood?
+
+Maybe it works like this:
+
+For e.g., in the layout1.xml, we got:
+
+<Button android:id="@+id/button1" >
+
+
+and AAPT will generate this in the R.java:
+
+public static final int button1=0x7f05000b;
+
+
+When the *.apk is genrated, the @+id/button1 with be substituded with "0x7f05000b".
+
+Thus, when we call:
+
+findViewById(R.id.button1);
+
+
+we are essentially still do the search based on the ID, though the ID is a number like 0x7f05000b.
+
+Thanks!
+
+ADD
+
+What I really want to know, is how the resource id integer is parsed into the resource content? In other words, how does the Android runtime locate the resource content with resource id as the sole clue?
+
+For example, how is a drawable picture found with a resource id? Or how is a string value is found with a resource id?
+    
+===============================================================================================
+177
+A:At build time, the aapt tool collects all of the resources you have defined (though separate files or explicit definitions in  files) and assigns resource IDs to them.
+
+A resource ID is a 32 bit number of the form: PPTTNNNN.  PP is the package the resource is for; TT is the type of the resource; NNNN is the name of the resource in that type.  For applications resources, PP is always 0x7f.
+
+The TT and NNNN values are assigned by aapt arbitrarily -- basically for each new type the next available number is assigned and used (starting with 1); likewise for each new name in a type, the next available number is assigned and used (starting with 1).
+
+So if we have these resource files handled by aapt in this order:
+
+layout/main.xml
+drawable/icon.xml
+layout/listitem.xml
+
+
+The first type we see is "layout" so that is given TT == 1.  The first name under that type is "main" so that is given NNNN == 1.  The final resource ID is 0x7f010001.
+
+Next we see "drawable" so that is given TT == 2.  The first name for that type is "icon" so that gets NNNN == 1.  The final resource ID is 0x7f020001.
+
+Last we see another "layout" which has TT == 1 as before.  This has a new name "listitem" so that gets the next value NNNN == 2.  The final resource ID is 0x7f010002.
+
+Note that aapt by default makes no attempt to keep these identifiers the same between builds.  Each time the resources change, they can all get new identifiers.  Each time they are built, a new R.java is created with the current identifiers so your code gets the correct values.  Because of this, you must never persist resource identifiers anywhere where they can be used across different builds of your app.
+
+Once the resources are compiled and identifiers assigned, aapt generates the R.java file for your source code and a binary file called "resources.arsc" that contains all of the resource names, identifiers, and values (for resources that come from separate file, their value is the path to that file in the .apk), in a format that can easily mmapped and parsed on the device at runtime.
+
+You can get a summary of the resources.arsc file in an apk with the command "aapt dump resources <path-to-apk>".
+
+The format of the binary resource table is documented in the header file for the resource data structures here:
+
+https://github.com/android/platform_frameworks_base/blob/master/libs/androidfw/include/androidfw/ResourceTypes.h
+
+The full implementation for reading the resource table on the device is here:
+
+https://github.com/android/platform_frameworks_base/blob/master/libs/androidfw/ResourceTypes.cpp
+    

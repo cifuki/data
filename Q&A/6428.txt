@@ -1,0 +1,155 @@
+40
+Q:I'm trying the new MultiDex Support on my app and so far I've managed to compile my app correctly, but when running it, I get the following exception:
+
+java.lang.RuntimeException: Unable to instantiate application android.support.multidex.MultiDexApplication: java.lang.ClassNotFoundException: Didn't find class "android.support.multidex.MultiDexApplication" on path: DexPathList[[zip file "/data/app/me.myapp.main-2.apk"],nativeLibraryDirectories=[/data/app-lib/me..main-2, /vendor/lib, /system/lib]]
+    at android.app.LoadedApk.makeApplication(LoadedApk.java:507)
+    at android.app.ActivityThread.handleBindApplication(ActivityThread.java:4382)
+    at android.app.ActivityThread.access$1500(ActivityThread.java:139)
+    at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1270)
+    at android.os.Handler.dispatchMessage(Handler.java:102)
+    at android.os.Looper.loop(Looper.java:136)
+    at android.app.ActivityThread.main(ActivityThread.java:5086)
+    at java.lang.reflect.Method.invokeNative(Native Method)
+    at java.lang.reflect.Method.invoke(Method.java:515)
+    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:785)
+    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:601)
+    at dalvik.system.NativeStart.main(Native Method)
+Caused by: java.lang.ClassNotFoundException: Didn't find class "android.support.multidex.MultiDexApplication" on path: DexPathList[[zip file "/data/app/me.myapp.main-2.apk"],nativeLibraryDirectories=[/data/app-lib/me.myapp.main-2, /vendor/lib, /system/lib]]
+    at dalvik.system.BaseDexClassLoader.findClass(BaseDexClassLoader.java:56)
+    at java.lang.ClassLoader.loadClass(ClassLoader.java:497)
+    at java.lang.ClassLoader.loadClass(ClassLoader.java:457)
+    at android.app.Instrumentation.newApplication(Instrumentation.java:998)
+    at android.app.LoadedApk.makeApplication(LoadedApk.java:502)
+
+
+This is my gradle file:
+
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 21
+    buildToolsVersion "21.1.0"
+
+    defaultConfig {
+        minSdkVersion 16
+        targetSdkVersion 21
+        multiDexEnabled true
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+        }
+        debug {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+        }
+    }
+    packagingOptions {
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE.txt'
+    }
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+
+dependencies {
+    compile 'com.android.support:multidex:1.0.0'
+    compile fileTree(include: ['*.jar'], dir: 'libs')
+    compile 'com.android.support:support-v4:21.0.0'
+    compile 'com.android.support:support-v13:21.0.0'
+    compile 'com.android.support:appcompat-v7:21.0.0'
+}
+
+
+And my AndroidManifest.xml:
+
+<application
+android:name="android.support.multidex.MultiDexApplication">
+
+
+I don't understand what the problem is. I think I'm doing everything according to the documentation. Is there something else i am missing? I made sure I had the latest support library and repo installed from the SDK manager.
+    
+===============================================================================================
+16
+A:My configuration:
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.14.+' // 0.14.1, 2014-11-6
+    }
+}
+
+dependencies {
+    compile 'com.android.support:multidex:1.0.0'
+}
+
+android {
+    compileSdkVersion = 21
+    buildToolsVersion = "21.1.0"
+
+    defaultConfig {
+        minSdkVersion 14
+        targetSdkVersion 21
+        multiDexEnabled true
+    }
+}
+
+
+Unfortunately, I have the same problem. But I found a strange situation:
+
+build/intermediates/dex/debug:
+
+-rw-rw-r--  1 andrew andrew  2221176 Nov  6 20:18 classes2.dex
+-rw-rw-r--  1 andrew andrew  8357596 Nov  6 20:18 classes.dex
+
+
+unzip apk, build/outputs/apk:
+
+-rw-rw-r-- 1 andrew andrew 8357596 Nov  6 20:18 classes2.dex
+-rw-rw-r-- 1 andrew andrew 2221176 Nov  6 20:18 classes.dex
+
+
+In apk, the main classes of classes.dex should be bigger than classes2.dex, but its not. I do also dex2jar & unzip jar to check classes, the application class is not there in classes.dex, its in classes2.dex contrarily.
+
+However, I should have fixed it. Here is my patched android gradle plugin you can try:
+
+buildscript {
+    repositories {
+        mavenCentral()
+        maven { url 'https://github.com/yongjhih/android-gradle-plugin.m2/raw/master/' }
+    }
+    dependencies {
+        classpath 'com.infstory.tools.build:gradle:0.14.+'
+    }
+}
+
+
+The patch is in: https://github.com/yongjhih/android-gradle-plugin/commit/9c2212e3b1b4c6e1f7b47f2086aba1903a6258bf
+or
+https://android-review.googlesource.com/#/c/113331/
+
+issue: https://code.google.com/p/android/issues/detail?id=78761
+
+The official patch is https://android-review.googlesource.com/#/c/113201/ that already been merged, I think it might be fixed in next version.
+
+Already been fixed 0.14.2 (2014/11/10). (from http://tools.android.com/tech-docs/new-build-system)
+
+Release notes:
+
+0.14.2 (2014/11/10)
+
+Fix potential multi-dex issue where the dex files could be renamed during packaging, leading to the wrong main dex file being used.
+Fix versionNameSuffix support
+Fix BuildType.initWith to copy shrinkResources flag
+setup default proguard rule file if none are provided (SDK/tools/proguard/proguard-android.txt)
+BuildType.pseudoLocalesEnabled flag to include fake locales in apk.
+
+    

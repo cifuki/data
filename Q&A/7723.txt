@@ -1,0 +1,142 @@
+34
+Q:I am trying to show a FragmentDialog ( created and shown as a dialog NOT added as content in a view hierarchy) where there is a ViewPager whose content is given by a FragmentPagerAdapter (provides Fragments consisting of an image). 
+
+The code works perfect when showing ViewPager + FragmentPagerAdapter from a FragmentActivity, but get the following exception when doing it from a FragmentDialog:
+
+"IllegalArgumentException: No view found for id 0x7f040077 for fragment SimpleFragment..."
+
+Here is my code:
+
+A SherlockFragmentActivity with a button to create and show the dialog.
+
+public class BorrameActivity extends SherlockFragmentActivity{
+    @Override
+ public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);  
+    setContentView(R.layout.one_act);
+
+    Button button = (Button) findViewById(R.id.button);
+    button.setOnClickListener(new OnClickListener(){
+        @Override
+        public void onClick(View arg0) {
+            showTheDialog();
+
+        }});
+   }
+
+   private void showTheDialog(){
+       AchGalleryDialog newFragment = AchGalleryDialog.newInstance(achs);
+       newFragment.show(getSupportFragmentManager(), "dialog");
+   }
+
+
+The FragmentDialog:
+
+public class AchGalleryDialog extends DialogFragment{
+    public AchGalleryDialog(){  
+}
+
+    public static AchGalleryDialog newInstance(){       
+        AchGalleryDialog f = new AchGalleryDialog();
+        return f;       
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);  
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+        Bundle savedInstanceState) {
+
+        View view = inflater.inflate(R.layout.dialog_user_result, container);
+        getDialog().setTitle("Hola tronco");
+
+        //content to show in the fragments
+        int[] images = new int[]{R.drawable.d1, R.drawable.d2, R.drawable.d3};
+
+        ViewPager pager = (ViewPager) view.findViewById(R.id.pager);
+        MyFragmentAdapter adapter = new MyFragmentAdapter(getFragmentManager(),images);  
+        pager.setAdapter(adapter);
+
+        return view;
+    }
+}
+
+
+This is the very simple MyFragmentPagerAdapter, 
+I put only the getItem() method, and nullPointer checks:
+
+@Override
+public Fragment getItem(int position) {
+    return MySimpleFragment.newInstance(images[position]); 
+
+}
+
+
+And finally SimpleFragment:
+
+public class SimpleFragment extends Fragment{
+    int id;
+    public static SimpleAchFragment newInstance(int imgId){
+        SimpleFragment f = new SimpleFragment();
+        Bundle args = new Bundle();
+        args.putLong(ID_BUNDLE, imgId);
+        f.setArguments(args);
+
+        return f;
+    }
+
+    public SimpleAchFragment(){
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        this.id = getArguments() != null ? getArguments().getInt(ID_BUNDLE) : 0;    
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+
+    // Inflate the layout for this fragment
+        View v =  inflater.inflate(R.layout.simple_fragment, container, false);
+        FragmentActivity mAct = getActivity();
+
+        ImageView img = (ImageView) v.findViewById(R.id.image);
+        img.setImageDrawable(mAct.getResources().getDrawable(id));
+
+        return v;
+    }
+
+}
+
+
+More info, if the content passed to the adapter ( an int array with 3 ints) has length zero, then the adapter doesn't try to create any Fragment so dialogs appears correctly but empty (as expected). 
+The Exception is thrown at SimpleFragment.onCreateView() at the time of inflating.
+The id referenced in the exception (as not found) correspond to ViewPager 's id, with is properly defined in R.layout.simple_fragment.
+
+I have try also to build the Dialog with an AlertDialog.builder and also directly with Dialog() contructor, but get the same behaviour.
+    
+===============================================================================================
+79
+A:Try this:
+
+In class AchGalleryDialog
+
+MyFragmentAdapter adapter = new MyFragmentAdapter(getChildFragmentManager(),images);
+
+
+instead of
+
+MyFragmentAdapter adapter = new MyFragmentAdapter(getFragmentManager(),images); 
+
+
+Because of this:
+
+http://developer.android.com/about/versions/android-4.2.html#NestedFragments
+
+Hope this will help!
+    

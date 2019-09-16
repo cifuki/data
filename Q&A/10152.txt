@@ -1,0 +1,79 @@
+27
+Q:I've been having some trouble getting some custom DialogPreference subclasses inside a PreferenceFragment to remain visible when the screen is rotated. I don't experience this problem when using a PreferenceActivity, so I don't know whether it's an Android bug or a problem with my code, but I'd like someone to confirm whether they are having the same experience.
+
+To test this, first create a preference screen containing at least one DialogPreference (it doesn't matter which subclass). Then display it in a PreferenceActivity. When you run your app, press on the DialogPreference so that it's dialog shows. Then rotate the screen so the orientation changes. Does the dialog remain visible?
+
+Then try the same, but with a PreferenceFragment to display your preferences instead of a PreferenceActivity. Again, does the dialog remain visible when you rotate the screen?
+
+So far, I've found that the dialog will remain visible if using a PreferenceActivity, but not if using a PreferenceFragment. Looking at the source code for DialogPreference, it seems that the correct behaviour is for the dialog to remain visible, because isDialogShowing is the state information that gets saved when onSaveInstanceState() is called on screen re-orientation. Therefore, I think a bug may be preventing the PreferenceFragment (and everything inside it) from restoring that state information.
+
+If it is an Android bug, then it has far-reaching implications, because anyone using PreferenceFragment cannot save and restore state information.
+
+Can someone please confirm? If it's not a bug, then what is going on?
+    
+===============================================================================================
+52
+A:Finally figured out a solution to this problem. Turns out it's not a bug, but a problem/oversight in the Android developer documentation.
+
+You see, I was following the PreferenceFragment tutorial here. That article tells you to do the following in order to instantiate your PreferenceFragment within an Activity:
+
+public class SettingsActivity extends Activity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // Display the fragment as the main content.
+        getFragmentManager().beginTransaction()
+                .replace(android.R.id.content, new SettingsFragment())
+                .commit();
+    }
+} 
+
+
+The problem with this is that when you change the screen orientation (or any other action that destroys and re-creates the Activity), your PreferenceFragment will get created twice, which is what causes it to lose its state. 
+
+The first creation will occur via the Activity's call to super.onCreate() (shown above), which will call the onActivityCreated() method for your PreferenceFragment () and the onRestoreInstanceState() method for each Preference it contains. These will successfully restore the state of everything.
+
+But then once that call to super.onCreate() returns, you can see that the onCreate() method will then go on to create the PreferenceFragment a second time. Because it is pointlessly created again (and this time, without state information!), all of the state that was just successfully restored will be completely discarded/lost. This explains why a DialogPreference that may be showing at the time that the Activity is destroyed will no longer be visible once the Activity is re-created.
+
+So what's the solution? Well, just add a small check to determine whether the PreferenceFragment has already been created, like so:
+
+public class SettingsActivity extends Activity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        Fragment existingFragment = getFragmentManager().findFragmentById(android.R.id.content);
+        if (existingFragment == null || !existingFragment.getClass().equals(SettingsFragment.class))
+        {
+            // Display the fragment as the main content.
+            getFragmentManager().beginTransaction()
+                .replace(android.R.id.content, new SettingsFragment())
+                .commit();
+        }
+    }
+}
+
+
+Or another way is to simply check if onCreate() is meant to restore state or not, like so:
+
+public class SettingsActivity extends Activity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        if (savedInstanceState == null)
+        {
+            // Display the fragment as the main content.
+            getFragmentManager().beginTransaction()
+                .replace(android.R.id.content, new SettingsFragment())
+                .commit();
+        }
+    }
+}
+
+
+So I guess the lesson learnt here is that onCreate() has a dual role - it can set up an Activity for the first time, or it can restore from an earlier state.
+
+The answer here led me to realizing this solution.
+    

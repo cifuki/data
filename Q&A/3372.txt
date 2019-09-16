@@ -1,0 +1,114 @@
+67
+Q:I've been trying to implement an application that requires camera preview on a surface.
+As I see the things, both activity and surface lifecycles consist of the following states:
+
+
+When I first launch my Activity: onResume()->onSurfaceCreated()->onSurfaceChanged()
+When I leave my Activity: onPause()->onSurfaceDestroyed()
+
+
+In this scheme, I can do corresponding calls like open/release camera and start/stop preview in onPause/onResume and onSurfaceCreated()/onSurfaceDestroyed().
+
+It works fine, unless I lock the screen. When I launch the app, then lock the screen and unlock it later I see:
+
+onPause() - and nothing else after the screen is locked - then onResume() after unlock - and no surface callbacks after then. Actually, onResume() is called after the power button is pressed and the screen is on, but the lock screen is still active, so, it's before the activity becomes even visible.
+
+With this scheme, I get a black screen after unlock, and no surface callbacks are called.
+
+Here's a code fragment that doesn't involve actual work with the camera, but the SurfaceHolder callbacks. The issue above is reproduced even with this code on my phone (callbacks are called in a normal sequence when you press "Back" button, but are missing when you lock the screen):
+
+class Preview extends SurfaceView implements SurfaceHolder.Callback {
+
+    private static final String tag= "Preview";
+
+    public Preview(Context context) {
+        super(context);
+        Log.d(tag, "Preview()");
+        SurfaceHolder holder = getHolder();
+        holder.addCallback(this);
+        holder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+    }
+
+    public void surfaceCreated(SurfaceHolder holder) {
+        Log.d(tag, "surfaceCreated");
+    }
+
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        Log.d(tag, "surfaceDestroyed");
+    }
+
+    public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
+        Log.d(tag, "surfaceChanged");
+    }
+}
+
+
+Any ideas on why the surface remains undestroyed after the Activity is paused? Also, how do you handle camera lifecycle in such cases?
+    
+===============================================================================================
+56
+A:Edit: if the targetSDK is greater than 10, putting the app to sleep calls onPause and onStop. Source 
+
+I looked at the lifecycle of both the Activity and the SurfaceView in a tiny camera app on my gingerbread phone. You are entirely correct; the surface is not destroyed when the power button is pressed to put the phone to sleep. When the phone goes to sleep, the Activity does onPause. (And does not do onStop.) It does onResume when the phone wakes up, and, as you point out, it does this while the lock screen is still visible and accepting input, which is a bit odd. When I make the Activity invisible by pressing the Home button, the Activity does both onPause and onStop. Something causes a callback to surfaceDestroyed in this case between the end of onPause and the start of onStop. It's not very obvious, but it does seem very consistent.
+
+When the power button is pressed to sleep the phone, unless something is explicitly done to stop it, the camera keeps running! If I have the camera do a per-image callback for each preview frame, with a Log.d() in there, the log statements keep coming while the phone is pretending to sleep. I think that is Very Sneaky.
+
+As another confusion, the callbacks to surfaceCreated and surfaceChanged happen after onResume in the activity, if the surface is being created.
+
+As a rule, I manage the camera in the class that implements the SurfaceHolder callbacks.
+
+class Preview extends SurfaceView implements SurfaceHolder.Callback {
+    private boolean previewIsRunning;
+    private Camera camera;
+
+    public void surfaceCreated(SurfaceHolder holder) {
+        camera = Camera.open();
+        // ...
+        // but do not start the preview here!
+    }
+
+    public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
+        // set preview size etc here ... then
+        myStartPreview();
+    }
+
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        myStopPreview();
+        camera.release();
+        camera = null;
+    }
+
+   // safe call to start the preview
+   // if this is called in onResume, the surface might not have been created yet
+   // so check that the camera has been set up too.
+   public void myStartPreview() {
+       if (!previewIsRunning && (camera != null)) {
+           camera.startPreview();
+           previewIsRunning = true;
+       }
+   }
+
+   // same for stopping the preview
+   public void myStopPreview() {
+       if (previewIsRunning && (camera != null)) {
+           camera.stopPreview();
+           previewIsRunning = false;
+       }
+   }
+}
+
+
+and then in the Activity:
+
+@Override public void onResume() {
+    preview.myStartPreview();  // restart preview after awake from phone sleeping
+    super.onResume();
+}
+@Override public void onPause() {
+    preview.myStopPreview();  // stop preview in case phone is going to sleep
+    super.onPause();
+}
+
+
+and that seems to work OK for me. Rotation events cause the Activity to be destroyed and recreated, which causes the SurfaceView to be destroyed and recreated too.
+    

@@ -1,0 +1,50 @@
+100
+Q:I have issues in my app regarding StrictMode and added the code snippet that basically disables the StrictModeHelper. However, Lint complains about setThreadPolicy() now and proposes to either add 
+
+@SuppressLint 'NewApi'
+
+
+or 
+
+@TargetApi(Build.VERSION_CODES.GINGERBREAD)
+
+
+to the onCreate() event of the view.
+
+Which method is prefered ..or are they basically doing the same?
+    
+===============================================================================================
+176
+A:I have issues in my app regarding StrictMode and added the code snippet that basically disables the StrictModeHelper
+
+
+Please fix the networking bug.
+
+
+  Which method is prefered ..or are they basically doing the same?
+
+
+@TargetApi and @SuppressLint have the same core effect: they suppress the Lint error.
+
+The difference is that with @TargetApi, you declare, via the parameter, what API level you have addressed in your code, so that the error can pop up again if you later modify the method to try referencing something newer than the API level cited in @TargetApi.
+
+For example, suppose that, instead of blocking the StrictMode complaints about your networking bug, you were trying to work around the issue of AsyncTask being serialized on newer versions of Android. You have a method like this in your code to opt into the thread pool on newer devices and use the default multithread behavior on older devices:
+
+  @TargetApi(11)
+  static public <T> void executeAsyncTask(AsyncTask<T, ?, ?> task,
+                                          T... params) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+      task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, params);
+    }
+    else {
+      task.execute(params);
+    }
+  }
+
+
+Having @TargetApi(11) means that if Lint detects that I am using something newer than my android:minSdkVersion, but up to API Level 11, Lint will not complain. In this case, that works. If, however, I modified this method to reference something that wasn't added until API Level 14, then the Lint error would appear again, because my @TargetApi(11) annotation says that I only fixed the code to work on API Level 11 and below above, not API Level 14 and below above.
+
+Using @SuppressLint('NewApi'), I would lose the Lint error for any API level, regardless of what my code references and what my code is set up to handle.
+
+Hence, @TargetApi is the preferred annotation, as it allows you to tell the build tools "OK, I fixed this category of problems" in a more fine-grained fashion.
+    

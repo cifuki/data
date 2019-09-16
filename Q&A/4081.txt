@@ -1,0 +1,220 @@
+57
+Q:This is the app I'm trying to build with all the elements mapped out below:
+
+
+
+Everything works, however, I want the inner horizontal recyclerview not to capture any of the vertical scrolls. All vertical scrolls must go towards the outer vertical recyclerview, not the horizontal one, so that the vertical scroll would allow for the toolbar to exit out of view according to it's scrollFlag.
+
+When I put my finger on the "StrawBerry Plant" part of the recyclerview and scroll up, it scroll out the toolbar:
+
+
+
+If I put my finger on the horizontal scrollview and scroll up, it does not scroll out the toolbar at all.
+
+The following is my xml layout code so far.
+
+The Activity xml layout:
+
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:id="@+id/fragment_container"
+    android:clipChildren="false">
+
+    <android.support.design.widget.CoordinatorLayout
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:id="@+id/container"
+        >
+
+    <android.support.design.widget.AppBarLayout
+        android:id="@+id/appBarLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <android.support.v7.widget.Toolbar
+            android:id="@+id/toolbar"
+            android:minHeight="?attr/actionBarSize"
+            android:background="?attr/colorPrimary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:layout_scrollFlags="scroll|enterAlways">
+
+        </android.support.v7.widget.Toolbar>
+
+        <android.support.design.widget.TabLayout
+            android:id="@+id/sliding_tabs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/colorPrimary"
+            style="@style/CustomTabLayout"
+            />
+
+    </android.support.design.widget.AppBarLayout>
+    <android.support.v4.view.ViewPager
+        android:id="@+id/viewPager"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior"
+        />
+
+    </android.support.design.widget.CoordinatorLayout>
+
+</FrameLayout>
+
+
+The "Fruits" fragment xml layout (which is the code for the fragment - the fragment is labeled in the above picture):
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ProgressBar
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/progressBar"
+        android:visibility="gone"
+        android:layout_centerInParent="true"
+        android:indeterminate="true"/>
+
+<!--    <android.support.v7.widget.RecyclerView-->
+    <com.example.simon.customshapes.VerticallyScrollRecyclerView
+        android:id="@+id/main_recyclerview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        />
+
+</RelativeLayout>
+
+
+I have used a custom class called VerticallyScrollRecyclerView which follows google example of handling touch events in a viewgroup. Its aim is to intercept and consume all the vertical scroll events so that it will scroll in / out the toolbar: http://developer.android.com/training/gestures/viewgroup.html
+
+The code for VerticallyScrollRecyclerView is below:
+
+public class VerticallyScrollRecyclerView extends RecyclerView {
+
+    public VerticallyScrollRecyclerView(Context context) {
+        super(context);
+    }
+
+    public VerticallyScrollRecyclerView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public VerticallyScrollRecyclerView(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+    }
+
+    ViewConfiguration vc = ViewConfiguration.get(this.getContext());
+    private int mTouchSlop = vc.getScaledTouchSlop();
+    private boolean mIsScrolling;
+    private float startY;
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        final int action = MotionEventCompat.getActionMasked(ev);
+        // Always handle the case of the touch gesture being complete.
+        if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_UP) {
+            // Release the scroll.
+            mIsScrolling = false;
+            startY = ev.getY();
+            return super.onInterceptTouchEvent(ev); // Do not intercept touch event, let the child handle it
+        }
+        switch (action) {
+            case MotionEvent.ACTION_MOVE: {
+                Log.e("VRecView", "its moving");
+                if (mIsScrolling) {
+                    // We're currently scrolling, so yes, intercept the
+                    // touch event!
+                    return true;
+                }
+                // If the user has dragged her finger horizontally more than
+                // the touch slop, start the scroll
+                // left as an exercise for the reader
+                final float yDiff = calculateDistanceY(ev.getY());
+                Log.e("yDiff ", ""+yDiff);
+                // Touch slop should be calculated using ViewConfiguration
+                // constants.
+                if (Math.abs(yDiff) > 5) {
+                    // Start scrolling!
+                    Log.e("Scroll", "we are scrolling vertically");
+                    mIsScrolling = true;
+                    return true;
+                }
+                break;
+            }
+        }
+        return super.onInterceptTouchEvent(ev);
+    }
+
+
+    private float calculateDistanceY(float endY) {
+        return startY - endY;
+    }
+
+}
+
+
+The "Favourite" layout which is the recyclerview within the vertical recyclerview:
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<RelativeLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:background="@color/white"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Favourite"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
+        android:layout_marginLeft="16dp"
+        android:id="@+id/header_fav"/>
+
+    <android.support.v7.widget.RecyclerView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_below="@+id/header_fav"
+        android:id="@+id/recyclerview_fav">
+    </android.support.v7.widget.RecyclerView>
+
+</RelativeLayout>
+
+
+This has been bugging me for a while now and I have not managed to come up with a solution. Does anyone know how to solve this problem? 
+
+5 points to Griffindor for the correct answer and of course, reputation points on SO.
+    
+===============================================================================================
+102
+A:Tested solution:
+
+All you need is to call mInnerRecycler.setNestedScrollingEnabled(false); on your inner RecyclerViews  
+
+
+Explanation:
+
+RecyclerView has support for nested scrolling introduced in API 21 through implementing the NestedScrollingChild interface. This is a valuable feature when you have a scrolling view inside another one that scrolls in the same direction and you want to scroll the inner View only when focused. 
+
+In any case, RecyclerView by default calls RecyclerView.setNestedScrollingEnabled(true); on itself when initializing. Now, back to the problem, since both of your RecyclerViews are within the same ViewPager that has the AppBarBehavior, the CoordinateLayout has to decide which scroll to respond to when you scroll from your inner RecyclerView; when your inner RecyclerView's nested scrolling is enabled, it gets the scrolling focus and the CoordinateLayout will choose to respond to its scrolling over the outer RecyclerView's scrolling. The thing is that, since your inner RecyclerViews don't scroll vertically, there is no vertical scroll change (from the CoordinateLayout's point of view), and if there is no change, the AppBarLayout doesn't change either.
+
+In your case, because your inner RecyclerViews are scrolling in a different direction, you can disable it, thus causing the CoordinateLayout to disregard its scrolling and respond to the outer RecyclerView's scrolling.
+
+
+
+Notice:
+
+The xml attribute android:nestedScrollingEnabled="boolean" is not intended for use with the RecyclerView, and an attempt to use android:nestedScrollingEnabled="false" will result in a java.lang.NullPointerException so, at least for now, you will have to do it in code. 
+    

@@ -1,0 +1,152 @@
+32
+Q:I saw the following example on the Dagger 2 website: 
+
+class Thermosiphon implements Pump {
+  private final Heater heater;
+
+  @Inject
+  Thermosiphon(Heater heater) {
+    this.heater = heater;
+  }
+
+  ...
+}
+
+
+and the documentation: 
+
+
+  When a new instance is requested, Dagger will obtain the required
+  parameters values and invoke this constructor.
+
+
+When I write a Module to provide a Thermosiphon like
+
+@Module
+public class ThermosiphonModule {
+
+    @Provides
+    @Singleton
+    Thermosiphon provideThermosiphon() {
+        return new Thermosiphon(???);
+    }
+
+}
+
+
+the Thermosiphon constructor still requires a Heater as an argument, rendering the whole 'automatic injection of constructor dependencies' useless. 
+
+I tried 
+
+return new Thermosiphon(null); 
+
+
+and 
+
+return new Thermosiphon(); 
+
+
+(empty constructor) and hoped for Dagger2 to pick up that I wanted the missing Heater to be injected, yet the Heater of the provided Thermosiphon is always null; 
+
+I verified though my HeaterComponent / HeaterModule are working fine and are able to provide a Heater. 
+
+Do I completey misunderstand the whole feature of 'Dagger satisfies constructor dependencies for you' or am I missing something?
+    
+===============================================================================================
+54
+A:If you're using modules, then if you have two provider modules bound to the same component, then you'll be able to allow them to see the heater as a constructor parameter.
+
+@Module
+public class HeaterModule {
+    @Provides
+    @Singleton
+    Heater heater() {
+        return new Heater(); // if not using @Inject constructor
+    }
+}
+
+@Module
+public class ThermosiphonModule {
+    @Provides
+    @Singleton
+    Thermosiphon thermosiphon(Heater heater) {
+        return new Thermosiphon(heater); // if not using @Inject constructor
+    }
+}
+
+@Singleton
+@Component(modules={ThermosiphonModule.class, HeaterModule.class})
+public interface SingletonComponent {
+    Thermosiphon thermosiphon();
+    Heater heater();
+
+    void inject(Something something);
+}
+
+public class CustomApplication extends Application {
+    private SingletonComponent singletonComponent;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        this.singletonComponent = DaggerSingletonComponent.builder().build(); //.create();
+    }
+
+    public SingletonComponent getSingletonComponent() {
+        return singletonComponent;
+    }
+}
+
+
+
+
+But with constructor injection, you will also be able to provide objects of that given scope, or unscoped objects, as long as they have a @Inject constructor.
+
+For example,
+
+@Singleton
+@Component // no modules
+public interface SingletonComponent {
+    Thermosiphon thermosiphon();
+    Heater heater();
+
+    void inject(Something something);
+}
+
+
+And
+
+@Singleton
+public class Heater {
+    @Inject
+    public Heater() {
+    }
+}
+
+
+And
+
+@Singleton
+public class Thermosiphon {
+    private Heater heater;
+
+    @Inject
+    public Thermosiphon(Heater heater) {
+        this.heater = heater;
+    }
+}
+
+
+Or
+
+@Singleton
+public class Thermosiphon {
+    @Inject
+    Heater heater;
+
+    @Inject
+    public Thermosiphon() {
+    }
+}
+
+    

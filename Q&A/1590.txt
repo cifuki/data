@@ -1,0 +1,118 @@
+115
+Q:I'm writing an app for 4.0 and 4.1 tablets, for which I do not want to use the support libraries (if not needed) but the 4.x api only therefore.
+
+So my target platform is very well defined as: >= 4.0 and <= 4.1
+
+The app has a multi-pane layout (two fragments, one small on the left, one content fragment on the right) and an action bar with tabs.
+
+Similar to this:
+
+
+
+Clicking a tab on the action bar changes the 'outer' fragment, and the inner fragment then is a fragment with two nested fragments (1. small left list fragment, 2. wide content fragment).
+
+I am now wondering what's the best practice to replace fragments and especially nested fragments. 
+The ViewPager is part of the support library, there's no native 4.x alternative for this class. Appear to be 'deprecated' in my sense.
+ - http://developer.android.com/reference/android/support/v4/view/ViewPager.html
+
+Then I read the release notes for Android 4.2, regarding ChildFragmentManager, which would be a good fit, but I am targeting 4.0 and 4.1, so this can't be used either.
+
+ChildFragmentManager is only available in 4.2
+
+
+http://developer.android.com/about/versions/android-4.2.html#NestedFragments
+http://developer.android.com/reference/android/app/Fragment.html#getChildFragmentManager()
+
+
+Unfortunately, there are hardly any good examples out there that show best practices for fragments usages without the support library, even in the entire Android developer guides; and especially nothing regarding nested fragments.
+
+So I am wondering: is it simply not possible to write 4.1 apps with nested fragments without using the support library and everything that comes with it? (need to use FragmentActivity instead of Fragment, etc.?)
+Or what would be the best practice?
+
+
+
+The problem that I am currently having in the development is exactly this statement:
+
+
+http://developer.android.com/about/versions/android-4.2.html#NestedFragments
+
+
+
+  The Android Support Library also now supports nested fragments, so you
+  can implement nested fragment designs on Android 1.6 and higher.
+  
+  Note: You cannot inflate a layout into a fragment when that layout
+  includes a <fragment>. Nested fragments are only supported when added
+  to a fragment dynamically.
+
+
+Because I put define the nested fragments in XML, which apparently causes an error like:
+
+Caused by: java.lang.IllegalArgumentException: Binary XML file line #15: Duplicate id 0x7f090009, tag frgCustomerList, or parent id 0x7f090008 with another fragment for de.xyz.is.android.fragment.CustomerListFragment_
+
+
+At the moment, I conclude for myself: even on 4.1, when I don't even want to target the 2.x platform, nested fragments as shown in the screenshot are not possible without the support library.
+
+(This might actually be more of a wiki entry than a question, but maybe somebody else has managed it before).
+
+Update:
+
+A helpful answer is at: Fragment Inside Fragment
+    
+===============================================================================================
+60
+A:Limitations
+
+So nesting fragments inside another fragment is not possible with xml regardless of which version of FragmentManager you use.
+
+So you have to add fragments via code, this might seem like a problem, but in the long run makes your layouts superflexible.
+
+So nesting without using getChildFragmentManger? The essence behind childFragmentManager is that it defers loading until the previous fragment transaction has finished. And of course it was only naturally supported in 4.2 or the support library.
+
+Nesting without ChildManager - Solution
+
+Solution, Sure! I have been doing this for a long time now, (since the ViewPager was announced).
+
+See below; This is a Fragment that defers loading, so Fragments can be loaded inside of it.
+
+Its pretty simple, the Handler is a really really handy class, effectively the handler waits for a space to execute on the main thread after the current fragment transaction has finished committing (as fragments interfere with the UI they run on the main thread).
+
+// Remember this is an example, you will need to modify to work with your code
+private final Handler handler = new Handler();
+private Runnable runPager;
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState)
+    return inflater.inflate(R.layout.frag_layout, container, false);
+}
+
+@Override
+public void onActivityCreated(Bundle savedInstanceState)
+{
+    super.onActivityCreated(savedInstanceState);
+    runPager = new Runnable() {
+
+        @Override
+        public void run()
+        {
+          getFragmentManager().beginTransaction().addFragment(R.id.frag_container, MyFragment.newInstance()).commit();
+        }
+    };
+    handler.post(runPager);
+}
+
+/**
+ * @see android.support.v4.app.Fragment#onPause()
+ */
+@Override
+public void onPause()
+{
+    super.onPause();
+    handler.removeCallbacks(runPager);
+}
+
+
+I wouldn't consider it 'best practice', but I have live apps using this hack and I am yet to have any issues with it.
+
+I also use this method for embedding view pagers - https://gist.github.com/chrisjenx/3405429
+    

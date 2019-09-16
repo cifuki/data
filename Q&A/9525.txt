@@ -1,0 +1,52 @@
+29
+Q:I've got some legacy code which I am making permission safe for Marshmallow.
+
+There is a broadcast using the PHONE_STATE permission as follows:
+
+<receiver android:name="redacted.TheBroadcastReceiver">
+    <intent-filter>
+        <action android:name="android.intent.action.PHONE_STATE"></action>
+        <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+    </intent-filter>
+</receiver>
+
+
+If the PHONE_STATE permission is granted but then later the user denied then when there is a phone call there is a permissions related crash. 
+But the crash occurs before the Broadcast Receiver's onReceive() is called (the crash is in android.app.ActivityThread.handleReceiver). That means that the broadcast receiver does not get the chance to even check if the permission is granted or not and deal with that situation.
+
+So my question is, if there is a broadcast receiver such as this how can the code deal with the situation where the user has disabled the permission because AFAIK there is no API to monitor for changes in permissions as they occur, therefore the code cannot know on the fly that the permission has been revoked, and therefore it can't deregister its broadcast receiver.
+    
+===============================================================================================
+1
+A:As for the permission in Android Marsmallow you may want to check for permission before your receiver is called like this:
+
+// Here, thisActivity is the current activity
+if (ContextCompat.checkSelfPermission(thisActivity,
+                Manifest.permission.PHONE_STATE)
+        != PackageManager.PERMISSION_GRANTED) {
+
+    // Should we show an explanation?
+    if (ActivityCompat.shouldShowRequestPermissionRationale(thisActivity,
+            Manifest.permission.PHONE_STATE)) {
+
+        // Show an expanation to the user *asynchronously* -- don't block
+        // this thread waiting for the user's response! After the user
+        // sees the explanation, try again to request the permission.
+
+    } else {
+
+        // No explanation needed, we can request the permission.
+
+        ActivityCompat.requestPermissions(thisActivity,
+                new String[]{Manifest.permission.PHONE_STATE},
+                MY_PERMISSIONS_REQUEST_PHONE_STATE);
+
+        // MY_PERMISSIONS_REQUEST_READ_CONTACTS is an
+        // app-defined int constant. The callback method gets the
+        // result of the request.
+    }
+}
+
+
+It is a late answer but i hope it helps someone!!!
+    

@@ -1,0 +1,365 @@
+38
+Q:Hi I've a tabbed activity, and in the first tab I fetch data from server and show it in a recyclerview within card views. For fetching the data from server I use the volley library. I want to implement the Pull to refresh to load the data (so whenever I pull it has to do the request to the network). And I want also to disable the network request whenever I switch between tabs (because when I change tab focus in my app it starts to fetching data) I want to do the network request only 1 time (when user log in first time) and then others requests maneged only by pull to refresh. 
+
+Here's my fragment where I've recyclerview and show the data:
+
+public class Tab1History extends Fragment
+{
+
+private RecyclerView recyclerView;
+private CespiteAdapter adapter;
+UserSessionManager session;
+
+private static final String URL_DATA = "http://mydata.php";
+
+private List<CespiteOgg> cespiteOggList;
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                         Bundle savedInstanceState)
+{
+
+    View rootView = inflater.inflate(R.layout.tab1history, container, false);
+
+    recyclerView = (RecyclerView) rootView.findViewById(R.id.my_recycler_view);
+    recyclerView.setHasFixedSize(true);//every item of the RecyclerView has a fix size
+    recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
+
+    cespiteOggList = new ArrayList<>();
+
+    loadRecyclerViewData();
+
+            return rootView;
+}
+
+private void loadRecyclerViewData()
+{
+    // Session class instance
+    session = new UserSessionManager(getActivity());
+    //get user data from session
+    HashMap<String, String> user = session.getUserDetails();
+    //get name
+    String name = user.get(UserSessionManager.KEY_NAME);
+    // get username
+    final String usernameUtente = user.get(UserSessionManager.KEY_USERNAME);
+
+    final ProgressDialog progressDialog = new ProgressDialog(getActivity());
+    progressDialog.setMessage("Carimento dati...");
+    progressDialog.show();
+
+    StringRequest stringRequest = new StringRequest(Request.Method.POST,
+            URL_DATA,
+            new Response.Listener<String>() {
+                @Override
+                public void onResponse(String s) {
+                    progressDialog.dismiss();
+                    try {
+                        JSONObject jsonObject = new JSONObject(s);
+                        JSONArray array = jsonObject.getJSONArray("dates");
+
+                        for(int i=0; i<array.length(); i++)
+                        {
+                            JSONObject o = array.getJSONObject(i);
+                            CespiteOgg item = new CespiteOgg(
+                                    o.getString("CodNumInventario"),
+                                    o.getString("Nome"),
+                                    o.getString("DtCatalogazione"),
+                                    o.getString("CodIdA"),
+                                    o.getString("username")
+                            );
+                            cespiteOggList.add(item);
+                        }
+
+                        adapter = new CespiteAdapter(cespiteOggList, getActivity());
+                        recyclerView.setAdapter(adapter);
+
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+
+                }
+            },
+            new Response.ErrorListener() {
+                @Override
+                public void onErrorResponse(VolleyError error) {
+                    progressDialog.dismiss();
+                }
+            })
+            {
+                @Override
+                protected Map<String, String> getParams() throws AuthFailureError {
+                    Map<String, String> params = new HashMap<String, String>();
+                    params.put("Username", usernameUtente);
+                    return params;
+                }
+            };
+
+    RegisterRequest.getmInstance(getActivity()).addToRequestque(stringRequest);
+
+}
+}
+
+
+And it's the adapter:
+
+public class CespiteAdapter extends RecyclerView.Adapter<CespiteAdapter.ViewHolder>
+{
+
+
+private List<CespiteOgg> cespiteOggList;
+private Context context;
+
+public CespiteAdapter(List<CespiteOgg> cespiteOggList, Context context) {
+
+    this.cespiteOggList = cespiteOggList;
+    this.context = context;
+}
+
+public class ViewHolder extends RecyclerView.ViewHolder
+{
+
+    public CardView cv;
+    public TextView txtNumInventario;
+    public TextView txtNomeCespite;
+    public TextView txtDtCatalogazione;
+    public TextView txtAula;
+    public TextView txtNomeUser;
+
+
+    ViewHolder(View itemView)
+    {
+
+        super (itemView);
+        //cv = (CardView) itemView.findViewById(R.id.cardView);
+        txtNumInventario = (TextView) itemView.findViewById(R.id.txtNumeroInventario);
+        txtNomeCespite = (TextView) itemView.findViewById(R.id.txtNomeCespite);
+        txtDtCatalogazione = (TextView) itemView.findViewById(R.id.txtDataCatalogazione);
+        txtAula = (TextView) itemView.findViewById(R.id.txtAula);
+        txtNomeUser= (TextView) itemView.findViewById(R.id.txtNomeUser);
+
+
+    }
+}
+
+
+
+@Override
+public CespiteAdapter.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType)
+{
+
+    LayoutInflater inflater = LayoutInflater.from(parent.getContext());
+
+    View cespiteView = inflater.inflate(R.layout.cespite_card_view, parent, false);
+
+    return new ViewHolder(cespiteView);
+}
+
+@Override
+public void onBindViewHolder(ViewHolder holder, int position)
+{
+
+    CespiteOgg cespiteOgg = cespiteOggList.get(position);
+
+    holder.txtNumInventario.setText(cespiteOgg.getNumInventario());
+    holder.txtNomeCespite.setText(cespiteOgg.getNomeCespite());
+    holder.txtDtCatalogazione.setText(cespiteOgg.getDtCatalogazione());
+    holder.txtAula.setText(cespiteOgg.getAula());
+    holder.txtNomeUser.setText(cespiteOgg.getNomeUser());
+
+}
+
+@Override
+public int getItemCount()
+{
+
+    return cespiteOggList.size();
+}
+
+}
+
+    
+===============================================================================================
+80
+A:You can use android SwipeRefreshLayout widget instead of ProgressDialog.
+
+Follow below steps to integrate SwipeRefreshLayout in your Tab1history fragment:
+
+1. In your layout tab1history, add SwipeRefreshLayout as a root layout and place RecyclewrView inside it.
+
+// tab1history.xml
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.v4.widget.SwipeRefreshLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/swipe_container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+        <android.support.v7.widget.RecyclerView
+            android:id="@+id/my_recycler_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+</android.support.v4.widget.SwipeRefreshLayout>
+
+
+2. In your Tab1History fragment, use SwipeRefreshLayout as below to load data from server:
+
+// Tab1History.java
+import android.os.Bundle;
+import android.support.v4.app.Fragment;
+import android.support.v4.widget.SwipeRefreshLayout;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+
+import com.android.volley.Request;
+import com.android.volley.Response;
+import com.android.volley.toolbox.StringRequest;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+
+
+public class Tab1History extends Fragment implements SwipeRefreshLayout.OnRefreshListener {
+
+    SwipeRefreshLayout mSwipeRefreshLayout;
+    private RecyclerView recyclerView;
+    private CespiteAdapter adapter;
+    UserSessionManager session;
+
+    private static final String URL_DATA = "http://mydata.php";
+
+    private List<CespiteOgg> cespiteOggList;
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState)
+    {
+
+        View rootView = inflater.inflate(R.layout.tab1history, container, false);
+
+
+        recyclerView = (RecyclerView) rootView.findViewById(R.id.my_recycler_view);
+        recyclerView.setHasFixedSize(true);//every item of the RecyclerView has a fix size
+        recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
+
+        cespiteOggList = new ArrayList<>();
+
+
+        // SwipeRefreshLayout
+        mSwipeRefreshLayout = (SwipeRefreshLayout) rootView.findViewById(R.id.swipe_container);
+        mSwipeRefreshLayout.setOnRefreshListener(this);
+        mSwipeRefreshLayout.setColorSchemeResources(R.color.colorPrimary,
+                android.R.color.holo_green_dark,
+                android.R.color.holo_orange_dark,
+                android.R.color.holo_blue_dark);
+
+        /**
+         * Showing Swipe Refresh animation on activity create
+         * As animation won't start on onCreate, post runnable is used
+         */
+        mSwipeRefreshLayout.post(new Runnable() {
+
+            @Override
+            public void run() {
+
+                mSwipeRefreshLayout.setRefreshing(true);
+
+                // Fetching data from server
+                loadRecyclerViewData();
+            }
+        });
+
+        return rootView;
+    }
+
+    /**
+     * This method is called when swipe refresh is pulled down
+     */
+    @Override
+    public void onRefresh() {
+
+        // Fetching data from server
+        loadRecyclerViewData();
+    }
+
+    private void loadRecyclerViewData()
+    {
+        // Showing refresh animation before making http call
+        mSwipeRefreshLayout.setRefreshing(true);
+
+        // Session class instance
+        session = new UserSessionManager(getActivity());
+        //get user data from session
+        HashMap<String, String> user = session.getUserDetails();
+        //get name
+        String name = user.get(UserSessionManager.KEY_NAME);
+        // get username
+        final String usernameUtente = user.get(UserSessionManager.KEY_USERNAME);
+
+
+        StringRequest stringRequest = new StringRequest(Request.Method.POST,
+                URL_DATA,
+                new Response.Listener<String>() {
+                    @Override
+                    public void onResponse(String s) {
+
+                        try {
+                            JSONObject jsonObject = new JSONObject(s);
+                            JSONArray array = jsonObject.getJSONArray("dates");
+
+                            for(int i=0; i<array.length(); i++)
+                            {
+                                JSONObject o = array.getJSONObject(i);
+                                CespiteOgg item = new CespiteOgg(
+                                        o.getString("CodNumInventario"),
+                                        o.getString("Nome"),
+                                        o.getString("DtCatalogazione"),
+                                        o.getString("CodIdA"),
+                                        o.getString("username")
+                                );
+                                cespiteOggList.add(item);
+                            }
+
+                            adapter = new CespiteAdapter(cespiteOggList, getActivity());
+                            recyclerView.setAdapter(adapter);
+
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+
+                        // Stopping swipe refresh
+                        mSwipeRefreshLayout.setRefreshing(false);
+
+                    }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+
+                        // Stopping swipe refresh
+                        mSwipeRefreshLayout.setRefreshing(false);
+                    }
+                })
+        {
+            @Override
+            protected Map<String, String> getParams() throws AuthFailureError {
+                Map<String, String> params = new HashMap<String, String>();
+                params.put("Username", usernameUtente);
+                return params;
+            }
+        };
+
+        RegisterRequest.getmInstance(getActivity()).addToRequestque(stringRequest);
+
+    }
+}
+
+
+Hope this will work properly.
+    

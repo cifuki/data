@@ -1,0 +1,432 @@
+28
+Q:I am trying to do a simple HttpGet to read a webpage. I have this working on iOS and working on Android over http, but not https.
+
+The url is an internal network IP and custom port, so I can read with http like this using a path of http://ipaddress:port/MyPage.html
+
+HttpClient httpclient = new DefaultHttpClient(httpParameters);
+                    HttpResponse response;
+        String responseString = null;
+        try {
+            // Try connection
+            HttpGet get = new HttpGet(params[0].path);
+            get.addHeader("Authorization",
+                    "Basic "
+                            + Base64.encodeBytes(new String(params[0].username + ":" + params[0].password)
+                                    .getBytes()));
+        response = httpclient.execute(get);
+        StatusLine statusLine = response.getStatusLine();
+        if (statusLine.getStatusCode() == HttpStatus.SC_OK) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            response.getEntity().writeTo(out);
+            out.close();
+            responseString = out.toString();
+        } else {
+            // Closes the connection.
+            response.getEntity().getContent().close();
+            throw new IOException(statusLine.getReasonPhrase());
+        }
+    } catch (ClientProtocolException e) {
+        Log.e(TAG, "ClientProtocolException");
+        this.e = e;
+    } catch (IOException e) {
+        Log.e(TAG, "IOException");
+        this.e = e;
+    }
+    return responseString;
+
+
+When I try using https, I get the No peer certificate error. So I have tried using this code:
+HttpClient httpclient = new DefaultHttpClient(httpParameters);
+
+private HttpClient createHttpClient() {
+        try {
+            KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+            trustStore.load(null, null);
+
+            SSLSocketFactory sf = new MySSLSocketFactory(trustStore);
+            sf.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
+
+            HttpParams params = new BasicHttpParams();
+            HttpProtocolParams.setVersion(params, HttpVersion.HTTP_1_1);
+            HttpProtocolParams.setContentCharset(params, HTTP.DEFAULT_CONTENT_CHARSET);
+            HttpProtocolParams.setUseExpectContinue(params, true);
+
+            SchemeRegistry schReg = new SchemeRegistry();
+            schReg.register(new Scheme("http", PlainSocketFactory.getSocketFactory(), 80));
+            schReg.register(new Scheme("https", sf, 8080));
+            ClientConnectionManager conMgr = new ThreadSafeClientConnManager(params, schReg);
+
+            return new DefaultHttpClient(conMgr, params);
+
+        } catch (Exception e) {
+            return new DefaultHttpClient();
+        }
+    }
+
+
+but this gives me a Connection closed by peer error.
+
+What am I doing wrong? I can safely ignore the certificate, as it's an internal network with self signed cert, however I have no control over the vert and users of my app may have different certs, so I really need to auto accept or bypass it.
+
+Thanks
+
+EDIT ------------------------------
+
+After trying My-Name-Is answer below:
+I've created a CustomX509TrustManager class as suggested, then create a custom HttpClient using it like this:
+
+private HttpClient sslClient(HttpClient client) {
+        try {
+            CustomX509TrustManager tm = new CustomX509TrustManager();
+            SSLContext ctx = SSLContext.getInstance("TLS");
+            ctx.init(null, new TrustManager[] { tm }, null);
+            SSLSocketFactory ssf = new MySSLSocketFactory(ctx);
+            ssf.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
+            ClientConnectionManager ccm = client.getConnectionManager();
+            SchemeRegistry sr = ccm.getSchemeRegistry();
+            sr.register(new Scheme("https", ssf, 8080));
+            return new DefaultHttpClient(ccm, client.getParams());
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+
+And finally use this HttpClient like this:
+
+private class httpGETTask extends AsyncTask<GetParams, Void, String> {
+private Exception e = null;
+
+@Override
+protected String doInBackground(GetParams... params) {
+    // Set connection parameters
+    HttpParams httpParameters = new BasicHttpParams();
+    int timeoutConnection = 15000;
+    HttpConnectionParams.setConnectionTimeout(httpParameters, timeoutConnection);
+    int timeoutSocket = 15000;
+    HttpConnectionParams.setSoTimeout(httpParameters, timeoutSocket);
+
+    Log.v(TAG, params[0].path);
+    HttpClient httpclient = new DefaultHttpClient(httpParameters);
+    httpclient = sslClient(httpclient);
+
+    HttpResponse response;
+    String responseString = null;
+    try {
+        // Try connection
+        HttpGet get = new HttpGet(params[0].path);
+        get.addHeader("Authorization",
+                "Basic "
+                        + Base64.encodeBytes(new String(params[0].username + ":" + params[0].password)
+                                .getBytes()));
+
+        response = httpclient.execute(get);
+        StatusLine statusLine = response.getStatusLine();
+        if (statusLine.getStatusCode() == HttpStatus.SC_OK) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            response.getEntity().writeTo(out);
+            out.close();
+            responseString = out.toString();
+        } else {
+            // Closes the connection.
+            response.getEntity().getContent().close();
+            throw new IOException(statusLine.getReasonPhrase());
+        }
+    } catch (ClientProtocolException e) {
+        Log.e(TAG, "ClientProtocolException");
+        this.e = e;
+    } catch (IOException e) {
+        Log.e(TAG, "IOException");
+        this.e = e;
+    }
+    return responseString;
+
+
+The logged path is in the format https://ipaddress:8080/Page.html
+But I get a Connection closed By Peer error:
+
+
+  05-24 08:20:32.500: E/ConnectionHelper(1129): IOException 05-24
+  08:20:32.550: E/ConnectionHelper(1129): Exception loading contents
+  05-24 08:20:32.550: E/ConnectionHelper(1129):
+  javax.net.ssl.SSLException: Connection closed by peer 05-24
+  08:20:32.550: E/ConnectionHelper(1129):   at
+  org.apache.harmony.xnet.provider.jsse.NativeCrypto.SSL_do_handshake(Native
+  Method) 05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.harmony.xnet.provider.jsse.OpenSSLSocketImpl.startHandshake(OpenSSLSocketImpl.java:410)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.harmony.xnet.provider.jsse.OpenSSLSocketImpl$SSLInputStream.(OpenSSLSocketImpl.java:643)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.harmony.xnet.provider.jsse.OpenSSLSocketImpl.getInputStream(OpenSSLSocketImpl.java:614)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.io.SocketInputBuffer.(SocketInputBuffer.java:70)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.SocketHttpClientConnection.createSessionInputBuffer(SocketHttpClientConnection.java:83)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.conn.DefaultClientConnection.createSessionInputBuffer(DefaultClientConnection.java:170)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.SocketHttpClientConnection.bind(SocketHttpClientConnection.java:106)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.conn.DefaultClientConnection.openCompleted(DefaultClientConnection.java:129)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.conn.DefaultClientConnectionOperator.openConnection(DefaultClientConnectionOperator.java:172)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.conn.AbstractPoolEntry.open(AbstractPoolEntry.java:164)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.conn.AbstractPooledConnAdapter.open(AbstractPooledConnAdapter.java:119)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.client.DefaultRequestDirector.execute(DefaultRequestDirector.java:360)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.client.AbstractHttpClient.execute(AbstractHttpClient.java:555)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.client.AbstractHttpClient.execute(AbstractHttpClient.java:487)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  org.apache.http.impl.client.AbstractHttpClient.execute(AbstractHttpClient.java:465)
+  05-24 08:20:32.550: E/ConnectionHelper(1129):     at
+  com.d_apps.my_app.connection_helpers.ConnectionHelper$httpGETTask.doInBackground(ConnectionHelper.java:114)
+
+    
+===============================================================================================
+56
+A:The following source should fix your problem.
+
+import android.app.Activity;
+import android.widget.EditText;
+import android.os.Bundle;
+import org.apache.http.HttpResponse;
+import org.apache.http.Header
+import java.io.InputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import android.util.Log;
+import android.view.Menu;
+public class MainActivity extends Activity {
+
+    private EditText text;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        text = (EditText) findViewById(R.id.editText1);
+        connect();
+    }
+
+    private void connect(){
+        try {
+            DataLoader dl = new DataLoader();
+            String url = "https://IpAddress";
+            HttpResponse response = dl.secureLoadData(url); 
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("HEADERS:\
+\
+");
+
+            Header[] headers = response.getAllHeaders();
+            for (int i = 0; i < headers.length; i++) {
+                Header h = headers[i];
+                sb.append(h.getName()).append(":\\t").append(h.getValue()).append("\
+");
+            }
+
+            InputStream is = response.getEntity().getContent();
+            StringBuilder out = new StringBuilder();
+            BufferedReader br = new BufferedReader(new InputStreamReader(is));
+            for (String line = br.readLine(); line != null; line = br.readLine())
+                out.append(line);
+            br.close();
+
+            sb.append("\
+\
+CONTENT:\
+\
+").append(out.toString()); 
+
+            Log.i("response", sb.toString());
+            text.setText(sb.toString());
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.activity_main, menu);
+        return true;
+    }
+
+}
+
+
+import android.app.Application;
+import android.content.Context;
+import java.io.InputStream;
+public class MeaApplication extends Application {
+
+    private static Context context;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        MeaApplication.context = getApplicationContext();
+    }
+
+    public static Context getAppContext() {
+        return MeaApplication.context;
+    }
+
+    public static InputStream loadCertAsInputStream() {
+        return MeaApplication.context.getResources().openRawResource(
+                R.raw.meacert);
+    }
+
+}
+
+
+import org.apache.http.conn.ssl.SSLSocketFactory;
+import javax.net.ssl.SSLContext;
+import java.security.KeyStore;
+import java.security.NoSuchAlgorithmException;
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.UnrecoverableKeyException;
+import javax.net.ssl.TrustManager;
+import java.net.Socket;
+import java.io.IOException;
+import java.net.UnknownHostException;
+/**
+ * Taken from: http://janis.peisenieks.lv/en/76/english-making-an-ssl-connection-via-android/
+ *
+ */
+public class CustomSSLSocketFactory extends SSLSocketFactory {
+    SSLContext sslContext = SSLContext.getInstance("TLS");
+
+    public CustomSSLSocketFactory(KeyStore truststore)
+            throws NoSuchAlgorithmException, KeyManagementException,
+            KeyStoreException, UnrecoverableKeyException {
+        super(truststore);
+
+        TrustManager tm = new CustomX509TrustManager();
+
+        sslContext.init(null, new TrustManager[] { tm }, null);
+    }
+
+    public CustomSSLSocketFactory(SSLContext context)
+            throws KeyManagementException, NoSuchAlgorithmException,
+            KeyStoreException, UnrecoverableKeyException {
+        super(null);
+        sslContext = context;
+    }
+
+    @Override
+    public Socket createSocket(Socket socket, String host, int port,
+            boolean autoClose) throws IOException, UnknownHostException {
+        return sslContext.getSocketFactory().createSocket(socket, host, port,
+                autoClose);
+    }
+
+    @Override
+    public Socket createSocket() throws IOException {
+        return sslContext.getSocketFactory().createSocket();
+    }
+}
+
+
+import javax.net.ssl.X509TrustManager;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
+import java.io.IOException;
+import java.io.InputStream;
+import java.security.cert.CertificateFactory;
+public class CustomX509TrustManager implements X509TrustManager {
+
+    @Override
+    public void checkClientTrusted(X509Certificate[] chain, String authType)
+            throws CertificateException {
+    }
+
+    @Override
+    public void checkServerTrusted(java.security.cert.X509Certificate[] certs,
+            String authType) throws CertificateException {
+
+        // Here you can verify the servers certificate. (e.g. against one which is stored on mobile device)
+
+        // InputStream inStream = null;
+        // try {
+        // inStream = MeaApplication.loadCertAsInputStream();
+        // CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        // X509Certificate ca = (X509Certificate)
+        // cf.generateCertificate(inStream);
+        // inStream.close();
+        //
+        // for (X509Certificate cert : certs) {
+        // // Verifing by public key
+        // cert.verify(ca.getPublicKey());
+        // }
+        // } catch (Exception e) {
+        // throw new IllegalArgumentException("Untrusted Certificate!");
+        // } finally {
+        // try {
+        // inStream.close();
+        // } catch (IOException e) {
+        // e.printStackTrace();
+        // }
+        // }
+    }
+
+    public X509Certificate[] getAcceptedIssuers() {
+        return null;
+    }
+
+}
+
+
+import org.apache.http.HttpResponse;
+import org.apache.http.client.ClientProtocolException;
+import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
+import java.security.KeyManagementException;
+import java.net.URISyntaxException;
+import java.security.KeyStoreException;
+import java.security.UnrecoverableKeyException;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import java.security.SecureRandom;
+import org.apache.http.client.HttpClient;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.conn.ssl.SSLSocketFactory;
+import org.apache.http.conn.ClientConnectionManager;
+import org.apache.http.conn.scheme.Scheme;
+import org.apache.http.conn.scheme.SchemeRegistry;
+import org.apache.http.client.methods.HttpGet;
+public class DataLoader {
+
+    public HttpResponse secureLoadData(String url)
+            throws ClientProtocolException, IOException,
+            NoSuchAlgorithmException, KeyManagementException,
+            URISyntaxException, KeyStoreException, UnrecoverableKeyException {
+        SSLContext ctx = SSLContext.getInstance("TLS");
+        ctx.init(null, new TrustManager[] { new CustomX509TrustManager() },
+                new SecureRandom());
+
+        HttpClient client = new DefaultHttpClient();
+
+        SSLSocketFactory ssf = new CustomSSLSocketFactory(ctx);
+        ssf.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
+        ClientConnectionManager ccm = client.getConnectionManager();
+        SchemeRegistry sr = ccm.getSchemeRegistry();
+        sr.register(new Scheme("https", ssf, 443));
+        DefaultHttpClient sslClient = new DefaultHttpClient(ccm,
+                client.getParams());
+
+        HttpGet get = new HttpGet(new URI(url));
+        HttpResponse response = sslClient.execute(get);
+
+        return response;
+    }
+
+}
+
+    

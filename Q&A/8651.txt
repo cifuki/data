@@ -1,0 +1,51 @@
+31
+Q:I include this ProGuard configuration to strip out debug log statements when I release an Android application:
+
+-assumenosideeffects class android.util.Log {
+    public static *** d(...);
+    public static *** v(...);
+}
+
+
+This works as expected — I can see from the ProGuard logs and Android log output that calls such as Log.d("This is a debug statement"); are removed.
+
+However, if I decompile the app at this stage, I can still see all the String literals that were used — i.e. This is a debug statement in this example.
+
+Is there a way to also remove each String that's no longer needed from the bytecode?
+    
+===============================================================================================
+47
+A:ProGuard can remove simple constant arguments (Strings, integers, etc). So in this case, the code and the string constant should disappear completely:
+
+Log.d("This is a debug statement");
+
+
+However, you may have observed the issue with some code like this:
+
+Log.d("The answer is "+answer);
+
+
+After compilation, this actually corresponds to:
+
+Log.d(new StringBuilder().append("The answer is ").append(answer).toString());
+
+
+ProGuard version 4.6 can simplify this to something like:
+
+new StringBuilder().append("The answer is ").append(answer).toString();
+
+
+So the logging is gone, but the optimization step still leaves some fluff behind. It's surprisingly tricky to simplify this without some deeper knowledge about the StringBuilder class. As far as ProGuard is concerned, it could say:
+
+new DatabaseBuilder().setup("MyDatabase").initialize(table).close();
+
+
+For a human, the StringBuilder code can obviously be removed, but the DatabaseBuilder code probably can't. ProGuard requires escape analysis and a few other techniques, which aren't in this version yet.
+
+As for a solution: you can create additional debug methods that take simple arguments, and let ProGuard remove those:
+
+MyLog.d("The answer is ", answer);
+
+
+Alternatively, you can try prefixing every debug statement with a condition that ProGuard can later evaluate as false. This option may be a bit more convoluted, requiring some additional -assumenosideeffects option on an initialization method for the debug flag.
+    

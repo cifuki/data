@@ -1,0 +1,81 @@
+32
+Q:I have a thread that running into an activity. I don't want that the thread continuos running when the user click the home button or, for example, the user receive a call phone.
+So I want pause the thread and resume it when the user re-opens the application.
+I've tried with this:
+
+protected void onPause() {
+  synchronized (thread) {
+    try {
+      thread.wait();
+    } catch (InterruptedException e) {
+      e.printStackTrace();
+    }
+  }
+  super.onPause();
+}
+protected void onResume() {
+  thread.notify();
+  super.onResume();
+}
+
+
+It stops the thread but don't resume it, the thread seems freezed.
+
+I've also tried with the deprecated method Thread.suspend() and Thread.resume(), but in this case into Activity.onPause() the thread doesn't stop.
+
+Anyone know the solution?
+    
+===============================================================================================
+63
+A:Use wait() and notifyAll() properly using a lock.
+
+Sample code:
+
+class YourRunnable implements Runnable {
+    private Object mPauseLock;
+    private boolean mPaused;
+    private boolean mFinished;
+
+    public YourRunnable() {
+        mPauseLock = new Object();
+        mPaused = false;
+        mFinished = false;
+    }
+
+    public void run() {
+        while (!mFinished) {
+            // Do stuff.
+
+            synchronized (mPauseLock) {
+                while (mPaused) {
+                    try {
+                        mPauseLock.wait();
+                    } catch (InterruptedException e) {
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Call this on pause.
+     */
+    public void onPause() {
+        synchronized (mPauseLock) {
+            mPaused = true;
+        }
+    }
+
+    /**
+     * Call this on resume.
+     */
+    public void onResume() {
+        synchronized (mPauseLock) {
+            mPaused = false;
+            mPauseLock.notifyAll();
+        }
+    }
+
+}
+
+    

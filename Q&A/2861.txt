@@ -1,0 +1,137 @@
+75
+Q:I have been using the new nested fragment API that Android includes in the support library.
+
+The problem that I am facing with nested fragments is that, if a nested fragment (that is, a fragment that has been added to another fragment via the FragmentManagerreturned by getChildFragmentManager()) calls startActivityForResult(), the nested fragment's onActivityResult() method is not called. However, both the parent fragment's onActivityResult() and activity's onActivityResult() do get called.
+
+I don't know if I am missing something about nested fragments, but I did not expect the described behavior. Below is the code that reproduces this problem. I would very much appreciate if someone can point me in the right direction and explain to me what I am doing wrong:
+
+package com.example.nestedfragmentactivityresult;
+
+import android.media.RingtoneManager;
+import android.os.Bundle;
+import android.content.Intent;
+import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentActivity;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.Toast;
+
+public class MainActivity extends FragmentActivity
+{
+    public void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+        this.getSupportFragmentManager()
+            .beginTransaction()
+            .add(android.R.id.content, new ContainerFragment())
+            .commit();
+    }
+
+    public void onActivityResult(int requestCode, int resultCode, Intent data)
+    {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        // This is called
+        Toast.makeText(getApplication(),
+            "Consumed by activity",
+            Toast.LENGTH_SHORT).show();
+    }
+
+    public static class ContainerFragment extends Fragment
+    {
+        public final View onCreateView(LayoutInflater inflater,
+                                       ViewGroup container,
+                                       Bundle savedInstanceState)
+        {
+            View result = inflater.inflate(R.layout.test_nested_fragment_container,
+                container,
+                false);
+
+            return result;
+        }
+
+        public void onActivityCreated(Bundle savedInstanceState)
+        {
+            super.onActivityCreated(savedInstanceState);
+            getChildFragmentManager().beginTransaction()
+                .add(R.id.content, new NestedFragment())
+                .commit();
+        }
+
+        public void onActivityResult(int requestCode,
+                                     int resultCode,
+                                     Intent data)
+        {
+            super.onActivityResult(requestCode, resultCode, data);
+
+            // This is called
+            Toast.makeText(getActivity(),
+                "Consumed by parent fragment",
+                Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    public static class NestedFragment extends Fragment
+    {
+        public final View onCreateView(LayoutInflater inflater,
+                                       ViewGroup container,
+                                       Bundle savedInstanceState)
+        {
+            Button button = new Button(getActivity());
+            button.setText("Click me!");
+            button.setOnClickListener(new View.OnClickListener()
+            {
+                public void onClick(View v)
+                {
+                    Intent intent = new Intent(RingtoneManager.ACTION_RINGTONE_PICKER);
+                    startActivityForResult(intent, 0);
+                }
+            });
+
+            return button;
+        }
+
+        public void onActivityResult(int requestCode,
+                                     int resultCode,
+                                     Intent data)
+        {
+            super.onActivityResult(requestCode, resultCode, data);
+
+            // This is NOT called
+            Toast.makeText(getActivity(),
+                "Consumed by nested fragment",
+                Toast.LENGTH_SHORT).show();
+        }
+    }
+}
+
+
+test_nested_fragment_container.xml is:
+
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/content"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" >
+
+</FrameLayout>
+
+    
+===============================================================================================
+57
+A:Yes, the onActivityResult() in nested fragment will not be invoked by this way.
+
+The calling sequence of onActivityResult (in Android support library) is 
+
+
+Activity.dispatchActivityResult().
+FragmentActivity.onActivityResult().
+Fragment.onActivityResult(). 
+
+
+In the 3rd step, the fragment is found in the FragmentMananger of parent Activity. So in your example, it is the container fragment that is found to dispatch onActivityResult(), nested fragment could never receive the event.
+
+I think you have to implement your own dispatch in ContainerFragment.onActivityResult(), find the nested fragment and invoke pass the result and data to it.
+    

@@ -1,0 +1,41 @@
+30
+Q:I'm fairly new to Android development and I can't seem to grasp the Java Out of Memory exception. I know it means that my app has gone over the VM budget but after Googling this many times I still don't seem to grasp this concept. I'm afraid that my app uses too much memory because I have six button selectors per screen with two bitmaps for each selector which are around 20 kb each according to the properties tab. On my rooted G2x I have set the VM budget to 12mb,restarted my phone and ran my app with no problems whatsoever. I am unbinding  drawables on each onDestroy() and hinting at the GC to run here also. After using the app for a while in the emulator I click "Cause GC" on my DDMS screen and the results are 
+ID=1, Heap Size 6.133 MB, Allocated 2.895MB, Free 3.238 MB, % Used 47.20, # Objects 52,623. 
+
+This is where I dont understand what's happening, my emulator is set to 24MB of VM. Where is that number? The actual problem I'm having is that if i set the emulator to 16MB of VM my app crashes on the second activity with the Out of Memory exception. How come it doesnt crash on my phone with the VM set to 12 MB or on my old HTC Magic phone with 12 MB of VM stock? Also do you guys think my app is taking up too much memory? I have no idea if those DDMS numbers are good or not. Thanks for your time. 
+
+As for my code I have every image specified in XML layouts I do not do anything programmaticly with them except for adding listeners to them. I found this bit of code on here and I've added it to every activity that I have...
+
+@Override
+protected void onDestroy() {
+    super.onDestroy();
+
+    unbindDrawables(findViewById(R.id.myRootLayout));
+    System.gc();
+}
+
+private void unbindDrawables(View view) {
+    if (view.getBackground() != null) {
+        view.getBackground().setCallback(null);
+    }
+    if (view instanceof ViewGroup && !(view instanceof AdapterView)) {
+        for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) {
+            unbindDrawables(((ViewGroup) view).getChildAt(i));
+        }
+        ((ViewGroup) view).removeAllViews();
+    }
+}
+
+
+Otherwise all I do is add onClickListeners to the buttons that have the PNG backgrounds. I would like to learn how to specify button backgrounds programmaticly but I need to have the selector functions like on focus, on press, non-focused but pressed etc. to make the button backgrounds change according to user interaction. I have reviewed the docs about this but it seems overwhelming, that's why I figured I'd start here with the basics of managing Heaps and work my way up to specifying selectors in code. This may not make sense but is there a "healthy" amount of memory allocation that an app could allocate without getting close to the Out of Memory exception? For example if an app allocated 6MB it should be fine but 8MB would be pushing it, are there bounds like that in memory allocation? Thanks again Alex Lockwood for your response I'm going to read and re-read it again until this stuff makes sense to me
+    
+===============================================================================================
+51
+A:When you set the VM budget on your emulator/device, what you are doing is telling the heap the maximum size it is allowed to be. At runtime, the heap grows dynamically in size as the Dalvik VM requests system memory from the operating system. The Dalvik VM typically starts by allocating a relatively small heap. Then after each GC run it checks to see how much free heap memory there is. If the ratio of free heap to total heap is too small, the Dalvik VM will then add more memory to the heap (up to the maximum configured heap size).
+
+That being said, the reason why you are not seeing "24 mb" on your DDMS screen is because the heap hasn't grown to its maximum size. This allows Android to make good use of the already small amount of memory that is available on handheld devices.
+
+As for why your application is crashing on the emulator and not your phone, that does seem odd (are you sure the numbers are correct?). You should keep in mind, however, that memory is managed dynamically and that total memory utilization is determined based on a number of external factors (the speed/frequency at which garbage collection is performed, etc.).
+
+Finally, for the reasons I mentioned above, it would be difficult to say for sure how well your application manages memory based on the single line of information you provided above. We'd really need to see some of your code. OutOfMemoryErrors are definitely worth worrying about, however, so I'd definitely look into your application's memory usage. One thing you might consider is to sample your bitmap images at runtime with calls to inSampleSize using the BitmapFactory class. This can help reduce the amount of memory required to load your drawable bitmaps. Either that or you could reduce the resolution of your drawables (although 20 kb each sounds fine to me).
+    

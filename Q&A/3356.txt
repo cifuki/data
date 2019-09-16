@@ -1,0 +1,454 @@
+67
+Q:In my application, I need to store lots of images in the device storage. Such files tend to fulfill the device storage, and I want to allow users to be able to choose external SD card as the destination folder. 
+
+I read everywhere that Android doesn't allow users to write to external SD card, by SD card I mean the external and mountable SD card and not the external storage, but file manager applications manage to write to External SD on all Android versions. 
+
+What is the better way to grant read/write access to external SD card on different API levels (Pre-KitKat, KitKat, Lollipop+)?
+
+Update 1
+
+I tried Method 1 from Doomknight's answer, with no avail: 
+As you can see I'm checking for permissions at runtime before attempting to write on SD:
+
+HashSet<String> extDirs = getStorageDirectories();
+for(String dir: extDirs) {
+    Log.e("SD",dir);
+    File f = new File(new File(dir),"TEST.TXT");
+    try {
+        if(ActivityCompat.checkSelfPermission(this,Manifest.permission.WRITE_EXTERNAL_STORAGE)==PackageManager.PERMISSION_GRANTED) {
+            f.createNewFile();
+        }
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+}
+
+
+But I get an access error, tried on two different devices: HTC10 and Shield K1.
+
+10-22 14:52:57.329 30280-30280/? E/SD: /mnt/media_rw/F38E-14F8
+10-22 14:52:57.329 30280-30280/? W/System.err: java.io.IOException: open failed: EACCES (Permission denied)
+10-22 14:52:57.329 30280-30280/? W/System.err:     at java.io.File.createNewFile(File.java:939)
+10-22 14:52:57.329 30280-30280/? W/System.err:     at com.myapp.activities.TestActivity.onResume(TestActivity.java:167)
+10-22 14:52:57.329 30280-30280/? W/System.err:     at android.app.Instrumentation.callActivityOnResume(Instrumentation.java:1326)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at android.app.Activity.performResume(Activity.java:6338)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at android.app.ActivityThread.performResumeActivity(ActivityThread.java:3336)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at android.app.ActivityThread.handleResumeActivity(ActivityThread.java:3384)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2574)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at android.app.ActivityThread.access$900(ActivityThread.java:150)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1399)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at android.os.Handler.dispatchMessage(Handler.java:102)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at android.os.Looper.loop(Looper.java:168)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at android.app.ActivityThread.main(ActivityThread.java:5885)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at java.lang.reflect.Method.invoke(Native Method)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:819)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:709)
+10-22 14:52:57.330 30280-30280/? W/System.err: Caused by: android.system.ErrnoException: open failed: EACCES (Permission denied)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at libcore.io.Posix.open(Native Method)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at libcore.io.BlockGuardOs.open(BlockGuardOs.java:186)
+10-22 14:52:57.330 30280-30280/? W/System.err:     at java.io.File.createNewFile(File.java:932)
+10-22 14:52:57.330 30280-30280/? W/System.err:  ... 14 more
+
+    
+===============================================================================================
+103
+A:Summary
+
+You can grant read/write access to external SD card on the different api levels (API23+ at run time).
+
+Since KitKat, permissions are not necessary if you use app-specific directories, required otherwise.
+
+Universal way:
+
+The history says that there is not universal way to write to external SD card but continues...
+
+This fact is demostrated by these examples of external storage configurations for devices.
+
+API-based way:
+
+Prior to KitKat try to use Doomsknight method 1, method 2 otherwise.
+
+Request permissions in manifest (Api < 23) and at run time (Api >= 23).
+
+Recommended way:
+
+ContextCompat.getExternalFilesDirs solves the access error when you don't need to share files.
+
+The secure way of sharing it is to use a content provider or the new Storage Access Framework.
+
+Privacy-aware way:
+
+As of Android Q Beta 4, apps that target Android 9 (API level 28) or lower see no change, by default.
+
+Apps targeting Android Q by default (or opting into it) are given a filtered view into external storage.
+
+
+
+1. Initial answer.
+
+
+  Universal way to write to external SD card on Android
+
+
+There is no universal way to write to external SD card on Android due to continuous changes:
+
+
+Pre-KitKat: official Android platform has not supported SD cards at all except for exceptions.
+KitKat: introduced APIs that let apps access files in app-specific directories on SD cards.
+Lollipop: added APIs to allow apps to request access to folders owned by other providers.
+Nougat: provided a simplified API to access common external storage directories.
+... Android Q privacy change: App-scoped and media-scoped storage
+
+
+
+  What is the better way to grant read/write access to external SD card
+  on different API levels
+
+
+Based on Doomsknight's answer and mine, and Dave Smith and Mark Murphy blog posts: 1, 2, 3:
+
+
+Ideally, use the Storage Access
+Framework
+and
+DocumentFile
+as Jared Rummler pointed. Or:
+Use your app specific path/storage/extSdCard/Android/data/com.myapp.example/files.
+Add read/write permission to manifest for pre-KitKat, no permission required later for this path.
+Try to use your App path and Doomsknight's methods considering KitKat and Samsung case.
+Filter and use getStorageDirectories, your App path and read/write permissions prior to KitKat.
+ContextCompat.getExternalFilesDirs since KitKat. Considering devices that return internal first.
+
+
+
+
+2. Updated answer.
+
+
+  Update 1. I tried Method 1 from Doomknight's answer, with no avail:
+  
+  As you can see I'm checking for permissions at runtime before
+  attempting to write on SD...
+
+
+I would use application-specific directories to avoid the issue of your updated question and ContextCompat.getExternalFilesDirs() using getExternalFilesDir documentation as reference.
+
+Improve the heuristics to determine what represents removable media based on the different api levels like android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT
+
+
+  ... But I get an access error, tried on two different devices: HTC10
+  and Shield K1.
+
+
+Remember that Android 6.0 supports portable storage devices and third-party apps must go through the Storage Access Framework. Your devices HTC10 and Shield K1 are probably API 23.
+
+Your log shows a permission denied exception accessing /mnt/media_rw, like this fix for API 19+:
+
+<permission name="android.permission.WRITE_EXTERNAL_STORAGE" >
+<group gid="sdcard_r" />
+<group gid="sdcard_rw" />
+<group gid="media_rw" /> // this line is added via root in the link to fix it.
+</permission>
+
+
+I never tried it so I can not share code but I would avoid the for trying to write on all the returned directories and look for the best available storage directory to write into based on remaining space.
+
+Perhaps Gizm0's alternative to your getStorageDirectories() method it's a good starting point.
+
+ContextCompat.getExternalFilesDirs solves the issue if you don't need access to other folders.
+
+
+
+3. Android 1.0 .. Pre-KitKat.
+
+Prior to KitKat try to use Doomsknight method 1 or read this response by Gnathonic.
+
+public static HashSet<String> getExternalMounts() {
+    final HashSet<String> out = new HashSet<String>();
+    String reg = "(?i).*vold.*(vfat|ntfs|exfat|fat32|ext3|ext4).*rw.*";
+    String s = "";
+    try {
+        final Process process = new ProcessBuilder().command("mount")
+                .redirectErrorStream(true).start();
+        process.waitFor();
+        final InputStream is = process.getInputStream();
+        final byte[] buffer = new byte[1024];
+        while (is.read(buffer) != -1) {
+            s = s + new String(buffer);
+        }
+        is.close();
+    } catch (final Exception e) {
+        e.printStackTrace();
+    }
+
+    // parse output
+    final String[] lines = s.split("\
+");
+    for (String line : lines) {
+        if (!line.toLowerCase(Locale.US).contains("asec")) {
+            if (line.matches(reg)) {
+                String[] parts = line.split(" ");
+                for (String part : parts) {
+                    if (part.startsWith("/"))
+                        if (!part.toLowerCase(Locale.US).contains("vold"))
+                            out.add(part);
+                }
+            }
+        }
+    }
+    return out;
+}
+
+
+Add the next code to your AndroidManifest.xml and read Getting access to external storage
+
+
+  Access to external storage is protected by various Android
+  permissions.
+  
+  Starting in Android 1.0, write access is protected with
+  the WRITE_EXTERNAL_STORAGE permission.
+  
+  Starting in Android 4.1, read
+  access is protected with the READ_EXTERNAL_STORAGE permission.
+  
+  In order to ... write files on the external storage, your app must
+  acquire ... system
+  permissions:
+
+<manifest ...>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+</manifest> 
+
+  
+  If you need to both..., you need to request
+  only the WRITE_EXTERNAL_STORAGE permission.
+
+
+Read Mark Murphy's explanation and recommended Dianne Hackborn and Dave Smith posts
+
+
+  
+  Until Android 4.4, there was no official support for removable media in Android, Starting in KitKat, the concept of \xe2\x80\x9cprimary\xe2\x80\x9d and \xe2\x80\x9csecondary\xe2\x80\x9d external storage emerges in the FMW API.
+  Prior apps are just relying on MediaStore indexing, ship with the hardware or examine mount points and apply some heuristics to determine what represents removable media.
+  
+
+
+
+
+4. Android 4.4 KitKat introduces the Storage Access Framework (SAF).
+
+Ignore the next note due to bugs, but try to use ContextCompat.getExternalFilesDirs():
+
+
+  
+  Since Android 4.2, there has been a request from Google for device manufacturers to lock down removable media for security (multi-user support) and new tests were added in 4.4.
+  Since KitKat getExternalFilesDirs() and other methods were added to return a usable path on all available storage volumes (The first
+  item returned is the primary volume).
+  The table below indicates what a developer might try to do and how KitKat will respond:
+  
+  
+  
+  Note: Beginning with Android 4.4, these permissions are not required
+  if you're reading or writing only files that are private to your app.
+  For more info..., see saving files that
+  are app-private.
+
+<manifest ...>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+                     android:maxSdkVersion="18" />
+</manifest>
+
+
+
+Also read Paolo Rovelli's explanation and try to use Jeff Sharkey's solution since KitKat:
+
+
+  In KitKat there's now a public API for interacting with
+  these secondary shared storage devices.
+  
+  The new Context.getExternalFilesDirs() and
+  Context.getExternalCacheDirs() methods can return multiple paths,
+  including both primary and secondary devices.
+  
+  You can then iterate
+  over them and check Environment.getStorageState() and
+  File.getFreeSpace() to determine the best place to store your files.
+  
+  These methods are also available on ContextCompat in the support-v4 library.
+  
+  Starting in Android 4.4, the owner, group and modes of files on
+  external storage devices are now synthesized based on directory
+  structure. This enables apps to manage their package-specific
+  directories on external storage without requiring they hold the broad
+  WRITE_EXTERNAL_STORAGE permission. For example, the app with package
+  name com.example.foo can now freely access
+  Android/data/com.example.foo/ on external storage devices with no
+  permissions. These synthesized permissions are accomplished by
+  wrapping raw storage devices in a FUSE daemon.
+
+
+With KitKat your chances for a "complete solution" without rooting are
+pretty much zero:
+
+
+  The Android project has definitely screwed up here.
+  No apps get full access to external SD cards:
+  
+  
+  file managers: you cannot use them to manage your external SD card. In
+  most areas, they can only read but not write.
+  media apps: you cannot
+  retag/re-organize your media collection any longer, as those apps
+  cannot write to it.
+  office apps: pretty much the same
+  
+  
+  The only place 3rd party apps are allowed to write on your
+  external card are "their own directories" (i.e.
+  /sdcard/Android/data/<package_name_of_the_app>).
+  
+  The only ways to
+  really fix that require either the manufacturer (some of them fixed
+  it, e.g. Huawei with their Kitkat update for the P6) \xe2\x80\x93 or root... (Izzy's explanation continues here)
+
+
+
+
+5. Android 5.0 introduced changes and the DocumentFile helper class.
+
+getStorageState Added in API 19, deprecated in API 21, 
+use getExternalStorageState(File)
+
+
+  Here's a great tutorial for interacting with the Storage Access
+  Framework in KitKat.
+  
+  Interacting with the new APIs in Lollipop is very similar (Jeff Sharkey's explanation).
+
+
+
+
+6. Android 6.0 Marshmallow introduces a new runtime permissions model.
+
+Request permissions at runtime if API level 23+ and read Requesting Permissions at Run Time
+
+
+  Beginning in Android 6.0 (API level 23), users grant permissions to
+  apps while the app is running, not when they install the app ... or update the app ... user can revoke the permissions.
+
+// Assume thisActivity is the current activity
+int permissionCheck = ContextCompat.checkSelfPermission(thisActivity,
+        Manifest.permission.WRITE_EXTERNAL_STORAGE);
+
+  
+  Android 6.0 introduces a new runtime permissions model where apps
+  request capabilities when needed at runtime. Because the new model
+  includes the READ/WRITE_EXTERNAL_STORAGE permissions, the platform
+  needs to dynamically grant storage access without killing or
+  restarting already-running apps. It does this by maintaining three
+  distinct views of all mounted storage devices:
+  
+  
+  /mnt/runtime/default is shown to apps with no special storage
+  permissions...
+  /mnt/runtime/read is shown to apps with
+  READ_EXTERNAL_STORAGE
+  /mnt/runtime/write is shown to apps with
+  WRITE_EXTERNAL_STORAGE
+  
+
+
+
+
+7. Android 7.0 provides a simplified API to access external storage dirs.
+
+
+  Scoped Directory Access
+  In Android 7.0, apps can use new APIs to request access to specific
+  external storage directories, including directories on removable media
+  such as SD cards...
+  
+  For more information, see the Scoped Directory Access training.
+
+
+Read Mark Murphy posts: Be Careful with Scoped Directory Access. It was deprecated in Android Q:
+
+
+  Note that the scoped directory access added in 7.0 is deprecated in
+  Android Q.
+  
+  Specifically, the createAccessIntent() method on StorageVolume is
+  deprecated. 
+  
+  They added a createOpenDocumentTreeIntent() that can be used as an
+  alternative.
+
+
+
+
+8. Android 8.0 Oreo .. Android Q Beta changes.
+
+
+  Starting in Android
+  O, the
+  Storage Access Framework allows custom documents
+  providers
+  to create seekable file descriptors for files residing in a remote
+  data source...
+  
+  Permissions,
+  prior to Android O, if an app requested a permission at runtime and the permission was granted, the system also incorrectly granted
+  the app the rest of the permissions that belonged to the same
+  permission group, and that were registered in the manifest.
+  
+  For apps targeting Android O, this behavior has been corrected. The app is granted only the permissions it has explicitly requested.
+  However, once the user grants a permission to the app, all subsequent
+  requests for permissions in that permission group are automatically
+  granted.
+  
+  For example, READ_EXTERNAL_STORAGE and WRITE_EXTERNAL_STORAGE...
+
+
+Update: An Android Q earlier beta release temporarily replaced the READ_EXTERNAL_STORAGE and WRITE_EXTERNAL_STORAGE permissions with more fine-grained, media-specific permissions.
+
+Note: Google introduced roles on Beta 1 and removed them from the documentation before Beta 2...
+
+Note: The permissions specific to media collections that were introduced in earlier beta releases\xe2\x80\x94READ_MEDIA_IMAGES, READ_MEDIA_AUDIO, and READ_MEDIA_VIDEO\xe2\x80\x94are now obsolete. More info:
+
+Q Beta 4 (final APIs) review by Mark Murphy: The Death of External Storage: The End of the Saga(?)
+
+
+  "Death is more universal than life. Everyone dies, but not everyone
+  lives." \xe2\x80\x95 Andrew Sachs
+
+
+
+
+9. Related questions and recommended answers.
+
+How can I get external SD card path for Android 4.0+?
+
+mkdir() works while inside internal flash storage, but not SD card?
+
+Diff between getExternalFilesDir and getExternalStorageDirectory()
+
+Why getExternalFilesDirs() doesn't work on some devices?
+
+How to use the new SD card access API presented for Android 5.0 (Lollipop)
+
+Writing to external SD card in Android 5.0 and above
+
+Android SD Card Write Permission using SAF (Storage Access Framework)
+
+SAFFAQ: The Storage Access Framework FAQ
+
+
+
+10. Related bugs and issues.
+
+Bug: On Android 6, when using getExternalFilesDirs, it won't let you create new files in its results
+
+Writing to directory returned by getExternalCacheDir() on Lollipop fails without write permission
+    

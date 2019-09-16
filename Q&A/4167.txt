@@ -1,0 +1,164 @@
+56
+Q:I have two applications.
+
+One is declaring permission and having single Activity:
+
+Part of AndroidManifest.xml
+
+<application
+    android:icon="@drawable/ic_launcher"
+    android:label="@string/app_name"
+    android:permission="your.namespace.permission.TEST" >
+    <activity
+        android:name=".DeclaringPermissionActivity"
+        android:label="@string/app_name" >
+
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+
+        <intent-filter> 
+         <action android:name="android.intent.action.VIEW" /> 
+         <category android:name="android.intent.category.DEFAULT" /> 
+         <category android:name="android.intent.category.BROWSABLE" /> 
+         <data android:scheme="myapp"
+             android:host="myapp.mycompany.com" /> 
+        </intent-filter> 
+    </activity>
+</application>
+
+
+The second declares that is uses permission
+
+Part of AndroidManifest.xml
+
+<uses-sdk android:minSdkVersion="10" />
+<uses-permission android:name="your.namespace.permission.TEST" />
+
+<application
+
+
+Part of Activity:
+
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.main);
+
+    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("myapp://myapp.mycompany.com/index")));
+}
+
+
+I'm installing the application declaring permission, then I run the second application. 
+
+In a result I get security exception:
+
+ 01-11 09:46:55.249: E/AndroidRuntime(347): java.lang.RuntimeException: Unable to start activity ComponentInfo{your.namespace2/your.namespace2.UsingPErmissionActivity}: java.lang.SecurityException: Permission Denial: starting Intent { act=android.intent.action.VIEW dat=myapp://myapp.mycompany.com/index cmp=your.namespace/.DeclaringPermissionActivity } from ProcessRecord{407842c0 347:your.namespace2/10082} (pid=347, uid=10082) requires your.namespace.permission.TEST
+
+    
+===============================================================================================
+102
+A:I created a test code you can use it and test your permissions. There are two applications PermissionTestClient which declares permission and protects its activity with this permission. Here is its manifest file:
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.testpackage.permissiontestclient"
+    android:versionCode="1"
+    android:versionName="1.0" >
+
+    <uses-sdk android:minSdkVersion="10" />
+    <permission android:name="com.testpackage.mypermission" android:label="my_permission" android:protectionLevel="dangerous"></permission>
+
+    <application
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name" >
+        <activity
+            android:permission="com.testpackage.mypermission"
+            android:name=".PermissionTestClientActivity"
+            android:label="@string/app_name" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter >
+                <action android:name="com.testpackage.permissiontestclient.MyAction" />
+                <category android:name="android.intent.category.DEFAULT" />                
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
+
+
+There is nothing special in Activity file so I will not show it here.
+
+PermissionTestServer application calls activity from PermissionTestClient. Here is its manifest file: 
+
+<?xml version="1.0" encoding="utf-8"?>
+
+
+
+
+<uses-sdk android:minSdkVersion="10" />
+<uses-permission android:name="com.testpackage.mypermission"/>
+
+<application
+    android:icon="@drawable/ic_launcher"
+    android:label="@string/app_name" >
+    <activity
+        android:name=".PermissionTestServerActivity"
+        android:label="@string/app_name" >
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+    </activity>
+</application>
+
+</manifest>
+
+
+And Activity:
+
+package com.testpackage.permissiontestserver;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.widget.Button;
+
+public class PermissionTestServerActivity extends Activity {
+    private static final String TAG = "PermissionTestServerActivity";
+
+    /** Called when the activity is first created. */
+    Button btnTest;
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        btnTest = (Button) findViewById(R.id.btnTest);
+        btnTest.setOnClickListener(new OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                Log.d(TAG, "Button pressed!");
+                Intent in = new Intent();
+                in.setAction("com.testpackage.permissiontestclient.MyAction");
+                in.addCategory("android.intent.category.DEFAULT");
+                startActivity(in);
+            }
+        });
+    }
+}
+
+
+To test it just remove uses-permission from Server application. You'll get security violation error.
+    

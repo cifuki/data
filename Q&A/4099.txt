@@ -1,0 +1,120 @@
+57
+Q:I have an AppBarLayout that scrolls off screen when scrolling a RecyclerView.
+Below the RecyclerView there is a RelativeLayout that is a footer.
+
+The footer is shown only after scrolling up - it behave like it has 
+
+layout_scrollFlags="scroll|enterAlways"
+
+
+but it doesn't have any scroll flags - is it a bug or am I doing something wrong? I want it to be always visible
+
+before scroll
+
+
+
+after scroll
+
+
+
+Update
+
+opened a google issue on this - it was marked 'WorkingAsIntended' this still doesn't help because I want a working solution of a footer inside a fragment.
+
+Update 2
+
+you can find the activity and the fragment xmls here - 
+
+note that if line 34 in activity.xml - the line containing app:layout_behavior="@string/appbar_scrolling_view_behavior" is commented out the text end is visible from the start - otherwise, it is visible only after scrolling up 
+    
+===============================================================================================
+44
+A:I use a simplified version of Learn OpenGL ES's solution (https://stackoverflow.com/a/33396965/778951) -- which improves on  Noa's solution (https://stackoverflow.com/a/31140112/1317564). It works fine for my simple quick-return toolbar above a TabLayout with footer buttons in each tab's ViewPager content.
+
+Just set the FixScrollingFooterBehavior as the layout_behavior on the View/ViewGroup you want to keep aligned at the bottom of the screen.
+
+Layout:
+
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.design.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <android.support.design.widget.AppBarLayout
+        android:id="@+id/appbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+            <android.support.v7.widget.Toolbar
+                android:id="@+id/toolbar"
+                android:layout_width="match_parent"
+                android:layout_height="?android:attr/actionBarSize"
+                android:minHeight="?android:attr/actionBarSize"
+                app:title="Foo"
+                app:layout_scrollFlags="scroll|enterAlways|snap"
+                />
+
+            <android.support.design.widget.TabLayout
+                android:id="@+id/tabs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:tabMode="fixed"/>
+
+    </android.support.design.widget.AppBarLayout>
+
+    <android.support.v4.view.ViewPager
+        android:id="@+id/viewpager"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="com.spreeza.shop.ui.widgets.FixScrollingFooterBehavior"
+        />
+
+</android.support.design.widget.CoordinatorLayout>
+
+
+Behavior:
+
+public class FixScrollingFooterBehavior extends AppBarLayout.ScrollingViewBehavior {
+
+    private AppBarLayout appBarLayout;
+
+    public FixScrollingFooterBehavior() {
+        super();
+    }
+
+    public FixScrollingFooterBehavior(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    @Override
+    public boolean onDependentViewChanged(CoordinatorLayout parent, View child, View dependency) {
+
+        if (appBarLayout == null) {
+            appBarLayout = (AppBarLayout) dependency;
+        }
+
+        final boolean result = super.onDependentViewChanged(parent, child, dependency);
+        final int bottomPadding = calculateBottomPadding(appBarLayout);
+        final boolean paddingChanged = bottomPadding != child.getPaddingBottom();
+        if (paddingChanged) {
+            child.setPadding(
+                child.getPaddingLeft(),
+                child.getPaddingTop(),
+                child.getPaddingRight(),
+                bottomPadding);
+            child.requestLayout();
+        }
+        return paddingChanged || result;
+    }
+
+
+    // Calculate the padding needed to keep the bottom of the view pager's content at the same location on the screen.
+    private int calculateBottomPadding(AppBarLayout dependency) {
+        final int totalScrollRange = dependency.getTotalScrollRange();
+        return totalScrollRange + dependency.getTop();
+    }
+}
+
+    

@@ -1,0 +1,60 @@
+40
+Q:Background
+
+I've made a library that shows a fast-scroller for RecyclerView (here, in case anyone wants), and I want to decide when to show and when to hide the fast-scroller.
+
+I think a nice decision would be that if there are items that aren't shown on the screen (or there are a lot of them that do not appear), after the RecyclerView finished its layout process, I would set the fast-scroller to be visible, and if all items are already shown, there is no need for it to be shown.
+
+The problem
+
+I can't find a listener/callback for the RecyclerView, to tell me when it has finished showing items, so that I could check how many items are shown compared to the items count.
+
+The recyclerView might also change its size when the keyboard appears and hides itself.
+
+What I've tried
+
+The scrolling listener will probably not help, as it occurs "all the time", and I just need to check only when the RecyclerView has changed its size or when the items count (or data) has changed.
+
+I could wrap the RecyclerView with a layout that notifies me of size changes, like this one that I've made, but I don't think it will work as the RecyclerView probably won't be ready yet to tell how many items are visible.
+
+The way to check the number of items being shown might be used as such:
+
+    final LinearLayoutManager layoutManager = new LinearLayoutManager(getActivity(), LinearLayoutManager.VERTICAL, false);
+    mRecyclerView.setLayoutManager(layoutManager);
+    ...
+    Log.d("AppLog", "visible items count:" + (layoutManager.findLastVisibleItemPosition() -layoutManager.findFirstVisibleItemPosition()+1));
+
+
+The question
+
+How do I get notified when the recyclerView has finished showing its child views, so that I could decide based on what's currently shown, to show/hide the fast-scroller ? 
+    
+===============================================================================================
+26
+A:I've found a way to solve this (thanks to user pskink), by using the callback of LayoutManager :
+
+final LinearLayoutManager layoutManager = new LinearLayoutManager(getActivity(), LinearLayoutManager.VERTICAL, false) {
+            @Override
+            public void onLayoutChildren(final Recycler recycler, final State state) {
+                super.onLayoutChildren(recycler, state);
+                //TODO if the items are filtered, considered hiding the fast scroller here
+                final int firstVisibleItemPosition = findFirstVisibleItemPosition();
+                if (firstVisibleItemPosition != 0) {
+                    // this avoids trying to handle un-needed calls
+                    if (firstVisibleItemPosition == -1)
+                        //not initialized, or no items shown, so hide fast-scroller
+                        mFastScroller.setVisibility(View.GONE);
+                    return;
+                }
+                final int lastVisibleItemPosition = findLastVisibleItemPosition();
+                int itemsShown = lastVisibleItemPosition - firstVisibleItemPosition + 1;
+                //if all items are shown, hide the fast-scroller
+                mFastScroller.setVisibility(mAdapter.getItemCount() > itemsShown ? View.VISIBLE : View.GONE);
+            }
+        };
+
+
+The good thing here is that it works well and will handle even keyboard being shown/hidden.
+
+The bad thing is that it gets called on cases that aren't interesting (meaning it has false positives), but it's not as often as scrolling events, so it's good enough for me.
+    

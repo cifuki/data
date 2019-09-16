@@ -1,0 +1,71 @@
+49
+Q:In my app I have a BroadcastReceiver that is launched as a component through a <receiver> tag, filtering android.net.conn.CONNECTIVITY_CHANGE intents.
+
+My goal is simply to know when a Wifi connection was established, so what I am doing in onReceive() is this:
+
+NetworkInfo networkInfo = intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
+if(networkInfo.getType() == ConnectivityManager.TYPE_WIFI && networkInfo.isConnected()) {
+    // Wifi is connected
+}
+
+
+It works fine, but I always seem to get two identical intents within about one second when a Wifi connection is established. I tried to look at any info I could get from the intent, the ConnectivityManager and WifiManager, but I can't find anything that distinguishes the two intents.
+
+Looking at the log, there is at least one other BroadcastReceiver that also receives the two identical intents.
+
+It is running on a HTC Desire with Android 2.2
+
+Any idea why I seem to get a "duplicated" intent when Wifi connects or what the difference between the two might be?
+    
+===============================================================================================
+62
+A:NOTE: For a recent, up-to-date answer, see this one below!
+
+After a lot of googling and debugging, I believe this is the correct way to determine if Wifi has connected or disconnected.
+
+The onReceive() method in the BroadcastReceiver:
+
+public void onReceive(final Context context, final Intent intent) {
+
+if(intent.getAction().equals(WifiManager.NETWORK_STATE_CHANGED_ACTION)) {
+    NetworkInfo networkInfo =
+        intent.getParcelableExtra(WifiManager.EXTRA_NETWORK_INFO);
+    if(networkInfo.isConnected()) {
+        // Wifi is connected
+        Log.d("Inetify", "Wifi is connected: " + String.valueOf(networkInfo));
+    }
+} else if(intent.getAction().equals(ConnectivityManager.CONNECTIVITY_ACTION)) {
+    NetworkInfo networkInfo =
+        intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
+    if(networkInfo.getType() == ConnectivityManager.TYPE_WIFI &&
+        ! networkInfo.isConnected()) {
+        // Wifi is disconnected
+        Log.d("Inetify", "Wifi is disconnected: " + String.valueOf(networkInfo));
+    }
+}
+}
+
+
+Together with the following receiver element in AndroidManifest.xml
+
+<receiver android:name="ConnectivityActionReceiver"
+    android:enabled="true" android:label="ConnectivityActionReceiver">
+    <intent-filter>
+        <action android:name="android.net.conn.CONNECTIVITY_CHANGE"/>
+        <action android:name="android.net.wifi.STATE_CHANGE"/>
+    </intent-filter>
+</receiver>
+
+
+Some explanation:
+
+
+When only considering ConnectivityManager.CONNECTIVITY_ACTION, I always get two intents containing identical NetworkInfo instances (both getType() == TYPE_WIFI and isConnected() == true) when Wifi connects - the issue described in this question.
+When only using WifiManager.NETWORK_STATE_CHANGED_ACTION, there is no intent broadcasted when Wifi disconnects, but two intents containing different NetworkInfo instances, allowing to determine one event when Wifi is connected.
+
+
+NOTE: I've received one single crash report (NPE) where the intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO) returned null. So, even if it seems to be extremely rare to happen, it might be a good idea to add a null check.
+
+Cheers,
+Torsten
+    

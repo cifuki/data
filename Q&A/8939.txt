@@ -1,0 +1,101 @@
+30
+Q:I am using Firebase Cloud Messaging to send push notifications.
+
+Here is my FirebaseMessageService:
+
+public class FireBaseMessageService extends FirebaseMessagingService {
+
+
+@Override
+public void onMessageReceived(RemoteMessage remoteMessage) {
+    Log.e("TAG", "From: " + remoteMessage.getFrom());
+    Log.e("TAG", "Notification Message Body: " + remoteMessage.getData().get("CardName")+"  :  "+remoteMessage.getData().get("CardCode"));
+    sendNotification(remoteMessage.getNotification().getBody());
+}
+
+
+private void sendNotification(String messageBody) {
+    Intent intent = new Intent(this, StartActivity.class);
+    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+    PendingIntent pendingIntent = PendingIntent.getActivity(this, 0 /* Request code */, intent,
+            PendingIntent.FLAG_ONE_SHOT);
+
+    Uri defaultSoundUri= RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+    NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this)
+            .setSmallIcon(R.mipmap.ic_launcher_final)
+            .setContentTitle("Notification")
+            .setContentText(messageBody)
+            .setTicker("Test")
+            .setAutoCancel(true)
+            .setDefaults(Notification.DEFAULT_SOUND)
+            .setContentIntent(pendingIntent);
+
+    NotificationManager notificationManager =
+            (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+
+        notificationManager.notify(0 /* ID of notification */, notificationBuilder.build());
+    }
+}
+
+
+And FirebaseInstanceServer:
+
+public class FirebaseInstanceService extends FirebaseInstanceIdService {
+
+
+@Override
+public void onTokenRefresh() {
+    // Get updated InstanceID token.
+    String refreshedToken = FirebaseInstanceId.getInstance().getToken();
+    Log.e("TAG", "Refreshed token: " + refreshedToken);
+
+    // TODO: Implement this method to send any registration to your app's servers.
+    sendRegistrationToServer(refreshedToken);
+
+}
+
+private void sendRegistrationToServer(String token) {
+
+
+      // Add custom implementation, as needed.
+        Log.e("TAG", "Refreshed token2: " + token);
+    }
+}
+
+
+Which is declared in the AndroidManifest:
+
+<service
+    android:name=".util.notifications.FireBaseMessageService">
+    <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+    </intent-filter>
+</service>
+
+<service
+    android:name=".util.notifications.FirebaseInstanceService">
+    <intent-filter>
+        <action android:name="com.google.firebase.INSTANCE_ID_EVENT"/>
+    </intent-filter>
+</service>
+
+
+So issue is that when App is running ticker is shown well and notification come with default sound, but when App is in background or is not running, notification come without any sound and ticker is not shown in status bar.
+Why is this happening and how can I fix it?
+    
+===============================================================================================
+64
+A:With FCM you specify a POST payload to send to https://fcm.googleapis.com/fcm/send. In that payload you can specify a data or a notification key, or both.
+
+If your payload contains only a data key, your app will handle all push messages itself. E.g. they are all delivered to your onMessageReceived handler.
+
+If your payload contains a notification key, your app will handle push messages itself only if your app is active/in the foreground. If it is not (so it's in the background, or closed entirely), FCM handles showing the notification for you by using the values you put into the notification key payload.
+
+Note that notifications sent from a console (like Firebase console), they always include a notification key.
+
+Looks like you want to be handling the FCM messages yourself so you can customize the notification a bit more etc, so it would be better to not include the notification key in the POST payload, so all push messages are delivered to your onMessageReceived.
+
+You can read more about it here:
+Advanced messaging options
+Downstream message syntax
+    

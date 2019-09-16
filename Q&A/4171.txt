@@ -1,0 +1,137 @@
+56
+Q:I'm currently having trouble connecting to my webservice on android. I use jackson-core/databind/annotation-2.2.4 and Spring RESTWebService. If I access the URL from the browser I can see the JSON response: (server return List\\Shop\\ looks like:)
+
+[{"name":"shopqwe","mobiles":[],"address":{"town":"city",
+"street":"streetqwe","streetNumber":"59","cordX":2.229997,"cordY":1.002539},
+"shoe" [{"shoeName":"addidas","number":"631744030","producent":"nike","price":999.0,
+"sizes":[30.0,35.0,38.0]}]
+
+
+From a Client endpoint (Android application) I receive this error message:
+
+08-26 17:43:07.406: E/AllShopsAsyc(28203): Could not read JSON: Can not deserialize
+instance of com.auginzynier.data.ShopContainer out of START_ARRAY token
+08-26 17:43:07.406: E/AllShopsAsyc(28203):  at [Source:
+com.android.okhttp.internal.http.HttpTransport$ChunkedInputStream@41efbd48; line: 1,
+column: 1]; nested exception is com.fasterxml.jackson.databind.JsonMappingException:
+Can not deserialize instance of com.auginzynier.data.ShopContainer out of START_ARRAY
+token
+08-26 17:43:07.406: E/AllShopsAsyc(28203):  at [Source:
+com.android.okhttp.internal.http.HttpTransport$ChunkedInputStream@41efbd48; line: 1,
+column: 1] 
+08-26 17:43:07.406: E/AllShopsAsyc(28203):
+org.springframework.http.converter.HttpMessageNotReadableException: Could not read
+JSON: Can not deserialize instance of com.auginzynier.data.ShopContainer out of
+START_ARRAY token
+
+
+My server request
+
+RestTemplate restTemplate = new RestTemplate();
+restTemplate.getMessageConverters().add(new MappingJackson2HttpMessageConverter());
+ShopContainer response  = restTemplate.getForObject(url, ShopContainer.class);
+
+
+where ShopContainer is:
+
+public class ShopContainer {
+   private List<Shop> shops;
+
+
+structure of Shop, Address and Shoe is : (I've omitted getters and setters):
+
+public class Shop {
+@JsonProperty("name")    private String name;
+@JsonProperty("mobiles")   private List<String> mobiles = new ArrayList<String>();
+@JsonProperty("address")   private Address address;
+@JsonProperty("shoe") private List<Shoe> shoe = new ArrayList<Shoe>();
+
+public class Address {
+@JsonProperty("town") private String town;
+@JsonProperty("street") private String street;
+@JsonProperty("streetNumber") private String streetNumber;
+@JsonProperty("cordX") private Double cordX;
+@JsonProperty("cordY") private Double cordY;
+
+public class Shoe {
+@JsonProperty("shoeName") private String shoeName;
+@JsonProperty("number") private String number;
+@JsonProperty("producent") private String producent;
+@JsonProperty("price") private Double price;
+@JsonProperty("sizes") private List<Double> sizes = new ArrayList<Double>();
+
+
+I've look here and on google but still can't figure out what I am missing at this point.
+
+Any response would be greatly helpful.
+
+Regards.
+
+@UPDATE 
+
+I've fixed the JSON by using jackson's ObjectMapper with RequestMethod.GET. It now returns a String.
+
+list is List<Shop>
+
+ObjectMapper mapper = new ObjectMapper();
+mapper.writeValue(new File("D:\\\\Android\\\\shop.json"), list);
+System.out.println(mapper.writerWithDefaultPrettyPrinter().writeValueAsString(list));
+return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(list);
+
+
+JSON in console looks like:
+
+[ {
+  "name" : "shopqwe",
+  "mobiles" : [ ],
+  "address" : {
+    "town" : "city",
+    "street" : "streetqwe",
+    "streetNumber" : "59",
+    "cordX" : 2.229997,
+    "cordY" : 2.002539
+  },
+  "shoe" : [ {
+    "shoeName" : "addidas",
+    "number" : "631744033",
+    "producent" : "nike",
+    "price" : 10.0,
+    "sizes" : [ 30.0, 35.0, 38.0 ]
+  } ]
+} ]
+
+
+Request still doesn't work - error is the same.
+    
+===============================================================================================
+131
+A:Your json contains an array, but you're trying to parse it as an object.
+This error occurs because objects must start with {.
+
+You have 2 options:
+
+
+You can get rid of the ShopContainer class and use Shop[] instead
+
+ShopContainer response  = restTemplate.getForObject(
+    url, ShopContainer.class);
+
+
+replace with
+
+Shop[] response  = restTemplate.getForObject(url, Shop[].class);
+
+
+and then make your desired object from it. 
+You can change your server to return an object instead of a list
+
+return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(list);
+
+
+replace with
+
+return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+    new ShopContainer(list));
+
+
+    

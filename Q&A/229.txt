@@ -1,0 +1,149 @@
+377
+Q:I've created a small test app which represents my problem.
+I'm using ActionBarSherlock to implement tabs with (Sherlock)Fragments.
+
+My code:
+TestActivity.java
+
+public class TestActivity extends SherlockFragmentActivity {
+    private ActionBar actionBar;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setupTabs(savedInstanceState);
+    }
+
+    private void setupTabs(Bundle savedInstanceState) {
+        actionBar = getSupportActionBar();
+        actionBar.setNavigationMode(ActionBar.NAVIGATION_MODE_TABS);
+
+        addTab1();
+        addTab2();
+    }
+
+    private void addTab1() {
+        Tab tab1 = actionBar.newTab();
+        tab1.setTag("1");
+        String tabText = "1";
+        tab1.setText(tabText);
+        tab1.setTabListener(new TabListener<MyFragment>(TestActivity.this, "1", MyFragment.class));
+
+        actionBar.addTab(tab1);
+    }
+
+    private void addTab2() {
+        Tab tab1 = actionBar.newTab();
+        tab1.setTag("2");
+        String tabText = "2";
+        tab1.setText(tabText);
+        tab1.setTabListener(new TabListener<MyFragment>(TestActivity.this, "2", MyFragment.class));
+
+        actionBar.addTab(tab1);
+    }
+}
+
+
+TabListener.java
+
+public class TabListener<T extends SherlockFragment> implements com.actionbarsherlock.app.ActionBar.TabListener {
+    private final SherlockFragmentActivity mActivity;
+    private final String mTag;
+    private final Class<T> mClass;
+
+    public TabListener(SherlockFragmentActivity activity, String tag, Class<T> clz) {
+        mActivity = activity;
+        mTag = tag;
+        mClass = clz;
+    }
+
+    /* The following are each of the ActionBar.TabListener callbacks */
+
+    public void onTabSelected(Tab tab, FragmentTransaction ft) {
+        SherlockFragment preInitializedFragment = (SherlockFragment) mActivity.getSupportFragmentManager().findFragmentByTag(mTag);
+
+        // Check if the fragment is already initialized
+        if (preInitializedFragment == null) {
+            // If not, instantiate and add it to the activity
+            SherlockFragment mFragment = (SherlockFragment) SherlockFragment.instantiate(mActivity, mClass.getName());
+            ft.add(android.R.id.content, mFragment, mTag);
+        } else {
+            ft.attach(preInitializedFragment);
+        }
+    }
+
+    public void onTabUnselected(Tab tab, FragmentTransaction ft) {
+        SherlockFragment preInitializedFragment = (SherlockFragment) mActivity.getSupportFragmentManager().findFragmentByTag(mTag);
+
+        if (preInitializedFragment != null) {
+            // Detach the fragment, because another one is being attached
+            ft.detach(preInitializedFragment);
+        }
+    }
+
+    public void onTabReselected(Tab tab, FragmentTransaction ft) {
+        // User selected the already selected tab. Usually do nothing.
+    }
+}
+
+
+MyFragment.java
+
+public class MyFragment extends SherlockFragment {
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        new AsyncTask<Void, Void, Void>() {
+
+            @Override
+            protected Void doInBackground(Void... params) {
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException ex) {
+                }
+                return null;
+            }
+
+            @Override
+            protected void onPostExecute(Void result){
+                getResources().getString(R.string.app_name);
+            }
+
+        }.execute();
+    }
+}
+
+
+I've added the Thread.sleep part to simulate downloading data. The code in the onPostExecute is to simulate use of the Fragment.
+
+When I rotate the screen very fast between landscape and portrait, I get an Exception at the onPostExecute code: 
+
+
+  java.lang.IllegalStateException: Fragment MyFragment{410f6060} not
+  attached to Activity
+
+
+I think it's because a new MyFragment has been created in the meantime, and was attached to the Activity before the AsyncTask finished. The code in onPostExecute calls upon a unattached MyFragment.
+
+But how can I fix this?
+    
+===============================================================================================
+756
+A:I've found the very simple answer: isAdded():
+
+
+  Return true if the fragment is currently added to its activity.
+
+
+@Override
+protected void onPostExecute(Void result){
+    if(isAdded()){
+        getResources().getString(R.string.app_name);
+    }
+}
+
+
+To avoid onPostExecute from being called when the Fragment is not attached to the Activity is to cancel the AsyncTask when pausing or stopping the Fragment. Then isAdded() would not be necessary anymore. However, it is advisable to keep this check in place.
+    

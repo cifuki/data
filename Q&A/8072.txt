@@ -1,0 +1,151 @@
+33
+Q:Is there a working example out there that demonstrates how to append additional rows in ListView dynamically?
+For example:
+
+
+you are pulling RSS feeds from
+different domains
+you then display the first 10 items
+in the ListView (while you have
+other threads running in the
+background continue pulling feeds)
+you scroll and reach the bottom of
+the List and click at a button to
+view more items
+the ListView will then get appended
+with additional 10 items, which
+makes 20 items now in total.
+
+
+Any advice how to accomplish this?
+
+Nicholas
+    
+===============================================================================================
+53
+A:To add new item to your list dynamically you have to get adapter class from your ListActivity and simply add new elements. When you add items directly to adapter, notifyDataSetChanged is called automatically for you - and the view updates itself.  You can also provide your own adapter (extending ArrayAdapter) and override the constructor taking List parameter. You can use this list just as you use adapter, but in this case you have to call adapter.notifyDataSetChanged() by yourself - to refresh the view. 
+Please, take a look at the example below:
+
+public class CustomList extends ListActivity {
+private LayoutInflater mInflater;
+private Vector<RowData> data;
+
+/** Called when the activity is first created. */
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.main);        
+    mInflater = (LayoutInflater) getSystemService(Activity.LAYOUT_INFLATER_SERVICE);
+    data = new Vector<RowData>();
+    RowData rd = new RowData("item1", "description1");
+    data.add(rd);
+    rd = new RowData("item2", "description2");
+    data.add(rd);
+    rd = new RowData("item2", "description3");
+    data.add(rd);
+
+    CustomAdapter adapter = new CustomAdapter(this, R.layout.custom_row,R.id.item, data);
+    setListAdapter(adapter);        
+    getListView().setTextFilterEnabled(true);
+}
+
+
+public void onListItemClick(ListView parent, View v, int position, long id) {
+    CustomAdapter adapter = (CustomAdapter) parent.getAdapter();
+    RowData row = adapter.getItem(position);        
+    AlertDialog.Builder builder = new AlertDialog.Builder(this);
+    builder.setTitle(row.mItem); 
+    builder.setMessage(row.mDescription + " -> " + position );
+    builder.setPositiveButton("ok", null);
+    builder.show();
+}
+
+/**
+ * Data type used for custom adapter. Single item of the adapter.      
+ */
+private class RowData {
+    protected String mItem;
+    protected String mDescription;
+
+    RowData(String item, String description){
+        mItem = item;
+        mDescription = description;         
+    }
+
+    @Override
+    public String toString() {
+        return mItem + " " +  mDescription;
+    }
+}
+
+private class CustomAdapter extends ArrayAdapter<RowData> {
+
+    public CustomAdapter(Context context, int resource,
+            int textViewResourceId, List<RowData> objects) {
+        super(context, resource, textViewResourceId, objects);
+
+    }
+
+    @Override
+    public View getView(int position, View convertView, ViewGroup parent) {
+        ViewHolder holder = null;
+
+        //widgets displayed by each item in your list
+        TextView item = null;
+        TextView description = null;
+
+        //data from your adapter
+        RowData rowData= getItem(position);
+
+
+        //we want to reuse already constructed row views...
+        if(null == convertView){
+            convertView = mInflater.inflate(R.layout.custom_row, null);
+            holder = new ViewHolder(convertView);
+            convertView.setTag(holder);
+        }
+        // 
+        holder = (ViewHolder) convertView.getTag();
+        item = holder.getItem();
+        item.setText(rowData.mItem);
+
+        description = holder.getDescription();      
+        description.setText(rowData.mDescription);
+
+        return convertView;
+    }
+}
+
+/**
+ * Wrapper for row data.
+ *
+ */
+private class ViewHolder {      
+    private View mRow;
+    private TextView description = null;
+    private TextView item = null;
+
+    public ViewHolder(View row) {
+        mRow = row;
+    }
+
+    public TextView getDescription() {
+        if(null == description){
+            description = (TextView) mRow.findViewById(R.id.description);
+        }
+        return description;
+    }
+
+    public TextView getItem() {
+        if(null == item){
+            item = (TextView) mRow.findViewById(R.id.item);
+        }
+        return item;
+    }       
+}
+
+
+}
+
+You can extend the example above and add "more" button - which just add new items to your adapter (or vector). Regards!
+    

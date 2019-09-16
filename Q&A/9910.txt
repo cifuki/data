@@ -1,0 +1,75 @@
+28
+Q:Mockito creates a proxy instance when some thing is spied on. Now, is there any way to forward setters that are then executed on that proxy instance to the real instance that sits behind it?
+
+Rationale: I have an object instance that I do not have completely under my control, i.e. an Android activity. I can give most parts of my app the proxied version and that runs fine as is, but because I need to create the spy / proxy very early during the creation phase of the activity, it is not yet fully instantiated, e.g. the base context is not attached. This happens on the proxy instance and is of course not used by the activity instance itself (which refers to itself via Activity.this). The end result is that this leads to all kinds of crashes because resource resolving happens via this base context, so the internal Fragment machinery throws NPEs and more.
+
+Here is some code:
+
+public class CustomAndroidJUnitRunner extends AndroidJUnitRunner {
+    @Override
+    public Activity newActivity(ClassLoader cl, String className, Intent intent)
+            throws InstantiationException, IllegalAccessException, ClassNotFoundException {
+        Activity activity = super.newActivity(cl, className, intent);
+        return maybeStubSomeDelegate(activity);
+    }
+
+    private Activity maybeStubSomeDelegate(Activity activity) {
+        if (!(activity instanceof SomeDelegate)) {
+            return activity;
+        }
+        Activity spiedActivity = spy(activity);
+        doReturn(SomeDelegateMock.getInstance())
+            .when((SomeDelegate) spiedActivity)
+            .getDelegate();
+        return spiedActivity;
+    }
+}
+
+
+I'm clueless - any ideas?
+    
+===============================================================================================
+1
+A:Using:
+
+android Test Support library's
+  SingleActivityFactory,
+  ActivityTestRule
+and Mockito's
+  spy()
+
+dependencies {
+  androidTestImplementation 'com.android.support.test:runner:1.0.2'
+  androidTestImplementation 'com.android.support.test:rules:1.0.2'
+  androidTestImplementation 'org.mockito:mockito-android:2.21.0'
+}
+
+
+Outline:
+
+inject the spied instance inside SingleActivityFactory's implementation
+
+Code:
+
+public class MainActivityTest {
+    MainActivity subject;
+
+    SingleActivityFactory<MainActivity> activityFactory = new SingleActivityFactory<MainActivity>(MainActivity.class) {
+        @Override
+        protected MainActivity create(Intent intent) {
+            subject = spy(getActivityClassToIntercept());
+            return subject;
+        }
+    };
+
+    @Rule
+    public ActivityTestRule<MainActivity> testRule = new ActivityTestRule<>(activityFactory, true, true);
+
+    @Test
+    public void activity_isBeingSpied() {
+        verify(subject).setContentView(R.layout.activity_main);
+    }
+
+}
+
+    

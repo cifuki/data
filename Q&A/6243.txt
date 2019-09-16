@@ -1,0 +1,51 @@
+41
+Q:According to the Android documentation, the system will clear a task (finish all Activities above the one that launched the task) that it deems to have been abandoned by the user:
+
+https://developer.android.com/guide/components/tasks-and-back-stack.html#Clearing
+
+
+  If the user leaves a task for a long time, the system clears the task of all activities except the root activity. When the user returns to the task again, only the root activity is restored. The system behaves this way, because, after an extended amount of time, users likely have abandoned what they were doing before and are returning to the task to begin something new.
+
+
+https://developer.android.com/guide/topics/manifest/activity-element.html#always
+
+
+  Normally, the system clears a task (removes all activities from the stack above the root activity) in certain situations when the user re-selects that task from the home screen. Typically, this is done if the user hasn't visited the task for a certain amount of time, such as 30 minutes.
+
+
+This behaviour can be easily reproduced on devices running Gingerbread and earlier. Launch an app and create some back history, then hit the home button and wait half an hour. Launch the app again from the home screen and the state has been cleared as if it were starting a new task. Perfect.
+
+However, on devices running ICS and above I cannot seem to reproduce this behaviour at all, even after a task has been inactive after many hours or days. When an app is relaunched from the home screen the task is always in the state I left it in.
+
+Assuming the documentation is correct, under what conditions will modern versions of Android (API 14+) automatically clear a task?
+
+If the behaviour has changed and the documentation is out of date, what is the purpose of the alwaysRetainTaskState attribute for <activity/>? Has the default value changed to "true" or is this attribute now deprecated?
+
+Note: I am not talking here about Android's process lifecycle management, which will be device resource dependent. Killing a process should be transparent to the user anyway and does not affect the task state.
+    
+===============================================================================================
+41
+A:Great question, after a bit of source diving the answer certainly surprised me!
+
+A quick look at the Android sources seems to provide the answer.  Let's start by looking back in Android 2.2 at ActivityManagerService.java.  Notice around line 186 a constant defined called ACTIVITY_INACTIVE_RESET_TIME that happens to be set to 30 minutes.
+
+// How long until we reset a task when the user returns to it.  Currently
+// 30 minutes.
+static final long ACTIVITY_INACTIVE_RESET_TIME = 1000*60*30;
+
+
+Look a little further for the resetTaskIfNeededLocked() method around line 7021 and you will see this value checked to determine if the task should be reset before being launched.
+
+Fast-forward to the Android 4.3 sources and the code has been moved into ActivityStack.java that is called from ActivityManagerService, but the basic structure is the same.  This time, the constant is defined around line 125:
+
+// How long until we reset a task when the user returns to it.  Currently
+// disabled.
+static final long ACTIVITY_INACTIVE_RESET_TIME = 0;
+
+
+The same resetTaskIfNeededLocked() method is found around line 1973, and you can see that now it checks if the value is greater than zero before applying the same timeout check to clearing the task state.  Notice, though, that this method does still check FLAG_ALWAYS_RETAIN_TASK_STATE, so this flag can still be used to protect a state clear, but it seems that with the outer check disabled this code will never be executed.
+
+Overall, this seems like pretty compelling evidence that the feature has been effectively disabled in AOSP for later versions of Android.  I do not see an external means (via system properties, etc.) for this value to be re-enabled per device unless the manufacturer were to rebuild the code with a value added here...but that is uncommon.  Most ODMs stick to config properties in XML or system properties that they can control via an overlay.
+
+So while technically the feature hasn't been "removed", it would seem to me that the documentation is no longer correct in terms of it auto-triggering after a delay.
+    

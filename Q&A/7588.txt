@@ -1,0 +1,37 @@
+35
+Q:The Android developer documentation, as part of Project Svelte (motto: "You ever try fitting Bugdroid into skinny jeans?!?"), has a page on Managing Your App's Memory. It contains:
+
+
+  When the user navigates to a different app and your UI is no longer visible, you should release any resources that are used by only your UI. Releasing UI resources at this time can significantly increase the system's capacity for cached processes, which has a direct impact on the quality of the user experience.
+
+
+and:
+
+
+  TRIM_MEMORY_RUNNING_LOW: Your app is running and not considered killable, but the device is running much lower on memory so you should release unused resources to improve system performance (which directly impacts your app's performance).
+
+
+and the like.
+
+However, these would only make sense if "releasing resources" would actually affect system RAM somehow.
+
+I was under the impression that the Dalvik VM behaved like the Java VM does (or perhaps "did", if they changed it when I wasn't looking). AFAIK, the Java VM allocates system RAM to increase the heap size but never releases it -- once allocated, it remains part of the heap space for as long as the process runs.
+
+If the Dalvik VM behaves the same way, then I fail to see how increasing the amount of unallocated heap space in our process would have any impact on the overall system performance. Now, freeing up heap space for our process is a good thing, and perhaps doing so would decrease the likelihood of us needing more system RAM in the future... but that's not what the documentation implies. The documentation states "Releasing UI resources at this time can significantly increase the system's capacity for cached processes"; it does not say "Releasing UI resources at this time has no immediate impact but will help reduce your app's system RAM footprint in the future".
+
+Now, had the instructions told us to release memory allocated via the NDK, that would make sense, as that occurs outside the Dalvik heap and would affect system RAM. But the documentation does not draw that distinction.
+
+Does the Dalvik VM actually release allocated RAM back to the system, other than by terminating the process? If so, when? And, to a lesser extent, how is that done, considering that the garbage collector is non-compacting and non-copying?
+
+Thanks!
+    
+===============================================================================================
+29
+A:Yes.  The basic idea is that, if there's a 4K page with nothing on it, the page will be returned to the system.
+
+The function that does this in the VM is called trimHeaps(), in dalvik/vm/alloc/HeapSource.cpp.  You can see it using mspace_trim(), which uses OS calls to unmap chunks that are no longer needed (see malloc_trim() comments around line 1203 in malloc.c).  It then traverses the heap with mspace_inspect_all(), which calls into releasePagesInRange() for every region.  The callback tests to see if it was passed a region with no allocations in it, and if so, truncates the boundaries to 4K alignment.  If the result isn't empty, we know the region spans one or more physical 4K pages, which can be returned to the system with madvise(MADV_DONTNEED).
+
+trimHeaps() is called from a few places, most notably gcDaemonThread(), which will initiate the trim five seconds after a concurrent GC.  The timer gets reset if the concurrent GC happens before five seconds elapse, the idea being that if we're GCing then the VM is busily allocating and this sort of idle-time trimming will be counter-productive.
+
+Because the Dalvik GC doesn't do compaction, this isn't as effective as it could be.  Fragmentation tends to build up over time, so the situation may get worse the longer a process lives.  The app framework can "recycle" long-lived services to alleviate this.
+    

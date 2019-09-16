@@ -1,0 +1,97 @@
+136
+Q:My application installs other applications, and it needs to keep track of what applications it has installed. Of course, this could be achieved by simply keeping a list of installed applications. But this should not be necessary! It should be the responsibility of the PackageManager to maintain the installedBy(a, b) relationship. In fact, according to the API it is:
+
+public abstract String getInstallerPackageName(String packageName) - 
+Retrieve the package name of the application that installed a package. This identifies which market the package came from.
+
+The current approach
+
+Install APK using Intent
+
+Intent intent = new Intent(Intent.ACTION_VIEW);
+intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+startActivity(intent);
+
+
+Uninstall APK using Intent:
+
+Intent intent = new Intent(Intent.ACTION_DELETE, Uri.fromParts("package",
+getPackageManager().getPackageArchiveInfo(apkUri.getPath(), 0).packageName,null));
+startActivity(intent);
+
+
+This is obviously not the way e.g. Android Market installs / uninstalls packages. They use a richer version of the PackageManager. This can bee seen by downloading the Android source code from the Android Git repository. Below are the two hidden methods that corresponds to the Intent approach. Unfortunately they are not available to external developers. But perhaps they will be in the future?
+
+The better approach
+
+Installing APK using the PackageManager
+
+/**
+ * @hide
+ * 
+ * Install a package. Since this may take a little while, the result will
+ * be posted back to the given observer.  An installation will fail if the calling context
+ * lacks the {@link android.Manifest.permission#INSTALL_PACKAGES} permission, if the
+ * package named in the package file's manifest is already installed, or if there's no space
+ * available on the device.
+ *
+ * @param packageURI The location of the package file to install.  This can be a 'file:' or a
+ * 'content:' URI.
+ * @param observer An observer callback to get notified when the package installation is
+ * complete. {@link IPackageInstallObserver#packageInstalled(String, int)} will be
+ * called when that happens.  observer may be null to indicate that no callback is desired.
+ * @param flags - possible values: {@link #INSTALL_FORWARD_LOCK},
+ * {@link #INSTALL_REPLACE_EXISTING}, {@link #INSTALL_ALLOW_TEST}.
+ * @param installerPackageName Optional package name of the application that is performing the
+ * installation. This identifies which market the package came from.
+ */
+public abstract void installPackage(
+        Uri packageURI, IPackageInstallObserver observer, int flags,
+        String installerPackageName);
+
+
+Uninstalling APK using the PackageManager
+
+/**
+ * Attempts to delete a package.  Since this may take a little while, the result will
+ * be posted back to the given observer.  A deletion will fail if the calling context
+ * lacks the {@link android.Manifest.permission#DELETE_PACKAGES} permission, if the
+ * named package cannot be found, or if the named package is a "system package".
+ * (TODO: include pointer to documentation on "system packages")
+ *
+ * @param packageName The name of the package to delete
+ * @param observer An observer callback to get notified when the package deletion is
+ * complete. {@link android.content.pm.IPackageDeleteObserver#packageDeleted(boolean)} will be
+ * called when that happens.  observer may be null to indicate that no callback is desired.
+ * @param flags - possible values: {@link #DONT_DELETE_DATA}
+ *
+ * @hide
+ */
+public abstract void deletePackage(
+        String packageName, IPackageDeleteObserver observer, int flags);
+
+
+Differences
+
+
+When using intents the local package manager is not made aware of which application the installation originated from. Specifically, getInstallerPackageName(...) returns null.
+The hidden method installPackage(...) takes the installer package name as a parameter, and is most likely capable of setting this value.
+
+
+Question
+
+Is it possible to specify package installer name using intents? 
+(Maybe the name of the installer package can be added as an extra to the installation intent?) 
+
+Tip: If you want to download the Android source code you can follow the steps described here: Downloading the Source Tree. To extract the *.java files and put them in folders according to the package hierarchy you can check out this neat script: View Android Source Code in Eclipse.
+    
+===============================================================================================
+66
+A:This is not currently available to third party applications.  Note that even using reflection or other tricks to access installPackage() will not help, because only system applications can use it.  (This is because it is the low-level install mechanism, after the permissions have been approved by the user, so it is not safe for regular applications to have access to.)
+
+Also the installPackage() function arguments have often changed between platform releases, so anything you do trying access it will fail on various other versions of the platform.
+
+EDIT:
+
+Also it is worth pointing out that this installerPackage was only added fairly recently to the platform (2.2?) and was originally not actually used for tracking who installed the app -- it is used by the platform to determine who to launch when reporting bugs with the app, for implementing Android Feedback.  (This was also one of the times the API method arguments changed.)  For at least a long while after it was introduced, Market still didn't use it to track the apps it has installed (and it may very well still not use it), but instead just used this to set the Android Feedback app (which was separate from Market) as the "owner" to take care of feedback.
+    

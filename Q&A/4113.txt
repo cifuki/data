@@ -1,0 +1,36 @@
+57
+Q:The android app I am working on overrides the Application class to store lightweight state (username, gps location, etc) in static vars.  Most of this state is set in OnCreate of the launch activity (username retrieved from prefs, location listener runs).  Is it safe to rely on the launch activity to initialize the Application class?  Are there any cases where the Application class might be re-created without the Launch activity also being created?  
+
+The question comes up because I ran into a null pointer exception accessing a variable in the Application class on resuming the app after the phone was asleep for several hours (the app was left in the foreground before phone went to sleep).  Is it possible that the process was killed while the phone was asleep and on waking the phone, the Application class was re-created, the top activity in the stack was resumed, but the launch activity.onCreate wasn't run thus the Application class wasn't initialized?
+
+Note that I have tried to test these kinds of scenarios by Forcing the App to stop using Settings / Manage applications.  However, I'm not able to recreate the problem.  On the next run, the Application class is created,  followed by the launch activity.onCreate.
+
+Is it safe to assume that the Application class instance will exist as long as the process, and that when the Application class is created it is equivalent to "restarting" the application ie. start with a new activity stack (and first activity on stack is the launch activity)?
+    
+===============================================================================================
+20
+A:No. Your entire application can be killed and recreated with the task stack intact; this lets the system reclaim memory on devices that need it while still presenting a seamless illusion of multitasking to the end user. From the docs:
+
+
+  A background activity (an activity
+  that is not visible to the user and
+  has been paused) is no longer
+  critical, so the system may safely
+  kill its process to reclaim memory for
+  other foreground or visible processes.
+  If its process needs to be killed,
+  when the user navigates back to the
+  activity (making it visible on the
+  screen again), its onCreate(Bundle)
+  method will be called with the
+  savedInstanceState it had previously
+  supplied in
+  onSaveInstanceState(Bundle) so that it
+  can restart itself in the same state
+  as the user last left it.
+
+
+That is, the process (which the Application is tied to) can be killed off but then restarted, and the individual activities should have enough info to recreate themselves from what they've saved before being killed, without relying on global state set in the process by other Activities.
+
+Consider storing persistent shared state that needs initialization by an Activity in either a SharedPreference or SQLite database, or passing it to Activities that need it as an Intent extra.
+    

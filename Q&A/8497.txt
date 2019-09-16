@@ -1,0 +1,106 @@
+31
+Q:I have the following code
+
+class OverlayTask extends AsyncTask<Void, Void, Void> {
+    @Override
+    public void onPreExecute() {
+
+        if (sites != null) {
+            myMapView.getOverlays().remove(sites);
+            myMapView.invalidate();
+            sites = null;
+        }
+    }
+
+    @Override
+    public Void doInBackground(Void... unused) {
+            grabShipsWithLocation();
+            return (null);
+    }
+
+    @Override
+    public void onPostExecute(Void unused) {
+        myMapView.getOverlays().add(sites);
+        myMapView.invalidate();
+        isLoading = false;
+    }
+}
+
+
+That seems to work fine on a few test devices but I am seeing a lot of errors appearing on the dev console.  I can't seem to work out why and where to put this Looper.prepare().  Is it needed?
+
+java.lang.ExceptionInInitializerError
+at com.test.appname.FinderMain$1.gotLocation(FinderMain.java:286)
+at com.test.appname.MyLocation$GetLastLocation.run(MyLocation.java:89)
+at java.util.Timer$TimerImpl.run(Timer.java:289)
+Caused by: java.lang.RuntimeException: Can't create handler inside thread that has not called Looper.prepare()
+at android.os.Handler.<init>(Handler.java:121)
+at android.os.AsyncTask$InternalHandler.<init>(AsyncTask.java:421)
+at android.os.AsyncTask$InternalHandler.<init>(AsyncTask.java:421)
+at android.os.AsyncTask.<clinit>(AsyncTask.java:152)
+
+
+As requested MyLocation.java
+
+    class GetLastLocation extends TimerTask {
+    @Override
+    public void run() {
+         lm.removeUpdates(locationListenerGps);
+         lm.removeUpdates(locationListenerNetwork);
+
+         Location net_loc=null, gps_loc=null;
+         if(gps_enabled)
+             gps_loc=lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+         if(network_enabled)
+             net_loc=lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+
+         //if there are both values use the latest one
+         if(gps_loc!=null && net_loc!=null){
+             if(gps_loc.getTime()>net_loc.getTime())
+                 locationResult.gotLocation(gps_loc);
+             else
+                 locationResult.gotLocation(net_loc);
+             return;
+         }
+
+         if(gps_loc!=null){
+             locationResult.gotLocation(gps_loc); //Line 89
+             return;
+         }
+         if(net_loc!=null){
+             locationResult.gotLocation(net_loc);
+             return;
+         }
+         locationResult.gotLocation(null);
+    }
+}
+
+    
+===============================================================================================
+95
+A:Long story:
+
+AsyncTask internally uses a Handler. A handler basically allows you to post Runnables from another thread on the thread the handler was assigned to, which in the case of AsyncTask is always the thread from which it is called. This only works for threads that have a Looper prepared, though. 
+
+For more information see http://developer.android.com/reference/android/os/Handler.html
+
+Short story:
+
+Simply wrap every call to FinderMain$1.gotLocation or the creation of AsyncTask within it in a Runnable, and post it to a Handler bound to the UI thread, like this:
+
+class GetLastLocation extends TimerTask {
+    private Handler mHandler = new Handler(Looper.getMainLooper());
+
+    @Override
+    public void run() {
+       // ...
+       mHandler.post(new Runnable() {
+          public void run() {
+              locationResult.gotLocation(null);
+          }
+       });
+       // ...
+     }
+}
+
+    

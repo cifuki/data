@@ -1,0 +1,106 @@
+34
+Q:I have a view which does some basic drawing. After this I want to draw a rectangle with a hole punched in so that only a region of the previous drawing is visible. And I'd like to do this with hardware acceleration enabled for my view for best performance.
+
+Currently I have two methods that work, but only works when disabled hardware acceleration and the other is too slow.
+
+Method 1: SW Acceleration (Slow)
+
+final int saveCount = canvas.save();
+
+// Clip out a circle.
+circle.reset();
+circle.addCircle(cx, cy, radius, Path.Direction.CW);
+circle.close();
+canvas.clipPath(circle, Region.Op.DIFFERENCE);
+
+// Draw the rectangle color.
+canvas.drawColor(backColor);
+
+canvas.restoreToCount(saveCount);
+
+
+This does not work with hardware acceleration enabled for the view because 'canvas.clipPath' is not supported in this mode (I know i can force SW rendering, but I'd like to avoid that).
+
+Method 2: HW Acceleration (V. Slow)
+
+// Create a new canvas.
+final Bitmap b = Bitmap.createBitmap(getWidth(), getHeight(), Bitmap.Config.ARGB_8888);
+final Canvas c = new Canvas(b);
+
+// Draw the rectangle colour.
+c.drawColor(backColor);
+
+// Erase a circle.
+c.drawCircle(cx, cy, radius, eraser);
+
+// Draw the bitmap on our views  canvas.
+canvas.drawBitmap(b, 0, 0, null);
+
+
+Where eraser is created as
+
+eraser = new Paint()
+eraser.setColor(0xFFFFFFFF);
+eraser.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+
+
+This is obviously slow -- a new Bitmap the size of the view is created every drawing call.
+
+Method 3: HW Acceleration (Fast, does not work on some devices)
+
+canvas.drawColor(backColor);
+canvas.drawCircle(cx, cy, radius, eraser);
+
+
+Same as the HW acceleration compatible method, but no extra canvas required. There is a major problem with this though -- it works with SW rendering forced, but on the HTC One X (Android 4.0.4 -- and probably some other devices) at least with HW rendering enabled it leaves the circle completely black. This is probably related to 22361.
+
+Method 4: HW Acceleration (Acceptable, works on all devices)
+
+As per Jan's suggestion for improving method 2, I avoided creating the bitmap in each call to onDraw, instead doing so in onSizeChanged:
+
+if (w != oldw || h != oldh) {
+    b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+    c = new Canvas(b);
+}
+
+
+And then just used these in onDraw:
+
+if (overlayBitmap == null) {
+   b = Bitmap.createBitmap(getWidth(), getHeight(), Bitmap.Config.ARGB_8888);
+   c = new Canvas(b);
+}
+b.eraseColor(Color.TRANSPARENT);
+c.drawColor(backColor);
+c.drawCircle(cx, cy, radius, eraser);
+canvas.drawBitmap(b, 0, 0, null);
+
+
+The performance is not as good as method 3, but much better than 2 and slightly better than 1.
+
+The question
+
+How can I achieve the same effect but do so in a manner compatible with HW acceleration (AND that works consistently on devices)? A method which increases the SW rendering performance would also be acceptable.
+
+NB: When moving the circle around I am just invalidating a region -- not the entire canvas -- so there's no room for a performance improvement there.
+    
+===============================================================================================
+18
+A:Instead of allocating a new canvas on each repaint, you should be able to allocate it once and then reuse the canvas on each repaint.
+
+on init and on resize:
+
+Bitmap b = Bitmap.createBitmap(getWidth(), getHeight(), Bitmap.Config.ARGB_8888);
+Canvas c = new Canvas(b);
+
+
+on repaint:
+
+b.eraseColor(Color.TRANSPARENT);
+    // needed if backColor is not opaque; thanks @JosephEarl
+c.drawColor(backColor);
+c.drawCircle(cx, cy, radius, eraser);
+
+canvas.drawBitmap(b, 0, 0, null);
+
+    

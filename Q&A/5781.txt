@@ -1,0 +1,208 @@
+43
+Q:I'm having trouble loading a photo for a contact in Android. I've googled for an answer, but so far have come up empty. Does anyone have an example of querying for a Contact, then loading the Photo? 
+
+So, given a contactUri which comes from an Activity result called using
+
+startActivityForResult(new Intent(Intent.ACTION_PICK,ContactsContract.CommonDataKinds.Phone.CONTENT_URI),PICK_CONTACT_REQUEST) 
+
+
+is: 
+
+
+  content://com.android.contacts/data/1557
+
+
+The loadContact(..) works fine. However when I call the getPhoto(...) method, I get a null value for the photo InputStream. It is also confusing because the URI values are different. The contactPhotoUri evaluates to:
+
+
+  content://com.android.contacts/contacts/1557
+
+
+See the comments inline in the code below.
+
+ class ContactAccessor {
+
+    /**
+     * Retrieves the contact information.
+     */
+    public ContactInfo loadContact(ContentResolver contentResolver, Uri contactUri) {
+
+        //contactUri --> content://com.android.contacts/data/1557
+
+        ContactInfo contactInfo = new ContactInfo();
+
+        // Load the display name for the specified person
+        Cursor cursor = contentResolver.query(contactUri,
+                                            new String[]{Contacts._ID, 
+                                                         Contacts.DISPLAY_NAME, 
+                                                         Phone.NUMBER,
+                                                         Contacts.PHOTO_ID}, null, null, null);
+        try {
+            if (cursor.moveToFirst()) {
+                contactInfo.setId(cursor.getLong(0));
+                contactInfo.setDisplayName(cursor.getString(1));
+                contactInfo.setPhoneNumber(cursor.getString(2));
+            }
+        } finally {
+            cursor.close();
+        }        
+        return contactInfo;  // <-- returns info for contact
+    }
+
+    public Bitmap getPhoto(ContentResolver contentResolver, Long contactId) {
+        Uri contactPhotoUri = ContentUris.withAppendedId(Contacts.CONTENT_URI, contactId);
+
+        // contactPhotoUri --> content://com.android.contacts/contacts/1557
+
+        InputStream photoDataStream = Contacts.openContactPhotoInputStream(contentResolver,contactPhotoUri); // <-- always null
+        Bitmap photo = BitmapFactory.decodeStream(photoDataStream);
+        return photo;
+    }
+
+    public class ContactInfo {
+
+        private long id;
+        private String displayName;
+        private String phoneNumber;
+        private Uri photoUri;
+
+        public void setDisplayName(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+
+        public void setPhoneNumber(String phoneNumber) {
+            this.phoneNumber = phoneNumber;
+        }
+
+        public String getPhoneNumber() {
+            return phoneNumber;
+        }
+
+        public Uri getPhotoUri() {
+            return this.photoUri;
+        }
+
+        public void setPhotoUri(Uri photoUri) {
+            this.photoUri = photoUri;
+        }
+
+        public long getId() {
+            return this.id;
+        }
+
+        public void setId(long id) {
+            this.id = id;
+        }
+
+    }
+}
+
+
+Clearly, I'm doing something wrong here, but I can't seem to figure out what the problem is. Thanks.
+    
+===============================================================================================
+30
+A:Having scanned the many questions and answers to the problem of displaying a thumbnail I thought I would post my solution to this particular conundrum as I could only find a couple that worked at all and none that provided a good canned solution for the lazy developer. 
+
+The class below takes a Context, QuickContactBadge and a telephone number and will attach a locally stored image to the badge if there is one available for the specified phone number.
+
+Here's the class:
+
+public final class QuickContactHelper {
+
+private static final String[] PHOTO_ID_PROJECTION = new String[] {
+    ContactsContract.Contacts.PHOTO_ID
+};
+
+private static final String[] PHOTO_BITMAP_PROJECTION = new String[] {
+    ContactsContract.CommonDataKinds.Photo.PHOTO
+};
+
+private final QuickContactBadge badge;
+
+private final String phoneNumber;
+
+private final ContentResolver contentResolver;
+
+public QuickContactHelper(final Context context, final QuickContactBadge badge, final String phoneNumber) {
+
+    this.badge = badge;
+    this.phoneNumber = phoneNumber;
+    contentResolver = context.getContentResolver();
+
+}
+
+public void addThumbnail() {
+
+    final Integer thumbnailId = fetchThumbnailId();
+    if (thumbnailId != null) {
+        final Bitmap thumbnail = fetchThumbnail(thumbnailId);
+        if (thumbnail != null) {
+            badge.setImageBitmap(thumbnail);
+        }
+    }
+
+}
+
+private Integer fetchThumbnailId() {
+
+    final Uri uri = Uri.withAppendedPath(ContactsContract.CommonDataKinds.Phone.CONTENT_FILTER_URI, Uri.encode(phoneNumber));
+    final Cursor cursor = contentResolver.query(uri, PHOTO_ID_PROJECTION, null, null, ContactsContract.Contacts.DISPLAY_NAME + " ASC");
+
+    try {
+        Integer thumbnailId = null;
+        if (cursor.moveToFirst()) {
+            thumbnailId = cursor.getInt(cursor.getColumnIndex(ContactsContract.Contacts.PHOTO_ID));
+        }
+        return thumbnailId;
+    }
+    finally {
+        cursor.close();
+    }
+
+}
+
+final Bitmap fetchThumbnail(final int thumbnailId) {
+
+    final Uri uri = ContentUris.withAppendedId(ContactsContract.Data.CONTENT_URI, thumbnailId);
+    final Cursor cursor = contentResolver.query(uri, PHOTO_BITMAP_PROJECTION, null, null, null);
+
+    try {
+        Bitmap thumbnail = null;
+        if (cursor.moveToFirst()) {
+            final byte[] thumbnailBytes = cursor.getBlob(0);
+            if (thumbnailBytes != null) {
+                thumbnail = BitmapFactory.decodeByteArray(thumbnailBytes, 0, thumbnailBytes.length);
+            }
+        }
+        return thumbnail;
+    }
+    finally {
+        cursor.close();
+    }
+
+}
+
+}
+
+
+And here's a typical use case inside an activity:
+
+String phoneNumber = "...";
+QuickContactBadge badge = (QuickContactBadge) view.findViewById(R.id.friend);
+new QuickContactHelper(this, badge, phoneNumber).addThumbnail();
+
+
+In a fragment it will be slightly different:
+
+String phoneNumber = "...";
+QuickContactBadge badge = (QuickContactBadge) view.findViewById(R.id.friend);
+new QuickContactHelper(getActivity(), badge, phoneNumber).addThumbnail();
+
+
+Now there are ways to be more efficient - for example if you are rendering a message timeline you'd want to re-use the same bitmap object for every badge instance for a given phone number instead of constantly creating new helper class instances and re-retrieving the bitmap - but my purpose here was to post a solution that is stripped down to the absolute minimum for clarity whilst at the same time providing a complete and usable solution out of the box. This solution has been built and tested on Andriod 4.0, and tested on 4.1 as well.
+    

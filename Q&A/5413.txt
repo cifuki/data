@@ -1,0 +1,66 @@
+46
+Q:I am a developer of two alarm clock apps on Google Play.  I am trying to get them to work with Android 6.0.  However, Doze mode makes it so they do not ring.  I put them on the white list, I put a foreground notification icon up, I'm not sure what else I can do - when in Doze mode, the the Alarm Manager alarms are still ignored.  The Clock app (which is a Google Play rather than AOSP app), however, is different.  When the alarm is enabled on the Clock app, "adb deviceidle step" will always read "active" and never "idle", "idle_pending" or anything else.
+
+Is Android cheating here, giving its own app more power, aka. "pulling an apple"?  Are all alarm clock apps on Google Play about to become non-functional?  Kind of worried here, these are quality apps that each took a year of part-time development time, and are big income sources for me.  Any clues on how I could get these to work would be a huge help.
+
+Setting the AlarmManager intent:
+
+        Intent intent = new Intent(context, ReceiverAlarm.class);
+        if (android.os.Build.VERSION.SDK_INT >= 16) {
+            intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
+        }
+        amSender = PendingIntent.getBroadcast(context, 1, intent, PendingIntent.FLAG_CANCEL_CURRENT); //FLAG_CANCEL_CURRENT seems to be required to prevent a bug where the intent doesn't fire after app reinstall in KitKat
+        am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        am.set(AlarmManager.RTC_WAKEUP, scheduleToTime+1, amSender);
+
+
+and the ReceiverAlarm class:
+
+public class ReceiverAlarm extends BroadcastReceiver{
+
+@Override
+public void onReceive(Context context, Intent intent) {
+    if (wakeLock == null) {
+        PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, Theme.appTitle);
+        wakeLock.acquire();
+    }
+    X.alarmMaster.startRingingAlarm(true);
+}
+
+
+and the relevant parts of the X.alarmMaster.startRingingAlarm() method:
+
+    if (wakeLock == null) {
+        PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, Theme.appTitle);
+        wakeLock.acquire();
+    }
+
+    if (screenWakeLock == null) {
+        PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        screenWakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, Theme.appTitle+" scr");
+        screenWakeLock.acquire();
+    }
+
+    Intent alarmIntent = new Intent(Intent.ACTION_VIEW);
+    alarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    alarmIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+    alarmIntent.setClass(context, ActivityAlarmAlarm.class);
+
+    context.startActivity(alarmIntent);
+
+
+Some of the methods have been pasted inline for easier readability.
+    
+===============================================================================================
+34
+A:Doze and App Standby definitely change the behavior in regards to alarms and wakelocks, but they're definitely not the end of the world for you!
+
+Have you tried using the method setAlarmclock() instead of set()? 
+It's designed specifically for alarm clocks and may be able to cut through doze. There are a few adb commands you can use to manually put a phone into doze or app standby mode: https://developer.android.com/preview/features/power-mgmt.html
+
+If that isn't able to wake your app up, there's the surefire method setExactAndAllowWhileIdle() is designed to wake the phone from doze no matter what. Worst case scenario, you can wake your app up with this method and use the wakeup to schedule the next alarm.
+
+Another page worth a read is this blog post with its flowchart for background work and alarms: https://plus.google.com/+AndroidDevelopers/posts/GdNrQciPwqo
+    

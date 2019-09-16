@@ -1,0 +1,70 @@
+44
+Q:For some reason Profile.getCurrentProfile() shows up null at times right after logging into FaceBook, using FB API v4.0.
+
+This is causing problems for me in my app because I can't display my next Activity with Profile being null.
+
+The reason I say it's null sometimes is because if I close out of my app and re-open it, I'm able to get to my next Activity, but if I'm not already logged in, and then login, Profile is null. It seems it is for a short period.
+
+Is there a work around or fix to this?
+    
+===============================================================================================
+83
+A:Like Hardy said, you have to create an instance of ProfileTracker which will start tracking profile updates, (i.e ProfileTracker.onCurrentProfileChanged() will be called when the user's profile finishes being fetched).
+
+Following is the complete code that you'd need to login to FB and get the user's profile:
+
+LoginButton loginButton = (LoginButton) findViewById(R.id.btn_facebook);
+loginButton.setReadPermissions("public_profile");
+mCallbackManager = CallbackManager.Factory.create();
+loginButton.registerCallback(mCallbackManager, new FacebookCallback<LoginResult>() {
+
+    private ProfileTracker mProfileTracker;
+
+    @Override
+    public void onSuccess(LoginResult loginResult) {
+        if(Profile.getCurrentProfile() == null) {
+            mProfileTracker = new ProfileTracker() {
+                @Override
+                protected void onCurrentProfileChanged(Profile oldProfile, Profile currentProfile) {
+                    Log.v("facebook - profile", currentProfile.getFirstName());
+                    mProfileTracker.stopTracking();
+                }
+            };
+            // no need to call startTracking() on mProfileTracker
+            // because it is called by its constructor, internally.
+        }
+        else {
+            Profile profile = Profile.getCurrentProfile();
+            Log.v("facebook - profile", profile.getFirstName());
+        }
+    }
+
+    @Override
+    public void onCancel() {
+        Log.v("facebook - onCancel", "cancelled");
+    }
+
+    @Override
+    public void onError(FacebookException e) {
+        Log.v("facebook - onError", e.getMessage());
+    }
+});
+
+
+You must override your Activity's or Fragment's onActivityResult() as below:
+
+@Override
+protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    // if you don't add following block,
+    // your registered `FacebookCallback` won't be called
+    if (mCallbackManager.onActivityResult(requestCode, resultCode, data)) {
+        return;
+    }
+}
+
+
+Edit:
+
+Code updated with Alex Zezekalo's suggestion to only call mProfileTracker.startTracking(); if Profile.getCurrentProfile() returns null.
+    

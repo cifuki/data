@@ -1,0 +1,119 @@
+52
+Q:I am trying to let users select a profile picture from gallery. My issue is that some pictures come as rotated to the right.
+
+I start the image picker like so:
+
+Intent photoPickerIntent = new Intent();
+photoPickerIntent.setType("image/*");
+photoPickerIntent.setAction(Intent.ACTION_GET_CONTENT);
+startActivityForResult(Intent.createChooser(photoPickerIntent, "Select profile picture"), Global.CODE_SELECT_PICTURE);
+
+
+I get the image from onActivityResult like so:
+
+Uri selectedPicture = data.getData();
+profilePic = MediaStore.Images.Media.getBitmap(activity.getContentResolver(), selectedPicture);
+
+
+How can i make have images not to be rotated?
+
+UPDATE:
+
+Following some of the helpful answers i have received, i managed to come up with the following working solution (It's just a working code, not well written). I would love to get your feedback on how i can improve it!
+
+public void onActivityResult(int requestCode, int resultCode, Intent data) {
+
+    if (resultCode == Activity.RESULT_OK && requestCode == Global.CODE_SELECT_PICTURE) {
+
+        // Get selected gallery image
+        Uri selectedPicture = data.getData();
+        // Get and resize profile image
+        String[] filePathColumn = {MediaStore.Images.Media.DATA};
+        Cursor cursor = activity.getContentResolver().query(selectedPicture, filePathColumn, null, null, null);
+        cursor.moveToFirst();
+
+        int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
+        String picturePath = cursor.getString(columnIndex);
+        cursor.close();
+
+        Bitmap loadedBitmap = BitmapFactory.decodeFile(picturePath);
+
+        ExifInterface exif = null;
+        try {
+            File pictureFile = new File(picturePath);
+            exif = new ExifInterface(pictureFile.getAbsolutePath());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        int orientation = ExifInterface.ORIENTATION_NORMAL;
+
+        if (exif != null)
+            orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+
+        switch (orientation) {
+            case ExifInterface.ORIENTATION_ROTATE_90:
+                loadedBitmap = rotateBitmap(loadedBitmap, 90);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_180:
+                loadedBitmap = rotateBitmap(loadedBitmap, 180);
+                break;
+
+            case ExifInterface.ORIENTATION_ROTATE_270:
+                loadedBitmap = rotateBitmap(loadedBitmap, 270);
+                break;
+        }           
+    }
+}
+
+public static Bitmap rotateBitmap(Bitmap bitmap, int degrees) {
+    Matrix matrix = new Matrix();
+    matrix.postRotate(degrees);
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+}
+
+    
+===============================================================================================
+57
+A:You could use ExifInterface to modify the orientation:
+
+public static Bitmap modifyOrientation(Bitmap bitmap, String image_absolute_path) throws IOException {
+    ExifInterface ei = new ExifInterface(image_absolute_path);
+    int orientation = ei.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+
+    switch (orientation) {
+    case ExifInterface.ORIENTATION_ROTATE_90:
+        return rotate(bitmap, 90);
+
+    case ExifInterface.ORIENTATION_ROTATE_180:
+        return rotate(bitmap, 180);
+
+    case ExifInterface.ORIENTATION_ROTATE_270:
+        return rotate(bitmap, 270);
+
+    case ExifInterface.ORIENTATION_FLIP_HORIZONTAL:
+        return flip(bitmap, true, false);
+
+    case ExifInterface.ORIENTATION_FLIP_VERTICAL:
+        return flip(bitmap, false, true);
+
+    default:
+        return bitmap;
+    }
+}
+
+public static Bitmap rotate(Bitmap bitmap, float degrees) {
+    Matrix matrix = new Matrix();
+    matrix.postRotate(degrees);
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+}
+
+public static Bitmap flip(Bitmap bitmap, boolean horizontal, boolean vertical) {
+    Matrix matrix = new Matrix();
+    matrix.preScale(horizontal ? -1 : 1, vertical ? -1 : 1);
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+}
+
+
+In order to get absolute path of your images from their uri, check this answer
+    

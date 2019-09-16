@@ -1,0 +1,149 @@
+120
+Q:I'm trying to change the drawable that sits in the Android actionbar searchview widget.
+
+Currently it looks like this:
+
+
+but I need to change the blue background drawable to a red colour.
+
+I've tried many things short of rolling my own search widget, but nothing seems to work.
+
+Can somebody point me in the right direction to changing this?
+    
+===============================================================================================
+251
+A:Intro
+
+Unfortunately there's no way to set SearchView text field style using themes, styles and inheritance in XML as you can do with background of items in ActionBar dropdown. This is because selectableItemBackground is listed as styleable in R.stylable, whereas searchViewTextField (theme attribute that we're interested in) is not. Thus, we cannot access it easily from within XML resources (you'll get a No resource found that matches the given name: attr 'android:searchViewTextField' error).
+
+Setting SearchView text field background from code
+
+So, the only way to properly substitute background of SearchView text field is to get into it's internals, acquire access to view that has background set based on searchViewTextField and set our own.
+
+NOTE: Solution below depends only on id (android:id/search_plate) of element within SearchView, so it's more SDK-version independent than children traversal (e.g. using searchView.getChildAt(0) to get to the right view within SearchView), but it's not bullet-proof. Especially if some manufacturer decides to reimplement internals of SearchView and element with above-mentioned id is not present - the code won't work.
+
+In SDK, the background for text field in SearchView is declared through nine-patches, so we'll do it the same way. You can find original png images in drawable-mdpi directory of Android git repository. We're interested in two image. One for state when text field is selected (named textfield_search_selected_holo_light.9.png) and one for where it's not (named textfield_search_default_holo_light.9.png).
+
+Unfortunately, you'll have to create local copies of both images, even if you want to customize only focused state. This is because textfield_search_default_holo_light is not present in R.drawable. Thus it's not easily accessible through @android:drawable/textfield_search_default_holo_light, which could be used in selector shown below, instead of referencing local drawable.
+
+NOTE: I was using Holo Light theme as base, but you can do the same with Holo Dark. It seems that there's no real difference in selected state 9-patches between Light and Dark themes. However, there's a difference in 9-patches for default state (see Light vs Dark). So, probably there's no need to make local copies of 9-patches for selected state, for both Dark and Light themes (assuming that you want to handle both, and make them both look the same as in Holo Theme). Simply make one local copy and use it in selector drawable for both themes.
+
+Now, you'll need to edit downloaded nine-patches to your need (i.e. changing blue color to red one). You can take a look at file using draw 9-patch tool to check if it is correctly defined after your edit.
+
+I've edited files using GIMP with one-pixel pencil tool (pretty easy) but you'll probably use the tool of your own. Here's my customized 9-patch for focused state:
+
+
+
+NOTE: For simplicity, I've used only images for mdpi density. You'll have to create 9-patches for multiple screen densities if, you want the best result on any device. Images for Holo SearchView can be found in mdpi, hdpi and xhdpi drawable.
+
+Now, we'll need to create drawable selector, so that proper image is displayed based on view state. Create file res/drawable/texfield_searchview_holo_light.xml with following content:
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true"
+        android:drawable="@drawable/textfield_search_selected_holo_light" />
+    <item android:drawable="@drawable/textfield_search_default_holo_light" />
+</selector>
+
+
+We'll use the above created drawable to set background for LinearLayout view that holds text field within SearchView - its id is android:id/search_plate. So here's how to do this quickly in code, when creating options menu:
+
+public class MainActivity extends Activity {
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+    }       
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.activity_main, menu);
+
+        // Getting SearchView from XML layout by id defined there - my_search_view in this case
+        SearchView searchView = (SearchView) menu.findItem(R.id.my_search_view).getActionView();
+        // Getting id for 'search_plate' - the id is part of generate R file,
+        // so we have to get id on runtime.
+        int searchPlateId = searchView.getContext().getResources().getIdentifier("android:id/search_plate", null, null);
+        // Getting the 'search_plate' LinearLayout.
+        View searchPlate = searchView.findViewById(searchPlateId);
+        // Setting background of 'search_plate' to earlier defined drawable.            
+        searchPlate.setBackgroundResource(R.drawable.textfield_searchview_holo_light);          
+
+        return super.onCreateOptionsMenu(menu);
+    }
+
+}
+
+
+Final effect
+
+Here's the screenshot of the final result:
+
+
+
+How I got to this
+
+I think it's worth metioning how I got to this, so that this approach can be used when customizing other views.
+
+Checking out view layout
+
+I've checked how SearchView layout looks like. In SearchView contructor one can find a line that inflates layout:
+
+inflater.inflate(R.layout.search_view, this, true);
+
+
+Now we know that SearchView layout is in file named res/layout/search_view.xml. Looking into search_view.xml we can find an inner LinearLayout element (with id search_plate) that has android.widget.SearchView$SearchAutoComplete inside it (looks like ours search view text field):
+
+    <LinearLayout
+        android:id="@+id/search_plate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_gravity="center_vertical"
+        android:orientation="horizontal"
+        android:background="?android:attr/searchViewTextField">
+
+
+Now, we now that the background is set based on current theme's searchViewTextField attribute.
+
+Investigating attribute (is it easily settable?)
+
+To check how searchViewTextField attribute is set, we investigate res/values/themes.xml. There's a group of attributes related to SearchView in default Theme:
+
+<style name="Theme">
+    <!-- (...other attributes present here...) -->
+
+    <!-- SearchView attributes -->
+    <item name="searchDropdownBackground">@android:drawable/spinner_dropdown_background</item>
+    <item name="searchViewTextField">@drawable/textfield_searchview_holo_dark</item>
+    <item name="searchViewTextFieldRight">@drawable/textfield_searchview_right_holo_dark</item>
+    <item name="searchViewCloseIcon">@android:drawable/ic_clear</item>
+    <item name="searchViewSearchIcon">@android:drawable/ic_search</item>
+    <item name="searchViewGoIcon">@android:drawable/ic_go</item>
+    <item name="searchViewVoiceIcon">@android:drawable/ic_voice_search</item>
+    <item name="searchViewEditQuery">@android:drawable/ic_commit_search_api_holo_dark</item>
+    <item name="searchViewEditQueryBackground">?attr/selectableItemBackground</item>
+
+
+We see that for default theme the value is @drawable/textfield_searchview_holo_dark. For Theme.Light value is also set in that file.
+
+Now, it would be great if this attribute was accessible through R.styleable, but, unfortunately it's not. For comparison, see other theme attributes which are present both in themes.xml and R.attr like textAppearance or selectableItemBackground. If searchViewTextField was present in R.attr (and R.stylable) we could simply use our drawable selector when defining theme for our whole application in XML. For example:
+
+<resources xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <style name="AppTheme" parent="android:Theme.Light">
+        <item name="android:searchViewTextField">@drawable/textfield_searchview_holo_light</item>
+    </style>
+</resources>
+
+
+What should be modified?
+
+Now we know, that we'll have to access search_plate through code. However, we still don't know how it should look like. In short, we search for drawables used as values in default themes: textfield_searchview_holo_dark.xml and textfield_searchview_holo_light.xml. Looking at content we see that the drawable is selector which reference two other drawables (which occur to be 9-patches later on) based on view state. You can find aggregated 9-patch drawables from (almost) all version of Android on androiddrawables.com
+
+Customizing
+
+We recognize the blue line in one of the 9-patches, so we create local copy of it and change colors as desired.
+    

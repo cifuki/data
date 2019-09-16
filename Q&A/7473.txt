@@ -1,0 +1,55 @@
+35
+Q:I am getting a very puzzling bug that I have no idea how to even begin working through. 
+
+I have a simple app with one activity, the views are implemented with Fragments.  One of the fragments has a ViewPager inside of it; so I decided I that I wanted to use the getChildFragmentManager class of the v4 support library.  I also had to use ActionBarSherlock, which caused a problem, because it does not ship with the v11 of the v4 library. 
+
+I fixed this by replacing the v4 support library in ABS with the v11 library, and everything compiled and appeared to be working, including the ViewPager. 
+
+Here is the strange part: 
+
+The first time the fragment with the ViewPager opens, it works properly; but the SECOND time it is navigated to, the app crashes, giving a useless stack trace.  From debugging, I discovered that the problem was with the FragmentManager returned by getChildFragmentManager; it throws the No Activity error.  
+
+Does anybody have any idea what could be causing this? 
+
+I will post code that you think is relevant. 
+
+Thank you, 
+David
+    
+===============================================================================================
+46
+A:I followed the link in jeremyvillalobos answer (which was very helpful) that led me to this workaround.
+
+public class CustomFragment extends Fragment {
+    private static final Field sChildFragmentManagerField;
+
+    static {
+        Field f = null;
+        try {
+            f = Fragment.class.getDeclaredField("mChildFragmentManager");
+            f.setAccessible(true);
+        } catch (NoSuchFieldException e) {
+            Log.e(LOGTAG, "Error getting mChildFragmentManager field", e);
+        }
+        sChildFragmentManagerField = f;
+    }
+
+    @Override
+    public void onDetach() {
+        super.onDetach();
+
+        if (sChildFragmentManagerField != null) {
+            try {
+                sChildFragmentManagerField.set(this, null);
+            } catch (Exception e) {
+                Log.e(LOGTAG, "Error setting mChildFragmentManager field", e);
+            }
+        }
+    }
+
+    ...
+}
+
+
+It works for me well, without the need to reinstantiate the fragment.
+    

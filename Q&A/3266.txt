@@ -1,0 +1,288 @@
+68
+Q:Is there a way to implement something similar to what RelativeLayout does on Android?
+
+In particular I'm looking for something similar to centerInParent, layout_below:<layout_id>, layout_above:<layout_id>, and alignParentLeft
+
+For more reference on RelativeLayout: https://developer.android.com/reference/android/widget/RelativeLayout.LayoutParams.html
+
+EDIT: here is an example of a layout relying on RelativeLayout
+
+
+
+So in the image above, on top, the "tofu's Songs" text is aligned as centerInParent inside a RelativeLayout. Whereas the other 2 are alignParentLeft and alignParentRight
+
+On each cell, where the fire icon is at, the number of likes on the bottom of it is aligned around the center of the flame icon. Also, the top and bottom title on each cell are aligned to the right and to the top and bottom of the image avatar, respectively. 
+    
+===============================================================================================
+186
+A:Flutter layouts are usually built using a tree of Column, Row and Stack widgets. These widgets take constructor arguments that specify rules for how the children are laid out relative to the parent, and you can also influence layout of individual children by wrapping them in Expanded, Flexible, Positioned, Align, or Center widgets.
+
+It is also possible to build complex layouts using CustomMultiChildLayout. This is how Scaffold is implemented internally, and an example of how to use it in an app appears in the Shrine demo. You can also use LayoutBuilder or CustomPaint, or go down a layer and extend RenderObject as shown in the sector example. Doing your layouts manually like this is more work and creates more potential for errors in corner cases, so I would try to get by with the high-level layout primitives if you can.
+
+To answer your specific questions:
+
+
+Use the leading and trailing arguments to AppBar to position your app bar elements. If you want to use a Row instead, use a mainAxisAlignment of MainAxisAlignment.spaceBetween.
+Use a Row with a crossAxisAlignment of CrossAxisAlignment.center to position the fire icon and number underneath.
+Use a Column with a mainAxisAlignment of MainAxisAlignment.spaceBetween to position your top and bottom title. (You should consider using ListTile to lay out the list tiles, but you'll lose control over the exact positioning if you do this.)
+
+
+Here is a code snippet that implements the design you provided. In this example I used an IntrinsicHeight to determine the height of the song tiles, but you can improve the performance by hard coding them to a fixed height.
+
+
+
+import 'package:flutter/material.dart';
+
+void main() {
+  runApp(new MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return new MaterialApp(
+      title: 'Flutter Demo',
+      theme: new ThemeData(
+        brightness: Brightness.dark,
+        primaryColorBrightness: Brightness.dark,
+      ),
+      home: new HomeScreen(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class Song extends StatelessWidget {
+  const Song({ this.title, this.author, this.likes });
+
+  final String title;
+  final String author;
+  final int likes;
+
+  @override
+  Widget build(BuildContext context) {
+    TextTheme textTheme = Theme
+      .of(context)
+      .textTheme;
+    return new Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0),
+      padding: const EdgeInsets.symmetric(horizontal: 15.0, vertical: 10.0),
+      decoration: new BoxDecoration(
+        color: Colors.grey.shade200.withOpacity(0.3),
+        borderRadius: new BorderRadius.circular(5.0),
+      ),
+      child: new IntrinsicHeight(
+        child: new Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            new Container(
+              margin: const EdgeInsets.only(top: 4.0, bottom: 4.0, right: 10.0),
+              child: new CircleAvatar(
+                backgroundImage: new NetworkImage(
+                  'http://thecatapi.com/api/images/get?format=src'
+                    '&size=small&type=jpg#${title.hashCode}'
+                ),
+                radius: 20.0,
+              ),
+            ),
+            new Expanded(
+              child: new Container(
+                child: new Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: <Widget>[
+                    new Text(title, style: textTheme.subhead),
+                    new Text(author, style: textTheme.caption),
+                  ],
+                ),
+              ),
+            ),
+            new Container(
+              margin: new EdgeInsets.symmetric(horizontal: 5.0),
+              child: new InkWell(
+                child: new Icon(Icons.play_arrow, size: 40.0),
+                onTap: () {
+                  // TODO(implement)
+                },
+              ),
+            ),
+            new Container(
+              margin: new EdgeInsets.symmetric(horizontal: 5.0),
+              child: new InkWell(
+                child: new Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    new Icon(Icons.favorite, size: 25.0),
+                    new Text('${likes ?? ''}'),
+                  ],
+                ),
+                onTap: () {
+                  // TODO(implement)
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class Feed extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return new ListView(
+      children: [
+        new Song(title: 'Trapadelic lobo', author: 'lillobobeats', likes: 4),
+        new Song(title: 'Different', author: 'younglowkey', likes: 23),
+        new Song(title: 'Future', author: 'younglowkey', likes: 2),
+        new Song(title: 'ASAP', author: 'tha_producer808', likes: 13),
+        new Song(title: '\xf0\x9f\x8c\xb2\xf0\x9f\x8c\xb2\xf0\x9f\x8c\xb2', author: 'TraphousePeyton'),
+        new Song(title: 'Something sweet...', author: '6ryan'),
+        new Song(title: 'Sharpie', author: 'Fergie_6'),
+      ],
+    );
+  }
+}
+
+class CustomTabBar extends AnimatedWidget implements PreferredSizeWidget {
+  CustomTabBar({ this.pageController, this.pageNames })
+    : super(listenable: pageController);
+
+  final PageController pageController;
+  final List<String> pageNames;
+
+  @override
+  final Size preferredSize = new Size(0.0, 40.0);
+
+  @override
+  Widget build(BuildContext context) {
+    TextTheme textTheme = Theme
+      .of(context)
+      .textTheme;
+    return new Container(
+      height: 40.0,
+      margin: const EdgeInsets.all(10.0),
+      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+      decoration: new BoxDecoration(
+        color: Colors.grey.shade800.withOpacity(0.5),
+        borderRadius: new BorderRadius.circular(20.0),
+      ),
+      child: new Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: new List.generate(pageNames.length, (int index) {
+          return new InkWell(
+            child: new Text(
+              pageNames[index],
+              style: textTheme.subhead.copyWith(
+                color: Colors.white.withOpacity(
+                  index == pageController.page ? 1.0 : 0.2,
+                ),
+              )
+            ),
+            onTap: () {
+              pageController.animateToPage(
+                index,
+                curve: Curves.easeOut,
+                duration: const Duration(milliseconds: 300),
+              );
+            }
+          );
+        })
+          .toList(),
+      ),
+    );
+  }
+}
+
+class HomeScreen extends StatefulWidget {
+  @override
+  _HomeScreenState createState() => new _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+
+  PageController _pageController = new PageController(initialPage: 2);
+
+  @override
+  build(BuildContext context) {
+    final Map<String, Widget> pages = <String, Widget>{
+      'My Music': new Center(
+        child: new Text('My Music not implemented'),
+      ),
+      'Shared': new Center(
+        child: new Text('Shared not implemented'),
+      ),
+      'Feed': new Feed(),
+    };
+    TextTheme textTheme = Theme
+      .of(context)
+      .textTheme;
+    return new Stack(
+      children: [
+        new Container(
+          decoration: new BoxDecoration(
+            gradient: new LinearGradient(
+              begin: FractionalOffset.topCenter,
+              end: FractionalOffset.bottomCenter,
+              colors: [
+                const Color.fromARGB(255, 253, 72, 72),
+                const Color.fromARGB(255, 87, 97, 249),
+              ],
+              stops: [0.0, 1.0],
+            )
+          ),
+          child: new Align(
+            alignment: FractionalOffset.bottomCenter,
+            child: new Container(
+              padding: const EdgeInsets.all(10.0),
+              child: new Text(
+                'T I Z E',
+                style: textTheme.headline.copyWith(
+                  color: Colors.grey.shade800.withOpacity(0.8),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            )
+          )
+        ),
+        new Scaffold(
+          backgroundColor: const Color(0x00000000),
+          appBar: new AppBar(
+            backgroundColor: const Color(0x00000000),
+            elevation: 0.0,
+            leading: new Center(
+              child: new ClipOval(
+                child: new Image.network(
+                  'http://i.imgur.com/TtNPTe0.jpg',
+                ),
+              ),
+            ),
+            actions: [
+              new IconButton(
+                icon: new Icon(Icons.add),
+                onPressed: () {
+                  // TODO: implement
+                },
+              ),
+            ],
+            title: const Text('tofu\\'s songs'),
+            bottom: new CustomTabBar(
+              pageController: _pageController,
+              pageNames: pages.keys.toList(),
+            ),
+          ),
+          body: new PageView(
+            controller: _pageController,
+            children: pages.values.toList(),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+
+Final note: In this example, I used a regular AppBar, but you could also use a CustomScrollView with a pinned SliverAppBar that has an elevation of 0.0. That would make the content visible as it scrolls behind your app bar. It is tricky to get this to play nicely with PageView, because it's expecting a fixed size area to lay itself out into.
+    

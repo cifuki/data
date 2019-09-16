@@ -1,0 +1,72 @@
+36
+Q:Trying the different preference activities in the ApiDemos for Android 4.0, I see in the code that some methods are deprecated in PreferencesFromCode.java, for example.
+
+So my question is: if I use PreferenceFragment, will it work for all version or only 3.0 or 4.0 and up?
+
+If so, what should I use that works for 2.2 and 2.3 as well?
+    
+===============================================================================================
+59
+A:PreferenceFragment will not work on 2.2 and 2.3 (only API level 11 and above). If you want to offer the best user experience and still support older Android versions, the best practice here seems to be to implement two PreferenceActivity classes and to decide at runtime which one to invoke. However, this method still includes calling deprecated APIs, but you can't avoid that.
+
+So for instance, you have a preference_headers.xml:
+
+<preference-headers xmlns:android="http://schemas.android.com/apk/res/android" > 
+    <header android:fragment="your.package.PrefsFragment" 
+        android:title="...">
+        <extra android:name="resource" android:value="preferences" />
+    </header>
+</preference-headers>
+
+
+and a standard preferences.xml (which hasn't changed much since lower API levels):
+
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" android:title="...">
+    ...
+</PreferenceScreen>
+
+
+Then you need an implementation of PreferenceFragment:
+
+public static class PrefsFragment extends PreferenceFragment {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        addPreferencesFromResource(R.xml.preferences);
+    }
+}
+
+
+And finally, you need two implementations of PreferenceActivity, for API levels supporting or not supporting PreferenceFragments:
+
+public class PreferencesActivity extends PreferenceActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        addPreferencesFromResource(R.xml.preferences);
+        addPreferencesFromResource(R.xml.other);
+    }
+}
+
+
+and:
+
+public class OtherPreferencesActivity extends PreferenceActivity {
+    @Override
+    public void onBuildHeaders(List<Header> target) {
+        loadHeadersFromResource(R.xml.preference_headers, target);
+    }
+}
+
+
+At the point where you want to display the preference screen to the user, you decide which one to start:
+
+if (Build.VERSION.SDK_INT < 11) {
+    startActivity(new Intent(this, PreferencesActivity.class));
+} else {
+    startActivity(new Intent(this, OtherPreferencesActivity.class));
+}
+
+
+So basically, you have an xml file per fragment, you load each of these xml files manually for API levels < 11, and both Activities use the same preferences.
+    

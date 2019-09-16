@@ -1,0 +1,151 @@
+39
+Q:I recently decided to have a closer look at the new Android Architecture Components that Google released, especially using their ViewModel lifecycle-aware class to a MVVM architecture, and LiveData.
+
+As long as I'm dealing with a single Activity, or a single Fragment, everything is fine.
+
+However, I can't find a nice solution to handle Activity switching.
+Say, for the sake of a short example, that Activity A has a button to launch Activity B.
+
+Where would the startActivity() be handled?
+
+Following the MVVM pattern, the logic of the clickListener should be in the ViewModel. However, we want to avoid having references to the Activity in there. So passing the context to the ViewModel is not an option.
+
+I narrowed down a couple of options that seem "OK", but was not able to find any proper answer of "here's how to do it.".
+
+Option 1 : Have an enum in the ViewModel with values mapping to possible routing (ACTIVITY_B, ACTIVITY_C). Couple this with a LiveData.
+The activity would observe this LiveData, and when the ViewModel decides that ACTIVITY_C should be launched, it'd just postValue(ACTIVITY_C). Activity can then call startActivity() normally.
+
+Option 2 : The regular interface pattern. Same principle as option 1, but Activity would implement the interface. I feel a bit more coupling with this though.
+
+Option 3 : Messaging option, such as Otto or similar. ViewModel sends a Broadcast, Activity picks it up and launches what it has to. Only problem with this solution is that, by default, you should put the register/unregister of that Broadcast inside the ViewModel. So doesn't help.
+
+Option 4 : Having a big Routing class, somewhere, as singleton or similar, that could be called to dispatch relevant routing to any activity. Eventually via interface? So every activity (or a BaseActivity) would implement 
+
+IRouting { void requestLaunchActivity(ACTIVITY_B); }
+
+
+This method just worries me a bit when your app starts having a lot of fragments/activities (because the Routing class would become humongous)
+
+So that's it. That's my question. How do you guys handle this?
+Do you go with an option that I didn't think of?
+What option do you consider the most relevant and why?
+What is the recommended Google approach?
+
+PS : Links that didn't get me anywhere 
+1 - Android ViewModel call Activity methods
+2 - How to start an activity from a plain non-activity java class?
+    
+===============================================================================================
+36
+A:NSimon, its great that you start using AAC. 
+
+I wrote a issue in the aac's-github before about that.
+
+There are several ways doing that.
+
+One solution would be using a 
+
+WeakReference to a NavigationController which holds the Context of the Activity. This is a common used pattern for handling context-bound stuff inside a ViewModel.
+
+I highly decline this for several reasons. First: that usually means that you have to keep a reference to your NavigationController which fixes the context leak, but doesnt solve the architecture at all.
+
+The best way (in my oppinion) is using LiveData which is lifecycle aware and can do all the wanted stuff. 
+
+Example:
+
+class YourVm : ViewModel() { 
+
+    val uiEventLiveData = SingleLiveData<Pair<YourModel, Int>>()
+    fun onClick(item: YourModel) {
+        uiEventLiveData.value = item to 3 // can be predefined values
+    }
+}
+
+
+After that you can listen inside your view for changes.
+
+class YourFragmentOrActivity { 
+     //assign your vm whatever
+     override fun onActivityCreated(savedInstanceState: Bundle?) { 
+        var context = this
+        yourVm.uiEventLiveData.observe(this, Observer {
+            when (it?.second) {
+                1 -> { context.startActivity( ... ) }
+                2 -> { .. } 
+            }
+
+        })
+    }
+}
+
+
+Take care that ive used a modified MutableLiveData, because else it will always emit the latest result for new Observers which leads to bad behaviour. For example if you change activity and go back it will end in a loop.
+
+class SingleLiveData<T> : MutableLiveData<T>() {
+
+    private val mPending = AtomicBoolean(false)
+
+    @MainThread
+    override fun observe(owner: LifecycleOwner, observer: Observer<T>) {
+
+        if (hasActiveObservers()) {
+            Log.w(TAG, "Multiple observers registered but only one will be notified of changes.")
+        }
+
+        // Observe the internal MutableLiveData
+        super.observe(owner, Observer { t ->
+            if (mPending.compareAndSet(true, false)) {
+                observer.onChanged(t)
+            }
+        })
+    }
+
+    @MainThread
+    override fun setValue(t: T?) {
+        mPending.set(true)
+        super.setValue(t)
+    }
+
+    /**
+     * Used for cases where T is Void, to make calls cleaner.
+     */
+    @MainThread
+    fun call() {
+        value = null
+    }
+
+    companion object {
+        private val TAG = "SingleLiveData"
+    }
+}
+
+
+Why is that attempt better then using WeakReferences, Interfaces, or any other solution? 
+
+Because this event split UI logic with business logic. Its also possible to have multiple observers. It cares about the lifecycle. It doesnt leak anything. 
+
+You could also solve it by using RxJava instead of LiveData by using a PublishSubject. (addTo requires RxKotlin)
+
+Take care about not leaking a subscription by releasing it in onStop().
+
+class YourVm : ViewModel() { 
+   var subject : PublishSubject<YourItem>  = PublishSubject.create();
+}
+
+class YourFragmentOrActivityOrWhatever {
+    var composite = CompositeDisposable() 
+    onStart() { 
+         YourVm.subject 
+             .subscribe( { Log.d("...", "Event emitted $it") }, { error("Error occured $it") }) 
+               .addTo(compositeDisposable)         
+       }   
+       onStop() {
+         compositeDisposable.clear()
+       }
+    }
+
+
+Also take care that a ViewModel is bound to an Activity OR a Fragment. You can't share a ViewModel between multiple Activities since this would break the "Livecycle-Awareness".
+
+If you need that persist your data by using a database like room or share the data using parcels.
+    

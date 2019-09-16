@@ -1,0 +1,53 @@
+31
+Q:I am trying to create helper method that would iterate through all Bundle objects, in a generic manner.
+
+By "generic" I mean:
+
+
+Doesn't need to know the names (keys) of the objects in the Bundle passed as a parameter.
+Doesn't need to change if another member (key) was added to the Bundle in the future.
+
+
+So far, I figure out the following outline to accomplish that:
+
+  private void bundleToSharedPreferences(Bundle bundle) {
+    Set<String> keys = bundle.keySet();
+    for (String key : keys) {
+        Object o = bundle.get(key);
+        if (o.getClass().getName().contentEquals("int")) {
+            // save ints
+        }
+        else if (o.getClass().getName().contentEquals("boolean")) {
+            // save booleans
+        }
+        else if (o.getClass().getName().contentEquals("String")) {
+            // save Strings
+        }
+        else {
+            // etc.
+        }
+    } 
+  }
+
+
+Does this approach make sense at all?
+
+Is there a better way of accomplishing this?
+    
+===============================================================================================
+3
+A:I would do it through reflection, if I were to do it at all. Store a static Map such that String.class maps to SharedPreference.putString(), etc. Then, when you're looping through the items check their class  against the map. If it doesn't exist, check the superclass, etc. That will either give you the proper method to call or will let you know that the requested object's type isn't something that can be put into the preferences.
+
+So the basic algorithm is:
+
+
+Get the object from the bundle
+Get its class
+See if the class is in the map
+If it is, invoke the specified method to put it in the SharedPreferences
+If it isn't, get it's superclass and return to step 3.
+If you get all the way up to java.lang.Object then you've got a bundled object that can't immediately be stored in SharedPreferences. Depending on what classes you've hit along the way you might want to try to handle this as well or you might just want to record the error and move on. Without knowing why you're doing this, it's impossible to guess how you should react when the method fails. It invariably will unless you've got total control over both the bundle and the preferences, but if you've got that amount of control there's no need to jump through all of these hoops because you could be much more straightforward and simply define your own keys.
+
+
+Note: reflection isn't fast and it isn't the easiest thing to code and maintain. If at all possible I'd recommend finding a less generic method that fits your use case.
+    

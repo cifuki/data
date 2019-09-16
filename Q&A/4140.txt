@@ -1,0 +1,129 @@
+56
+Q:I know there is a Robolectric.shadowOf(Fragment) method and a ShadowFragment class, thought they aren't listed on the docs, but I can't make it work.
+
+myFragment = new MyFragment();
+myFragment.onCreateView(LayoutInflater.from(activity), (ViewGroup) activity.findViewById(R.id.container), null);
+myFragment.onAttach(activity);
+myFragment.onActivityCreated(null); 
+
+
+I'm working with API level 13 (Honeycomb).
+
+Thanks.
+    
+===============================================================================================
+109
+A:Edit #4 & #5: In Robolectric 3.*, they split up the fragment starting functions.
+
+For support fragments, you will need to add a dependency to your build.gradle:
+
+testCompile "org.robolectric:shadows-supportv4:3.8"
+
+
+Import: org.robolectric.shadows.support.v4.SupportFragmentTestUtil.startFragment;
+
+For platform fragments, you don't need this dependency. Import: import static org.robolectric.util.FragmentTestUtil.startFragment;
+
+
+They both use the same name of startFragment().
+
+import static org.robolectric.shadows.support.v4.SupportFragmentTestUtil.startFragment;
+
+@RunWith(RobolectricTestRunner.class)
+@Config(constants = BuildConfig.class)
+public class YourFragmentTest
+{
+    @Test
+    public void shouldNotBeNull() throws Exception
+    {
+        YourFragment fragment = YourFragment.newInstance();
+        startFragment( fragment );
+        assertNotNull( fragment );
+    }
+}
+
+
+Edit #3: Robolectric 2.4 has an API for support and regular fragments. You can either use the newInstance() pattern or use the constructor when constructing your Fragment's.
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import static org.junit.Assert.assertNotNull;
+import static org.robolectric.util.FragmentTestUtil.startFragment;
+
+@RunWith(RobolectricGradleTestRunner.class)
+public class YourFragmentTest
+{
+    @Test
+    public void shouldNotBeNull() throws Exception
+    {
+        YourFragment fragment = new YourFragment();
+        startFragment( fragment );
+        assertNotNull( fragment );
+    }
+}
+
+
+Edit #2: There's a new helper if you're using support fragments (one that supports regular activities/fragments should be in the next release):
+
+import static org.robolectric.util.FragmentTestUtil.startFragment;
+
+@Before
+public void setUp() throws Exception
+{
+    fragment = YourFragment.newInstance();
+    startFragment( fragment );
+}
+
+
+Edit: If you upgraded to Robolectric 2.0:
+
+public static void startFragment( Fragment fragment )
+{
+    FragmentActivity activity = Robolectric.buildActivity( FragmentActivity.class )
+                                           .create()
+                                           .start()
+                                           .resume()
+                                           .get();
+
+    FragmentManager fragmentManager = activity.getSupportFragmentManager();
+    FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+    fragmentTransaction.add( fragment, null );
+    fragmentTransaction.commit();
+}
+
+
+Original answer
+
+As the other commenter suggested, you do need to use the fragment manager (instead of calling the lifecycle methods you listed above).
+
+@RunWith(MyTestRunner.class)
+public class YourFragmentTest
+{
+    @Test
+    public void shouldNotBeNull() throws Exception
+    {
+        YourFragment yourFragment = new YourFragment();
+        startFragment( yourFragment );
+        assertNotNull( yourFragment );
+    }
+
+
+I create a test runner and have a function that starts up a fragment for me so I can use it everywhere.
+
+public class MyTestRunner extends RobolectricTestRunner
+{
+    public MyTestRunner( Class<?> testClass ) throws InitializationError
+    {
+        super( testClass );
+    }
+
+    public static void startFragment( Fragment fragment )
+    {
+        FragmentManager fragmentManager = new FragmentActivity().getSupportFragmentManager();
+        FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+        fragmentTransaction.add( fragment, null );
+        fragmentTransaction.commit();
+    }
+}
+
+    

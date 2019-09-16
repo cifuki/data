@@ -1,0 +1,123 @@
+96
+Q:I have problem making my fragments communicating with each other through the Activity, which is using the FragmentPagerAdapter, as a helper class that implements the management of tabs and all details of connecting a ViewPager with associated TabHost. I have implemented FragmentPagerAdapter just as same as it is provided by the Android sample project Support4Demos.
+
+The main question is how can I get particular fragment from FragmentManager when I don't have neither Id or Tag? FragmentPagerAdapter is creating the fragments and auto generating the Id and Tags.
+    
+===============================================================================================
+181
+A:Summary of the problem
+
+Note: In this answer I'm going to reference FragmentPagerAdapter and its source code. But the general solution should also apply to FragmentStatePagerAdapter.
+
+If you're reading this you probably already know that FragmentPagerAdapter/FragmentStatePagerAdapter is meant to create Fragments for your ViewPager, but upon Activity recreation (whether from a device rotation or the system killing your App to regain memory) these Fragments won't be created again, but instead their instances retrieved from the FragmentManager. Now say your Activity needs to get a reference to these Fragments to do work on them. You don't have an id or tag for these created Fragments because FragmentPagerAdapter set them internally. So the problem is how to get a reference to them without that information...
+
+Problem with current solutions: relying on internal code
+
+A lot of the solutions I've seen on this and similar questions rely on getting a reference to the existing Fragment by calling FragmentManager.findFragmentByTag() and mimicking the internally created tag: "android:switcher:" + viewId + ":" + id. The problem with this is that you're relying on internal source code, which as we all know is not guaranteed to remain the same forever. The Android engineers at Google could easily decide to change the tag structure which would break your code leaving you unable to find a reference to the existing Fragments.
+
+Alternate solution without relying on internal tag
+
+Here's a simple example of how to get a reference to the Fragments returned by FragmentPagerAdapter that doesn't rely on the internal tags set on the Fragments. The key is to override instantiateItem() and save references in there instead of in getItem().
+
+public class SomeActivity extends Activity {
+    private FragmentA m1stFragment;
+    private FragmentB m2ndFragment;
+
+    // other code in your Activity...
+
+    private class CustomPagerAdapter extends FragmentPagerAdapter {
+        // other code in your custom FragmentPagerAdapter...
+
+        public CustomPagerAdapter(FragmentManager fm) {
+            super(fm);
+        }
+
+        @Override
+        public Fragment getItem(int position) {
+            // Do NOT try to save references to the Fragments in getItem(),
+            // because getItem() is not always called. If the Fragment
+            // was already created then it will be retrieved from the FragmentManger
+            // and not here (i.e. getItem() won't be called again).
+            switch (position) {
+                case 0:
+                    return new FragmentA();
+                case 1:
+                    return new FragmentB();
+                default:
+                    // This should never happen. Always account for each position above
+                    return null;
+            }
+        }
+
+        // Here we can finally safely save a reference to the created
+        // Fragment, no matter where it came from (either getItem() or
+        // FragmentManger). Simply save the returned Fragment from
+        // super.instantiateItem() into an appropriate reference depending
+        // on the ViewPager position.
+        @Override
+        public Object instantiateItem(ViewGroup container, int position) {
+            Fragment createdFragment = (Fragment) super.instantiateItem(container, position);
+            // save the appropriate reference depending on position
+            switch (position) {
+                case 0:
+                    m1stFragment = (FragmentA) createdFragment;
+                    break;
+                case 1:
+                    m2ndFragment = (FragmentB) createdFragment;
+                    break;
+            }
+            return createdFragment;
+        }
+    }
+
+    public void someMethod() {
+        // do work on the referenced Fragments, but first check if they
+        // even exist yet, otherwise you'll get an NPE.
+
+        if (m1stFragment != null) {
+            // m1stFragment.doWork();
+        }
+
+        if (m2ndFragment != null) {
+            // m2ndFragment.doSomeWorkToo();
+        }
+    }
+}
+
+
+or if you prefer to work with tags instead of class member variables/references to the Fragments you can also grab the tags set by FragmentPagerAdapter in the same manner:
+NOTE: this doesn't apply to FragmentStatePagerAdapter since it doesn't set tags when creating its Fragments.
+
+@Override
+public Object instantiateItem(ViewGroup container, int position) {
+    Fragment createdFragment = (Fragment) super.instantiateItem(container, position);
+    // get the tags set by FragmentPagerAdapter
+    switch (position) {
+        case 0:
+            String firstTag = createdFragment.getTag();
+            break;
+        case 1:
+            String secondTag = createdFragment.getTag();
+            break;
+    }
+    // ... save the tags somewhere so you can reference them later
+    return createdFragment;
+}
+
+
+Note that this method does NOT rely on mimicking the internal tag set by FragmentPagerAdapter and instead uses proper APIs for retrieving them. This way even if the tag changes in future versions of the SupportLibrary you'll still be safe.
+
+
+
+Don't forget that depending on the design of your Activity, the Fragments you're trying to work on may or may not exist yet, so you have to account for that by doing null checks before using your references.
+
+Also, if instead you're working with FragmentStatePagerAdapter, then you don't want to keep hard references to your Fragments because you might have many of them and hard references would unnecessarily keep them in memory. Instead save the Fragment references in WeakReference variables instead of standard ones. Like this:
+
+WeakReference<Fragment> m1stFragment = new WeakReference<Fragment>(createdFragment);
+// ...and access them like so
+Fragment firstFragment = m1stFragment.get();
+if (firstFragment != null) {
+    // reference hasn't been cleared yet; do work...
+}
+
+    

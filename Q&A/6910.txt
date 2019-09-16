@@ -1,0 +1,214 @@
+37
+Q:I am facing this issue and seen some answers on this site but did not get any proper solution.
+I have used previous version of Firebase which works fine but when I try to upgrade using Upgradation and update Firebase class to DatabaseReference it shows error and not working.
+I am adding my manifest file entire code so please help me to resolve this issue.
+Here is my manifest
+
+    <?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="firebasechat.com.firebasechat">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="true"
+        android:name=".Activity.SimpleBlog"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+        <activity android:name=".Activity.RegisterActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>
+
+
+my Module app is given below.
+
+    apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 26
+    buildToolsVersion "26.0.0"
+    defaultConfig {
+        applicationId "firebasechat.com.firebasechat"
+        minSdkVersion 15
+        targetSdkVersion 26
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+
+        multiDexEnabled  true
+
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    packagingOptions {
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE-FIREBASE.txt'
+        exclude 'META-INF/NOTICE'
+    }
+}
+
+
+
+dependencies {
+    compile fileTree(include: ['*.jar'], dir: 'libs')
+    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    })
+    compile 'com.android.support:appcompat-v7:26.+'
+compile 'com.android.volley:volley:1.0.0'
+compile "com.google.firebase:firebase-database:11.0.0"
+compile 'com.google.android.gms:play-services:11.0.0'
+compile 'com.android.support:recyclerview-v7:25.0.0'
+testCompile 'junit:junit:4.12'
+    testCompile 'junit:junit:4.12'
+}
+
+
+and Project gradle
+
+    // Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:2.3.3'
+        classpath 'com.google.gms:google-services:4.2.0'// Updated version of google service
+    }
+}
+allprojects {
+    repositories {
+        jcenter()
+        maven {
+            url "https://maven.google.com" // Google's Maven repository
+        }
+    }
+}
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+
+Below is my Activity.
+
+    public class RegisterActivity extends AppCompatActivity {
+
+    EditText username, password;
+    Button registerButton;
+    String user, pass;
+
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_register);
+
+        username = (EditText)findViewById(R.id.username);
+        password = (EditText)findViewById(R.id.password);
+        registerButton = (Button)findViewById(R.id.registerButton);
+
+
+          FirebaseApp.initializeApp(this);
+
+
+
+        registerButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                user = username.getText().toString();
+                pass = password.getText().toString();
+
+
+                    final ProgressDialog pd = new ProgressDialog(RegisterActivity.this);
+                    pd.setMessage("Loading...");
+                    pd.show();
+
+                    String url = "https://pure-coda-174710.firebaseio.com/users.json";
+
+                    StringRequest request = new StringRequest(Request.Method.GET, url, new Response.Listener<String>(){
+                        @Override
+                        public void onResponse(String s) {
+
+//                            Firebase reference = new Firebase("https://pure-coda-174710.firebaseio.com/users");
+                            DatabaseReference reference = FirebaseDatabase.getInstance()
+                                    .getReferenceFromUrl("https://pure-coda-174710.firebaseio.com/users");
+
+
+                            if(s.equals("null")) {
+                                reference.child(user).child("password").setValue(pass);
+                                Toast.makeText(RegisterActivity.this, "registration successful", Toast.LENGTH_LONG).show();
+                            }
+                            else {
+                                try {
+                                    JSONObject obj = new JSONObject(s);
+
+                                    if (!obj.has(user)) {
+                                        reference.child(user).child("password").setValue(pass);
+                                        Toast.makeText(RegisterActivity.this, "registration successful", Toast.LENGTH_LONG).show();
+                                    } else {
+                                        Toast.makeText(RegisterActivity.this, "username already exists", Toast.LENGTH_LONG).show();
+                                    }
+
+                                } catch (JSONException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+
+                            pd.dismiss();
+                        }
+
+                    },new Response.ErrorListener(){
+                        @Override
+                        public void onErrorResponse(VolleyError volleyError) {
+                            System.out.println("" + volleyError );
+                            pd.dismiss();
+                        }
+                    });
+
+                    RequestQueue rQueue = Volley.newRequestQueue(RegisterActivity.this);
+                    rQueue.add(request);
+
+            }
+        });
+    }
+}
+
+    
+===============================================================================================
+36
+A:In your SimpleBlog application class, initialize FirebaseApp in onCreate() method and remove it from RegisterActivity in order to have Firebase initialize into entire application, not just one Activity. 
+
+@Override
+public void onCreate() {
+    super.onCreate();
+    FirebaseApp.initializeApp(this);
+}
+
+
+Also add apply plugin: 'com.google.gms.google-services' at the end of app gradle:
+
+dependencies {
+    ....
+}
+
+apply plugin: 'com.google.gms.google-services'
+
+
+Plugin is required to process your json config from firebase and to avoid dependency collisions. You can read here for more details.
+    

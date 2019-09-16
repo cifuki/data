@@ -1,0 +1,31 @@
+28
+Q:In the documentation for Google Analytics for Android it has a note saying:
+
+
+  Note: Only one BroadcastReceiver class can be specified per application. Should you need to incorporate two or more BroadcastReceivers from different SDKs, you will need to create your own BroadcastReceiver class that will receive all broadcasts and call the appropriate BroadcastReceivers for each type of Broadcast.
+
+
+While somewhat confusing there doesn't appear to be a single element of truth in that statement.  In particular you can have multiple receivers in an application and they work just fine.  Other places have interpreted this to mean that you can't have more than one receiver for a particular Intent action.  However in my testing including on a Tablet/3.2 device as well as a G1/1.6 device I do see that all broadcast receivers for com.android.vending.INSTALL_REFERRER are indeed called.
+
+I have implemented a receiver that will call others based on some config and was updating it use the PackageManager instead and get entries from the manifest, but this all appears completely unnecessary.
+
+So what is the truth?  Is the analytics doc a complete crock or is there some truth behind the note?
+    
+===============================================================================================
+22
+A:Answering my own question.  The Android system works perfectly well with multiple receivers for the same intent.  It will call all of them as expected.
+
+Android Market/Play Store/Finsky has been deliberately written to not use standard Android practise and deliberately ensures that only the first one is called.  Consequently you have to do the multiplexing as described on the analytics page, and not trust referral tester tools.
+
+This code in the onReceive method will let you find all the receivers.
+
+// clear out classname
+intent.setComponent(null);
+// do what Market/Store/Finsky should have done in the first place
+List<ResolveInfo> l=context.getPackageManager().queryBroadcastReceivers(intent, 0);
+
+
+Then look in the applicationInfo in each ResolveInfo, and use the name (after checking exported and enabled), and don't call yourself.
+
+I've updated Referral Tester to match the Market/Store behaviour and make it easier to do testing of install referrers.  See https://github.com/rogerbinns/referraltester
+    

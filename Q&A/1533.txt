@@ -1,0 +1,88 @@
+117
+Q:I am using the query method of SQLiteDatabase. How do I use the query method? 
+
+I tried this:
+
+Cursor cursor = sqLiteDatabase.query(
+    tableName, tableColumns, whereClause, whereArgs, groupBy, having, orderBy);
+
+
+tableColumns - columns parameter is constructed as follows. 
+
+String[] columns = new String[]{KEY_ID, KEY_CONTENT};
+
+
+If we need to get all the fields, how should the column parameter to be constructed. Do we need to include all the Field Names in String array?
+
+How do I properly use the query method?
+    
+===============================================================================================
+236
+A:tableColumns
+
+
+null for all columns as in SELECT * FROM ...
+new String[] { "column1", "column2", ... } for specific columns as in SELECT column1, column2 FROM ... - you can also put complex expressions here:
+new String[] { "(SELECT max(column1) FROM table1) AS max" } would give you a column named max holding the max value of column1
+
+
+whereClause
+
+
+the part you put after WHERE without that keyword, e.g. "column1 > 5"
+should include ? for things that are dynamic, e.g. "column1=?" -> see whereArgs
+
+
+whereArgs
+
+
+specify the content that fills each ? in whereClause in the order they appear
+
+
+the others
+
+
+just like whereClause the statement after the keyword or null if you don't use it.
+
+
+Example
+
+String[] tableColumns = new String[] {
+    "column1",
+    "(SELECT max(column1) FROM table2) AS max"
+};
+String whereClause = "column1 = ? OR column1 = ?";
+String[] whereArgs = new String[] {
+    "value1",
+    "value2"
+};
+String orderBy = "column1";
+Cursor c = sqLiteDatabase.query("table1", tableColumns, whereClause, whereArgs,
+        null, null, orderBy);
+
+// since we have a named column we can do
+int idx = c.getColumnIndex("max");
+
+
+is equivalent to the following raw query
+
+String queryString =
+    "SELECT column1, (SELECT max(column1) FROM table1) AS max FROM table1 " +
+    "WHERE column1 = ? OR column1 = ? ORDER BY column1";
+sqLiteDatabase.rawQuery(queryString, whereArgs);
+
+
+
+
+By using the Where/Bind -Args version you get automatically escaped values and you don't have to worry if input-data contains '.
+
+Unsafe: String whereClause = "column1='" + value + "'";
+Safe: String whereClause = "column1=?";
+
+because if value contains a ' your statement either breaks and you get exceptions or does unintended things, for example value = "XYZ'; DROP TABLE table1;--" might even drop your table since the statement would become two statements and a comment:
+
+SELECT * FROM table1 where column1='XYZ'; DROP TABLE table1;--'
+
+
+using the args version XYZ'; DROP TABLE table1;-- would be escaped to 'XYZ''; DROP TABLE table1;--' and would only be treated as a value. Even if the ' is not intended to do bad things it is still quite common that people have it in their names or use it in texts, filenames, passwords etc. So always use the args version. (It is okay to build int and other primitives directly into whereClause though)
+    

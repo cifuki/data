@@ -1,0 +1,77 @@
+113
+Q:My app supports 3 (soon 4) languages. Since several locales are quite similar I'd like to give the user the option to change locale in my application, for instance an Italian person might prefer Spanish over English.
+
+Is there a way for the user to select among the locales that are available for the application and then change what locale is used? I don't see it as a problem to set locale for each Activity since it is a simple task to perform in a base class.
+    
+===============================================================================================
+78
+A:For people still looking for this answer, since configuration.locale was deprecated from API 24, you can now use:
+
+configuration.setLocale(locale);
+
+
+Take in consideration that the minSkdVersion for this method is API 17.
+
+Full example code:
+
+@SuppressWarnings("deprecation")
+private void setLocale(Locale locale){
+    SharedPrefUtils.saveLocale(locale); // optional - Helper method to save the selected language to SharedPreferences in case you might need to attach to activity context (you will need to code this)
+    Resources resources = getResources();
+    Configuration configuration = resources.getConfiguration();
+    DisplayMetrics displayMetrics = resources.getDisplayMetrics();
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1){
+        configuration.setLocale(locale);
+    } else{
+        configuration.locale=locale;
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N){
+        getApplicationContext().createConfigurationContext(configuration);
+    } else {
+        resources.updateConfiguration(configuration,displayMetrics);
+    }
+}
+
+
+Don't forget that, if you change the locale with a running Activity, you will need to restart it for the changes to take effect.
+
+EDIT 11th MAY 2018
+
+As from @CookieMonster's post, you might have problems keeping the locale change in higher API versions. If so, add the following code to your Base Activity so that you update the context locale on every Activity creation:
+
+@Override
+protected void attachBaseContext(Context base) {
+     super.attachBaseContext(updateBaseContextLocale(base));
+}
+
+private Context updateBaseContextLocale(Context context) {
+    String language = SharedPrefUtils.getSavedLanguage(); // Helper method to get saved language from SharedPreferences
+    Locale locale = new Locale(language);
+    Locale.setDefault(locale);
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        return updateResourcesLocale(context, locale);
+    }
+
+    return updateResourcesLocaleLegacy(context, locale);
+}
+
+@TargetApi(Build.VERSION_CODES.N)
+private Context updateResourcesLocale(Context context, Locale locale) {
+    Configuration configuration = context.getResources().getConfiguration();
+    configuration.setLocale(locale);
+    return context.createConfigurationContext(configuration);
+}
+
+@SuppressWarnings("deprecation")
+private Context updateResourcesLocaleLegacy(Context context, Locale locale) {
+    Resources resources = context.getResources();
+    Configuration configuration = resources.getConfiguration();
+    configuration.locale = locale;
+    resources.updateConfiguration(configuration, resources.getDisplayMetrics());
+    return context;
+}
+
+
+If you use this, don't forget to save the language to SharedPreferences when you set the locale with setLocate(locale)
+    

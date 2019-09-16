@@ -1,0 +1,140 @@
+31
+Q:I am trying to replace the currently working HTTP connection with a HTTPS connection in a Android app that I am writing. The additional security of a HTTPS connection is necessary and so I cannot ignore this step.
+
+I have the following:
+
+
+A server configured to establish a HTTPS connection, and require a client certificate
+
+
+This server has a certificate that is issued by a standard large-scale CA. In short, if I access this connection via the browser in Android, it works fine because the devices truststore recognizes the CA. (So it's not self-signed)
+
+A client certificate that is essentially self-signed. (Issued by an internal CA)
+An Android app that loads this client certificate and attempts to connect to the aforementioned server, but has the following problems/properties:
+
+
+The client can connect to the server when the server is configured to not require a client certificate. Basically, if I use SSLSocketFactory.getSocketFactory() the connection works fine, but the client certificate is a required part of this applications specifications, so:
+The client produces a javax.net.ssl.SSLPeerUnverifiedException: No peer certificate exception when I attempt to connect with my custom SSLSocketFactory, but I am not entirely certain why. This exception seems a little ambiguous after searching around the internet for various solutions to this.
+
+
+
+Here is the relavent code for the client:
+
+SSLSocketFactory socketFactory = null;
+
+public void onCreate(Bundle savedInstanceState) {
+    loadCertificateData();
+}
+
+private void loadCertificateData() {
+    try {
+        File[] pfxFiles = Environment.getExternalStorageDirectory().listFiles(new FileFilter() {
+            public boolean accept(File file) {
+                if (file.getName().toLowerCase().endsWith("pfx")) {
+                    return true;
+                }
+                return false;
+            }
+        });
+
+        InputStream certificateStream = null;
+        if (pfxFiles.length==1) {
+            certificateStream = new FileInputStream(pfxFiles[0]);
+        }
+
+        KeyStore keyStore = KeyStore.getInstance("PKCS12");
+        char[] password = "somePassword".toCharArray();
+        keyStore.load(certificateStream, password);
+
+        System.out.println("I have loaded [" + keyStore.size() + "] certificates");
+
+        KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        keyManagerFactory.init(keyStore, password);
+
+        socketFactory = new SSLSocketFactory(keyStore);
+    } catch (Exceptions e) {
+        // Actually a bunch of catch blocks here, but shortened!
+    }
+}
+
+private void someMethodInvokedToEstablishAHttpsConnection() {
+    try {
+        HttpParams standardParams = new BasicHttpParams();
+        HttpConnectionParams.setConnectionTimeout(standardParams, 5000);
+        HttpConnectionParams.setSoTimeout(standardParams, 30000);
+
+        SchemeRegistry schRegistry = new SchemeRegistry();
+        schRegistry.register(new Scheme("http", PlainSocketFactory.getSocketFactory(), 80));
+        schRegistry.register(new Scheme("https", socketFactory, 443));
+        ClientConnectionManager connectionManager = new ThreadSafeClientConnManager(standardParams, schRegistry);
+
+        HttpClient client = new DefaultHttpClient(connectionManager, standardParams);
+        HttpPost request = new HttpPost();
+        request.setURI(new URI("https://TheUrlOfTheServerIWantToConnectTo));
+        request.setEntity("Some set of data used by the server serialized into string format");
+        HttpResponse response = client.execute(request);
+        resultData = EntityUtils.toString(response.getEntity());
+    } catch (Exception e) {
+        // Catch some exceptions (Actually multiple catch blocks, shortened)
+    }
+}
+
+
+I have verified that, yes indeed the keyStore loads a certificate and is all happy with that.
+
+I have two theories as to what I'm missing from reading about HTTPS/SSL connections, but as this is really my first foray, I am a little puzzled as to what I actually need to resolve this issue.
+
+The first possibility, as far as I can tell, is that I need to configure this SSLSocketFactory with the devices' truststore that includes all of the standard Intermediate and endpoint Certificate Authorities. That is, the device's default of SSLSocketFactory.getSocketFactory() loads some set of CAs into the factory's truststore that is used to trust the server when it sends its certificate, and that is what is failing in my code, because I do not properly have the trust store loaded. If this is true, how would I best go about loading this data?
+
+The second possibility is due to the fact that the client certificate is self-signed (or issued by an internal certificate authority -- correct me if I'm wrong, but these really amount to the same thing, for all intents and purposes here). It is in fact this truststore that I am missing, and basically I need to provide a way for the server to validate the certificate with the internal CA, and also validate that this internal CA is in fact "trustable". If this is true, exactly what sort of thing am I looking for? I have seen some reference to this that makes me believe this may be my problem, as in here, but I am truly not certain. If this is indeed my problem, what would I ask for from the person who maintains the internal CA, and then how would I add this to my code so that my HTTPS connection would work?
+
+The third, and hopefully less possible solution, is that I'm entirely wrong about some point here and have missed a crucial step or am completely neglecting a portion of HTTPS/SSL that I just don't currently have any knowledge of. If this is the case, could you please provide me with a bit of a direction so that I can go and learn what it is I need to learn?
+
+Thanks for reading!
+    
+===============================================================================================
+7
+A:I think this is indeed the issue.
+
+
+  The first possibility, as far as I can tell, is that I need to
+  configure this SSLSocketFactory with the devices' truststore that
+  includes all of the standard Intermediate and endpoint Certificate
+  Authorities
+  
+  If this is true, how would I best go about loading this data?
+
+
+Try something like this (you'll need to get your socket factory to use this default trust manager):
+
+X509TrustManager manager = null;
+FileInputStream fs = null;
+
+TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+
+try
+{
+    fs = new FileInputStream(System.getProperty("javax.net.ssl.trustStore")); 
+    keyStore.load(fs, null);
+}
+finally
+{
+    if (fs != null) { fs.close(); }
+}
+
+trustManagerFactory.init(keyStore);
+TrustManager[] managers = trustManagerFactory.getTrustManagers();
+
+for (TrustManager tm : managers)
+{
+    if (tm instanceof X509TrustManager) 
+    {
+        manager = (X509TrustManager) tm;
+        break;
+    }
+}
+
+
+EDIT: Please look at Pooks' answer before using the code here.  It sounds like there's a better way to do this now.
+    

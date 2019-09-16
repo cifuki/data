@@ -1,0 +1,71 @@
+122
+Q:I'm piecing together a cheapo app that amongst other things "frames" some of our websites...  Pretty simple with the WebViewClient. until I hit the video.
+
+The video is done as HTML5  elements, and these work fine and dandy on Chrome, iPhones, and now that we fixed the encoding issues it works great on Android in the native browser.
+
+Now the rub: WebView doesn't like it.  At all.  I can click on the poster image, and nothing happens.
+
+Googling, I found this which is close, but seems to be based on a 'link' (as in a href...) instead of a video element.  (onDownloadListener does not appear to get invoked on video elements...)
+
+I also see references to overriding onShowCustomView, but that seems to not get called on video elements... nor does shouldOverrideUrlLoading.. 
+
+I would rather not get into "pull xml from the server, reformat it in the app".. by keeping the story layout on the server, I can control the content a bit better without forcing people to keep updating an app.  So if I can convince WebView to handle  tags like the native browser, that would be best.
+
+I'm clearly missing something obvious.. but I have no clue what.
+    
+===============================================================================================
+92
+A:I answer this topic just in case someone read it and is interested on the result.
+It is possible to view a video element (video html5 tag) within a WebView, but I must say I had to deal with it for few days. These are the steps I had to follow so far:
+
+-Find a properly encoded video
+
+-When initializing the WebView, set the JavaScript, Plug-ins the WebViewClient and the WebChromeClient.
+
+
+url = new String("http://broken-links.com/tests/video/"); 
+mWebView = (WebView) findViewById(R.id.webview);
+mWebView.setWebChromeClient(chromeClient);
+mWebView.setWebViewClient(wvClient);
+mWebView.getSettings().setJavaScriptEnabled(true);
+mWebView.getSettings().setPluginState(PluginState.ON);
+mWebView.loadUrl(url);
+
+
+-Handle the onShowCustomView in the WebChromeClient object.
+
+@Override
+public void onShowCustomView(View view, CustomViewCallback callback) {
+    super.onShowCustomView(view, callback);
+    if (view instanceof FrameLayout){
+        FrameLayout frame = (FrameLayout) view;
+        if (frame.getFocusedChild() instanceof VideoView){
+            VideoView video = (VideoView) frame.getFocusedChild();
+            frame.removeView(video);
+            a.setContentView(video);
+            video.setOnCompletionListener(this);
+            video.setOnErrorListener(this);
+            video.start();
+        }
+    }
+}
+
+
+-Handle the onCompletion and the onError events for the video, in order to get back to the web view.
+
+public void onCompletion(MediaPlayer mp) {
+    Log.d(TAG, "Video completo");
+    a.setContentView(R.layout.main);
+    WebView wb = (WebView) a.findViewById(R.id.webview);
+    a.initWebView();
+}
+
+
+But now I should say there are still an important issue. I can play it only once. The second time I click on the video dispatcher (either the poster or some play button), it does nothing.
+
+I would also like the video to play inside the WebView frame, instead of opening the Media Player window, but this is for me a secondary issue.
+
+I hope it helps somebody, and I would also thank any comment or suggestion.
+
+Saludos, terr\xc3\xadcolas.
+    

@@ -1,0 +1,70 @@
+60
+Q:So I've learned that I need an empty constructor in order for my fragments not to crash on reinitialization. My problem is that I use lists of data for my fragments when they are initialized (at least some of them). So what would be a good way to start new fragments with a list of data. Should I in the OnCreate() make a getData method which gets the data from some other source or what would be a proper approach?
+
+Feeding the bundle with data really wouldn't be a very good approach as I have a lot of data.
+
+So let's take a case (I understand it tons better that way).
+
+When a user clicks on a button the fragment is started. What I used to do was creating a new fragment this way:
+
+    FragmentManager fragmentManager = getSupportFragmentManager();
+    FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+
+    fragmentTransaction.replace(R.id.center_container, new DetailFragment(item));
+    fragmentTransaction.addToBackStack(DETAIL_TAG);
+
+    fragmentTransaction.commit();
+
+
+Then in my fragment:
+
+public DetailFragment(EventItem item) {
+    mItem = item;
+    mPlaces = Database.getContainerPlaces(getActivity()).getValidItems();
+}
+
+
+I can't give all the data to a bundle, so that wouldn't work. So what should I do?
+
+A: Should I initialize the fragment with the empty constructor and then from my activity use setters to set the data directly in the fragment? However, won't I be missing data if the user presses home, android close the fragment and the user later returns?
+
+B: Should I initialize the fragment with factory pattern and call setRetainInstance(true), give the fragment a key for identifying the data and then letting the fragment fetch the data needed in onCreateView from some third source?
+
+C: Should I just make an empty constructor and then in onCreate() fetch the data needed for the fragment?
+
+It should be noted that the app is locked in portrait so the issue is primarily with maintaining the objects when Android closes and the user restarts.
+    
+===============================================================================================
+73
+A:So what would be a good way to start new fragments with a list of data.
+
+
+Use the factory pattern and the "arguments" Bundle, such as:
+
+package com.commonsware.empublite;
+
+import android.os.Bundle;
+
+public class SimpleContentFragment extends AbstractContentFragment {
+  private static final String KEY_FILE="file";
+
+  protected static SimpleContentFragment newInstance(String file) {
+    SimpleContentFragment f=new SimpleContentFragment();
+
+    Bundle args=new Bundle();
+
+    args.putString(KEY_FILE, file);
+    f.setArguments(args);
+
+    return(f);
+  }
+
+  @Override
+  String getPage() {
+    return(getArguments().getString(KEY_FILE));
+  }
+}
+
+
+If you are retaining your fragment instance, you should be able to get away with just using ordinary setters to put stuff in data members. The "arguments" Bundle is retained as part of configuration changes, so for non-retained instances, this is the way to ensure your setup data is retained if the user rotates the screen, etc.
+    

@@ -1,0 +1,183 @@
+101
+Q:I've implemented the newest appcompat library and using the Toolbar as action bar. But the problem is I cannot catch the home button / hamburger icon click event. I've tried and looked everything but doesn't seem to find a similar problem.
+
+This is my Activity class :
+
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    toolbar = (Toolbar) findViewById(R.id.toolbar);
+    setSupportActionBar(toolbar);
+
+    // Set up the drawer.
+    navDrawerFragment = 
+        (NavigationDrawerFragment) getSupportFragmentManager()
+        .findFragmentById(R.id.navigation_drawer);
+    navDrawerFragment.setUp(
+        R.id.navigation_drawer, 
+        (DrawerLayout) findViewById(R.id.drawer_layout), 
+        toolbar);
+}
+
+
+And this is my NavigationDrawerFragment class :
+
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    if (savedInstanceState != null) {
+        currentSelectedPosition = savedInstanceState.getInt(
+            STATE_SELECTED_POSITION);
+        fromSavedInstanceState = true;
+    }
+
+    // Select either the default item (0) or the last selected item.
+    selectItem(currentSelectedPosition);
+}
+
+@Override
+public void onActivityCreated (Bundle savedInstanceState) {
+    super.onActivityCreated(savedInstanceState);
+    // Indicate that this fragment would like 
+    // to influence the set of actions in the action bar.
+    setHasOptionsMenu(true);
+}
+
+public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState) {
+        drawerListView = (ListView) inflater.inflate(
+            R.layout.fragment_navigation_drawer, container, false);
+        drawerListView.setOnItemClickListener(
+            new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, 
+                View view, int position, long id) {
+                selectItem(position);
+            }
+        });
+        //mDrawerListView.setAdapter();
+        //mDrawerListView.setItemChecked(mCurrentSelectedPosition, true);
+        return drawerListView;
+}
+
+public void setUp(int fragmentId, DrawerLayout drawerLayout, Toolbar toolbar) {
+    fragmentContainerView = getActivity().findViewById(fragmentId);
+    this.drawerLayout = drawerLayout;
+
+    // set a custom shadow that overlays the main 
+    // content when the drawer opens
+    drawerLayout.setDrawerShadow(
+        R.drawable.drawer_shadow, GravityCompat.START);
+    // set up the drawer's list view 
+    // with items and click listener
+
+    ActionBar actionBar = getActionBar();
+    actionBar.setDisplayHomeAsUpEnabled(true);
+    actionBar.setHomeButtonEnabled(true);
+
+    // ActionBarDrawerToggle ties together the the proper interactions
+    // between the navigation drawer and the action bar app icon.
+    drawerToggle = new ActionBarDrawerToggle(
+        getActivity(), 
+        drawerLayout, 
+        toolbar, 
+        R.string.navigation_drawer_open, 
+        R.string.navigation_drawer_close) {
+        public void onDrawerClosed(View view) {
+            super.onDrawerClosed(view);
+        }
+
+        public void onDrawerOpened(View drawerView) {
+            super.onDrawerOpened(drawerView);
+        }
+    };
+
+    // If the user hasn't 'learned' about the drawer, 
+    // open it to introduce them to the drawer,
+    // per the navigation drawer design guidelines.
+    if (!userLearnedDrawer && !fromSavedInstanceState) {
+        drawerLayout.openDrawer(fragmentContainerView);
+    }
+
+    // Defer code dependent on restoration of previous instance state.
+    drawerLayout.post(new Runnable() {
+        @Override
+        public void run() {
+            drawerToggle.syncState();
+        }
+    });
+
+    drawerLayout.setDrawerListener(drawerToggle);
+}
+
+@Override
+public void onSaveInstanceState(Bundle outState) {
+    super.onSaveInstanceState(outState);
+    outState.putInt(STATE_SELECTED_POSITION, currentSelectedPosition);
+}
+
+@Override
+public void onConfigurationChanged(Configuration newConfig) {
+    super.onConfigurationChanged(newConfig);
+    // Forward the new configuration the drawer toggle component.
+    drawerToggle.onConfigurationChanged(newConfig);
+}
+
+@Override
+public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+    super.onCreateOptionsMenu(menu, inflater);
+}
+
+@Override
+public boolean onOptionsItemSelected(MenuItem item) {
+    Log.d("cek", "item selected");
+    if (drawerToggle.onOptionsItemSelected(item)) {
+        Log.d("cek", "home selected");
+        return true;
+    }
+
+    return super.onOptionsItemSelected(item);
+}
+
+
+when I clicked a menu item, the log "item selected" gets called. But when I click on the home button, it opens navigation drawer but the log "home selected" never get called. I've set onOptionsItemSelected method inside my Activity as well, but it still doesn't get called.
+    
+===============================================================================================
+212
+A:If you want to know when home is clicked is an AppCompatActivity then you should try it like this:
+
+First tell Android you want to use your Toolbar as your ActionBar:
+
+setSupportActionBar(toolbar);
+
+
+Then set Home to be displayed via setDisplayShowHomeEnabled like this:
+
+getSupportActionBar().setDisplayShowHomeEnabled(true);
+
+
+Finally listen for click events on android.R.id.home like usual:
+
+@Override
+public boolean onOptionsItemSelected(MenuItem menuItem) {
+    if (menuItem.getItemId() == android.R.id.home) {
+        Timber.d("Home pressed");
+    }
+    return super.onOptionsItemSelected(menuItem);
+}
+
+
+If you want to know when the navigation button is clicked on a Toolbar in a class other than AppCompatActivity you can use these methods to set a navigation icon and listen for click events on it. The navigation icon will appear on the left side of your Toolbar where the the "home" button used to be. 
+
+toolbar.setNavigationIcon(getResources().getDrawable(R.drawable.ic_nav_back));
+toolbar.setNavigationOnClickListener(new View.OnClickListener() {
+    @Override
+    public void onClick(View v) {
+        Log.d("cek", "home selected");
+    }
+});
+
+
+If you want to know when the hamburger is clicked and when the drawer opens, you're already listening for these events via onDrawerOpened and onDrawerClosed so you'll want to see if those callbacks fit your requirements.
+    

@@ -1,0 +1,58 @@
+39
+Q:I'm trying to use TaskStackBuilder with notifications to create a back stack for the back button to go through.  Normal flow of my app:
+
+
+Activity A is launched from the launcher.
+User selects an item from A, which launches B with extras for what to load.
+User selects an item from B, this launches C with extras for what to load.
+
+
+Sometimes, after a background update when the user isn't using my app, I generate a notification.  If they click this notification, it launches Activity C, skipping A and B.  I'm trying to follow the design guidelines and create a back stack, so when they press back it will go to Activity B instead of the home screen.  My problem is that Activity B requires an extra in its launch intent to tell it what to grab from the database.
+
+My current TaskStackBuilder code:
+
+TaskStackBuilder sBuilder = TaskStackBuilder.create( this );
+sBuilder.addParentStack( ActivityC.class );
+sBuilder.addNextIntent( launchIntent );
+
+pIntent = sBuilder.getPendingIntent( 0, PendingIntent.FLAG_ONE_SHOT );
+
+
+Clicking on the notification launches Activity C just fine, but when I press back it explodes with an IllegalArgumentException from my ContentProvider because Activity B doesn't know what ID to request.  Is there any way to get this extra into the back stack or am I stuck?
+    
+===============================================================================================
+56
+A:This line:
+
+sBuilder.addParentStack( ActivityC.class );
+
+
+adds all parents declared for ActivityC in AndroidManifest.xml in <meta-data>. I don't know what it is, I haven't used it. I doubt you need it.
+
+This line adds intent to an array:
+
+sBuilder.addNextIntent(launchIntent);
+
+
+then the array of intents is used to create PendingIntent, probably with PendingIntent.getActivities, I couldn't find the implementation, which is then started somewhere with Context.startActivities.
+
+I think you just need to create set of intents, there you can add extras:
+
+Intent activityA = new Intent(context, ActivityA.class);
+activityA.putExtra(key, valueA);
+Intent activityB = new Intent(context, ActivityB.class);
+activityB.putExtra(key, valueB);
+Intent activityC = new Intent(context, ActivityC.class);
+activityC.putExtra(key, valueC);
+
+
+and add them to builder:
+
+sBuilder.addNextIntent(activityA);
+sBuilder.addNextIntent(activityB);
+sBuilder.addNextIntent(activityC);
+pIntent = sBuilder.getPendingIntent( 0, PendingIntent.FLAG_ONE_SHOT );
+
+
+I haven't tested it, this is only a result of my fast research, I hope someone will correct me if I'm wrong.
+    

@@ -1,0 +1,137 @@
+51
+Q:When I run native code on Android L (Nexus 5), I get the error.
+
+
+  error: only position independent executables (PIE) are supported.
+
+
+The same code is executed correctly on my Samsung Galaxy S3 (Android 4.3).
+
+Here is my Application.mk
+
+APP_PROJECT_PATH := $(call my-dir)/..
+APP_ABI := armeabi
+NDK_TOOLCHAIN_VERSION := 4.7
+APP_PLATFORM := android-9
+APP_GNUSTL_FORCE_CPP_FEATURES := exceptions rtti
+
+
+However when I replace APP_PLATFORM := android-9 with APP_PLATFORM := android-16 (As I read here, PIE support appeared in Jelly Been (API level 16)), the same executable file works fine on Android L.
+
+Is there a way to compile native code using APP_PLATFORM := android-9 and run it on Android L?
+    
+===============================================================================================
+48
+A:If you can live with only supporting Android 4.1+, just set APP_PLATFORM := android-16 and you'll be good to go. Behind the scenes it sets APP_PIE := true. Your binary will segfault on older SDKs.
+
+If you also need to support lower SDK levels, you'll need to create two binaries. Some other answers I've seen have recommended maintaining two separate source trees with different APP_PLATFORMs, but you don't need to do that. It's possible to make a single Android.mk output both a PIE and a non-PIE binary.
+
+NDK 10c and later:
+
+Make sure that PIE is disabled by default since enabling it manually is easier than disabling it. PIE doesn't get enabled by default unless your APP_PLATFORM is >=16. Make sure that your APP_PLATFORM is either not set (defaulting to android-3, or android-14 since NDK 15), lower than android-16, or set APP_PIE := false.
+
+The following Android.mk then creates a PIE and a non-PIE binary, but has a caveat (see below):
+
+LOCAL_PATH := $(call my-dir)
+
+include $(CLEAR_VARS)
+
+# Enable PIE manually. Will get reset on $(CLEAR_VARS). This
+# is what enabling PIE translates to behind the scenes.
+LOCAL_CFLAGS += -fPIE
+LOCAL_LDFLAGS += -fPIE -pie
+
+LOCAL_MODULE := mymod
+
+LOCAL_SRC_FILES := \\
+    mymod.c
+
+include $(BUILD_EXECUTABLE)
+
+include $(CLEAR_VARS)
+
+LOCAL_MODULE := mymod-nopie
+
+LOCAL_SRC_FILES := \\
+    mymod.c
+
+include $(BUILD_EXECUTABLE)
+
+
+You'll then have to add some sort of logic to invoke the correct binary in your code.
+
+Unfortunately, this means you'll have to compile the executable module twice, which can be slow. You also need to specify LOCAL_SRC_FILES and any libraries twice, which can be frustrating and difficult to keep track of. What you can do is to compile the main executable as a static library, and build executables from nothing but that static library. Static libraries do not require PIE.
+
+LOCAL_PATH := $(call my-dir)
+
+include $(CLEAR_VARS)
+
+LOCAL_MODULE := mymod-common
+
+LOCAL_SRC_FILES := \\
+  mymod.c
+
+include $(BUILD_STATIC_LIBRARY)
+
+include $(CLEAR_VARS)
+
+# Enable PIE manually. Will get reset on $(CLEAR_VARS). This
+# is what enabling PIE translates to behind the scenes.
+LOCAL_CFLAGS += -fPIE
+LOCAL_LDFLAGS += -fPIE -pie
+
+LOCAL_MODULE := mymod
+
+LOCAL_STATIC_LIBRARIES := mymod-common
+
+include $(BUILD_EXECUTABLE)
+
+include $(CLEAR_VARS)
+
+LOCAL_MODULE := mymod-nopie
+
+LOCAL_STATIC_LIBRARIES := mymod-common
+
+include $(BUILD_EXECUTABLE)
+
+
+This seems to work quite nicely, although a certain amount of boilerplate is still required.
+
+NDK 10b:
+
+NDK 10b enables PIE by default and doesn't let you disable it, except with terrible hacks. Really, just update to 10c. I'm leaving my old answer here for reference but I wouldn't recommend it to anyone.
+
+LOCAL_PATH := $(call my-dir)
+
+# Forcefully disable PIE globally. This makes it possible to
+# build some binaries without PIE by adding the necessary flags
+# manually. These will not get reset by $(CLEAR_VARS). PIE is
+# force-enabled on NDK 10b so we'll need this even if APP_PIE
+# is set to false.
+TARGET_PIE := false
+NDK_APP_PIE := false
+
+include $(CLEAR_VARS)
+
+# Enable PIE manually. Will get reset on $(CLEAR_VARS). This
+# is what enabling PIE translates to behind the scenes.
+LOCAL_CFLAGS += -fPIE
+LOCAL_LDFLAGS += -fPIE -pie
+
+LOCAL_MODULE := mymod
+
+LOCAL_SRC_FILES := \\
+    mymod.c
+
+include $(BUILD_EXECUTABLE)
+
+include $(CLEAR_VARS)
+
+LOCAL_MODULE := mymod-nopie
+
+LOCAL_SRC_FILES := \\
+    mymod.c
+
+include $(BUILD_EXECUTABLE)
+
+    

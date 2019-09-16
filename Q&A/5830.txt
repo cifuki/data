@@ -1,0 +1,26 @@
+43
+Q:The Android Dev Guide says
+
+
+  Content providers are also useful for
+  reading and writing data that is
+  private to your application and not
+  shared.
+
+
+Generally, Content Providers are used for providing data to different applications or sharing data among them. I was wondering if there is any use to having private providers and not wanting to share it. Are there any benefits provided that a direct access to DB or file system don't provide?
+
+Thanks,
+Rajath
+    
+===============================================================================================
+78
+A:It automatically schedules all your server-side and synchronization DB access in a background thread.  However, in your application frontend, the Content Resolver/Provider will normally execute queries/transactions from the UI thread by default. You must perform all transactions asynchronously (i.e. using a CursorLoader) to ensure that your application runs smoothly on the UI side
+It localizes re-entrant DB access from the any threads that access through ContentProvider, so that all locking can happen entirely in your ContentProvider override calls, rather than keeping track of it in a DB layer, a service, and a UI layer.
+As part of the above, it also provides a nice singleton interface to your data -- If you have ten Activity classes in your app, you just go through ContentResolver static calls from each one, versus needing to deal with opening/closing a SQLiteDatabase in each activity as you jump from one activity to another in your app.
+ContentProvider is tied very tightly to the SyncAdapter model -- Meaning it's pretty much the only way to go if you want to keep your database in sync with a server-hosted database out on the net. (your app mirrors a REST api type of situation)
+It ties into ContentResolver's ContentObserver interface -- This is an interface where (among many other useful things) a view can register as observing a specific set of data (through the Cursor to that data).  Then, if you drive a change into the ContentProvider, the CP can notify the CR, which can in turn notify any relevant cursors, which in turn will requery and cause the view to update.  This is much cleaner than having to manually keep track of your views so you can invalidate and redraw them.
+
+
+As for re-entrant locking of the DB, it doesn't do it completely, but it helps -- your ContentProvider class implements four simple functions (CRUD interface) and, if you choose to override it, a fifth, batchAdd() -- This localizes your locking.  The bone simple answer is to simply tag all four/five of those function declarations "synchronized" at the function level and you're done.  Much cleaner than trying to figure out locking out from 20 places that access your DB in 5 different Activites.
+    

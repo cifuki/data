@@ -1,0 +1,293 @@
+31
+Q:I'm trying to create a layout with a ViewFlipper containing ScrollViews. The idea is to detect horizontal swipes to move to previous/next ScrollView. Moreover, the ScrollView contains another ViewFlipper containing ImageView with a vertical swipe detector to go to previous/next ImageView. When I replace the ScrollView by a LinearLayout both gesture detectors work properly, but with the ScrollView, none work (the gesture listeners are not even triggers). Why does using a ScrollView disable my gesture detectors? How can I make it work? 
+
+Activity
+
+public class ProduitHome extends Activity{  
+
+    private Resources res;
+    float density;
+
+    private int position, parent_id;;
+    private int num_products;
+
+    private Produit produit;
+    private ImageDownloader mImageLoader;   
+
+    private ViewFlipper product_viewflipper;
+    private ScrollView current_product_layout;
+    Animation next_product_out, next_product_in, previous_product_in, previous_product_out;
+
+    private GestureDetector galleryGestureDetector;
+    private View.OnTouchListener galleryGestureListener;
+
+    private GestureDetector productGestureDetector;
+    private View.OnTouchListener productGestureListener;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.produit_home);
+
+        num_products = GlobalData.map_list_produits.get(parent_id).size();
+
+        product_viewflipper = (ViewFlipper) findViewById(R.id.product_viewflipper);
+
+        LayoutInflater inflater = getLayoutInflater();
+
+
+        // Add num_products view to the viewflipper
+
+        for(int i=0; i<num_products; i++){
+            ScrollView product_detail = (ScrollView) inflater.inflate(R.layout.produit_detail, null);
+            product_viewflipper.addView(product_detail);
+        }
+
+
+        // Set data and show current product
+
+        current_product_layout = (ScrollView) product_viewflipper.getChildAt(position);
+        product_viewflipper.setDisplayedChild(position);
+
+        setProductData();
+
+
+        // Set swipe listener to switch product
+
+        productGestureDetector = new GestureDetector(new ProductGestureListener());
+        productGestureListener = new View.OnTouchListener() 
+        {
+            public boolean onTouch(View v, MotionEvent event) 
+            {
+                if (productGestureDetector.onTouchEvent(event)) 
+                {
+                    return true;
+                }
+                else{
+                    return false;
+                }
+            }
+        };
+
+        product_viewflipper.setOnTouchListener(productGestureListener);
+
+
+        // Set switch product animation
+
+        next_product_out = AnimationUtils.loadAnimation(this, R.anim.next_product_out);
+        next_product_in = AnimationUtils.loadAnimation(this, R.anim.next_product_in);
+        previous_product_in = AnimationUtils.loadAnimation(this, R.anim.previous_product_in);
+        previous_product_out = AnimationUtils.loadAnimation(this, R.anim.previous_product_out);
+
+    }
+
+
+    class VerticalSwipeListener extends SimpleOnGestureListener {
+
+        @Override
+        public boolean onDown(MotionEvent e) {
+            return true;
+        }
+
+        @Override
+        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+
+            final int SWIPE_MIN_DISTANCE = 80;
+            final int SWIPE_MAX_OFF_PATH = 250;
+            final int SWIPE_THRESHOLD_VELOCITY = 200; 
+
+            try {
+                if (Math.abs(e1.getX() - e2.getX()) > SWIPE_MAX_OFF_PATH)
+                    return false;                
+
+                ViewFlipper gallery = (ViewFlipper)current_product_layout.findViewById(R.id.product_gallery);
+
+                if(e1.getY() - e2.getY() > SWIPE_MIN_DISTANCE && Math.abs(velocityY) > SWIPE_THRESHOLD_VELOCITY) {
+                    gallery.showNext();                    
+                }  else if (e2.getY() - e1.getY() > SWIPE_MIN_DISTANCE && Math.abs(velocityY) > SWIPE_THRESHOLD_VELOCITY) {
+                    gallery.showPrevious();
+                }
+                ((RadioGroup)current_product_layout.findViewById(R.id.gallery_nav)).check(gallery.getDisplayedChild());
+            } catch (Exception e) {
+            }
+            return false;
+        }
+    }
+
+
+    class ProductGestureListener extends SimpleOnGestureListener {
+
+        @Override
+        public boolean onDown(MotionEvent e) {
+            return true;
+        }
+
+        @Override
+        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+
+            final int SWIPE_MIN_DISTANCE = 120;
+            final int SWIPE_MAX_OFF_PATH = 250;
+            final int SWIPE_THRESHOLD_VELOCITY = 200; 
+
+            if(!Utils.IsOnline(ProduitHome.this)){
+                SRPDialogs.show(ProduitHome.this, SRPDialogs.NOT_CONNECTED);
+            }
+            else{
+
+                try {
+                    if (Math.abs(e1.getY() - e2.getY()) > SWIPE_MAX_OFF_PATH)
+                        return false;
+                    if(e2.getX() - e1.getX() > SWIPE_MIN_DISTANCE && Math.abs(velocityX) > SWIPE_THRESHOLD_VELOCITY) {
+
+                        // show next product
+
+                    }  else if (e1.getX() - e2.getX() > SWIPE_MIN_DISTANCE && Math.abs(velocityX) > SWIPE_THRESHOLD_VELOCITY) {
+
+                     // show previous product
+
+                    }
+                } catch (Exception e) {
+                }
+            }
+            return false;
+        }
+    }
+
+    public void setProductData(){
+
+        produit = GlobalData.map_produits.get(GlobalData.map_list_produits.get(parent_id).get(position).id); 
+
+        TextView name = (TextView) current_product_layout.findViewById(R.id.name);
+        name.setText(produit.libelle);
+
+        // Load gallery
+
+        int nPics = produit.list_url_pic.size();
+
+        if(nPics>0){
+
+            ViewFlipper gallery = (ViewFlipper) current_product_layout.findViewById(R.id.product_gallery);
+            gallery.removeAllViews();           
+
+            mImageLoader = new ImageDownloader(res,
+                    ((BitmapDrawable)res.getDrawable(R.drawable.default_row_pic)).getBitmap(), 1);          
+
+            final ViewFlipper.LayoutParams params_vf = new ViewFlipper.LayoutParams(ViewFlipper.LayoutParams.FILL_PARENT, ViewFlipper.LayoutParams.FILL_PARENT);
+
+            for(String url : produit.list_url_pic){
+
+                // Add images to viewflipper
+                ImageView imageView_p = new ImageView(this);
+                imageView_p.setLayoutParams(params_vf);
+                imageView_p.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                imageView_p.setTag(url);
+                imageView_p.setImageResource(R.drawable.default_row_pic);
+                mImageLoader.download(url, imageView_p);
+                gallery.addView(imageView_p);
+            } 
+
+            // Swipe detector to switch picture in gallery
+
+            galleryGestureDetector = new GestureDetector(new VerticalSwipeListener());
+            galleryGestureListener = new View.OnTouchListener() 
+            {
+                public boolean onTouch(View v, MotionEvent event) 
+                {
+                    if (galleryGestureDetector.onTouchEvent(event)) 
+                    {
+                        return true;
+                    }
+                    else{
+                        return false;
+                    }
+                }
+            };
+
+        }
+    }
+}
+
+
+Parent layout
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/product_home" android:layout_width="fill_parent"
+    android:layout_height="fill_parent" android:orientation="vertical"
+    android:background="@color/grey_bg">
+
+    <!-- more stuff -->
+
+    <ViewFlipper android:id="@+id/product_viewflipper"
+        android:layout_width="fill_parent" android:layout_height="fill_parent"
+        android:layout_below="@id/header_logo" />
+
+    <!-- more stuff -->
+
+</RelativeLayout>
+
+
+ViewFlipper's children layout
+
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent" android:layout_height="fill_parent"
+    android:background="@color/grey_bg">
+
+    <LinearLayout android:layout_width="fill_parent"
+        android:layout_height="wrap_content" android:orientation="vertical"
+        android:gravity="center_horizontal">
+
+        <!-- more stuff -->
+
+        <RelativeLayout android:layout_below="@id/bg_content_top"
+            android:layout_above="@id/bg_content_bottom"
+            android:layout_width="300dp" android:layout_height="fill_parent"
+            android:background="@drawable/bg_content"
+            android:paddingRight="3dp" android:paddingLeft="3dp"
+            android:layout_centerHorizontal="true">
+
+           <!-- more stuff -->
+
+            <RelativeLayout android:id="@+id/content"
+                android:layout_below="@id/title_container"
+                android:layout_above="@id/bg_content_bottom"
+                android:layout_width="fill_parent"
+                android:layout_height="wrap_content"
+                android:paddingLeft="7dp" android:paddingRight="7dp"
+                android:paddingTop="10dp" android:paddingBottom="10dp">               
+
+                <ViewFlipper android:id="@+id/product_gallery"
+                    android:clickable="true" android:focusable="false"
+                    android:layout_width="100dp" android:layout_height="150dp"
+                    android:layout_marginRight="10dp"
+                    android:layout_below="@id/title_container"
+                    android:layout_toRightOf="@id/gallery_nav" />
+
+                <!-- more stuff -->
+
+            </RelativeLayout>
+
+        </RelativeLayout>
+
+        <!-- more stuff -->
+
+    </LinearLayout>
+
+</ScrollView>
+
+    
+===============================================================================================
+57
+A:I had to add
+
+@Override
+public boolean dispatchTouchEvent(MotionEvent ev){
+    super.dispatchTouchEvent(ev);    
+    return productGestureDetector.onTouchEvent(ev); 
+}
+
+
+in my Activity.
+    

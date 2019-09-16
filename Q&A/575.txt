@@ -1,0 +1,48 @@
+227
+Q:All activities in my application require a user to be logged-in to view. Users can log out from almost any activity. This is a requirement of the application. At any point if the user logs-out, I want to send the user to the Login Activity. At this point I want this activity to be at the bottom of the history stack so that pressing the "back" button returns the user to Android's home screen.
+
+I've seen this question asked a few different places, all answered with similar answers (that I outline here), but I want to pose it here to collect feedback.
+
+I've tried opening the Login activity by setting its Intent flags to FLAG_ACTIVITY_CLEAR_TOP which seems to do as is outlined in the documentation, but does not achieve my goal of placing the Login activity at the bottom of the history stack, and preventing the user from navigating back to previously-seen logged-in activities. I also tried using android:launchMode="singleTop" for the Login activity in the manifest, but this does not accomplish my goal either (and seems to have no effect anyway).
+
+I believe I need to either clear the history stack, or finish all previously- opened activities.
+
+One option is to have each activity's onCreate check logged-in status, and finish() if not logged-in. I do not like this option, as the back button will still be available for use, navigating back as activities close themselves.
+
+The next option is to maintain a LinkedList of references to all open activities that is statically accessible from everywhere (perhaps using weak references). On logout I will access this list and iterate over all previously-opened activities, invoking finish() on each one. I'll probably begin implementing this method soon.
+
+I'd rather use some Intent flag trickery to accomplish this, however. I'd be beyond happy to find that I can fulfill my application's requirements without having to use either of the two methods that I've outlined above.
+
+Is there a way to accomplish this by using Intent or manifest settings, or is my second option, maintaining a LinkedList of opened activities the best option? Or is there another option that I'm completely overlooking?
+    
+===============================================================================================
+207
+A:I can suggest you another approach IMHO more robust.
+Basically you need to broadcast a logout message to all your Activities needing to stay under a logged-in status. So you can use the sendBroadcast and install a BroadcastReceiver in all your Actvities.
+Something like this:
+
+/** on your logout method:**/
+Intent broadcastIntent = new Intent();
+broadcastIntent.setAction("com.package.ACTION_LOGOUT");
+sendBroadcast(broadcastIntent);
+
+
+The receiver (secured Activity):
+
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    /**snip **/
+    IntentFilter intentFilter = new IntentFilter();
+    intentFilter.addAction("com.package.ACTION_LOGOUT");
+    registerReceiver(new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Log.d("onReceive","Logout in progress");
+            //At this point you should start the login activity and finish this one
+            finish();
+        }
+    }, intentFilter);
+    //** snip **//
+}
+
+    

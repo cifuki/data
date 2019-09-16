@@ -1,0 +1,178 @@
+45
+Q:Final Update
+
+The feature request has been fulfilled by Google.  Please see this answer below.
+
+Original Question
+
+Using the old version of the Google Maps Android API, I was able to capture a screenshot of the google map to share via social media.  I used the following code to capture the screenshot and save the image to a file and it worked great:
+
+public String captureScreen()
+{
+    String storageState = Environment.getExternalStorageState();
+    Log.d("StorageState", "Storage state is: " + storageState);
+
+    // image naming and path  to include sd card  appending name you choose for file
+    String mPath = this.getFilesDir().getAbsolutePath();
+
+    // create bitmap screen capture
+    Bitmap bitmap;
+    View v1 = this.mapView.getRootView();
+    v1.setDrawingCacheEnabled(true);
+    bitmap = Bitmap.createBitmap(v1.getDrawingCache());
+    v1.setDrawingCacheEnabled(false);
+
+    OutputStream fout = null;
+
+    String filePath = System.currentTimeMillis() + ".jpeg";
+
+    try 
+    {
+        fout = openFileOutput(filePath,
+                MODE_WORLD_READABLE);
+
+        // Write the string to the file
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fout);
+        fout.flush();
+        fout.close();
+    } 
+    catch (FileNotFoundException e) 
+    {
+        // TODO Auto-generated catch block
+        Log.d("ImageCapture", "FileNotFoundException");
+        Log.d("ImageCapture", e.getMessage());
+        filePath = "";
+    } 
+    catch (IOException e) 
+    {
+        // TODO Auto-generated catch block
+        Log.d("ImageCapture", "IOException");
+        Log.d("ImageCapture", e.getMessage());
+        filePath = "";
+    }
+
+    return filePath;
+}
+
+
+However, the new GoogleMap object used by V2 of the api does not have a "getRootView()" method like MapView does. 
+
+I tried to do this:
+
+    SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
+            .findFragmentById(R.id.basicMap);
+
+    View v1 = mapFragment.getView();
+
+
+But the screenshot that I get does not have any map content and looks like this:
+
+
+Has anyone figured out how to take a screenshot of the new Google Maps Android API V2?
+
+Update
+
+I also tried to get the rootView this way:
+
+View v1 = getWindow().getDecorView().getRootView();
+
+
+This results in a screenshot that includes the action bar at the top of the screen, but the map is still blank like the screenshot I attached.
+
+Update
+
+A feature request has been submitted to Google.  Please go star the feature request if this is something you want google to add in the future:  Add screenshot ability to Google Maps API V2
+    
+===============================================================================================
+62
+A:Update - Google has added a snapshot method**!:
+
+The feature request for a method to take a screen shot of the Android Google Map API V2 OpenGL layer has been fulfilled.  
+
+To take a screenshot, simply implement the following interface:
+
+public abstract void onSnapshotReady (Bitmap snapshot)
+
+
+and call:
+
+public final void snapshot (GoogleMap.SnapshotReadyCallback callback)
+
+Example that takes a screenshot, then presents the standard "Image Sharing" options:
+
+public void captureScreen()
+    {
+        SnapshotReadyCallback callback = new SnapshotReadyCallback() 
+        {
+
+            @Override
+            public void onSnapshotReady(Bitmap snapshot) 
+            {
+                // TODO Auto-generated method stub
+                bitmap = snapshot;
+
+                OutputStream fout = null;
+
+                String filePath = System.currentTimeMillis() + ".jpeg";
+
+                try 
+                {
+                    fout = openFileOutput(filePath,
+                            MODE_WORLD_READABLE);
+
+                    // Write the string to the file
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fout);
+                    fout.flush();
+                    fout.close();
+                } 
+                catch (FileNotFoundException e) 
+                {
+                    // TODO Auto-generated catch block
+                    Log.d("ImageCapture", "FileNotFoundException");
+                    Log.d("ImageCapture", e.getMessage());
+                    filePath = "";
+                } 
+                catch (IOException e) 
+                {
+                    // TODO Auto-generated catch block
+                    Log.d("ImageCapture", "IOException");
+                    Log.d("ImageCapture", e.getMessage());
+                    filePath = "";
+                }
+
+                openShareImageDialog(filePath);
+            }
+        };
+
+        mMap.snapshot(callback);
+    }
+
+
+Once the image is finished being captured, it will trigger the standard "Share Image" dialog so the user can pick how they'd like to share it:
+
+public void openShareImageDialog(String filePath) 
+{
+File file = this.getFileStreamPath(filePath);
+
+if(!filePath.equals(""))
+{
+    final ContentValues values = new ContentValues(2);
+    values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+    values.put(MediaStore.Images.Media.DATA, file.getAbsolutePath());
+    final Uri contentUriFile = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+
+    final Intent intent = new Intent(android.content.Intent.ACTION_SEND);
+    intent.setType("image/jpeg");
+    intent.putExtra(android.content.Intent.EXTRA_STREAM, contentUriFile);
+    startActivity(Intent.createChooser(intent, "Share Image"));
+}
+else
+{
+            //This is a custom class I use to show dialogs...simply replace this with whatever you want to show an error message, Toast, etc.
+    DialogUtilities.showOkDialogWithText(this, R.string.shareImageFailed);
+}
+}
+
+
+Documentation is here
+    

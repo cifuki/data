@@ -1,0 +1,189 @@
+74
+Q:I'm trying to add native code to my app. I have everything in ../main/jni as it was in my Eclipse project. I have added ndk.dir=... to my local.properties. I haven't done anything else yet (I'm not sure what else is actually required, so if I've missed something let me know). When I try and build I get this error:
+
+Execution failed for task ':app:compileDebugNdk'.
+> com.android.ide.common.internal.LoggedErrorException: Failed to run command:
+    /Users/me/android-ndk-r8e/ndk-build NDK_PROJECT_PATH=null 
+APP_BUILD_SCRIPT=/Users/me/Project/app/build/ndk/debug/Android.mk APP_PLATFORM=android-19 
+NDK_OUT=/Users/me/Project/app/build/ndk/debug/obj 
+NDK_LIBS_OUT=/Users/me/Project/app/build/ndk/debug/lib APP_ABI=all
+
+  Error Code:
+    2
+  Output:
+    make: *** No rule to make target `/Users/me/Project/webapp/build/ndk/debug//Users/me/Project/app/src/main/jni/jni_part.cpp',
+ needed by `/Users/me/Project/app/build/ndk/debug/obj/local/armeabi-v7a/objs/webapp//Users/me/Project/app/src/main/jni/jni_part.o'.  
+Stop.
+
+
+What do I need to do?
+
+Android.mk:
+
+LOCAL_PATH := $(call my-dir)
+
+include $(CLEAR_VARS)
+
+# OpenCV
+OPENCV_CAMERA_MODULES:=on
+OPENCV_INSTALL_MODULES:=on
+include .../OpenCV-2.4.5-android-sdk/sdk/native/jni/OpenCV.mk
+
+LOCAL_MODULE    := native_part
+LOCAL_SRC_FILES := jni_part.cpp
+LOCAL_LDLIBS +=  -llog -ldl
+
+include $(BUILD_SHARED_LIBRARY)
+
+
+Application.mk:
+
+APP_STL := gnustl_static
+APP_CPPFLAGS := -frtti -fexceptions
+APP_ABI := armeabi armeabi-v7a
+APP_PLATFORM := android-8
+
+    
+===============================================================================================
+118
+A:Gradle Build Tools 2.2.0+ - The closest the NDK has ever come to being called 'magic'
+
+In trying to avoid experimental and frankly fed up with the NDK and all its hackery I am happy that 2.2.x of the Gradle Build Tools came out and now it just works. The key is the externalNativeBuild and pointing ndkBuild path argument at an Android.mk or change ndkBuild to cmake and point the path argument at a CMakeLists.txt build script.
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "25.0.2"
+
+    defaultConfig {
+        minSdkVersion 19
+        targetSdkVersion 19
+
+        ndk {
+            abiFilters 'armeabi', 'armeabi-v7a', 'x86'
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++11'
+                arguments '-DANDROID_TOOLCHAIN=clang',
+                        '-DANDROID_PLATFORM=android-19',
+                        '-DANDROID_STL=gnustl_static',
+                        '-DANDROID_ARM_NEON=TRUE',
+                        '-DANDROID_CPP_FEATURES=exceptions rtti'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+             path 'src/main/jni/CMakeLists.txt'
+        }
+        //ndkBuild {
+        //   path 'src/main/jni/Android.mk'
+        //}
+    }
+}
+
+
+For much more detail check Google's page on adding native code.
+
+After this is setup correctly you can ./gradlew installDebug and off you go. You will also need to be aware that the NDK is moving to clang since gcc is now deprecated in the Android NDK.
+
+Android Studio Clean and Build Integration - DEPRECATED
+
+The other answers do point out the correct way to prevent the automatic creation of Android.mk files, but they fail to go the extra step of integrating better with Android Studio. I have added the ability to actually clean and build from source without needing to go to the command-line. Your local.properties file will need to have ndk.dir=/path/to/ndk
+
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 14
+    buildToolsVersion "20.0.0"
+
+    defaultConfig {
+        applicationId "com.example.application"
+        minSdkVersion 14
+        targetSdkVersion 14
+
+        ndk {
+            moduleName "YourModuleName"
+        }
+    }
+
+    sourceSets.main {
+        jni.srcDirs = [] // This prevents the auto generation of Android.mk
+        jniLibs.srcDir 'src/main/libs' // This is not necessary unless you have precompiled libraries in your project.
+    }
+
+    task buildNative(type: Exec, description: 'Compile JNI source via NDK') {
+        def ndkDir = android.ndkDirectory
+        commandLine "$ndkDir/ndk-build",
+                '-C', file('src/main/jni').absolutePath, // Change src/main/jni the relative path to your jni source
+                '-j', Runtime.runtime.availableProcessors(),
+                'all',
+                'NDK_DEBUG=1'
+    }
+
+    task cleanNative(type: Exec, description: 'Clean JNI object files') {
+        def ndkDir = android.ndkDirectory
+        commandLine "$ndkDir/ndk-build",
+                '-C', file('src/main/jni').absolutePath, // Change src/main/jni the relative path to your jni source
+                'clean'
+    }
+
+    clean.dependsOn 'cleanNative'
+
+    tasks.withType(JavaCompile) {
+        compileTask -> compileTask.dependsOn buildNative
+    }
+}
+
+dependencies {
+    compile 'com.android.support:support-v4:20.0.0'
+}
+
+
+The src/main/jni directory assumes a standard layout of the project. It should be the relative from this build.gradle file location to the jni directory.
+
+Gradle - for those having issues
+
+Also check this Stack Overflow answer.
+
+It is really important that your gradle version and general setup are correct. If you have an older project I highly recommend creating a new one with the latest Android Studio and see what Google considers the standard project. Also, use gradlew. This protects the developer from a gradle version mismatch. Finally, the gradle plugin must be configured correctly.
+
+And you ask what is the latest version of the gradle plugin? Check the tools page and edit the version accordingly.
+
+Final product - /build.gradle
+
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+// Running 'gradle wrapper' will generate gradlew - Getting gradle wrapper working and using it will save you a lot of pain.
+task wrapper(type: Wrapper) {
+    gradleVersion = '2.2'
+}
+
+// Look Google doesn't use Maven Central, they use jcenter now.
+buildscript {
+    repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:1.2.0'
+
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+}
+
+allprojects {
+    repositories {
+        jcenter()
+    }
+}
+
+
+Make sure gradle wrapper generates the gradlew file and gradle/wrapper subdirectory. This is a big gotcha.
+
+ndkDirectory
+
+This has come up a number of times, but android.ndkDirectory is the correct way to get the folder after 1.1. Migrating Gradle Projects to version 1.0.0. If you're using an experimental or ancient version of the plugin your mileage may vary.
+    

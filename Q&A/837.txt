@@ -1,0 +1,244 @@
+174
+Q:I'm trying to make a gridview with two columns. I mean two photos per row side by side just like this image.
+
+
+
+But my pictures have spaces between them, due to the fact that it's not the same size. Here is what I'm getting.
+
+
+
+as you can see the first picture hides the legend which shows the contact name and phone number. and the other pictures are not stretched correctly. 
+
+Here is my GridView xml file. As you can see the columnWidth is set to 200dp. I'd like it to be automatic, so the pictures will resize automatically for each screen size.
+
+<?xml version="1.0" encoding="utf-8"?>
+<GridView 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/gridViewContacts"
+    android:layout_width="fill_parent" 
+    android:layout_height="fill_parent"
+    android:numColumns="2"
+    android:columnWidth="200dp"
+    android:stretchMode="columnWidth"    
+    android:gravity="center" />
+
+
+and here is the item xml file, which represents each item itself.
+
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" >
+
+    <ImageView
+        android:id="@+id/imageViewContactIcon"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY" />
+
+    <LinearLayout
+        android:id="@+id/linearlayoutContactName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingLeft="5dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp"
+        android:background="#99000000"
+        android:layout_alignBottom="@+id/imageViewContactIcon">
+
+        <TextView
+            android:id="@+id/textViewContactName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:textSize="15sp"
+            android:text="Lorem Ipsum" />       
+
+        <TextView
+            android:id="@+id/textViewContactNumber"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:layout_marginLeft="5dp"
+            android:focusable="true"
+            android:ellipsize="marquee"
+            android:marqueeRepeatLimit="marquee_forever"
+            android:textSize="10sp"
+            android:text="123456789" />
+
+    </LinearLayout>
+
+</RelativeLayout>
+
+
+So what I want, is to show two images per row, and the images auto resized, no matter the  screen size. What am I doing wrong on my layout?
+
+Thanks.
+    
+===============================================================================================
+396
+A:Here's a relatively easy method to do this. Throw a GridView into your layout, setting the stretch mode to stretch the column widths, set the spacing to 0 (or whatever you want), and set the number of columns to 2:
+
+res/layout/main.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <GridView
+        android:id="@+id/gridview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:verticalSpacing="0dp"
+        android:horizontalSpacing="0dp"
+        android:stretchMode="columnWidth"
+        android:numColumns="2"/>
+
+</FrameLayout>
+
+
+Make a custom ImageView that maintains its aspect ratio:
+
+src/com/example/graphicstest/SquareImageView.java
+
+public class SquareImageView extends ImageView {
+    public SquareImageView(Context context) {
+        super(context);
+    }
+
+    public SquareImageView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public SquareImageView(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        setMeasuredDimension(getMeasuredWidth(), getMeasuredWidth()); //Snap to width
+    }
+}
+
+
+Make a layout for a grid item using this SquareImageView and set the scaleType to centerCrop:
+
+res/layout/grid_item.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+             android:layout_width="match_parent"
+             android:layout_height="match_parent">
+
+    <com.example.graphicstest.SquareImageView
+        android:id="@+id/picture"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"/>
+
+    <TextView
+        android:id="@+id/text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:paddingTop="15dp"
+        android:paddingBottom="15dp"
+        android:layout_gravity="bottom"
+        android:textColor="@android:color/white"
+        android:background="#55000000"/>
+
+</FrameLayout>
+
+
+Now make some sort of adapter for your GridView:
+
+src/com/example/graphicstest/MyAdapter.java
+
+private final class MyAdapter extends BaseAdapter {
+    private final List<Item> mItems = new ArrayList<Item>();
+    private final LayoutInflater mInflater;
+
+    public MyAdapter(Context context) {
+        mInflater = LayoutInflater.from(context);
+
+        mItems.add(new Item("Red",       R.drawable.red));
+        mItems.add(new Item("Magenta",   R.drawable.magenta));
+        mItems.add(new Item("Dark Gray", R.drawable.dark_gray));
+        mItems.add(new Item("Gray",      R.drawable.gray));
+        mItems.add(new Item("Green",     R.drawable.green));
+        mItems.add(new Item("Cyan",      R.drawable.cyan));
+    }
+
+    @Override
+    public int getCount() {
+        return mItems.size();
+    }
+
+    @Override
+    public Item getItem(int i) {
+        return mItems.get(i);
+    }
+
+    @Override
+    public long getItemId(int i) {
+        return mItems.get(i).drawableId;
+    }
+
+    @Override
+    public View getView(int i, View view, ViewGroup viewGroup) {
+        View v = view;
+        ImageView picture;
+        TextView name;
+
+        if (v == null) {
+            v = mInflater.inflate(R.layout.grid_item, viewGroup, false);
+            v.setTag(R.id.picture, v.findViewById(R.id.picture));
+            v.setTag(R.id.text, v.findViewById(R.id.text));
+        }
+
+        picture = (ImageView) v.getTag(R.id.picture);
+        name = (TextView) v.getTag(R.id.text);
+
+        Item item = getItem(i);
+
+        picture.setImageResource(item.drawableId);
+        name.setText(item.name);
+
+        return v;
+    }
+
+    private static class Item {
+        public final String name;
+        public final int drawableId;
+
+        Item(String name, int drawableId) {
+            this.name = name;
+            this.drawableId = drawableId;
+        }
+    }
+}
+
+
+Set that adapter to your GridView:
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.main);
+    GridView gridView = (GridView)findViewById(R.id.gridview);
+    gridView.setAdapter(new MyAdapter(this));
+}
+
+
+And enjoy the results:
+
+
+    

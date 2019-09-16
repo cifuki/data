@@ -1,0 +1,127 @@
+30
+Q:I am asking the user for input via a Dialog:
+
+package com.android.cancertrials;
+
+import android.app.Dialog;
+import android.content.Context;
+import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+
+public class CustomDialog extends Dialog  {
+
+
+    private String name;
+//    private ReadyListener readyListener;
+     public static EditText etName;
+     public String zip;
+
+    public CustomDialog(Context context, String name) {
+        super(context);
+        this.name = name;
+//        this.readyListener = readyListener;
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.mycustomdialog);
+        setTitle("Enter the Zip Code ");
+        Button buttonOK = (Button) findViewById(R.id.ok);
+        buttonOK.setOnClickListener(new OKListener());
+        etName = (EditText) findViewById(R.id.EditZip);
+    }
+
+    private class OKListener implements android.view.View.OnClickListener {
+        @Override
+        public void onClick(View v) {
+//            readyListener.ready(String.valueOf(etName.getText()));
+            CustomDialog.this.dismiss();
+        }
+    }
+
+
+}
+
+
+When the user hits OK, how can I pass the value that was entered in the textbox, back to a member variable in the Activity that launched it?
+    
+===============================================================================================
+72
+A:You can do that in different ways... actually, if your dialog has only an "OK" button to dismiss, why don't you just create a custom dialog using the AlertDialog.Builder class instead of subclassing Dialog?
+
+Anyway... let's suppose you have good reasons to do it the way you did it. In that case, I'd use the ObserverPattern. Something like this:
+
+public class CustomDialog extends Dialog  {
+
+
+    private String name;
+     public static EditText etName;
+     public String zip;
+    OnMyDialogResult mDialogResult; // the callback
+
+    public CustomDialog(Context context, String name) {
+        super(context);
+        this.name = name;
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        // same you have
+    }
+
+    private class OKListener implements android.view.View.OnClickListener {
+        @Override
+        public void onClick(View v) {
+            if( mDialogResult != null ){
+                mDialogResult.finish(String.valueOf(etName.getText()));
+            }
+            CustomDialog.this.dismiss();
+        }
+    }
+
+    public void setDialogResult(OnMyDialogResult dialogResult){
+        mDialogResult = dialogResult;
+    }
+
+    public interface OnMyDialogResult{
+       void finish(String result);
+    }
+}
+
+
+On your activity:
+
+CustomDialog dialog;
+// initialization stuff, blah blah
+dialog.setDialogResult(new OnMyDialogResult(){
+    public void finish(String result){
+        // now you can use the 'result' on your activity
+    }
+});
+
+
+Reading your code it seems you already tried something similar.
+
+Edit: doing it the easy way
+
+You can still use your mycustomdialog layout. And this is how you would use the AlertDialog.Builder:
+
+LayoutInflater inflater = LayoutInflater.from(YourActivity.this);
+final View yourCustomView = inflater.inflate(R.layout.mycustomdialog, null);
+
+final TextView etName = (EditText) yourCustomView.findViewById(R.id.EditZip);
+AlertDialog dialog = new AlertDialog.Builder(YourActivity.this)
+    .setTitle("Enter the Zip Code")
+    .setView(yourCustomView)
+    .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+        public void onClick(DialogInterface dialog, int whichButton) {
+            mSomeVariableYouHaveOnYourActivity = etName.getText().toString();
+        }
+    })
+    .setNegativeButton("Cancel", null).create();
+dialog.show();
+
+    

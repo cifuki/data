@@ -1,0 +1,283 @@
+31
+Q:I've been having a problem playing an mp3 file stored in a raw resource: when the file first starts playing, it generates perhaps a quarter of a second of sound and then restarts. (I know that this is basically a duplicate of the problem described here, but the solution offered there hasn't worked for me.) I have tried several things and have made some progress on the problem, but it isn't totally fixed.
+
+Here's how I'm setting up to play a file:
+
+mPlayer.reset();
+try {
+    AssetFileDescriptor afd = getResources().openRawResourceFd(mAudioId);
+    if (afd == null) {
+        Toast.makeText(mOwner, "Could not load sound.",
+                Toast.LENGTH_LONG).show();
+        return;
+    }
+    mPlayer.setDataSource(afd.getFileDescriptor(),
+            afd.getStartOffset(), afd.getLength());
+    afd.close();
+    mPlayer.prepare();
+} catch (Exception e) {
+    Log.d(LOG_TAG, "Could not load sound.", e);
+    Toast.makeText(mOwner, "Could not load sound.", Toast.LENGTH_LONG)
+            .show();
+}
+
+
+If I exit the activity (which calls mPlayer.release()) and come back to it (creating a new MediaPlayer), the stutter is usually (but not always) gone—provided I load the same sound file. I tried a couple of things that made no difference:
+
+
+Load the sound file as an asset instead of as a resource.
+Create the MediaPlayer using MediaPlayer.create(getContext(), mAudioId) and skip the calls to setDataSource(...) and prepare().
+
+
+Then I noticed that LogCat always shows this line at about the time that playback starts:
+
+DEBUG/AudioSink(37): bufferCount (4) is too small and increased to 12
+
+
+It got me wondering if the stuttering is due to the apparent rebuffering. This led me to try something else:
+
+
+After calling prepare(), call mPlayer.start() and immediately call mPlayer.pause().
+
+
+To my pleasant surprise, this had a big effect. A great deal of the stutter is gone, plus no sound (that I can hear) is actually played at that point in the process.
+
+However, it still stutters from time to time when I call mPlayer.start() for real. Plus, this seems like a huge kludge. Is there any way to kill this problem completely and cleanly?
+
+EDIT More info; not sure if related. If I call pause() during playback, seek to an earlier position, and call start() again, I hear a short bit (~1/4 sec) of additional sound from where it was paused before it starts playing at the new position. This seems to point to more buffering problems.
+
+Also, the stuttering (and paused buffer) problems show up on emulators from 1.6 through 3.0.
+    
+===============================================================================================
+67
+A:AFAIK the buffers that MediaPlayer creates internally are for storing decompressed samples, not for storing prefetched compressed data. I suspect your stuttering comes from I/O slowness as it loads more MP3 data for decompression.
+
+I recently had to solve a similar problem with video playback. Thanks to MediaPlayer being unable to play an arbitrary InputStream (the API is strangely lame) the solution I came up with was to write a small in-process webserver for serving up local files (on the SD card) over HTTP. MediaPlayer then loads it via a URI of the form http://127.0.0.1:8888/videofilename.
+
+EDIT:
+
+Below is the StreamProxy class I use to feed content into a MediaPlayer instance. The basic use is that you instantiate it, start() it, and set your media player going with something like MediaPlayer.setDataSource("http://127.0.0.1:8888/localfilepath");
+
+I should note that it is rather experimental and probably not entirely bug-free. It was written to solve a similar problem to yours, namely that MediaPlayer cannot play a file that is also being downloaded. Streaming a file locally in this way works around that restriction (i.e. I have a thread downloading the file while the StreamProxy feeds it into mediaplayer).
+
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
+import android.os.AsyncTask;
+import android.os.Looper;
+import android.util.Log;
+
+public class StreamProxy implements Runnable {
+
+    private static final int SERVER_PORT=8888;
+
+    private Thread thread;
+    private boolean isRunning;
+    private ServerSocket socket;
+    private int port;
+
+    public StreamProxy() {
+
+        // Create listening socket
+        try {
+          socket = new ServerSocket(SERVER_PORT, 0, InetAddress.getByAddress(new byte[] {127,0,0,1}));
+          socket.setSoTimeout(5000);
+          port = socket.getLocalPort();
+        } catch (UnknownHostException e) { // impossible
+        } catch (IOException e) {
+          Log.e(TAG, "IOException initializing server", e);
+        }
+
+    }
+
+    public void start() {
+        thread = new Thread(this);
+        thread.start();
+    }
+
+    public void stop() {
+        isRunning = false;
+        thread.interrupt();
+        try {
+            thread.join(5000);
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+        }
+    }
+
+    @Override
+      public void run() {
+        Looper.prepare();
+        isRunning = true;
+        while (isRunning) {
+          try {
+            Socket client = socket.accept();
+            if (client == null) {
+              continue;
+            }
+            Log.d(TAG, "client connected");
+
+            StreamToMediaPlayerTask task = new StreamToMediaPlayerTask(client);
+            if (task.processRequest()) {
+                task.execute();
+            }
+
+          } catch (SocketTimeoutException e) {
+            // Do nothing
+          } catch (IOException e) {
+            Log.e(TAG, "Error connecting to client", e);
+          }
+        }
+        Log.d(TAG, "Proxy interrupted. Shutting down.");
+      }
+
+
+
+
+    private class StreamToMediaPlayerTask extends AsyncTask<String, Void, Integer> {
+
+        String localPath;
+        Socket client;
+        int cbSkip;
+
+        public StreamToMediaPlayerTask(Socket client) {
+            this.client = client;
+        }
+
+        public boolean processRequest() {
+            // Read HTTP headers
+            String headers = "";
+            try {
+              headers = Utils.readTextStreamAvailable(client.getInputStream());
+            } catch (IOException e) {
+              Log.e(TAG, "Error reading HTTP request header from stream:", e);
+              return false;
+            }
+
+            // Get the important bits from the headers
+            String[] headerLines = headers.split("\
+");
+            String urlLine = headerLines[0];
+            if (!urlLine.startsWith("GET ")) {
+                Log.e(TAG, "Only GET is supported");
+                return false;               
+            }
+            urlLine = urlLine.substring(4);
+            int charPos = urlLine.indexOf(' ');
+            if (charPos != -1) {
+                urlLine = urlLine.substring(1, charPos);
+            }
+            localPath = urlLine;
+
+            // See if there's a "Range:" header
+            for (int i=0 ; i<headerLines.length ; i++) {
+                String headerLine = headerLines[i];
+                if (headerLine.startsWith("Range: bytes=")) {
+                    headerLine = headerLine.substring(13);
+                    charPos = headerLine.indexOf('-');
+                    if (charPos>0) {
+                        headerLine = headerLine.substring(0,charPos);
+                    }
+                    cbSkip = Integer.parseInt(headerLine);
+                }
+            }
+            return true;
+        }
+
+        @Override
+        protected Integer doInBackground(String... params) {
+
+                        long fileSize = GET CONTENT LENGTH HERE;
+
+            // Create HTTP header
+            String headers = "HTTP/1.0 200 OK\\r\
+";
+            headers += "Content-Type: " + MIME TYPE HERE + "\\r\
+";
+            headers += "Content-Length: " + fileSize  + "\\r\
+";
+            headers += "Connection: close\\r\
+";
+            headers += "\\r\
+";
+
+            // Begin with HTTP header
+            int fc = 0;
+            long cbToSend = fileSize - cbSkip;
+            OutputStream output = null;
+            byte[] buff = new byte[64 * 1024];
+            try {
+                output = new BufferedOutputStream(client.getOutputStream(), 32*1024);                           
+                output.write(headers.getBytes());
+
+                // Loop as long as there's stuff to send
+                while (isRunning && cbToSend>0 && !client.isClosed()) {
+
+                    // See if there's more to send
+                    File file = new File(localPath);
+                    fc++;
+                    int cbSentThisBatch = 0;
+                    if (file.exists()) {
+                        FileInputStream input = new FileInputStream(file);
+                        input.skip(cbSkip);
+                        int cbToSendThisBatch = input.available();
+                        while (cbToSendThisBatch > 0) {
+                            int cbToRead = Math.min(cbToSendThisBatch, buff.length);
+                            int cbRead = input.read(buff, 0, cbToRead);
+                            if (cbRead == -1) {
+                                break;
+                            }
+                            cbToSendThisBatch -= cbRead;
+                            cbToSend -= cbRead;
+                            output.write(buff, 0, cbRead);
+                            output.flush();
+                            cbSkip += cbRead;
+                            cbSentThisBatch += cbRead;
+                        }
+                        input.close();
+                    }
+
+                    // If we did nothing this batch, block for a second
+                    if (cbSentThisBatch == 0) {
+                        Log.d(TAG, "Blocking until more data appears");
+                        Thread.sleep(1000);
+                    }
+                }
+            }
+            catch (SocketException socketException) {
+                Log.e(TAG, "SocketException() thrown, proxy client has probably closed. This can exit harmlessly");
+            }
+            catch (Exception e) {
+                Log.e(TAG, "Exception thrown from streaming task:");
+                Log.e(TAG, e.getClass().getName() + " : " + e.getLocalizedMessage());
+                e.printStackTrace();                
+            }
+
+            // Cleanup
+            try {
+                if (output != null) {
+                    output.close();
+                }
+                client.close();
+            }
+            catch (IOException e) {
+                Log.e(TAG, "IOException while cleaning up streaming task:");                
+                Log.e(TAG, e.getClass().getName() + " : " + e.getLocalizedMessage());
+                e.printStackTrace();                
+            }
+
+            return 1;
+        }
+
+    }
+}
+
+    

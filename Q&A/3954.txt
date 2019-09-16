@@ -1,0 +1,109 @@
+58
+Q:I know there are no default selection methods in recyclerview class, But I have tried in following way,
+
+public void onBindViewHolder(ViewHolder holder, final int position) {
+    holder.mTextView.setText(fonts.get(position).getName());
+    holder.checkBox.setChecked(fonts.get(position).isSelected());
+
+    holder.checkBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+        @Override
+        public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+            if(isChecked) {
+                for (int i = 0; i < fonts.size(); i++) {
+                    fonts.get(i).setSelected(false);
+                }
+                fonts.get(position).setSelected(isChecked);
+            }
+        }
+    });
+}
+
+
+While trying this code, I got expected output, But completely not. 
+
+I will explain this with images. 
+
+By default, the first item is selected from my adapter
+
+
+
+Then I am trying to select 2nd and then 3rd, and then 4th and finally 5th one,
+
+
+
+Here 5th only should be selected, but all five are getting selected.
+
+If I scroll the list to bottom and come again to top,
+
+
+
+I got what I expected,
+
+How can I overcome this issue? And some time If I scroll the list very fast some other item gets selected. How to overcome this problem too?
+
+Update
+
+While I am trying to use notifyDataSetChanged() after fonts.get(position).setSelected(isChecked); I got following exception,
+
+java.lang.IllegalStateException: Cannot call this method while RecyclerView is computing a layout or scrolling
+        at android.support.v7.widget.RecyclerView.assertNotInLayoutOrScroll(RecyclerView.java:1462)
+        at android.support.v7.widget.RecyclerView$RecyclerViewDataObserver.onChanged(RecyclerView.java:2982)
+        at android.support.v7.widget.RecyclerView$AdapterDataObservable.notifyChanged(RecyclerView.java:7493)
+        at android.support.v7.widget.RecyclerView$Adapter.notifyDataSetChanged(RecyclerView.java:4338)
+        at com.app.myapp.screens.RecycleAdapter.onRowSelect(RecycleAdapter.java:111)
+
+    
+===============================================================================================
+92
+A:The solution for the issue:
+
+public class yourRecyclerViewAdapter extends RecyclerView.Adapter<yourRecyclerViewAdapter.yourViewHolder> {
+
+private static CheckBox lastChecked = null;
+private static int lastCheckedPos = 0;
+
+
+public void onBindViewHolder(ViewHolder holder, final int position) {
+
+    holder.mTextView.setText(fonts.get(position).getName());
+    holder.checkBox.setChecked(fonts.get(position).isSelected());
+    holder.checkBox.setTag(new Integer(position));
+
+    //for default check in first item
+    if(position == 0 && fonts.get(0).isSelected() && holder.checkBox.isChecked())
+    {
+       lastChecked = holder.checkBox;
+       lastCheckedPos = 0;
+    }
+
+    holder.checkBox.setOnClickListener(new View.OnClickListener() 
+    {
+        @Override
+        public void onClick(View v) 
+        {
+           CheckBox cb = (CheckBox)v;
+           int clickedPos = ((Integer)cb.getTag()).intValue(); 
+
+           if(cb.isChecked())
+           {
+              if(lastChecked != null)
+              {
+                  lastChecked.setChecked(false);
+                  fonts.get(lastCheckedPos).setSelected(false);
+              }                       
+
+              lastChecked = cb;
+              lastCheckedPos = clickedPos;
+          }
+          else
+             lastChecked = null;
+
+          fonts.get(clickedPos).setSelected(cb.isChecked);
+       }
+   });
+}
+}
+
+
+Hope this help!
+    

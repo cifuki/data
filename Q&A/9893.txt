@@ -1,0 +1,89 @@
+28
+Q:I have a read-only database connection. Sometimes, when reading data from the database with a SELECT query, it throws a SQLiteReadOnlyDatabaseException.
+
+I open the connection like this:
+
+return SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY);
+
+
+The query is:
+
+Select * FROM BudgetVersions WHERE entityId = ?
+
+
+I read data from the database using db.rawQuery(), like this:
+
+String query = ...;
+Cursor c = db.rawQuery(query, new String[]{ activeBudgetId });
+try {
+    if (c.moveToFirst()) {            
+        bv.versionName = c.getString(c.getColumnIndexOrThrow("versionName"));
+        return bv;
+    } else {
+        return null;
+    }
+} finally {
+    c.close();
+}
+
+
+Very rarely, I get a crash like this, inside the call to c.moveToFirst(): 
+
+Caused by: android.database.sqlite.SQLiteReadOnlyDatabaseException: attempt to write a readonly database (code 776)
+at android.database.sqlite.SQLiteConnection.nativeExecuteForCursorWindow(Native Method)
+at android.database.sqlite.SQLiteConnection.executeForCursorWindow(SQLiteConnection.java:845)
+at android.database.sqlite.SQLiteSession.executeForCursorWindow(SQLiteSession.java:836)
+at android.database.sqlite.SQLiteQuery.fillWindow(SQLiteQuery.java:62)
+at android.database.sqlite.SQLiteCursor.fillWindow(SQLiteCursor.java:144)
+at android.database.sqlite.SQLiteCursor.getCount(SQLiteCursor.java:133)
+at android.database.AbstractCursor.moveToPosition(AbstractCursor.java:197)
+at android.database.AbstractCursor.moveToFirst(AbstractCursor.java:237)
+
+
+As a workaround, I could try using a writable database connection instead, but I'd like to know why the crash is happening.
+
+The table I'm reading from is a standard SQLite table:
+
+CREATE TABLE BudgetVersions (
+    entityId        VARCHAR  PRIMARY KEY NOT NULL UNIQUE,
+    budgetId        VARCHAR  NOT NULL,
+    versionName     VARCHAR  NOT NULL,
+    dateFormat      VARCHAR,
+    currencyFormat  VARCHAR,
+    lastAccessedOn  DATETIME,
+    isTombstone     BOOL     NOT NULL,
+    deviceKnowledge NUMERIC  NOT NULL
+);
+
+
+I've seen the crash happen on both a KitKat emulator and a device running Lollipop.
+
+
+
+There is a separate writeable connection open to the same database at the same time, owned by a WebView. The database is being updated by Javascript code in the WebView, and read from in the native Android/Java layer with this read-only connection.
+
+I expect this may prove to be the ultimate cause of the problem, but I'd like to understand in detail why a read-only connection would interfere with a separate writeable connection.
+
+I am well aware that the general advice is to use a single connection to the database, but since the writeable connection is owned by the WebView, I don't have easy access to it from the Java code.
+    
+===============================================================================================
+16
+A:Solved by changing it to a writeable database connection. The clue was in the documentation for the 776 error code:
+
+
+  (776) SQLITE_READONLY_ROLLBACK
+  
+  The SQLITE_READONLY_ROLLBACK error code is an extended error code for
+  SQLITE_READONLY. The SQLITE_READONLY_ROLLBACK error code indicates
+  that a database cannot be opened because it has a hot journal that
+  needs to be rolled back but cannot because the database is readonly.
+
+
+During development, I am frequently interrupting the currently-running app to install and run a new version. This causes the currently-running app to be force-stopped by the system. If the Javascript code in the WebView is in the middle of writing to the database via its separate writeable connection when the app is nuked, then a hot journal will be left behind.
+
+When the new version of the app starts up, the read-only database connection in the native Java code is opened. When this connection spots the journal, it tries to roll back the journal. And because it's a read-only connection, it fails.
+
+(This fits with the crash being observed immediately on startup after I've made a change.)
+
+The correct fix is therefore to make the Java connection a writeable connection. This connection never attempts a write during normal operation, but it must write when recovering from a previous interrupted write through the WebView's writeable connection.
+    

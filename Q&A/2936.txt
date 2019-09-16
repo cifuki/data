@@ -1,0 +1,174 @@
+74
+Q:What is this error ? How can I fix this? My app is running but can't load data. And this is my Error: Use JsonReader.setLenient(true) to accept malformed JSON at line 1 column 1 path $ 
+
+This is my fragment : 
+
+public class news extends Fragment {
+
+
+private RecyclerView recyclerView;
+private ArrayList<Deatails> data;
+private DataAdapter adapter;
+private View myFragmentView;
+
+
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+
+    myFragmentView = inflater.inflate(R.layout.news, container, false);
+    initViews();
+    return myFragmentView;
+
+}
+
+
+private void initViews() {
+    recyclerView = (RecyclerView) myFragmentView.findViewById(R.id.card_recycler_view);
+    RecyclerView.LayoutManager layoutManager = new LinearLayoutManager(getActivity().getApplicationContext());
+    recyclerView.setHasFixedSize(true);
+    recyclerView.setLayoutManager(layoutManager);
+    data = new ArrayList<Deatails>();
+    adapter = new DataAdapter(getActivity(), data);
+    recyclerView.setAdapter(adapter);
+
+    new Thread()
+    {
+        public void run()
+        {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    loadJSON();
+                }
+            });
+
+        }
+    }
+    .start();
+}
+
+private void loadJSON() {
+    if (isNetworkConnected()){
+
+        HttpLoggingInterceptor interceptor = new HttpLoggingInterceptor();
+        interceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
+        OkHttpClient client = new OkHttpClient.Builder()
+                .addInterceptor(interceptor)
+                .retryOnConnectionFailure(true)
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .build();
+
+        Gson gson = new GsonBuilder()
+                .setLenient()
+                .create();
+
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl("http://www.memaraneha.ir/")
+                .client(client)
+                .addConverterFactory(GsonConverterFactory.create(gson))
+                .build();
+
+        RequestInterface request = retrofit.create(RequestInterface.class);
+        Call<JSONResponse> call = request.getJSON();
+        final ProgressDialog progressDialog = new ProgressDialog(getActivity());
+        progressDialog.show();
+        call.enqueue(new Callback<JSONResponse>() {
+            @Override
+            public void onResponse(Call<JSONResponse> call, Response<JSONResponse> response) {
+                progressDialog.dismiss();
+                JSONResponse jsonResponse = response.body();
+                data.addAll(Arrays.asList(jsonResponse.getAndroid()));
+                adapter.notifyDataSetChanged();
+            }
+            @Override
+            public void onFailure(Call<JSONResponse> call, Throwable t) {
+                progressDialog.dismiss();
+                Log.d("Error", t.getMessage());
+            }
+        });
+    }
+    else {
+        Toast.makeText(getActivity().getApplicationContext(), "Internet is disconnected", Toast.LENGTH_LONG).show();}
+}
+private boolean isNetworkConnected() {
+    ConnectivityManager cm = (ConnectivityManager) getActivity().getSystemService(Context.CONNECTIVITY_SERVICE);
+    NetworkInfo ni = cm.getActiveNetworkInfo();
+    if (ni == null) {
+        // There are no active networks.
+        return false;
+    } else
+        return true;
+}
+}
+
+
+RequestInterface :
+
+public interface RequestInterface {
+
+@GET("Erfan/news.php")
+Call<JSONResponse> getJSON();
+}
+
+
+
+
+
+  UPDATE
+  
+  always this error not about your json , it could become from your wrong
+  request , for better handle first check your request in postman if you got response then compare your json response with your model if nothing is wrong then this error come from your wrong request , also it could happened when your response not josn (in some case response maybe is html)
+
+    
+===============================================================================================
+128
+A:This is a well-known issue and based on this answer you could add setLenient:
+
+Gson gson = new GsonBuilder()
+        .setLenient()
+        .create();
+
+Retrofit retrofit = new Retrofit.Builder()
+        .baseUrl(BASE_URL)
+        .client(client)
+        .addConverterFactory(GsonConverterFactory.create(gson))
+        .build();
+
+
+Now, if you add this to your retrofit, it gives you another error:
+
+com.google.gson.JsonSyntaxException: java.lang.IllegalStateException: Expected BEGIN_OBJECT but was STRING at line 1 column 1 path $
+
+
+This is another well-known error you can find answer here (this error means that your server response is not well-formatted); So change server response to return something:
+
+{
+    android:[
+        { ver:"1.5", name:"Cupcace", api:"Api Level 3" }
+        ...
+    ]
+}
+
+
+For better comprehension, compare your response with Github api.
+
+Suggestion: to find out what's going on to your request/response add HttpLoggingInterceptor in your retrofit.
+
+Based on this answer your ServiceHelper would be:
+
+private ServiceHelper() {
+        httpClient = new OkHttpClient.Builder();
+        HttpLoggingInterceptor interceptor = new HttpLoggingInterceptor();
+        interceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
+        httpClient.interceptors().add(interceptor);
+        Retrofit retrofit = createAdapter().build();
+        service = retrofit.create(IService.class);
+    }
+
+
+Also don't forget to add:
+
+compile 'com.squareup.okhttp3:logging-interceptor:3.3.1'
+
+    

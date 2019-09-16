@@ -1,0 +1,256 @@
+41
+Q:when i do continuous click on Capture button (without any break), getting Runtime Exception
+how can i resolve this issue ? 
+
+if its not possible so how may i handle this Exception ?
+
+btnCapture = (ImageButton) findViewById(R.id.btnCapture);
+                final MediaPlayer mp = MediaPlayer.create(CameraLauncherActivity.this, R.raw.button);
+                btnCapture.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+
+                            // line where getting RuntimeException
+                        camera.takePicture(null, null, mPicture);   
+
+                    }
+                });
+
+
+Log:
+
+02-12 14:48:41.580: E/AndroidRuntime(6997): FATAL EXCEPTION: main
+02-12 14:48:41.580: E/AndroidRuntime(6997): java.lang.RuntimeException: takePicture failed
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at android.hardware.Camera.native_takePicture(Native Method)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at android.hardware.Camera.takePicture(Camera.java:1126)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at android.hardware.Camera.takePicture(Camera.java:1071)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at app.cam.shane.CameraLauncherActivity$3.onClick(CameraLauncherActivity.java:116)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at android.view.View.performClick(View.java:4223)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at android.view.View$PerformClick.run(View.java:17275)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at android.os.Handler.handleCallback(Handler.java:615)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at android.os.Handler.dispatchMessage(Handler.java:92)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at android.os.Looper.loop(Looper.java:137)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at android.app.ActivityThread.main(ActivityThread.java:4921)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at java.lang.reflect.Method.invokeNative(Native Method)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at java.lang.reflect.Method.invoke(Method.java:511)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1036)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:803)
+02-12 14:48:41.580: E/AndroidRuntime(6997):     at dalvik.system.NativeStart.main(Native Method)
+
+
+Note:- Like in Pudding Camera, they allow user to do continuous tap on Capture button, but they will never show exception, if you do 50 clicks it will capture 10 or more images, each image after specific time but not showing exception, like i am getting in my code, in a same way how can i handle this exception ?
+
+Complete Code:
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    setContentView(R.layout.activity_camera);
+
+    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+
+            preview=(SurfaceView)findViewById(R.id.surface);     
+            previewHolder=preview.getHolder();    
+            previewHolder.addCallback(surfaceCallback);    
+            previewHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+
+            btnCapture = (ImageButton) findViewById(R.id.btnCapture);
+            final MediaPlayer mp = MediaPlayer.create(CameraLauncherActivity.this, R.raw.button);
+            btnCapture.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    mp.start();
+                    camera.takePicture(null, null, mPicture);                 
+                }
+            });
+
+
+    @Override
+    public void onResume() {  
+        super.onResume();   
+        camera=Camera.open(); 
+    }  
+
+    @Override   
+    public void onPause() {  
+        super.onPause();  
+        if (inPreview) {  
+        camera.stopPreview();   
+        }   
+        camera.release();   
+        camera=null;   
+        inPreview=false;         
+    }   
+
+
+    private Camera.Size getBestPreviewSize(int width, int height,
+            Camera.Parameters parameters) {
+            Camera.Size result=null;
+
+            for (Camera.Size size : parameters.getSupportedPreviewSizes()) {
+                if (size.width <= width && size.height <= height) {
+                    if (result == null) {
+                        result=size;
+                    }
+                    else {
+                        int resultArea=result.width * result.height;
+                        int newArea=size.width * size.height;
+
+                        if (newArea > resultArea) {
+                            result=size;
+                        }
+                    }
+                }
+            }
+
+            return(result);
+        }
+
+    private Camera.Size getSmallestPictureSize(Camera.Parameters parameters) {
+        Camera.Size result=null;
+
+        for (Camera.Size size : parameters.getSupportedPictureSizes()) {
+            if (result == null) {
+                result=size;
+            }
+            else {
+                int resultArea=result.width * result.height;
+                int newArea=size.width * size.height;
+
+                if (newArea < resultArea) {
+                    result=size;
+                }
+            }
+        }
+
+        return(result);
+    }
+
+
+    SurfaceHolder.Callback surfaceCallback=new SurfaceHolder.Callback(){
+
+    public void surfaceCreated(SurfaceHolder holder) {     
+        try {        
+            camera.setPreviewDisplay(previewHolder); 
+            }   catch (Throwable t) {   
+                Log.e("PreviewDemo-surfaceCallback",
+                        "Exception in setPreviewDisplay()", t);
+                Toast.makeText(CameraLauncherActivity.this, t.getMessage(), Toast.LENGTH_LONG).show();       
+                }     
+            }      
+
+    public void surfaceChanged(SurfaceHolder holder,int format, int width,int height) {
+        params = camera.getParameters();       
+        params.setFlashMode(Camera.Parameters.FLASH_MODE_ON);
+        Camera.Size size = getBestPreviewSize(width, height, params);  
+        Camera.Size pictureSize=getSmallestPictureSize(params);
+        if (size != null && pictureSize != null) {      
+            params.setPreviewSize(size.width, size.height);
+            params.setPictureSize(pictureSize.width,
+                    pictureSize.height);
+            camera.setParameters(params);       
+            camera.startPreview();       
+            inPreview=true;                 
+
+            }     
+        }      
+
+    public void surfaceDestroyed(SurfaceHolder holder) {
+
+        }   
+    };       
+
+    PictureCallback mPicture = new PictureCallback() {
+        @Override
+        public void onPictureTaken(byte[] data, Camera camera) {
+            pictureFile = getOutputMediaFile();
+            camera.startPreview();
+            if (pictureFile == null) {
+                return;
+            }
+            try {
+                FileOutputStream fos = new FileOutputStream(pictureFile);
+                fos.write(data);
+                fos.close();
+            } catch (FileNotFoundException e) {
+
+            } catch (IOException e) {
+            }
+        }
+    };
+
+    static File getOutputMediaFile() {
+
+        /* yyyy-MM-dd'T'HH:mm:ss.SSSZ */
+        timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss")
+        .format(new Date());
+
+        // file name
+        mediaFile = new File(LoginActivity.mediaStorageDir.getPath() + File.separator
+                + "IMG_" + timeStamp + ".jpg");
+
+        return mediaFile;
+
+    }
+
+
+}
+
+    
+===============================================================================================
+63
+A:Firstly, catch your exceptions in onPictureTaken, leaving empty catch sections is not a good practice. Then, I would add a flag that would prevent from calling takePicture() while previous picture is being saved. Later in your button onClick you would check if it's ok to call takePicture(). 
+
+
+Declare a flag as a member of your Activity:
+
+private boolean safeToTakePicture = false;
+
+In surfaceChanged(), just set the flag to true after calling startPreview():
+
+camera.startPreview();
+safeToTakePicture = true;
+
+In your onClick() listener check the flag and take picture if ok to do so:
+
+if (safeToTakePicture) {
+    mp.start();
+    camera.takePicture(null, null, mPicture); 
+    safeToTakePicture = false;
+}
+
+In onPictureTaken(), set the flag again to true after picture has been saved (and add exception printing):
+
+PictureCallback mPicture = new PictureCallback() {
+    @Override
+    public void onPictureTaken(byte[] data, Camera camera) {
+        pictureFile = getOutputMediaFile();
+        camera.startPreview();
+
+        if (pictureFile == null) {
+            //no path to picture, return
+            safeToTakePicture = true;
+            return;
+        }
+        try {
+            FileOutputStream fos = new FileOutputStream(pictureFile);
+            fos.write(data);
+            fos.close();
+
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();              //<-------- show exception
+        } catch (IOException e) {
+            e.printStackTrace();              //<-------- show exception
+        }
+
+        //finished saving picture 
+        safeToTakePicture = true;
+    }
+};
+
+
+
+NOTES:
+As the docs say, "Preview must be started before you can take a picture.", so possible enhancement would be to use setPreviewCallback() to register callback that will be called when preview data is available, and set the flag to true when onPreviewFrame is called. 
+    

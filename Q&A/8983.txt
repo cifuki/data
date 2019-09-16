@@ -1,0 +1,281 @@
+30
+Q:Recently I use RecyclerView and add a custom header view (another type of item view) and try to updated it when data has changed. Something strange happens. The adapter creates a new HeaderViewHolder and uses both the new HeaderViewHolder and the old one.
+
+Here's the sample.
+
+MainActivity.java
+
+public class MainActivity extends ActionBarActivity {
+
+  private RecyclerView mRecyclerView;
+
+  private MyAdapter mAdapter;
+
+  @Override protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    mRecyclerView = (RecyclerView) findViewById(R.id.list);
+    LinearLayoutManager llm = new LinearLayoutManager(this);
+    llm.setSmoothScrollbarEnabled(true);
+    mRecyclerView.setLayoutManager(llm);
+    mRecyclerView.setAdapter(mAdapter = new MyAdapter(this, genItemList()));
+  }
+
+  @Override public boolean onCreateOptionsMenu(Menu menu) {
+    // Inflate the menu; this adds items to the action bar if it is present.
+    getMenuInflater().inflate(R.menu.menu_main, menu);
+    return true;
+  }
+
+  @Override public boolean onOptionsItemSelected(MenuItem item) {
+    // Handle action bar item clicks here. The action bar will
+    // automatically handle clicks on the Home/Up button, so long
+    // as you specify a parent activity in AndroidManifest.xml.
+    int id = item.getItemId();
+
+    //noinspection SimplifiableIfStatement
+    if (id == R.id.action_settings) {
+      return true;
+    }
+
+    return super.onOptionsItemSelected(item);
+  }
+
+  public void addItems(View view) {
+    mAdapter.addItemList(genItemList());
+  }
+
+  private List<Item> genItemList() {
+    List<Item> list = new ArrayList<>(50);
+    for (int i = 0; i < 50; i++) {
+      Item item = new Item();
+      item.text1 = "AAAAAAAAAAAAAAAAAAAAAAAA";
+      item.text2 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+      list.add(item);
+    }
+    return list;
+  }
+
+  public void updateHeader(View view) {
+    mAdapter.updateHeader("Updated header");
+  }
+}
+
+
+MyAdapter.java
+
+public class MyAdapter extends RecyclerView.Adapter {
+
+  private static final String TAG = "MyAdapter";
+
+  private static final int TYPE_HEADER = 0;
+  private static final int TYPE_ITEM   = 1;
+
+  private LayoutInflater mInflater;
+
+  private List<Item> mItemList;
+
+  private Header mHeader;
+
+  public MyAdapter(Context context, List<Item> items) {
+    mInflater = LayoutInflater.from(context);
+    mItemList = items != null ? items : new ArrayList<Item>();
+    mHeader = new Header();
+    mHeader.text = "header";
+  }
+
+  @Override public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup viewGroup, int type) {
+    switch (type) {
+    case TYPE_HEADER:
+      Log.d(TAG, "create header view holder");
+      View headerView = mInflater.inflate(android.R.layout.simple_list_item_1, viewGroup, false);
+      return new HeaderViewHolder(headerView);
+    case TYPE_ITEM:
+      View itemView = mInflater.inflate(R.layout.layout_item, viewGroup, false);
+      return new MyViewHolder(itemView);
+    }
+    return null;
+  }
+
+  @Override public void onBindViewHolder(RecyclerView.ViewHolder viewHolder, int position) {
+    if (viewHolder instanceof HeaderViewHolder) {
+      Log.d(TAG, "bind header view holder");
+      TextView textView = (TextView) viewHolder.itemView.findViewById(android.R.id.text1);
+      textView.setText(mHeader.text);
+      Log.d(TAG, "position: " + position + " holder: " + viewHolder + " text: " + mHeader.text);
+    } else if (viewHolder instanceof MyViewHolder) {
+      Item item = mItemList.get(position - 1)
+      ((MyViewHolder) viewHolder).setText1(item.text1);
+      ((MyViewHolder) viewHolder).setText2(item.text2);
+    }
+  }
+
+  @Override public int getItemCount() {
+    return mItemList == null ? 0 : mItemList.size() + 1; // plus header
+  }
+
+  @Override public int getItemViewType(int position) {
+    return position == 0 ? TYPE_HEADER : TYPE_ITEM;
+  }
+
+  public void addItemList(List<Item> list) {
+    if (list != null) {
+      mItemList.addAll(list);
+      notifyDataSetChanged();
+    }
+  }
+
+  public void updateHeader(String text) {
+    mHeader.text = text;
+    notifyItemChanged(0);
+    // notifyDataSetChanged();
+  }
+
+  static class HeaderViewHolder extends RecyclerView.ViewHolder {
+
+    public HeaderViewHolder(View itemView) {
+      super(itemView);
+    }
+  }
+
+  static class MyViewHolder extends RecyclerView.ViewHolder {
+
+    TextView mTextView1;
+    TextView mTextView2;
+
+    public MyViewHolder(View itemView) {
+      super(itemView);
+
+      mTextView1 = (TextView) itemView.findViewById(R.id.text1);
+      mTextView2 = (TextView) itemView.findViewById(R.id.text2);
+    }
+
+    public void setText1(String text) {
+      mTextView1.setText(text);
+    }
+
+    public void setText2(String text) {
+      mTextView2.setText(text);
+    }
+  }
+}
+
+
+Header.java
+
+public class Header {
+
+  public String text;
+}
+
+
+Item.java
+
+public class Item {
+
+  public String text1;
+  public String text2;
+}
+
+
+activity_main.xml
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical"
+              tools:context=".MainActivity">
+
+  <android.support.v7.widget.RecyclerView
+      android:id="@+id/list"
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1" />
+
+  <LinearLayout
+      style="?android:buttonBarStyle"
+      android:layout_width="match_parent"
+      android:layout_height="56dp"
+      android:orientation="horizontal">
+
+    <Button
+        android:id="@+id/add"
+        style="?android:buttonBarButtonStyle"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:onClick="addItems"
+        android:text="Add items" />
+
+    <Button
+        android:id="@+id/update"
+        style="?android:buttonBarButtonStyle"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:onClick="updateHeader"
+        android:text="update header" />
+  </LinearLayout>
+
+</LinearLayout>
+
+
+layout_item.xml
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical">
+
+  <TextView
+      android:id="@+id/text1"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:ellipsize="marquee"
+      android:maxLines="1"
+      android:textAppearance="?android:textAppearanceLarge"
+      android:textColor="@android:color/black" />
+
+  <TextView
+      android:id="@+id/text2"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:ellipsize="marquee"
+      android:maxLines="1"
+      android:textAppearance="?android:textAppearanceSmall"
+      android:textColor="@android:color/black" />
+
+</LinearLayout>
+
+
+And then, here's the logcat output when I clicked 3 times "update header":
+
+06-05 19:57:50.368  20400-20400/com.imaygou.recyclerupdateitemdemo D/MyAdapter\xef\xb9\x95 create header view holder
+06-05 19:57:50.369  20400-20400/com.imaygou.recyclerupdateitemdemo D/MyAdapter\xef\xb9\x95 bind header view holder
+06-05 19:57:50.370  20400-20400/com.imaygou.recyclerupdateitemdemo D/MyAdapter\xef\xb9\x95 position: 0 holder: ViewHolder{3f742717 position=0 id=-1, oldPos=-1, pLpos:-1 no parent} text: header
+06-05 19:57:54.030  20400-20400/com.imaygou.recyclerupdateitemdemo D/MyAdapter\xef\xb9\x95 create header view holder
+06-05 19:57:54.031  20400-20400/com.imaygou.recyclerupdateitemdemo D/MyAdapter\xef\xb9\x95 bind header view holder
+06-05 19:57:54.031  20400-20400/com.imaygou.recyclerupdateitemdemo D/MyAdapter\xef\xb9\x95 position: 0 holder: ViewHolder{3ac01621 position=0 id=-1, oldPos=-1, pLpos:-1 no parent} text: Updated header
+06-05 19:57:56.938  20400-20400/com.imaygou.recyclerupdateitemdemo D/MyAdapter\xef\xb9\x95 bind header view holder
+06-05 19:57:56.938  20400-20400/com.imaygou.recyclerupdateitemdemo D/MyAdapter\xef\xb9\x95 position: 0 holder: ViewHolder{3f742717 position=0 id=-1, oldPos=-1, pLpos:-1 no parent} text: Updated header
+06-05 19:57:59.613  20400-20400/com.imaygou.recyclerupdateitemdemo D/MyAdapter\xef\xb9\x95 bind header view holder
+06-05 19:57:59.613  20400-20400/com.imaygou.recyclerupdateitemdemo D/MyAdapter\xef\xb9\x95 position: 0 holder: ViewHolder{3ac01621 position=0 id=-1, oldPos=-1, pLpos:-1 no parent} text: Updated header
+
+
+If I use notifyDataSetChanged() instead of notifyItemChanged(0), everything works fine. No one more ViewHolder. But why? 
+
+Why it'll create a new ViewHolder and use both of them? 
+
+What's the best practise about using notifyItemChanged(int)?
+    
+===============================================================================================
+48
+A:RecyclerView use both of ViewHolder for smooth animation from an old state to a new. This is default behaviour of RecyclerView.ItemAnimator. 
+
+You can disable animation by passing an empty item animator to RecyclerView:
+
+listView.setItemAnimator(null);
+
+    

@@ -1,0 +1,110 @@
+54
+Q:I am using intent to launch camera:
+
+Intent cameraIntent = new Intent(
+    android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+getParent().startActivityForResult(cameraIntent, CAMERA_PIC_REQUEST);
+
+
+and using:
+
+Bitmap thumbnail = (Bitmap) data.getExtras().get("data");
+photoImage.setImageBitmap(thumbnail);
+photoImage.setVisibility(View.VISIBLE);
+
+
+But it is only a thumbnail, how do I get the full bitmap? I know I can use my own Activity and use:
+
+Camera.PictureCallback()
+
+
+But is there anyway to do it using Intent?
+
+Thanks!
+
+edit:
+
+I also tried:
+
+public void onActivityResult(int requestCode, int resultCode, Intent data) {
+    Uri uri = data.getData();
+    imageView.setImageURI(uri);
+}
+
+
+It works for photo selected from gallery, but for camera intent, data.getData() returns null.
+    
+===============================================================================================
+101
+A:To get full sized camera image you should point camera to save picture in temporary file, like:
+
+    private URI mImageUri;
+
+    Intent intent = new Intent("android.media.action.IMAGE_CAPTURE");
+    File photo;
+    try
+    {
+        // place where to store camera taken picture
+        photo = this.createTemporaryFile("picture", ".jpg");
+        photo.delete();
+    }
+    catch(Exception e)
+    {
+        Log.v(TAG, "Can't create file to take picture!");
+        Toast.makeText(activity, "Please check SD card! Image shot is impossible!", 10000);
+        return false;
+    }
+    mImageUri = Uri.fromFile(photo);
+    intent.putExtra(MediaStore.EXTRA_OUTPUT, mImageUri);
+    //start camera intent
+    activity.startActivityForResult(this, intent, MenuShootImage);
+
+private File createTemporaryFile(String part, String ext) throws Exception
+{
+    File tempDir= Environment.getExternalStorageDirectory();
+    tempDir=new File(tempDir.getAbsolutePath()+"/.temp/");
+    if(!tempDir.exists())
+    {
+        tempDir.mkdirs();
+    }
+    return File.createTempFile(part, ext, tempDir);
+}
+
+
+Then after image capture intent finished to work - just grab your picture from imageUri using following code:
+
+public void grabImage(ImageView imageView)
+{
+    this.getContentResolver().notifyChange(mImageUri, null);
+    ContentResolver cr = this.getContentResolver();
+    Bitmap bitmap;
+    try
+    {
+        bitmap = android.provider.MediaStore.Images.Media.getBitmap(cr, mImageUri);
+        imageView.setImageBitmap(bitmap);
+    }
+    catch (Exception e)
+    {
+        Toast.makeText(this, "Failed to load", Toast.LENGTH_SHORT).show();
+        Log.d(TAG, "Failed to load", e);
+    }
+}
+
+
+//called after camera intent finished
+@Override
+public void onActivityResult(int requestCode, int resultCode, Intent intent)
+{
+    //MenuShootImage is user defined menu option to shoot image
+    if(requestCode==MenuShootImage && resultCode==RESULT_OK) 
+    {
+       ImageView imageView;
+       //... some code to inflate/create/find appropriate ImageView to place grabbed image
+       this.grabImage(imageView);
+    }
+    super.onActivityResult(requestCode, resultCode, intent);
+}
+
+
+P.S. Code need to be revised with respect to new security restriction applied in Android M - FileProvider: mImageUri has to be packed with FileProvider
+    

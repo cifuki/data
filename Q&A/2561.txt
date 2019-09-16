@@ -1,0 +1,120 @@
+81
+Q:I have data with latitude and longitude stored in my SQLite database, and I want to get the nearest locations to the parameters I put in (ex. My current location - lat/lng, etc.).
+
+I know that this is possible in MySQL, and I've done quite some research that SQLite needs a custom external function for the Haversine formula (calculating distance on a sphere), but I haven't found anything that is written in Java and works.
+
+Also, if I want to add custom functions, I need the org.sqlite .jar (for org.sqlite.Function), and that adds unnecessary size to the app.
+
+The other side of this is, I need the Order by function from SQL, because displaying the distance alone isn't that much of a problem - I already did it in my custom SimpleCursorAdapter, but I can't sort the data, because I don't have the distance column in my database. That would mean updating the database every time the location changes and that's a waste of battery and performance. So if someone has any idea on sorting the cursor with a column that's not in the database, I'd be grateful too!
+
+I know there are tons of Android apps out there that use this function, but can someone please explain the magic.
+
+By the way, I found this alternative: Query to get records based on Radius in SQLite?
+
+It's suggesting to make 4 new columns for cos and sin values of lat and lng, but is there any other, not so redundant way?
+    
+===============================================================================================
+106
+A:1) At first filter your SQLite data with a good approximation and decrease amount of data that you need to evaluate in your java code. Use the following procedure for this purpose:
+
+To have a deterministic threshold and more accurate filter on data, It is better to calculate 4 locations that are in radius meter of the north, west, east and south of your central point in your java code and then check easily by less than and more than SQL operators (>, <) to determine if your points in database are in that rectangle or not.
+
+The method calculateDerivedPosition(...) calculates those points for you (p1, p2, p3, p4 in picture).
+
+
+
+/**
+* Calculates the end-point from a given source at a given range (meters)
+* and bearing (degrees). This methods uses simple geometry equations to
+* calculate the end-point.
+* 
+* @param point
+*           Point of origin
+* @param range
+*           Range in meters
+* @param bearing
+*           Bearing in degrees
+* @return End-point from the source given the desired range and bearing.
+*/
+public static PointF calculateDerivedPosition(PointF point,
+            double range, double bearing)
+    {
+        double EarthRadius = 6371000; // m
+
+        double latA = Math.toRadians(point.x);
+        double lonA = Math.toRadians(point.y);
+        double angularDistance = range / EarthRadius;
+        double trueCourse = Math.toRadians(bearing);
+
+        double lat = Math.asin(
+                Math.sin(latA) * Math.cos(angularDistance) +
+                        Math.cos(latA) * Math.sin(angularDistance)
+                        * Math.cos(trueCourse));
+
+        double dlon = Math.atan2(
+                Math.sin(trueCourse) * Math.sin(angularDistance)
+                        * Math.cos(latA),
+                Math.cos(angularDistance) - Math.sin(latA) * Math.sin(lat));
+
+        double lon = ((lonA + dlon + Math.PI) % (Math.PI * 2)) - Math.PI;
+
+        lat = Math.toDegrees(lat);
+        lon = Math.toDegrees(lon);
+
+        PointF newPoint = new PointF((float) lat, (float) lon);
+
+        return newPoint;
+
+    }
+
+
+And now create your query:
+
+PointF center = new PointF(x, y);
+final double mult = 1; // mult = 1.1; is more reliable
+PointF p1 = calculateDerivedPosition(center, mult * radius, 0);
+PointF p2 = calculateDerivedPosition(center, mult * radius, 90);
+PointF p3 = calculateDerivedPosition(center, mult * radius, 180);
+PointF p4 = calculateDerivedPosition(center, mult * radius, 270);
+
+strWhere =  " WHERE "
+        + COL_X + " > " + String.valueOf(p3.x) + " AND "
+        + COL_X + " < " + String.valueOf(p1.x) + " AND "
+        + COL_Y + " < " + String.valueOf(p2.y) + " AND "
+        + COL_Y + " > " + String.valueOf(p4.y);
+
+
+COL_X is the name of the column in the database that stores latitude values and COL_Y is for longitude.
+
+So you have some data that are near your central point with a good approximation.
+
+2) Now you can loop on these filtered data and determine if they are really near your point (in the circle) or not using the following methods:
+
+public static boolean pointIsInCircle(PointF pointForCheck, PointF center,
+            double radius) {
+        if (getDistanceBetweenTwoPoints(pointForCheck, center) <= radius)
+            return true;
+        else
+            return false;
+    }
+
+public static double getDistanceBetweenTwoPoints(PointF p1, PointF p2) {
+        double R = 6371000; // m
+        double dLat = Math.toRadians(p2.x - p1.x);
+        double dLon = Math.toRadians(p2.y - p1.y);
+        double lat1 = Math.toRadians(p1.x);
+        double lat2 = Math.toRadians(p2.x);
+
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.sin(dLon / 2)
+                * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        double d = R * c;
+
+        return d;
+    }
+
+
+Enjoy!
+
+I used and customized this reference and completed it.
+    

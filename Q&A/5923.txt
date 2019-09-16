@@ -1,0 +1,103 @@
+42
+Q:I'm in the process of converting an existing app from Eclipse to Android Studio. However, when I run it on a device running 4.x (I've tested several versions on emulators), it immediately crashes with a NoClassDefFoundError.
+
+I've tried commenting out references to the classes it can't find, but there's always another. As far as can tell, the offending class is always
+
+
+Within my own code
+An inner class (Update: With more investigation, this one isn't always true)
+
+
+Everything works fine on a 5.0.1 emulator (I don't have a device to test on). My build.gradle file is fairly long, but looks like this:
+
+apply plugin: 'com.android.application'
+apply plugin: 'android-apt'
+
+def AAVersion = "2.7.1"
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "21.1.1"
+
+    defaultConfig {
+        applicationId "com.myapp.android"
+        minSdkVersion 8
+        targetSdkVersion 19
+        multiDexEnabled = true
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+        }
+    }
+
+    packagingOptions {
+        *snip*
+    }
+}
+
+buildscript {
+    repositories {
+        mavenCentral()
+
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:1.0.0'
+        classpath 'com.neenbedankt.gradle.plugins:android-apt:1.4'
+    }
+}
+
+repositories {
+    maven {
+        url "https://repo.commonsware.com.s3.amazonaws.com"
+    }
+}
+
+apt {
+    arguments {
+        androidManifestFile variant.outputs[0].processResources.manifestFile
+        resourcePackageName 'com.pact.android'
+    }
+}
+
+dependencies {
+    *snip compile project(':...') declarations
+
+    apt "com.googlecode.androidannotations:androidannotations:$AAVersion"
+    compile "com.googlecode.androidannotations:androidannotations-api:$AAVersion"
+
+    compile 'com.actionbarsherlock:actionbarsherlock:4.4.0@aar'
+    compile 'com.android.support:support-v4:21.0.3'
+    compile 'com.google.android.gms:play-services:3.1.36'
+
+    *snip many more compile declarations*
+
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+}
+
+
+Some examples of classes that cause trouble:
+
+
+An anonymous class that implements an interface inside the facebook library (as a library project)
+Parcelable.CREATOR implementations in my models
+An inner class that extends android.os.Library
+An inner class in my own code
+A class that implements an interface in a library from maven
+
+
+What's going wrong, and how do I fix it?
+    
+===============================================================================================
+117
+A:I was incompletely implementing MultiDex support, so some of my classes weren't in the proper dex file. To fix it, you have to do more than just set multiDexEnabled = true in your defaultConfig block. You also have to:
+
+
+Include compile 'com.android.support:multidex:1.0.1' in your dependencies
+Have your Application class extend MultiDexApplication instead of just Application. Alternatively, you can call MultiDex.install() in attachBaseContext() of your application.
+
+
+See https://developer.android.com/tools/building/multidex.html for more details.
+    

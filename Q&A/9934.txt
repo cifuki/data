@@ -1,0 +1,159 @@
+27
+Q:I'm trying to create a custom viewpager inside custom scroll viewthat dynamically wraps the current child's height.
+
+package com.example.vihaan.dynamicviewpager;
+
+import android.content.Context;
+import android.util.AttributeSet;
+import android.view.GestureDetector;
+import android.view.MotionEvent;
+import android.widget.ScrollView;
+
+    /**
+     * Created by vihaan on 1/9/15.
+     */
+    public class CustomScrollView extends ScrollView {
+
+        private GestureDetector mGestureDetector;
+
+        public CustomScrollView(Context context, AttributeSet attrs) {
+            super(context, attrs);
+            mGestureDetector = new GestureDetector(context, new YScrollDetector());
+            setFadingEdgeLength(0);
+        }
+
+        @Override
+        public boolean onInterceptTouchEvent(MotionEvent ev) {
+            return super.onInterceptTouchEvent(ev)
+                    && mGestureDetector.onTouchEvent(ev);
+        }
+
+        // Return false if we're scrolling in the x direction
+        class YScrollDetector extends GestureDetector.SimpleOnGestureListener {
+            @Override
+            public boolean onScroll(MotionEvent e1, MotionEvent e2,
+                                    float distanceX, float distanceY) {
+                return (Math.abs(distanceY) > Math.abs(distanceX));
+            }
+        }
+    }
+
+
+CustomPager
+
+/**
+ * Created by vihaan on 1/9/15.
+ */
+public class CustomPager extends ViewPager {
+
+    public CustomPager (Context context) {
+        super(context);
+    }
+
+    public CustomPager (Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    @Override
+    public void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+
+        boolean wrapHeight = MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.AT_MOST;
+
+        final View tab = getChildAt(0);
+        int width = getMeasuredWidth();
+        int tabHeight = tab.getMeasuredHeight();
+
+        if (wrapHeight) {
+            // Keep the current measured width.
+            widthMeasureSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY);
+        }
+
+        int fragmentHeight = measureFragment(((Fragment) getAdapter().instantiateItem(this, getCurrentItem())).getView());
+        heightMeasureSpec = MeasureSpec.makeMeasureSpec(tabHeight + fragmentHeight + (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 50, getResources().getDisplayMetrics()), MeasureSpec.AT_MOST);
+
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+    }
+
+    public int measureFragment(View view) {
+        if (view == null)
+            return 0;
+
+        view.measure(0, 0);
+        return view.getMeasuredHeight();
+    }
+}
+
+
+MyPagerAdapter
+
+public class MyPagerAdapter extends FragmentPagerAdapter {
+
+    private List<Fragment> fragments;
+
+    public MyPagerAdapter(FragmentManager fm) {
+        super(fm);
+        this.fragments = new ArrayList<Fragment>();
+        fragments.add(new FirstFragment());
+        fragments.add(new SecondFragment());
+        fragments.add(new ThirdFragment());
+        fragments.add(new FourthFragment());
+    }
+
+    @Override
+    public Fragment getItem(int position) {
+        return fragments.get(position);
+    }
+
+    @Override
+    public int getCount() {
+        return fragments.size();
+    }
+}
+
+
+I was hoping that this would wrap around current fragments height but it is only taking the height of first child into consideration.
+
+Sample github project : https://github.com/VihaanVerma89/DynamicViewPager
+    
+===============================================================================================
+65
+A:Made a few tweaks in your code and it is working fine now.
+
+1] onMeasure function wasn't proper. Use below logic
+
+@Override
+public void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+    if (mCurrentView == null) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        return;
+    }
+    int height = 0;
+    mCurrentView.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+    int h = mCurrentView.getMeasuredHeight();
+    if (h > height) height = h;
+    heightMeasureSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY);
+
+    super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+}
+
+
+2] ViewPager needs to be re-measured each time a page is changed. Good place to do this is setPrimaryItem function of PagerAdapter
+
+@Override
+    public void setPrimaryItem(ViewGroup container, int position, Object object) {
+        super.setPrimaryItem(container, position, object);
+        if (position != mCurrentPosition) {
+            Fragment fragment = (Fragment) object;
+            CustomPager pager = (CustomPager) container;
+            if (fragment != null && fragment.getView() != null) {
+                mCurrentPosition = position;
+                pager.measureCurrentView(fragment.getView());
+            }
+        }
+    }
+
+
+Here is the link to GitHub project with these tweaks:
+https://github.com/vabhishek/WrapContentViewPagerDemo
+    

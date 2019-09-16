@@ -1,0 +1,115 @@
+33
+Q:I have a fragment that opens a Dialogfragment to get user input (a string, and an integer). How do I send these two things back to the fragment?
+
+Here is my DialogFragment:
+
+public class DatePickerFragment extends DialogFragment {
+    String Month;
+    int Year;
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        getDialog().setTitle(getString(R.string.Date_Picker));
+        View v = inflater.inflate(R.layout.date_picker_dialog, container, false);
+
+        Spinner months = (Spinner) v.findViewById(R.id.months_spinner);
+        ArrayAdapter<CharSequence> monthadapter = ArrayAdapter.createFromResource(getActivity(),
+                R.array.Months, R.layout.picker_row);
+              months.setAdapter(monthadapter);
+              months.setOnItemSelectedListener(new OnItemSelectedListener(){
+                  @Override
+                  public void onItemSelected(AdapterView<?> parentView, View selectedItemView, int monthplace, long id) {
+                      Month = Integer.toString(monthplace);
+                  }
+                  public void onNothingSelected(AdapterView<?> parent) {
+                    }
+              });
+
+        Spinner years = (Spinner) v.findViewById(R.id.years_spinner);
+        ArrayAdapter<CharSequence> yearadapter = ArrayAdapter.createFromResource(getActivity(),
+             R.array.Years, R.layout.picker_row);
+        years.setAdapter(yearadapter);
+        years.setOnItemSelectedListener(new OnItemSelectedListener(){
+          @Override
+          public void onItemSelected(AdapterView<?> parentView, View selectedItemView, int yearplace, long id) {
+              if (yearplace == 0){
+                  Year = 2012;
+              }if (yearplace == 1){
+                  Year = 2013;
+              }if (yearplace == 2){
+                  Year = 2014;
+              }
+          }
+          public void onNothingSelected(AdapterView<?> parent) {}
+        });
+
+        Button button = (Button) v.findViewById(R.id.button);
+        button.setOnClickListener(new View.OnClickListener() {
+           public void onClick(View v) {
+               getDialog().dismiss();
+            }
+        });
+
+        return v;
+    }
+}
+
+
+I need to send the data after the button click and before getDialog().dismiss()
+
+Here is the fragment that data needs to be sent to:
+
+public class CalendarFragment extends Fragment {
+int Year;
+String Month;
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container,
+        Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    int position = getArguments().getInt("position");
+    String[] categories = getResources().getStringArray(R.array.categories);
+    getActivity().getActionBar().setTitle(categories[position]);
+    View v = inflater.inflate(R.layout.calendar_fragment_layout, container, false);    
+
+    final Calendar c = Calendar.getInstance();
+    SimpleDateFormat month_date = new SimpleDateFormat("MMMMMMMMM");
+    Month = month_date.format(c.getTime());
+    Year = c.get(Calendar.YEAR);
+
+    Button button = (Button) v.findViewById(R.id.button);
+    button.setText(Month + " "+ Year);
+    button.setOnClickListener(new View.OnClickListener() {
+        public void onClick(View v) {
+           new DatePickerFragment().show(getFragmentManager(), "MyProgressDialog");
+        }
+    });
+   return v;
+  }
+}
+
+
+so once the user selects a date in the Dialogfragment, it must return the month and year. 
+
+Then, the text on the button should change to the month and year specified by user.
+    
+===============================================================================================
+85
+A:NOTE: aside from one or two Android Fragment specific calls, this is a generic approach recipe for implementation of data exchange between loosely coupled components. You can safely use this approach to exchange data between literally anything, be it Fragments, Activities, Dialogs or any other elements  of your application.
+
+
+
+Here's the recipe:
+
+
+Create interface (i.e. named MyContract) containing a signature of method for passing the data, i.e. methodToPassData(... data);.
+Ensure your DialogFragment fullfils that contract (which usually means implements desired interface): class MyFragment extends Fragment implements MyContract {....}
+On creation of DialogFragment set your invoking Fragment as its target fragment by calling myDialogFragment.setTargetFragment(this, 0);. This is the object you will be talking to later.
+In your DialogFragment, get that invoking fragment by calling getTargetFragment(); and cast returned object to the contract interface you created in step 1, by doing: MyContract mHost = (MyContract)getTargetFragment();. Casting lets us ensure the target object implements the contract needed and we can expect methodToPassData() to be there. If not, then you will get regular ClassCastException. This usually should not happen, unless you are doing too much copy-paste coding :) If your project uses external code, libraries or plugins etc and in such case you should rather catch the exception and tell the user i.e. plugin is not compatible instead of just let app crash.
+When time to send data back comes, call methodToPassData() on the object you obtained previously: ((MyContract)getTargetFragment()).methodToPassData(data);. If your onAttach() already casts and assigns target fragment to a class variable (i.e. mHost), then this code would be just mHost.methodToPassData(data);.
+Voil\xc3\xa0.
+
+
+You just successfully passed your data from dialog back to invoking fragment.
+    

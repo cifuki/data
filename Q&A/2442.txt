@@ -1,0 +1,308 @@
+84
+Q:After I upgraded to the Support Library v21 my ActionBar in my PreferenceActivity is gone.
+
+Did I miss some attributes in my theme to activate it again? I had some similar trouble with a black ActionBar.
+
+I also tried to add it a little hackish by adding a Toolbar to the root layout, but that did not work as expected.
+    
+===============================================================================================
+170
+A:Please find the GitHub Repo: Here
+
+
+
+Very Similar to your own code but added xml to allow for set title:
+
+Continuing to use PreferenceActivity:
+
+settings_toolbar.xml : 
+
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.v7.widget.Toolbar
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/toolbar"
+    app:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="?attr/actionBarSize"
+    app:navigationContentDescription="@string/abc_action_bar_up_description"
+    android:background="?attr/colorPrimary"
+    app:navigationIcon="?attr/homeAsUpIndicator"
+    app:title="@string/action_settings"
+    />
+
+
+SettingsActivity.java :
+
+public class SettingsActivity extends PreferenceActivity {
+
+    @Override
+    protected void onPostCreate(Bundle savedInstanceState) {
+        super.onPostCreate(savedInstanceState);
+
+        LinearLayout root = (LinearLayout)findViewById(android.R.id.list).getParent().getParent().getParent();
+        Toolbar bar = (Toolbar) LayoutInflater.from(this).inflate(R.layout.settings_toolbar, root, false);
+        root.addView(bar, 0); // insert at top
+        bar.setNavigationOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finish();
+            }
+        });
+    }
+
+}
+
+
+Result :
+
+
+
+
+
+UPDATE (Gingerbread Compatibility) :
+
+As pointed out here, Gingerbread Devices are returning NullPointerException on this line:
+
+LinearLayout root = (LinearLayout)findViewById(android.R.id.list).getParent().getParent().getParent();
+
+
+FIX:
+
+SettingsActivity.java :
+
+public class SettingsActivity extends PreferenceActivity {
+
+    @Override
+    protected void onPostCreate(Bundle savedInstanceState) {
+        super.onPostCreate(savedInstanceState);
+        Toolbar bar;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            LinearLayout root = (LinearLayout) findViewById(android.R.id.list).getParent().getParent().getParent();
+            bar = (Toolbar) LayoutInflater.from(this).inflate(R.layout.settings_toolbar, root, false);
+            root.addView(bar, 0); // insert at top
+        } else {
+            ViewGroup root = (ViewGroup) findViewById(android.R.id.content);
+            ListView content = (ListView) root.getChildAt(0);
+
+            root.removeAllViews();
+
+            bar = (Toolbar) LayoutInflater.from(this).inflate(R.layout.settings_toolbar, root, false);
+
+
+            int height;
+            TypedValue tv = new TypedValue();
+            if (getTheme().resolveAttribute(R.attr.actionBarSize, tv, true)) {
+                height = TypedValue.complexToDimensionPixelSize(tv.data, getResources().getDisplayMetrics());
+            }else{
+                height = bar.getHeight();
+            }
+
+            content.setPadding(0, height, 0, 0);
+
+            root.addView(content);
+            root.addView(bar);
+        }
+
+        bar.setNavigationOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finish();
+            }
+        });
+    }
+}
+
+
+Any issues with the above let me know!
+
+
+
+UPDATE 2: TINTING WORKAROUND
+
+As pointed out in many dev notes PreferenceActivity does not support tinting of elements, however by utilising a few internal classes you CAN achieve this. That is until these classes are removed. (Works using appCompat support-v7 v21.0.3).
+
+Add the following imports:
+
+import android.support.v7.internal.widget.TintCheckBox;
+import android.support.v7.internal.widget.TintCheckedTextView;
+import android.support.v7.internal.widget.TintEditText;
+import android.support.v7.internal.widget.TintRadioButton;
+import android.support.v7.internal.widget.TintSpinner;
+
+
+Then override the onCreateView method:
+
+@Override
+public View onCreateView(String name, Context context, AttributeSet attrs) {
+    // Allow super to try and create a view first
+    final View result = super.onCreateView(name, context, attrs);
+    if (result != null) {
+        return result;
+    }
+
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+        // If we're running pre-L, we need to 'inject' our tint aware Views in place of the
+        // standard framework versions
+        switch (name) {
+            case "EditText":
+                return new TintEditText(this, attrs);
+            case "Spinner":
+                return new TintSpinner(this, attrs);
+            case "CheckBox":
+                return new TintCheckBox(this, attrs);
+            case "RadioButton":
+                return new TintRadioButton(this, attrs);
+            case "CheckedTextView":
+                return new TintCheckedTextView(this, attrs);
+        }
+    }
+
+    return null;
+}
+
+
+Result:
+
+
+
+
+
+AppCompat 22.1
+
+AppCompat 22.1 introduced new tinted elements, meaning that there is no longer a need to utilise the internal classes to achieve the same effect as the last update. Instead follow this (still overriding onCreateView):
+
+@Override
+public View onCreateView(String name, Context context, AttributeSet attrs) {
+    // Allow super to try and create a view first
+    final View result = super.onCreateView(name, context, attrs);
+    if (result != null) {
+        return result;
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+        // If we're running pre-L, we need to 'inject' our tint aware Views in place of the
+        // standard framework versions
+        switch (name) {
+            case "EditText":
+                return new AppCompatEditText(this, attrs);
+            case "Spinner":
+                return new AppCompatSpinner(this, attrs);
+            case "CheckBox":
+                return new AppCompatCheckBox(this, attrs);
+            case "RadioButton":
+                return new AppCompatRadioButton(this, attrs);
+            case "CheckedTextView":
+                return new AppCompatCheckedTextView(this, attrs);
+        }
+    }
+
+    return null;
+}
+
+
+
+
+NESTED PREFERENCE SCREENS
+
+A lot of people are experiencing issues with including the Toolbar in nested <PreferenceScreen />s however, I have found a solution!! - After a lot of trial and error!
+
+Add the following to your SettingsActivity:
+
+@SuppressWarnings("deprecation")
+@Override
+public boolean onPreferenceTreeClick(PreferenceScreen preferenceScreen, Preference preference) {
+    super.onPreferenceTreeClick(preferenceScreen, preference);
+
+    // If the user has clicked on a preference screen, set up the screen
+    if (preference instanceof PreferenceScreen) {
+        setUpNestedScreen((PreferenceScreen) preference);
+    }
+
+    return false;
+}
+
+public void setUpNestedScreen(PreferenceScreen preferenceScreen) {
+    final Dialog dialog = preferenceScreen.getDialog();
+
+    Toolbar bar;
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
+        LinearLayout root = (LinearLayout) dialog.findViewById(android.R.id.list).getParent();
+        bar = (Toolbar) LayoutInflater.from(this).inflate(R.layout.settings_toolbar, root, false);
+        root.addView(bar, 0); // insert at top
+    } else {
+        ViewGroup root = (ViewGroup) dialog.findViewById(android.R.id.content);
+        ListView content = (ListView) root.getChildAt(0);
+
+        root.removeAllViews();
+
+        bar = (Toolbar) LayoutInflater.from(this).inflate(R.layout.settings_toolbar, root, false);
+
+        int height;
+        TypedValue tv = new TypedValue();
+        if (getTheme().resolveAttribute(R.attr.actionBarSize, tv, true)) {
+            height = TypedValue.complexToDimensionPixelSize(tv.data, getResources().getDisplayMetrics());
+        }else{
+            height = bar.getHeight();
+        }
+
+        content.setPadding(0, height, 0, 0);
+
+        root.addView(content);
+        root.addView(bar);
+    }
+
+    bar.setTitle(preferenceScreen.getTitle());
+
+    bar.setNavigationOnClickListener(new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            dialog.dismiss();
+        }
+    });
+}
+
+
+The reason that PreferenceScreen's are such a pain is because they are based as a wrapper dialog, so we need to capture the dialog layout to add the toolbar to it.
+
+
+
+Toolbar Shadow
+
+By design importing the Toolbar does not allow for elevation and shadowing in pre-v21 devices, so if you would like to have elevation on your Toolbar you need to wrap it in a AppBarLayout:
+
+`settings_toolbar.xml :
+
+<android.support.design.widget.AppBarLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+   <android.support.v7.widget.Toolbar
+       .../>
+
+</android.support.design.widget.AppBarLayout>
+
+
+Not forgetting to add the add the Design Support library as a dependency in build.gradle file:
+
+compile 'com.android.support:support-v4:22.2.0'
+compile 'com.android.support:appcompat-v7:22.2.0'
+compile 'com.android.support:design:22.2.0'
+
+
+
+
+Android 6.0
+
+I have investigated the reported overlapping issue and I cannot reproduce the issue.
+
+The full code in use as above produces the following:
+
+
+
+If I am missing something please let me know via this repo and I will investigate.
+    

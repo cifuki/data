@@ -1,0 +1,96 @@
+33
+Q:Use Case: Logging error messages as displayed to the user.
+
+However you don't want to have messages in your log that depend on the locale of the user's device.
+On the other hand you don't want to change the locale of the user's device just for your (technical) logging.
+Can this be achieved?
+I found a couple of potential solutions here on stackoverflow: 
+
+
+how to get string from different locales in Android?
+Can I access to resources from different locale android?
+android - Get string from default locale using string in specific locale
+maybe even android - Changing Locale within the app itself
+
+
+However, they all result in changing the locale of my device (until the next configuration change).
+
+Anyway, my current workaround is like so:
+
+public String getStringInDefaultLocale(int resId) {
+    Resources currentResources = getResources();
+    AssetManager assets = currentResources.getAssets();
+    DisplayMetrics metrics = currentResources.getDisplayMetrics();
+    Configuration config = new Configuration(
+            currentResources.getConfiguration());
+    config.locale = DEFAULT_LOCALE;
+    /*
+     * Note: This (temporiarily) changes the devices locale! TODO find a
+     * better way to get the string in the specific locale
+     */
+    Resources defaultLocaleResources = new Resources(assets, metrics,
+            config);
+    String string = defaultLocaleResources.getString(resId);
+    // Restore device-specific locale
+    new Resources(assets, metrics, currentResources.getConfiguration());
+    return string;
+}
+
+
+To be honest, I don't like this approach at all. It's not efficient and - thinking about concurrency and all that - it might result in some view in the "wrong" locale.
+
+So - Any ideas? Maybe this could be achieved using ResourceBundles, just like in standard Java?
+    
+===============================================================================================
+22
+A:You can use this for API +17
+
+@NonNull
+@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
+public static String getStringByLocal(Activity context, int id, String locale) {
+    Configuration configuration = new Configuration(context.getResources().getConfiguration());
+    configuration.setLocale(new Locale(locale));
+    return context.createConfigurationContext(configuration).getResources().getString(id);
+}
+
+
+Update (1) : How to support old versions.
+
+@NonNull
+public static String getStringByLocal(Activity context, int resId, String locale) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1)
+        return getStringByLocalPlus17(context, resId, locale);
+    else
+        return getStringByLocalBefore17(context, resId, locale);
+}
+
+@NonNull
+@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
+private static String getStringByLocalPlus17(Activity context, int resId, String locale) {
+    Configuration configuration = new Configuration(context.getResources().getConfiguration());
+    configuration.setLocale(new Locale(locale));
+    return context.createConfigurationContext(configuration).getResources().getString(resId);
+}
+
+private static String getStringByLocalBefore17(Context context,int resId, String language) {
+    Resources currentResources = context.getResources();
+    AssetManager assets = currentResources.getAssets();
+    DisplayMetrics metrics = currentResources.getDisplayMetrics();
+    Configuration config = new Configuration(currentResources.getConfiguration());
+    Locale locale = new Locale(language);
+    Locale.setDefault(locale);
+    config.locale = locale;
+/*
+ * Note: This (temporarily) changes the devices locale! TODO find a
+ * better way to get the string in the specific locale
+ */
+    Resources defaultLocaleResources = new Resources(assets, metrics, config);
+    String string = defaultLocaleResources.getString(resId);
+    // Restore device-specific locale
+    new Resources(assets, metrics, currentResources.getConfiguration());
+    return string;
+}
+
+
+Update (2): Check this article
+    

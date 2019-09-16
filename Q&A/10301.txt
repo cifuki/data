@@ -1,0 +1,73 @@
+27
+Q:I am currently writing an open source project that aims to port the famous Holo theme to previous versions of Android (since 1,6!!!)
+
+Everything works fine and I am really proud of my work, but the problem I am facing now is to get the ProgressBar totally looking like the ICS one.
+
+I used the same xml code than Android source: (progress_medium_holo.xml)
+
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <rotate
+             android:drawable="@drawable/spinner_48_outer_holo"
+             android:pivotX="50%"
+             android:pivotY="50%"
+             android:fromDegrees="0"
+             android:toDegrees="1080" />
+    </item>
+    <item>
+        <rotate
+             android:drawable="@drawable/spinner_48_inner_holo"
+             android:pivotX="50%"
+             android:pivotY="50%"
+             android:fromDegrees="720"
+             android:toDegrees="0" />
+    </item>
+</layer-list>
+
+
+With same png:
+
+spinner_76_outer_holo.png and spinner_76_inner_holo.png
+
+  white pic =>  
+
+But unfortunately, I only get one circle...
+
+If you don't understand what I mean, you can try this app on a pre-ICS device:
+
+https://play.google.com/store/apps/details?id=com.WazaBe.HoloDemo
+
+FULL SOURCE IS HERE: https://github.com/ChristopheVersieux/HoloEverywhere
+
+Thank a lot for your help
+
+
+    
+===============================================================================================
+12
+A:Just found the answer here! 
+
+https://stackoverflow.com/a/8697806/327402
+
+Very usefull post!
+
+There is indeed a platform limitation, although it's not what you might think.  The issue is that pre-API11, RotateDrawable had some crude code in it to require that the animation rotate clockwise by checking if toDegrees was greater than fromDegrees; if not, the two were forced equal to each other.  If you modified your example to have the second item move in a forward direction (from 0 to 720, or even -720 to 0), both images would animate fine on all platforms; though I realize that defeats the purpose of what you're aiming for.
+
+Take a look at the cached version Google Codesearch has of RotateDrawable.inflate(), which is the 2.3 version of the method used to turn the XML into the object, and you'll see what I mean.
+
+RotateDrawable.java ...the offending code is around line 235...
+
+    float fromDegrees = a.getFloat(
+            com.android.internal.R.styleable.RotateDrawable_fromDegrees, 0.0f);
+    float toDegrees = a.getFloat(
+            com.android.internal.R.styleable.RotateDrawable_toDegrees, 360.0f);
+
+    toDegrees = Math.max(fromDegrees, toDegrees); //<--There's the culprit
+
+
+This takes an XML block like the second item that you have there, and turns it into a RotateDrawable that ends up with the same value for fromDegrees and toDegrees (in your case, 720), causing the image to simply stand still.  You can visible test this by setting the start value to some value not a multiple of 360 (like 765).  You'll see that the image still does not animate, but is rotated to the initial coordinate.
+
+This awkward check was removed in the Honeycomb/ICS sources, which is why you can do backwards rotation on those platforms.  Also, it doesn't look like there is a way to set these values from Java code, so a custom RotateDrawableCompat may be in your future :)
+
+HTH
+    

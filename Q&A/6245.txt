@@ -1,0 +1,293 @@
+41
+Q:I am using the Android M Fingerprint API to allow users to login to the application. To do this I would need to store the username and password on the device. Currently I have the login working, as well as the Fingerprint API, but the username and password are both stored as plaintext. I would like to encrypt the password before I store it, and be able to retrieve it after the user authenticates with their fingerprint.
+
+I am having a great amount of difficulty getting this to work. I have been trying to apply what I can from the Android Security samples, but each example seems to only handle encryption or signing, and never decryption.
+
+What I have so far is that I have to obtain an instance of the AndroidKeyStore, a KeyPairGenerator and a Cipher, using asymmetric cryptography to allow the use of the Android KeyGenParameterSpec.Builder().setUserAuthenticationRequired(true). The reason for asymmetric cryptography is because the setUserAuthenticationRequired method will block any use of the key if the user is not authenticated, but:
+
+
+  This authorization applies only to secret key and private key operations. Public key operations are not restricted.
+
+
+This should allow me to encrypt the password using the public key before the user authenticates with their fingerprint, then decrypt using the private key only after the user is authenticated.
+
+public KeyStore getKeyStore() {
+    try {
+        return KeyStore.getInstance("AndroidKeyStore");
+    } catch (KeyStoreException exception) {
+        throw new RuntimeException("Failed to get an instance of KeyStore", exception);
+    }
+}
+
+public KeyPairGenerator getKeyPairGenerator() {
+    try {
+        return KeyPairGenerator.getInstance("EC", "AndroidKeyStore");
+    } catch(NoSuchAlgorithmException | NoSuchProviderException exception) {
+        throw new RuntimeException("Failed to get an instance of KeyPairGenerator", exception);
+    }
+}
+
+public Cipher getCipher() {
+    try {
+        return Cipher.getInstance("EC");
+    } catch(NoSuchAlgorithmException | NoSuchPaddingException exception) {
+        throw new RuntimeException("Failed to get an instance of Cipher", exception);
+    }
+}
+
+private void createKey() {
+    try {
+        mKeyPairGenerator.initialize(
+                new KeyGenParameterSpec.Builder(KEY_ALIAS,
+                        KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                        .setAlgorithmParameterSpec(new ECGenParameterSpec("secp256r1")
+                        .setUserAuthenticationRequired(true)
+                        .build());
+        mKeyPairGenerator.generateKeyPair();
+    } catch(InvalidAlgorithmParameterException exception) {
+        throw new RuntimeException(exception);
+    }
+}
+
+private boolean initCipher(int opmode) {
+    try {
+        mKeyStore.load(null);
+
+        if(opmode == Cipher.ENCRYPT_MODE) {
+            PublicKey key = mKeyStore.getCertificate(KEY_ALIAS).getPublicKey();
+            mCipher.init(opmode, key);
+        } else {
+            PrivateKey key = (PrivateKey) mKeyStore.getKey(KEY_ALIAS, null);
+            mCipher.init(opmode, key);
+        }
+
+        return true;
+    } catch (KeyPermanentlyInvalidatedException exception) {
+        return false;
+    } catch(KeyStoreException | CertificateException | UnrecoverableKeyException
+            | IOException | NoSuchAlgorithmException | InvalidKeyException
+            | InvalidAlgorithmParameterException exception) {
+        throw new RuntimeException("Failed to initialize Cipher", exception);
+    }
+}
+
+private void encrypt(String password) {
+    try {
+        initCipher(Cipher.ENCRYPT_MODE);
+        byte[] bytes = mCipher.doFinal(password.getBytes());
+        String encryptedPassword = Base64.encodeToString(bytes, Base64.NO_WRAP);
+        mPreferences.getString("password").set(encryptedPassword);
+    } catch(IllegalBlockSizeException | BadPaddingException exception) {
+        throw new RuntimeException("Failed to encrypt password", exception);
+    }
+}
+
+private String decryptPassword(Cipher cipher) {
+    try {
+        String encryptedPassword = mPreferences.getString("password").get();
+        byte[] bytes = Base64.decode(encryptedPassword, Base64.NO_WRAP);
+        return new String(cipher.doFinal(bytes));
+    } catch (IllegalBlockSizeException | BadPaddingException exception) {
+        throw new RuntimeException("Failed to decrypt password", exception);
+    }
+}
+
+
+To be honest, I am not sure if any of this is right, it is bits and pieces from anything I could find on the subject. Everything I change throws a different exception, and this particular build does not run because I cannot instantiate the Cipher, it throws a NoSuchAlgorithmException: No provider found for EC. I have tried switch to RSA as well, but I get similar errors.
+
+So my question is basically this; how can I encrypt plaintext on Android, and make it available for decryption after the user is authenticated by the Fingerprint API? 
+
+
+
+I have made some progress, mostly due to the discovery of the information on the KeyGenParameterSpec documentation page.
+
+I have kept getKeyStore, encryptePassword, decryptPassword, getKeyPairGenerator and getCipher mostly the same, but I changed the KeyPairGenerator.getInstance and Cipher.getInstance to "RSA" and "RSA/ECB/OAEPWithSHA-256AndMGF1Padding" respectively. 
+
+I also changed the rest of the code to RSA instead of Elliptic Curve, because from what I understand, Java 1.7 (and therefore Android) does not support encryption and decryption with EC. I changed my createKeyPair method based on the "RSA key pair for encryption/decryption using RSA OAEP" example on the documentation page:
+
+private void createKeyPair() {
+    try {
+        mKeyPairGenerator.initialize(
+                new KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_DECRYPT)
+                        .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA512)
+                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_OAEP)
+                        .setUserAuthenticationRequired(true)
+                        .build());
+        mKeyPairGenerator.generateKeyPair();
+    } catch(InvalidAlgorithmParameterException exception) {
+        throw new RuntimeException(exception);
+    }
+}
+
+
+I also altered my initCipher method based on the known issue in the KeyGenParameterSpec documentation:
+
+
+  A known bug in Android 6.0 (API Level 23) causes user authentication-related authorizations to be enforced even for public keys. To work around this issue extract the public key material to use outside of Android Keystore.
+
+
+private boolean initCipher(int opmode) {
+    try {
+        mKeyStore.load(null);
+
+        if(opmode == Cipher.ENCRYPT_MODE) {
+            PublicKey key = mKeyStore.getCertificate(KEY_ALIAS).getPublicKey();
+
+            PublicKey unrestricted = KeyFactory.getInstance(key.getAlgorithm())
+                    .generatePublic(new X509EncodedKeySpec(key.getEncoded()));
+
+            mCipher.init(opmode, unrestricted);
+        } else {
+            PrivateKey key = (PrivateKey) mKeyStore.getKey(KEY_ALIAS, null);
+            mCipher.init(opmode, key);
+        }
+
+        return true;
+    } catch (KeyPermanentlyInvalidatedException exception) {
+        return false;
+    } catch(KeyStoreException | CertificateException | UnrecoverableKeyException
+            | IOException | NoSuchAlgorithmException | InvalidKeyException
+            | InvalidAlgorithmParameterException exception) {
+        throw new RuntimeException("Failed to initialize Cipher", exception);
+    }
+}
+
+
+Now I can encrypt the password, and save the encrypted password. But when I obtain the encrypted password and attempt to decrypt, I get a KeyStoreException Unknown error...
+
+03-15 10:06:58.074 14702-14702/com.example.app E/LoginFragment: Failed to decrypt password
+        javax.crypto.IllegalBlockSizeException
+            at android.security.keystore.AndroidKeyStoreCipherSpiBase.engineDoFinal(AndroidKeyStoreCipherSpiBase.java:486)
+            at javax.crypto.Cipher.doFinal(Cipher.java:1502)
+            at com.example.app.ui.fragment.util.LoginFragment.onAuthenticationSucceeded(LoginFragment.java:251)
+            at com.example.app.ui.controller.FingerprintCallback.onAuthenticationSucceeded(FingerprintCallback.java:21)
+            at android.support.v4.hardware.fingerprint.FingerprintManagerCompat$Api23FingerprintManagerCompatImpl$1.onAuthenticationSucceeded(FingerprintManagerCompat.java:301)
+            at android.support.v4.hardware.fingerprint.FingerprintManagerCompatApi23$1.onAuthenticationSucceeded(FingerprintManagerCompatApi23.java:96)
+            at android.hardware.fingerprint.FingerprintManager$MyHandler.sendAuthenticatedSucceeded(FingerprintManager.java:805)
+            at android.hardware.fingerprint.FingerprintManager$MyHandler.handleMessage(FingerprintManager.java:757)
+            at android.os.Handler.dispatchMessage(Handler.java:102)
+            at android.os.Looper.loop(Looper.java:148)
+            at android.app.ActivityThread.main(ActivityThread.java:5417)
+            at java.lang.reflect.Method.invoke(Native Method)
+            at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:726)
+            at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:616)
+        Caused by: android.security.KeyStoreException: Unknown error
+            at android.security.KeyStore.getKeyStoreException(KeyStore.java:632)
+            at android.security.keystore.KeyStoreCryptoOperationChunkedStreamer.doFinal(KeyStoreCryptoOperationChunkedStreamer.java:224)
+            at android.security.keystore.AndroidKeyStoreCipherSpiBase.engineDoFinal(AndroidKeyStoreCipherSpiBase.java:473)
+            at javax.crypto.Cipher.doFinal(Cipher.java:1502)\xc2\xa0
+            at com.example.app.ui.fragment.util.LoginFragment.onAuthenticationSucceeded(LoginFragment.java:251)\xc2\xa0
+            at com.example.app.ui.controller.FingerprintCallback.onAuthenticationSucceeded(FingerprintCallback.java:21)\xc2\xa0
+            at android.support.v4.hardware.fingerprint.FingerprintManagerCompat$Api23FingerprintManagerCompatImpl$1.onAuthenticationSucceeded(FingerprintManagerCompat.java:301)\xc2\xa0
+            at android.support.v4.hardware.fingerprint.FingerprintManagerCompatApi23$1.onAuthenticationSucceeded(FingerprintManagerCompatApi23.java:96)\xc2\xa0
+            at android.hardware.fingerprint.FingerprintManager$MyHandler.sendAuthenticatedSucceeded(FingerprintManager.java:805)\xc2\xa0
+            at android.hardware.fingerprint.FingerprintManager$MyHandler.handleMessage(FingerprintManager.java:757)\xc2\xa0
+            at android.os.Handler.dispatchMessage(Handler.java:102)\xc2\xa0
+            at android.os.Looper.loop(Looper.java:148)\xc2\xa0
+            at android.app.ActivityThread.main(ActivityThread.java:5417)\xc2\xa0
+            at java.lang.reflect.Method.invoke(Native Method)\xc2\xa0
+            at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:726)\xc2\xa0
+            at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:616)
+
+    
+===============================================================================================
+36
+A:I found the final piece of the puzzle on the Android Issue Tracker, another known bug causes the unrestricted PublicKey to be incompatible with the Cipher when using OAEP. The work around is to add a new OAEPParameterSpec to the Cipher upon initialization:
+
+OAEPParameterSpec spec = new OAEPParameterSpec(
+        "SHA-256", "MGF1", MGF1ParameterSpec.SHA1, PSource.PSpecified.DEFAULT);
+
+mCipher.init(opmode, unrestricted, spec);
+
+
+Below is the final code:
+
+public KeyStore getKeyStore() {
+    try {
+        return KeyStore.getInstance("AndroidKeyStore");
+    } catch (KeyStoreException exception) {
+        throw new RuntimeException("Failed to get an instance of KeyStore", exception);
+    }
+}
+
+public KeyPairGenerator getKeyPairGenerator() {
+    try {
+        return KeyPairGenerator.getInstance("RSA", "AndroidKeyStore");
+    } catch(NoSuchAlgorithmException | NoSuchProviderException exception) {
+        throw new RuntimeException("Failed to get an instance of KeyPairGenerator", exception);
+    }
+}
+
+public Cipher getCipher() {
+    try {
+        return Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+    } catch(NoSuchAlgorithmException | NoSuchPaddingException exception) {
+        throw new RuntimeException("Failed to get an instance of Cipher", exception);
+    }
+}
+
+private void createKeyPair() {
+    try {
+        mKeyPairGenerator.initialize(
+                new KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_DECRYPT)
+                        .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA512)
+                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_OAEP)
+                        .setUserAuthenticationRequired(true)
+                        .build());
+        mKeyPairGenerator.generateKeyPair();
+    } catch(InvalidAlgorithmParameterException exception) {
+        throw new RuntimeException("Failed to generate key pair", exception);
+    }
+}
+
+private boolean initCipher(int opmode) {
+    try {
+        mKeyStore.load(null);
+
+        if(opmode == Cipher.ENCRYPT_MODE) {
+            PublicKey key = mKeyStore.getCertificate(KEY_ALIAS).getPublicKey();
+
+            PublicKey unrestricted = KeyFactory.getInstance(key.getAlgorithm())
+                    .generatePublic(new X509EncodedKeySpec(key.getEncoded()));
+
+            OAEPParameterSpec spec = new OAEPParameterSpec(
+                    "SHA-256", "MGF1", MGF1ParameterSpec.SHA1, PSource.PSpecified.DEFAULT);
+
+            mCipher.init(opmode, unrestricted, spec);
+        } else {
+            PrivateKey key = (PrivateKey) mKeyStore.getKey(KEY_ALIAS, null);
+            mCipher.init(opmode, key);
+        }
+
+        return true;
+    } catch (KeyPermanentlyInvalidatedException exception) {
+        return false;
+    } catch(KeyStoreException | CertificateException | UnrecoverableKeyException
+            | IOException | NoSuchAlgorithmException | InvalidKeyException
+            | InvalidAlgorithmParameterException exception) {
+        throw new RuntimeException("Failed to initialize Cipher", exception);
+    }
+}
+
+private void encrypt(String password) {
+    try {
+        initCipher(Cipher.ENCRYPT_MODE);
+        byte[] bytes = mCipher.doFinal(password.getBytes());
+        String encrypted = Base64.encodeToString(bytes, Base64.NO_WRAP);
+        mPreferences.getString("password").set(encrypted);
+    } catch(IllegalBlockSizeException | BadPaddingException exception) {
+        throw new RuntimeException("Failed to encrypt password", exception);
+    }
+}
+
+private String decrypt(Cipher cipher) {
+    try {
+        String encoded = mPreferences.getString("password").get();
+        byte[] bytes = Base64.decode(encoded, Base64.NO_WRAP);
+        return new String(cipher.doFinal(bytes));
+    } catch (IllegalBlockSizeException | BadPaddingException exception) {
+        throw new RuntimeException("Failed to decrypt password", exception);
+    }
+}
+
+    

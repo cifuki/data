@@ -1,0 +1,222 @@
+37
+Q:I am having trouble implementing custom getFilter in custom arrayAdapter. Actually I have no idea how to implement it. Tried various codes but still no luck. Here is my custom array adapter.
+
+package com.test.FilterableList.Adapters;
+
+import java.util.ArrayList;
+import android.content.Context;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+import android.widget.TextView;
+
+import com.test.FilterableList.Models.ListTO;
+import com.test.FilterableList.R;
+
+import android.widget.Filterable;
+
+
+public class FilterableAdapter extends ArrayAdapter<ListTO> implements Filterable {
+
+    // declaring our ArrayList of items
+    public ArrayList<ListTO> objects;
+
+    /* here we must override the constructor for ArrayAdapter
+    * the only variable we care about now is ArrayList<Item> objects,
+    * because it is the list of objects we want to display.
+    */
+    public FilterableAdapter(Context context, int textViewResourceId, ArrayList<ListTO> objects) {
+        super(context, textViewResourceId, objects);
+        this.objects = objects;
+    }
+
+    /*
+     * we are overriding the getView method here - this is what defines how each
+     * list item will look.
+     */
+    public View getView(int position, View convertView, ViewGroup parent){
+
+        // assign the view we are converting to a local variable
+        View v = convertView;
+
+        // first check to see if the view is null. if so, we have to inflate it.
+        // to inflate it basically means to render, or show, the view.
+        if (v == null) {
+            LayoutInflater inflater = (LayoutInflater) getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+            v = inflater.inflate(R.layout.list_item, null);
+        }
+
+        /*
+         * Recall that the variable position is sent in as an argument to this method.
+         * The variable simply refers to the position of the current object in the list. (The ArrayAdapter
+         * iterates through the list we sent it)
+         *
+         * Therefore, i refers to the current Item object.
+         */
+        ListTO i = objects.get(position);
+
+        if (i != null) {
+
+            // This is how you obtain a reference to the TextViews.
+            // These TextViews are created in the XML files we defined.
+
+            TextView tt = (TextView) v.findViewById(R.id.list_name);
+            if (tt != null){
+                tt.setText(i.FileName);
+            }
+
+
+
+        }
+
+        // the view must be returned to our activity
+        return v;
+
+    }
+}
+
+
+And Here is the ListTO class.
+
+package com.test.FilterableList.Models;
+
+public class ListTO {
+
+    public int Id;
+    public String FileName;
+    public String FileUri;
+
+    public ListTO(int id, String fileName, String fileUri) {
+
+        Id = id;
+        FileName = fileName;
+        FileUri = fileUri;
+
+    }
+
+}
+
+
+And here is the layout.
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/blacklikenbackground"
+    tools:context=".AllListActivity" >
+
+    <EditText
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:text="Search"
+        android:id="@+id/inputSearch"
+        />
+
+
+    <ListView
+        android:id="@+id/test_list"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+    </ListView>
+
+</LinearLayout>
+
+
+Here the search keyword comes from "inputSearch" EditText.
+
+Here's the text changed listener.
+
+ inputSearch.addTextChangedListener(new TextWatcher() {
+
+                    @Override
+                    public void onTextChanged(CharSequence cs, int arg1, int arg2, int arg3) {
+                        // When user changed the Text
+                      //  Toast.makeText(getActivity(), cs.toString(), Toast.LENGTH_LONG).show();
+                        m_adapter.getFilter().filter(cs);
+                    }
+
+                    @Override
+                    public void beforeTextChanged(CharSequence arg0, int arg1, int arg2,
+                                                  int arg3) {
+                        // TODO Auto-generated method stub
+
+                    }
+
+                    @Override
+                    public void afterTextChanged(Editable arg0) {
+                        // TODO Auto-generated method stub
+                    }
+                });
+
+
+Thanks.
+    
+===============================================================================================
+46
+A:You are having problem, mainly because you are using custom object. If you pass a String or int value to array adapter its know how to filter it. But if you pass custom object default filter implementation have to no idea how to deal with that. 
+
+Although it is not clear what you are trying to do in your filter i recommend you following steps. 
+
+
+Proper implementation of ListTO, although it has nothing to do with your goal right now
+Implement custom filter
+return your filter
+
+
+Implement custom filter
+
+First thing you have to do is, implements Filterable from your array adapter. 
+
+Second, provide implementation of your Filter
+
+Filter myFilter = new Filter() {
+        @Override
+        protected FilterResults performFiltering(CharSequence constraint) {
+         FilterResults filterResults = new FilterResults();   
+         ArrayList<ListTO> tempList=new ArrayList<ListTO>();
+         //constraint is the result from text you want to filter against. 
+         //objects is your data set you will filter from
+         if(constraint != null && objects!=null) {
+             int length=objects.size();
+             int i=0;
+                while(i<length){
+                    ListTO item=objects.get(i);
+                    //do whatever you wanna do here
+                    //adding result set output array     
+
+                    tempList.add(item);
+
+                    i++;
+                }
+                //following two lines is very important
+                //as publish result can only take FilterResults objects
+                filterResults.values = tempList;
+                filterResults.count = tempList.size();
+          }
+          return filterResults;
+      }
+
+      @SuppressWarnings("unchecked")
+      @Override
+      protected void publishResults(CharSequence contraint, FilterResults results) {
+          objects = (ArrayList<ListTO>) results.values;
+          if (results.count > 0) {
+           notifyDataSetChanged();
+          } else {
+              notifyDataSetInvalidated();
+          }  
+      }
+     };
+
+
+Last step, 
+
+@Override
+     public Filter getFilter() {
+        return myFilter;
+    }
+
+    

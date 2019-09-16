@@ -1,0 +1,110 @@
+49
+Q:We're implementing a Job via JobScheduler for background loading of data. The job will fire about once a day. What tools are available for us to test this functionality (possibly ADB)?
+
+Use cases are to be able to simulate the conditions required for a Job to be run or to just say specifically "Run this job" as part of our automated test suite.
+    
+===============================================================================================
+93
+A:Right.
+Henning and P4u144 set me on the right track to answer this in more detail.
+
+Identify all registered jobs
+
+Identify your task with the adb shell dumpsys jobscheduler command.
+This will give you a huge output in following categories.
+
+
+Settings
+Registered XX Jobs
+Connectivity
+Alarms
+Idle
+Battery
+AppIdle
+Content
+Job history
+Pending queue
+
+
+The category you are most likely to be interested in is Registered XX Jobs. This tells you how many jobs have been scheduled on the device.
+For example, your packagename is com.foo.bar.application you should see an entry like this:
+
+JOB #u0a93/17: eec3709 com.foo.bar.application/com.evernote.android.job.v21.PlatformJobService
+    u0a93 tag=*job*/com.foo.bar.application/com.evernote.android.job.v21.PlatformJobService
+    Source: uid=u0a93 user=0 pkg=com.foo.bar.application
+    JobInfo:
+      Service: com.foo.bar.application/com.evernote.android.job.v21.PlatformJobService
+      PERIODIC: interval=+15m0s0ms flex=+5m0s0ms
+      PERSISTED
+      Requires: charging=false deviceIdle=false
+      Network type: 2
+      Backoff: policy=1 initial=+30s0ms
+      Has early constraint
+      Has late constraint
+    Required constraints: TIMING_DELAY DEADLINE UNMETERED
+    Satisfied constraints: CONNECTIVITY NOT_ROAMING APP_NOT_IDLE DEVICE_NOT_DOZING
+    Unsatisfied constraints: TIMING_DELAY DEADLINE UNMETERED
+    Earliest run time: 07:23
+    Latest run time: 12:23
+    Ready: false (job=false pending=false active=false user=true)
+
+
+
+  Tip: Use adb shell dumpsys jobscheduler | grep com.foo.bar.application to quickly filter the list.
+
+
+Now you can easily identify if your job has been registered with the correct criteria.
+
+FireBaseJobdispatcher
+
+If you use FirebaseJobDispatcher lib you can use 
+
+adb shell dumpsys activity service GcmService | grep com.foo.bar.debug
+    com.foo.bar.debug:0 v853
+    u0|com.foo.bar.debug: 3
+    (scheduled) com.foo.bar.debug/com.firebase.jobdispatcher.GooglePlayReceiver{u=0 tag="com.foo.bar.debug.job.FetchArticlesJob" trigger=window{start=10800s,end=11700s,earliest=10448s,latest=11348s} requirements=[NET_UNMETERED,DEVICE_IDLE] attributes=[PERSISTED,RECURRING] scheduled=-351s last_run=N/A jid=N/A status=PENDING retries=0 client_lib=FIREBASE_JOB_DISPATCHER-1}
+    (scheduled) com.foo.bar.debug/com.firebase.jobdispatcher.GooglePlayReceiver{u=0 tag="com.foo.bar.debug.job.FetchNotificationGroupsJob" trigger=window{start=86400s,end=129600s,earliest=86048s,latest=129248s} requirements=[NET_CONNECTED,CHARGING] attributes=[PERSISTED,RECURRING] scheduled=-351s last_run=N/A jid=N/A status=PENDING retries=0 client_lib=FIREBASE_JOB_DISPATCHER-1}
+    (scheduled) com.foo.bar.debug/com.firebase.jobdispatcher.GooglePlayReceiver{u=0 tag="com.foo.bar.debug.job.RemoveUnusedRealmArticlesJob" trigger=window{start=577980s,end=608400s,earliest=521961s,latest=552381s} requirements=[NET_ANY] attributes=[PERSISTED,RECURRING] scheduled=-56018s last_run=N/A jid=N/A status=PENDING retries=0 client_lib=FIREBASE_JOB_DISPATCHER-1}
+    (finished) [com.foo.bar.debug/com.firebase.jobdispatcher.GooglePlayReceiver:com.foo.bar.debug.job.UpdateNotificationGroupJob,u0]
+    (finished) [com.foo.bar.debug/com.firebase.jobdispatcher.GooglePlayReceiver:com.foo.bar.debug.job.UpdatePushTokenJob,u0]
+    (finished) [com.foo.bar.debug/com.firebase.jobdispatcher.GooglePlayReceiver:com.foo.bar.debug.job.FetchArticlesJob,u0]
+
+
+to check if your service has been scheduled or run.
+
+Force your task to run
+
+When creating a Job you get a JOB_ID returned.
+Use this JOB_ID to force the job to run.
+You can do this by using the adb shell cmd jobscheduler run command, (requires Android 7.1 or higher).
+
+For example, your packagename is com.foo.bar.application and the JOB_ID was 1. 
+You can now run your task via adb 
+
+adb shell cmd jobscheduler run -f com.foo.bar.application 1
+
+
+Don't forget the -f option as this forces the job to run even if the restrictions set are not met.
+
+Evernote Android Job Lib
+
+Last but certainly not least.
+Use the wonderful library from Evernote for this.
+It allows for easy backporting of the JobScheduler on lower API levels using either JobScheduler, GcmNetworkManager or AlarmManager depending on your API level.
+
+Edit 24/08
+
+Even better use the firebase job dispatcher library. 
+
+
+  The Firebase JobDispatcher is a library for scheduling background jobs in your Android app. It provides a JobScheduler-compatible API that works on all recent versions of Android (API level 9+) that have Google Play services installed.
+
+
+I hope this helped. 
+
+Thanks
+
+Edit 28/04/2019
+
+Both Evernote Android-Job and Firebase JobDispatcher are now in maintenance only mode and they both suggest to use jetpack's WorkManager for these kind of jobs.
+    

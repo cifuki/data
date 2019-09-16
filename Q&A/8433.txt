@@ -1,0 +1,184 @@
+32
+Q:I am working on gps tracking apps in android. Here is my code architecture:
+
+
+BackgroundSyncService : A service class that is used for getting location update. Here GoogleApiClient is initialized and implements others Location related methods.
+AppRunCheckerReceiver : A BroadcastReceiver class that will check if my BackgroundSyncService is running or not in a time interval. If it stopped then it start.
+GpsEnableReceiver : A BroadcastReceiver it will fire if gps status changed. It will check if my BackgroundSyncService is running or not in a time interval. If it stopped then it start.
+InternetConnectionStateReceiver : A BroadcastReceiver it will fire when internet status changed. It will check if my BackgroundSyncService is running or not in a time interval. If it is stopped, then it start.
+
+
+In my BackgroundSyncService service I initialize the GoogleApiClient using this way:
+
+public void setLocationLocationRequest() {
+
+        try {
+            googleApiClient = new GoogleApiClient.Builder(this).addConnectionCallbacks(this)
+                    .addOnConnectionFailedListener(this).addApi(com.google.android.gms.location.LocationServices.API).build();
+
+            locationRequest = new LocationRequest();
+            locationRequest.setInterval(3000);
+            locationRequest.setFastestInterval(3000);
+            locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+            googleApiClient.connect();
+        } catch (Exception e) {
+
+    }
+
+
+Here accuricy is LocationRequest.PRIORITY_HIGH_ACCURACY and interval is 
+
+locationRequest.setInterval(3000)
+
+
+here is the GoogleApiClient implementation code.
+
+This application GPS info section contains Latitude longitude and Accuracy parameter
+
+My Findings: in onLocationChanged(Location location) method I check the accuracy of Location object in this way : location.getAccuracy(). Here if accuracy is less than 50 meter, then I accept it.
+
+In 85% of the cases it working like a charm. It sending me exact location from GPS. But in 15% cases, it sending me inaccurate location like more >300 meter.
+
+The 15% device are low cost China brand mobile. 
+
+My Questions:  
+
+
+How can i make accuracy level near 99%. Is there any problem on my code architecture?
+Does GPS accuracy depends on device configuration? if YES then what can I do for low configuration device?
+How Uber, Go-JEK etc. ride sharing apps works for all device? Is they have extra coding for GPS only? 
+My application is for Bangladesh. Here internet is slow. Is it has negative impact on GPS accuracy? 
+
+
+Thanks in advance for this thread. And also sorry for bad english.
+    
+===============================================================================================
+21
+A:Location Updates can be done in following ways:
+
+
+Location you get from GPS is more accurate than the location you get from the network,so if you need accuracy use GPS
+Not sure about this but i think its about the context what type of location you want like you want the accuracy or the fastest one so according to that choose your provider
+FusedLocation provider is the most efficient and effective solution for getting the location on android now,it gathers the location data from different sources and according to the parameters passed like in how much time you want location to be updated,you want high accuracy or not etc.It provides you the best location.
+Yes you should use the FusedLocationProvider for getting the location on android,as google also recommends this and it the most effective and efficient way there to get location on android for now.
+
+
+
+
+Why don't you try by creating Criteria.ACCURACY_HIGH
+
+
+  A constant indicating a high accuracy requirement - may be used for horizontal, altitude, speed or bearing accuracy.  For horizontal and vertical position this corresponds roughly to an accuracy of less than 100 meters.
+
+
+Android tries to mask the reality of the hardware from us, but in practice there are only two location providers: GPS and network. GPS location is slow and not all devices have it, but it is accurate. Network location is faster and is supported by almost all devices, but it is less accurate.
+
+Google improved its map and location management with fused location provider.
+
+The main entry point for interacting with the fused location provider.The methods must be used in conjunction with a GoogleApiClient. 
+
+
+
+Code:
+
+ new GoogleApiClient.Builder(context)
+         .addApi(LocationServices.API)
+         .addConnectionCallbacks(this)
+         .addOnConnectionFailedListener(this)
+         .build()
+
+
+
+  gps \xe2\x80\x93> (GPS, AGPS): Name of the GPS location provider. This provider determines location using satellites. Depending on
+  conditions, this provider may take a while to return a location fix.
+  Requires the permission android.permission.ACCESS_FINE_LOCATION.
+  
+  network \xe2\x80\x93>
+   (AGPS, CellID, WiFi MACID): Name of the network location provider.
+  This provider determines location based on availability of cell tower
+  and WiFi access points. Results are retrieved by means of a network
+  lookup. Requires either of the permissions
+  android.permission.ACCESS_COARSE_LOCATION or
+  android.permission.ACCESS_FINE_LOCATION.
+
+
+
+
+Other Options:
+
+getLastKnownLocation()
+
+The getLastKnownLocation() this returns the last known location...after you re-install the app it will not have any last known location...so it will result in NPE...instead use below code 
+
+public Location getLocation() {
+    try {
+        locationManager = (LocationManager) mContext
+                .getSystemService(LOCATION_SERVICE);
+
+        // getting GPS status
+        isGPSEnabled = locationManager
+                .isProviderEnabled(LocationManager.GPS_PROVIDER);
+
+        // getting network status
+        isNetworkEnabled = locationManager
+                .isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+
+        if (!isGPSEnabled && !isNetworkEnabled) {
+            // no network provider is enabled
+        } else {
+            this.canGetLocation = true;
+            //here is the if-else change so code avoids falling into both loops
+         // if GPS Enabled get lat/long using GPS Services
+            if (isGPSEnabled) {
+                if (location == null) {
+                    locationManager.requestLocationUpdates(
+                            LocationManager.GPS_PROVIDER,
+                            MIN_TIME_BW_UPDATES,
+                            MIN_DISTANCE_CHANGE_FOR_UPDATES, this);
+                    Log.d("GPS", "GPS Enabled");
+                    if (locationManager != null) {
+                        location = locationManager
+                                .getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                        if (location != null) {
+                            latitude = location.getLatitude();
+                            longitude = location.getLongitude();
+                        }
+                    }
+                }
+            } else if (isNetworkEnabled) {
+                locationManager.requestLocationUpdates(
+                        LocationManager.NETWORK_PROVIDER,
+                        MIN_TIME_BW_UPDATES,
+                        MIN_DISTANCE_CHANGE_FOR_UPDATES, this);
+                Log.d("Network", "Network Enabled");
+                if (locationManager != null) {
+                    location = locationManager
+                            .getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                    if (location != null) {
+                        latitude = location.getLatitude();
+                        longitude = location.getLongitude();
+                    }
+                }
+            }
+        }
+
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+
+    return location;
+}
+
+
+Check few Best examples I have found:
+
+
+http://rdcworld-android.blogspot.in/2012/01/get-current-location-coordinates-city.html
+https://developers.google.com/android/reference/com/google/android/gms/location/FusedLocationProviderApi
+https://developer.android.com/reference/android/location/LocationManager.html
+https://demonuts.com/current-gps-location/
+https://developer.android.com/training/location/retrieve-current.html
+
+
+It worked for me...should work for you too...
+    

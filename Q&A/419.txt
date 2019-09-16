@@ -1,0 +1,140 @@
+274
+Q:I'm trying to create an always-op-top button/clickable-image
+which stays on top of all the windows all the time. 
+
+The proof of
+concept is 
+
+
+here - Smart Taskbar (on AppBrain)
+and here V1.4.0 Sidebar style SWKey - Button savior (on xda-developers) 
+
+
+I have been successful and have a running service now. The service
+displays some text on top left corner of screen all the time while
+user can freely interact with rest of apps in normal manner. 
+
+What I'm
+doing is subclass ViewGroup and add it to root window manager with
+flag TYPE_SYSTEM_OVERLAY. Now I want to add a button/clickable-image
+in place of this text which can receive touch events on itself. I
+tried overriding "onTouchEvent" for the whole ViewGroup but it does
+not receive any event. 
+
+How can I receive events only on certain parts
+of my always-on-top view group? Kindly suggest.
+
+public class HUD extends Service {
+    HUDView mView;
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Toast.makeText(getBaseContext(),"onCreate", Toast.LENGTH_LONG).show();
+        mView = new HUDView(this);
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+                0,
+//              WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+//                      | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT);
+        params.gravity = Gravity.RIGHT | Gravity.TOP;
+        params.setTitle("Load Average");
+        WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        wm.addView(mView, params);
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        Toast.makeText(getBaseContext(),"onDestroy", Toast.LENGTH_LONG).show();
+        if(mView != null)
+        {
+            ((WindowManager) getSystemService(WINDOW_SERVICE)).removeView(mView);
+            mView = null;
+        }
+    }
+}
+
+class HUDView extends ViewGroup {
+    private Paint mLoadPaint;
+
+    public HUDView(Context context) {
+        super(context);
+        Toast.makeText(getContext(),"HUDView", Toast.LENGTH_LONG).show();
+
+        mLoadPaint = new Paint();
+        mLoadPaint.setAntiAlias(true);
+        mLoadPaint.setTextSize(10);
+        mLoadPaint.setARGB(255, 255, 0, 0);
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        canvas.drawText("Hello World", 5, 15, mLoadPaint);
+    }
+
+    @Override
+    protected void onLayout(boolean arg0, int arg1, int arg2, int arg3, int arg4) {
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        //return super.onTouchEvent(event);
+        Toast.makeText(getContext(),"onTouchEvent", Toast.LENGTH_LONG).show();
+        return true;
+    }
+}
+
+    
+===============================================================================================
+153
+A:This might be a stupid solution. But it works. If you can improve it, please let me know.
+
+OnCreate of your Service: I have used WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH flag. This is the only change in service.
+
+@Override
+    public void onCreate() {
+        super.onCreate();
+        Toast.makeText(getBaseContext(),"onCreate", Toast.LENGTH_LONG).show();
+        mView = new HUDView(this);
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                PixelFormat.TRANSLUCENT);
+        params.gravity = Gravity.RIGHT | Gravity.TOP;
+        params.setTitle("Load Average");
+        WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        wm.addView(mView, params);
+    }
+
+
+Now, you will start getting each and every click event. So, you need to rectify in your event handler.
+
+In your ViewGroup touch event
+
+@Override
+public boolean onTouchEvent(MotionEvent event) {
+
+    // ATTENTION: GET THE X,Y OF EVENT FROM THE PARAMETER
+    // THEN CHECK IF THAT IS INSIDE YOUR DESIRED AREA
+
+
+    Toast.makeText(getContext(),"onTouchEvent", Toast.LENGTH_LONG).show();
+    return true;
+}
+
+
+Also you may need to add this permission to your manifest:
+
+<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    

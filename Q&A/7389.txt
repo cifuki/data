@@ -1,0 +1,78 @@
+35
+Q:Samsung's TWLauncher allows apps to create badge counts on app icons.
+
+This is completely undocumented! There is no mention of it anywhere, and only a handful of apps are using it (e.g. Facebook, eBay).
+
+How do you use this functionality to add a count to your app icon?
+
+This is very specific to Samsung devices. I am not asking about Android in general. I'm only asking about badging Samsung's Touchwhiz interface which currently allows badging. Android does not. 
+    
+===============================================================================================
+68
+A:First you'll need to add the following permissions to your AndroidManifest.xml file.
+
+<uses-permission android:name="com.sec.android.provider.badge.permission.READ" />
+<uses-permission android:name="com.sec.android.provider.badge.permission.WRITE" />
+
+
+The column structure is as follows:
+
+(integer) _id, (text) package, (text) class, (integer) badgecount, (blob) icon, (???) extraData
+
+
+In order to query ALL results from the BadgeProvider do the following:
+
+// This is the content uri for the BadgeProvider
+Uri uri = Uri.parse("content://com.sec.badge/apps");
+
+Cursor c = getContentResolver().query(uri, null, null, null, null);
+
+// This indicates the provider doesn't exist and you probably aren't running
+// on a Samsung phone running TWLauncher. This has to be outside of try/finally block
+if (c == null) {
+    return;
+}
+
+try {
+    if (!c.moveToFirst()) {
+        // No results. Nothing to query
+        return;
+    }
+
+    c.moveToPosition(-1);
+    while (c.moveToNext()) {
+        String pkg = c.getString(1);
+        String clazz = c.getString(2);
+        int badgeCount = c.getInt(3);
+        Log.d("BadgeTest", "package: " + pkg + ", class: " + clazz + ", count: " + String.valueOf(cnt));
+    }
+} finally {
+    c.close();
+}
+
+
+In order to add a badge count to your application icon
+
+ContentValues cv = new ContentValues();
+cv.put("package", getPackageName());
+// Name of your activity declared in the manifest as android.intent.action.MAIN.
+// Must be fully qualified name as shown below
+cv.put("class", "com.example.badge.activity.Test");
+cv.put("badgecount", 1); // integer count you want to display
+
+// Execute insert
+getContentResolver().insert(Uri.parse("content://com.sec.badge/apps"), cv);
+
+
+If you want to clear the badge count on your icon
+
+ContentValues cv = new ContentValues();
+cv.put("badgecount", 0);
+getContentResolver().update(Uri.parse("content://com.sec.badge/apps"), cv, "package=?", new String[] {getPackageName()});  
+
+
+NEW
+I have created an open source project that you can import as a library to assist with this. It's licensed as Apache so feel free to use it as you please.
+
+You can get it from here: https://github.com/shafty023/SamsungBadger
+    

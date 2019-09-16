@@ -1,0 +1,188 @@
+45
+Q:I think I need to create a new SSL Socket Factory?
+Also, I don't want to use the global SSL Context (https://github.com/square/okhttp/issues/184) for obvious reasons.
+
+thanks!
+
+EDIT:
+
+As of okhttp 2.1.0 you can pin certificates very easily.
+
+See the source code here to get started
+    
+===============================================================================================
+70
+A:UPDATE FOR OKHTTP 3.0
+
+OKHTTP 3.0 has built-in support for pinning certificates. Start off by pasting the following code:
+
+ String hostname = "yourdomain.com";
+ CertificatePinner certificatePinner = new CertificatePinner.Builder()
+     .add(hostname, "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+     .build();
+ OkHttpClient client = OkHttpClient.Builder()
+     .certificatePinner(certificatePinner)
+     .build();
+
+ Request request = new Request.Builder()
+     .url("https://" + hostname)
+     .build();
+ client.newCall(request).execute();
+
+
+This will fail because AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA is not a valid hash of your certificate. The exception thrown will have the correct hashes of your certificate:
+
+ javax.net.ssl.SSLPeerUnverifiedException: Certificate pinning failure!
+   Peer certificate chain:
+     sha256/afwiKY3RxoMmLkuRW1l7QsPZTJPwDS2pdDROQjXw8ig=: CN=publicobject.com, OU=PositiveSSL
+     sha256/klO23nT2ehFDXCfx3eHTDRESMz3asj1muO+4aIdjiuY=: CN=COMODO RSA Secure Server CA
+     sha256/grX4Ta9HpZx6tSHkmCrvpApTQGo67CYDnvprLg5yRME=: CN=COMODO RSA Certification Authority
+     sha256/lCppFqbkrlJ3EcVFAkeip0+44VaoJUymbnOaEUk7tEU=: CN=AddTrust External CA Root
+   Pinned certificates for publicobject.com:
+     sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+   at okhttp3.CertificatePinner.check(CertificatePinner.java)
+   at okhttp3.Connection.upgradeToTls(Connection.java)
+   at okhttp3.Connection.connect(Connection.java)
+   at okhttp3.Connection.connectAndSetOwner(Connection.java)
+
+
+Make sure you add these to your CertificatePinner object, and you have successfully pinned your certificate:
+
+ CertificatePinner certificatePinner = new CertificatePinner.Builder()
+   .add("publicobject.com", "sha256/afwiKY3RxoMmLkuRW1l7QsPZTJPwDS2pdDROQjXw8ig=")
+   .add("publicobject.com", "sha256/klO23nT2ehFDXCfx3eHTDRESMz3asj1muO+4aIdjiuY=")
+   .add("publicobject.com", "sha256/grX4Ta9HpZx6tSHkmCrvpApTQGo67CYDnvprLg5yRME=")
+   .add("publicobject.com", "sha256/lCppFqbkrlJ3EcVFAkeip0+44VaoJUymbnOaEUk7tEU=")
+   .build();
+
+
+EVERYTHING PAST HERE IS FOR OLDER (2.x) VERSIONS OF OKHTTP
+
+After reading this blog post I was able to modify the concept for use with OkHttp. You should use at least version 2.0 if you want to avoid using a global SSL context.
+
+This modification applies only to the current instance of OkHttp, and changes that instance so that it only accepts certificates from the certificate specified. If you want other certificates (such as one from Twitter) to be accepted, you simply need to create a new OkHttp instance without the modifications described below.
+
+1. Creating a TrustStore
+
+In order to pin a certificate, you first need to create a truststore containing this certificate. To create the truststore we will use this handy script from nelenkov slightly modified for our purposes:
+
+#!/bin/bash
+
+if [ "$#" -ne 3 ]; then
+  echo "Usage: importcert.sh <CA cert PEM file> <bouncy castle jar> <keystore pass>"
+  exit 1
+fi
+
+CACERT=$1
+BCJAR=$2
+SECRET=$3
+
+TRUSTSTORE=mytruststore.bks
+ALIAS=`openssl x509 -inform PEM -subject_hash -noout -in $CACERT`
+
+if [ -f $TRUSTSTORE ]; then
+    rm $TRUSTSTORE || exit 1
+fi
+
+echo "Adding certificate to $TRUSTSTORE..."
+keytool -import -v -trustcacerts -alias $ALIAS \\
+      -file $CACERT \\
+      -keystore $TRUSTSTORE -storetype BKS \\
+      -providerclass org.bouncycastle.jce.provider.BouncyCastleProvider \\
+      -providerpath $BCJAR \\
+      -storepass $SECRET
+
+echo "" 
+echo "Added '$CACERT' with alias '$ALIAS' to $TRUSTSTORE..."
+
+
+To run this script you need 3 things: 
+
+
+Make sure keytool (included in Android SDK) is on your $PATH.
+Make sure you have the latest BouncyCastle jar file download in the same dir as the script. (Download here)
+The certificate you want to pin.
+
+
+Now run the script
+
+./gentruststore.sh your_cert.pem bcprov-jdk15on-150.jar your_secret_pass
+
+
+Type 'yes' to trust the certificate, and when complete mytruststore.bks will be generated in your current dir.
+
+2. Apply your TrustStore to your Android project
+
+Create a directory raw under your res folder. Copy mytruststore.bks here.
+
+Now here's a very simple class that pins your cert to OkHttp
+
+import android.content.Context;
+import android.util.Log;
+
+import com.squareup.okhttp.OkHttpClient;
+import com.squareup.okhttp.Request;
+import com.squareup.okhttp.Response;
+
+import java.io.InputStream;
+import java.io.Reader;
+import java.security.KeyStore;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManagerFactory;
+
+
+/**
+ * Created by martin on 02/06/14.
+ */
+public class Pinning {
+
+    Context context;
+    public static String TRUST_STORE_PASSWORD = "your_secret";
+    private static final String ENDPOINT = "https://api.yourdomain.com/";
+
+    public Pinning(Context c) {
+        this.context = c;
+    }
+
+    private SSLSocketFactory getPinnedCertSslSocketFactory(Context context) {
+        try {
+            KeyStore trusted = KeyStore.getInstance("BKS");
+            InputStream in = context.getResources().openRawResource(R.raw.mytruststore);
+            trusted.load(in, TRUST_STORE_PASSWORD.toCharArray());
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(
+                    TrustManagerFactory.getDefaultAlgorithm());
+            trustManagerFactory.init(trusted);
+            sslContext.init(null, trustManagerFactory.getTrustManagers(), null);
+            return sslContext.getSocketFactory();
+        } catch (Exception e) {
+            Log.e("MyApp", e.getMessage(), e);
+        }
+        return null;
+    }
+
+    public void makeRequest() {
+        try {
+            OkHttpClient client = new OkHttpClient();
+            client.setSslSocketFactory(getPinnedCertSslSocketFactory(context));
+
+            Request request = new Request.Builder()
+                    .url(ENDPOINT)
+                    .build();
+
+            Response response = client.newCall(request).execute();
+
+            Log.d("MyApp", response.body().string());
+
+        } catch (Exception e) {
+            Log.e("MyApp", e.getMessage(), e);
+
+        }
+    }
+}
+
+
+As you can see we instantiate a new instance of OkHttpClient and call setSslSocketFactory, passing in a SSLSocketFactory with our custom truststore. Make sure you set TRUST_STORE_PASSWORD to the password you passed into the shell script.  Your OkHttp instance should now only accept the certificate you specified.
+    

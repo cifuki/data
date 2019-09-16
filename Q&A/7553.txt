@@ -1,0 +1,85 @@
+35
+Q:I need to reliably detect if a device has full internet access, i.e. that the user is not confined to a captive portal (also called walled garden), i.e. a limited subnet which forces users to submit their credentials on a form in order to get full access. 
+
+My app is automating the authentication process, and therefore it is important to know that full internet access is not available before starting the logon activity. 
+
+The question is not about how to check that the network interface is up and in a connected state. It is about making sure the device has unrestricted internet access as opposed to a sandboxed intranet segment.
+
+All the approaches I have tried so far are failing, because connecting to any well-known host would not throw an exception but return a valid HTTP 200 response code because all requests are routed to the login page.
+
+Here are all the approaches I tried but they all return true instead of false for the reasons explained above:
+
+1:
+
+
+InetAddress.getByName(host).isReachable(TIMEOUT_IN_MILLISECONDS);
+isConnected = true; <exception not thrown>
+
+
+2:
+
+Socket socket = new Socket();
+SocketAddress sockaddr = new InetSocketAddress(InetAddress.getByName(host), 80);
+socket.connect(sockaddr, pingTimeout);
+isConnected = socket.isConnected();
+
+
+3:
+
+URL url = new URL(hostUrl));
+URLConnection urlConn = url.openConnection();
+HttpURLConnection httpConn = (HttpURLConnection) urlConn;
+httpConn.setAllowUserInteraction(false);
+httpConn.setRequestMethod("GET");
+httpConn.connect();
+responseCode = httpConn.getResponseCode();
+isConnected = responseCode == HttpURLConnection.HTTP_OK;
+
+
+So, how do I make sure I connected to an actual host instead of the login redirection page? Obviously, I could check the actual response body from the 'ping' host I use but it does not look like a proper solution.
+    
+===============================================================================================
+43
+A:For reference, here is the 'official' method from the Android 4.0.1 AOSP code base:
+WifiWatchdogStateMachine.isWalledGardenConnection(). I am including the code below just in case the link breaks in the future.
+
+private static final String mWalledGardenUrl = "http://clients3.google.com/generate_204";
+private static final int WALLED_GARDEN_SOCKET_TIMEOUT_MS = 10000;
+
+private boolean isWalledGardenConnection() {
+    HttpURLConnection urlConnection = null;
+    try {
+        URL url = new URL(mWalledGardenUrl); // "http://clients3.google.com/generate_204"
+        urlConnection = (HttpURLConnection) url.openConnection();
+        urlConnection.setInstanceFollowRedirects(false);
+        urlConnection.setConnectTimeout(WALLED_GARDEN_SOCKET_TIMEOUT_MS);
+        urlConnection.setReadTimeout(WALLED_GARDEN_SOCKET_TIMEOUT_MS);
+        urlConnection.setUseCaches(false);
+        urlConnection.getInputStream();
+        // We got a valid response, but not from the real google
+        return urlConnection.getResponseCode() != 204;
+    } catch (IOException e) {
+        if (DBG) {
+            log("Walled garden check - probably not a portal: exception "
+                    + e);
+        }
+        return false;
+    } finally {
+        if (urlConnection != null) {
+            urlConnection.disconnect();
+        }
+    }
+}
+
+
+This approach relies on a specific URL, mWalledGardenUrl = "http://clients3.google.com/generate_204" always returning a 204 response code. This will work even if DNS has been interfered with since in that case a 200 code will be returned instead of the expected 204. I have seen some captive portals spoofing requests to this specific URL in order to prevent the Internet not accessible message on Android devices.
+
+Google has a variation of this theme: fetching http://www.google.com/blank.html will return a 200 code with a zero-length response body. So if you get a non-empty body this would be another way to figure out that you are behind a walled garden.
+
+Apple has its own URLs for detecting captive portals: when network is up IOS and MacOS devices would connect to an URL like http://www.apple.com/library/test/success.html, http://attwifi.apple.com/library/test/success.html, or http://captive.apple.com/hotspot-detect.html which must return an HTTP status code of 200 and a body containing Success. 
+
+
+  NOTE:
+      This approach will not work in areas with restricted Internet access such as China where the whole country is a walled garden, and where most Google/Apple services are blocked or filtered. Some of these might not be blocked: http://www.google.cn/generate_204, http://g.cn/generate_204, http://gstatic.com/generate_204 or http://connectivitycheck.gstatic.com/generate_204 \xe2\x80\x94 yet these all belong to google so not guaranteed to work.
+
+    

@@ -1,0 +1,124 @@
+29
+Q:I've implemented access to a database using SQLiteOpenHelper from the android.database package within some classes (with pattern DAO).
+
+I wrote some junit tests for these classes using an AndroidTestCase but this causes the tests to use the same database as the application.
+
+I read that the ProviderTestCase2 or RenamingDelegatingContext can be used to test the database separately. Unluckily I couldn't find any nice tutorial/example that shows how to test a database with ProviderTestCase2/RenamingDelegatingContext.
+
+Can anyone point me somewhere OR give me some tip OR share some code for database testing?!
+
+Cheeerrrrsss!!
+Giorgio
+    
+===============================================================================================
+21
+A:Both the ProviderTestCase and RenamingDelegatingContext will destroy the database if one already exists before opening it within it's context, so in that sense they both have the same low-level approach towards opening a SQLite database.
+
+You leverage this by opening the database in your fixture in setUp(), which will then ensure that your working with a fresh database before each test case.
+
+I would suggest that you go for writing content providers rather than creating database adapters. You can use a common interface for accessing data, be it stored in the DB or somewhere over the network, the design of content providers can be accommodated to access such data at the cost of a bit of IPC overhead involved that most of us shouldn't have to care about. 
+
+If you did this for accessing a SQLite database, the framework would completely manage the database connection for you in a separate process. As added beef, the ProviderTestCase2<ContentProvider> completely bootstraps a test context for your content provider without you having to a write a single line of code.
+
+But, that's not said it isn't such a huge effort to do the bootstrapping yourself. So supposing you had a database adapter as such; we'll just focus on open() for getting write access to our database, nothing fancy:
+
+public class MyAdapter {
+
+    private static final String DATABASE_NAME = "my.db";
+    private static final String DATABASE_TABLE = "table";
+    private static final int DATABASE_VERSION = 1;
+
+
+    /**
+     * Database queries
+     */
+    private static final String DATABASE_CREATE_STATEMENT = "some awesome create statement";
+
+    private final Context mCtx;
+    private SQLiteDatabase mDb;
+    private DatabaseHelper mDbHelper;
+
+    private static class DatabaseHelper extends SQLiteOpenHelper {
+
+        public DatabaseHelper(Context context) {
+            super(context, DATABASE_NAME, null, DATABASE_VERSION);
+        }
+
+        @Override
+        public void onCreate(SQLiteDatabase db) {
+            db.execSQL(DATABASE_CREATE_STATEMENT);  
+        }
+
+        @Override
+        public void onUpgrade(SQLiteDatabase db, int a, int b) {
+            // here to enable this code to compile
+        }
+    }
+
+    /**
+     * Constructor - takes the provided context to allow for the database to be
+     * opened/created.
+     * 
+     * @param context the Context within which to work.
+     */
+    public MyAdapter(Context context) {
+        mCtx = context;
+    }
+
+    /**
+        * Open the last.fm database. If it cannot be opened, try to create a new
+        * instance of the database. If it cannot be created, throw an exception to
+        * signal the failure.
+        * 
+        * @return this (self reference, allowing this to be chained in an
+        *         initialization call)
+        * @throws SQLException if the database could be neither opened or created
+        */
+    public MyAdapter open() throws SQLException {
+        mDbHelper = new DatabaseHelper(mCtx);
+        mDb = mDbHelper.getWritableDatabase();
+        return this;
+    }
+
+    public void close() {
+            mDbHelper.close();
+        }
+
+}
+
+
+Then you could write your test as such:
+
+public final class MyAdapterTests extends AndroidTestCase {
+
+    private static final String TEST_FILE_PREFIX = "test_";
+private MyAdapter mMyAdapter;
+
+@Override
+protected void setUp() throws Exception {
+    super.setUp();
+
+    RenamingDelegatingContext context 
+        = new RenamingDelegatingContext(getContext(), TEST_FILE_PREFIX);
+
+    mMyAdapter = new MyAdapter(context);
+    mMyAdapter.open();
+}
+
+@Override
+protected void tearDown() throws Exception {
+    super.tearDown();
+
+    mMyAdapter.close();
+    mMyAdapter = null;
+}
+
+public void testPreConditions() {
+    assertNotNull(mMyAdapter);
+}
+
+}
+
+
+So what's happening here is that the context implementation of RenamingDelegatingContext, once MyAdapter(context).open() is called, will always recreate the database. Each test you write now will be going against the state of the database after MyAdapter.DATABASE_CREATE_STATEMENT is called. 
+    

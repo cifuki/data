@@ -1,0 +1,41 @@
+34
+Q:I'm using AndroidStudio and Gradle to build my Android app with tests in the 'androidTest' source directory. I added a new dependency and am now getting the following issue when running Android Tests either in AndroidStudio or via './gradlew connectedCheck'. What's the preferred way to resolve this?
+
+'Warning:Conflict with dependency 'org.somelibrary:library-core'. Resolved versions for app and test app differ.'
+
+As of Android Gradle Plugin 1.1.1 the error displays like this:
+"Warning:Conflict with dependency 'com.google.code.findbugs:jsr305'. Resolved versions for app (1.3.9) and test app (2.0.1) differ."
+    
+===============================================================================================
+63
+A:When you build and run Android Tests for your app the Android Gradle plugin builds two APKs (the app and the test APK). During the gradle run the dependencies for the app and test builds are compared. Dependencies that exist in both are removed from the test build when the version numbers are the same. When the same dependencies are in use, but differ by version number then you will need to manually resolve the dependency conflict and this error is presented.
+
+To resolve the conflict you first need to figure out the two versions that are conflicting. If you aren't already using the Android Gradle Plugin v1.1.1+ then if you upgrade to that version the error message will give you the conflicting version numbers. Choose which one you need.
+
+*When choosing between the conflict numbers it might be important to keep in mind that unless you've overridden the default gradle dependency resolution strategy (failOnVersionConflict) then conflicts internally within the app and test builds (separately) will be resolved by choosing the greater version.
+
+Now you need to decide how to resolve the conflict. If you need to force the use of the lower version (1.2) of the library you will need to force the dependency to be resolved for both the app and test builds to a specific version of the library like this:
+
+// Needed to resolve app vs test dependencies, specifically, transitive dependencies of
+// libraryq and libraryz. Forcing the use of the smaller version after regression testing.
+configurations.all {
+    resolutionStrategy.force 'org.somelibrary:library-core:1.2'
+}
+
+
+If you need to use the 2.1 version of the dependency then you can use the snippet above as well, but you will never start using a newer version of the library regardless of whether transitive dependency updates require it. Alternatively, you can also add a new normal dependency to either the app or the test builds (whichever was trying to use the 1.2 version of the dependency). This will force the app or test build to depend on the (previously mentioned) gradle dependency resolution strategy and therefore use the 2.1 version of the library for that build.
+
+// Force the use of 2.1 because the app requires that version in libraryq transitively.
+androidTestCompile 'org.somelibrary:library-core:2.1'
+
+
+or
+
+// Force the use of 2.1 because the Android Tests require that version in libraryz.
+compile 'org.somelibrary:library-core:2.1'
+
+
+In this solution the error could resurface, if say version 3.3, started to be used in only one of either the test or the app builds, but this is typically OK because you'll be notified of another incompatibility at build time and can take action.
+
+Update: A few new solutions to this question now also list excluding a particular transitive dependency from a declared dependency. This is a valid solution, but puts more onus on the developers. In the same way that the forced dependency resolution suggestion above above hard codes a version into the build, the exclude-transitive-dependency solution specifically overrides the stated requirements of a library. Sometimes library developers have bugs or work around bugs in various other libraries so when you implement these solutions you take some risk in potentially having to chase down very obscure bugs.
+    

@@ -1,0 +1,80 @@
+101
+Q:Is there any way to slow the scroll speed with the viewpager adaptor in android?
+
+
+
+You know, I've been looking at this code. I can't figure out what I'm dong wrong.
+
+try{ 
+    Field mScroller = mPager.getClass().getDeclaredField("mScroller"); 
+    mScroller.setAccessible(true); 
+    Scroller scroll = new Scroller(cxt);
+    Field scrollDuration = scroll.getClass().getDeclaredField("mDuration");
+    scrollDuration.setAccessible(true);
+    scrollDuration.set(scroll, 1000);
+    mScroller.set(mPager, scroll);
+}catch (Exception e){
+    Toast.makeText(cxt, "something happened", Toast.LENGTH_LONG).show();
+} 
+
+
+It doesn't change anything yet no exceptions occur?
+    
+===============================================================================================
+224
+A:I've started with HighFlyer's code which indeed changed the mScroller field (which is a great start) but didn't help extend the duration of the scroll because ViewPager explicitly passes the duration to the mScroller when requesting to scroll.
+
+Extending ViewPager didn't work as the important method (smoothScrollTo) can't be overridden.
+
+I ended up fixing this by extending Scroller with this code:
+
+public class FixedSpeedScroller extends Scroller {
+
+    private int mDuration = 5000;
+
+    public FixedSpeedScroller(Context context) {
+        super(context);
+    }
+
+    public FixedSpeedScroller(Context context, Interpolator interpolator) {
+        super(context, interpolator);
+    }
+
+    public FixedSpeedScroller(Context context, Interpolator interpolator, boolean flywheel) {
+        super(context, interpolator, flywheel);
+    }
+
+
+    @Override
+    public void startScroll(int startX, int startY, int dx, int dy, int duration) {
+        // Ignore received duration, use fixed one instead
+        super.startScroll(startX, startY, dx, dy, mDuration);
+    }
+
+    @Override
+    public void startScroll(int startX, int startY, int dx, int dy) {
+        // Ignore received duration, use fixed one instead
+        super.startScroll(startX, startY, dx, dy, mDuration);
+    }
+}
+
+
+And using it like this:
+
+try {
+    Field mScroller;
+    mScroller = ViewPager.class.getDeclaredField("mScroller");
+    mScroller.setAccessible(true); 
+    FixedSpeedScroller scroller = new FixedSpeedScroller(mPager.getContext(), sInterpolator);
+    // scroller.setFixedDuration(5000);
+    mScroller.set(mPager, scroller);
+} catch (NoSuchFieldException e) {
+} catch (IllegalArgumentException e) {
+} catch (IllegalAccessException e) {
+}
+
+
+I've basically hardcoded the duration to 5 seconds and made my ViewPager use it.
+
+Hope this helps.
+    

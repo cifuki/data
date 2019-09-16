@@ -1,0 +1,135 @@
+55
+Q:So, back when I was using Koush's Ion, I was able to add a json body to my posts with a simple .setJsonObjectBody(json).asJsonObject()
+
+I'm moving over to OkHttp, and I really don't see a good way to do that. I'm getting error 400's all over the place.
+
+Anyone have any ideas?
+
+I've even tried manually formatting it as a json string.
+
+String reason = menuItem.getTitle().toString();
+JsonObject json = new JsonObject();
+json.addProperty("Reason", reason);
+
+String url = mBaseUrl + "/" + id + "/report";
+
+Request request = new Request.Builder()
+        .header("X-Client-Type", "Android")
+        .url(url)
+        .post(RequestBody
+                .create(MediaType
+                    .parse("application/json"),
+                        "{\\"Reason\\": \\"" + reason + "\\"}"
+                ))
+        .build();
+
+client.newCall(request).enqueue(new com.squareup.okhttp.Callback() {
+    @Override
+    public void onFailure(Request request, IOException throwable) {
+        throwable.printStackTrace();
+    }
+
+    @Override
+    public void onResponse(Response response) throws IOException {
+        if (!response.isSuccessful()) throw new IOException(
+                "Unexpected code " + response);
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(context, "Report Received", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+});
+
+/*Ion.with(getContext(), url)
+        .setHeader("X-Client-Type", "Android")
+        .setJsonObjectBody(json)
+        .asJsonObject()
+        .setCallback(new FutureCallback<JsonObject>() {
+            @Override
+            public void onCompleted(Exception e, JsonObject result) {
+                Toast.makeText(context, "Report Received", Toast.LENGTH_SHORT).show();
+            }
+        });*/
+
+
+Edit: For anyone stumbling upon this question later, here is my solution that does everything asynchronously. The selected answer IS CORRECT, but my code is a bit different.
+
+String reason = menuItem.getTitle().toString();
+if (reason.equals("Copyright"))
+    reason = "CopyrightInfringement";
+JsonObject json = new JsonObject();
+json.addProperty("Reason", reason);
+
+String url = mBaseUrl + "/" + id + "/report";
+
+String jsonString = json.toString();
+RequestBody body = RequestBody.create(JSON, jsonString);
+
+Request request = new Request.Builder()
+    .header("X-Client-Type", "Android")
+    .url(url)
+    .post(body)
+    .build();
+
+client.newCall(request).enqueue(new com.squareup.okhttp.Callback() {
+    @Override
+    public void onFailure(Request request, IOException throwable) {
+        throwable.printStackTrace();
+    }
+
+    @Override
+    public void onResponse(Response response) throws IOException {
+        if (!response.isSuccessful()) throw new IOException(
+            "Unexpected code " + response);
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(context, "Report Received", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+});
+
+/*Ion.with(getContext(), url)
+    .setHeader("X-Client-Type", "Android")
+    .setJsonObjectBody(json)
+    .asJsonObject()
+    .setCallback(new FutureCallback<JsonObject>() {
+        @Override
+        public void onCompleted(Exception e, JsonObject result) {
+            Toast.makeText(context, "Report Received", Toast.LENGTH_SHORT).show();
+        }
+    });*/
+
+...
+
+private void runOnUiThread(Runnable task) {
+    new Handler(Looper.getMainLooper()).post(task);
+}
+
+
+A little more work, mainly because you have to get back to the UI thread to do any UI work, but you have the benefit of HTTPS just...working.
+    
+===============================================================================================
+110
+A:Just use JSONObject.toString(); method.
+And have a look at OkHttp's tutorial:
+
+public static final MediaType JSON
+    = MediaType.parse("application/json; charset=utf-8");
+
+OkHttpClient client = new OkHttpClient();
+
+String post(String url, String json) throws IOException {
+  RequestBody body = RequestBody.create(JSON, json);
+  Request request = new Request.Builder()
+      .url(url)
+      .post(body)
+      .build();
+  Response response = client.newCall(request).execute();
+  return response.body().string();
+}
+
+    

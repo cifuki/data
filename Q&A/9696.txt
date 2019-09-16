@@ -1,0 +1,78 @@
+28
+Q:I've 2 ASyncTasks, one retrieves a value from an httpPost and the other update some elements of the UI (including an listview).
+The problem is that since both ASyncTasks share the same background thread, if the network opperation start first and runs slow (due a bad network connectivity). The others background thread takes too much time making the app irresponsible.
+
+Since both ASyncTasks are independient is pretty stupid one to make wait the other. It would be more logical asynctasks different classes use different threads, am I wrong?
+
+Reading the ASyncTask doc. Talks about using  executeOnExecutor(), but how can I solve that in a API level lower than 11?
+
+Here goes a small example that reproduces the "problem"
+
+        new Task1().execute();
+        new Task2().execute();
+
+
+With
+
+public class Task1 extends AsyncTask<Void, Void, Void> {
+
+    @Override
+    protected Void doInBackground(Void... params) {
+        GLog.e("doInBackground start 1");
+        SystemClock.sleep(9000);
+        GLog.e("doInBackground end 1");
+        return null;
+    }
+
+    @Override
+    protected void onPreExecute() {
+        GLog.e("onPreExecute 1");
+        super.onPreExecute();
+    }
+
+    @Override
+    protected void onPostExecute(Void result) {
+        GLog.e("onPostExecute 1");
+        super.onPostExecute(result);
+    }
+
+}
+
+public class Task2 extends AsyncTask<Void, Void, Void> {
+
+    @Override
+    protected void onPreExecute() {
+        GLog.e("onPreExecute 2");
+        super.onPreExecute();
+    }
+
+    @Override
+    protected Void doInBackground(Void... params) {
+        GLog.e("doInBackground start 2");
+        SystemClock.sleep(9000);
+        GLog.e("doInBackground end 2");
+        return null;
+    }
+
+    @Override
+    protected void onPostExecute(Void result) {
+        GLog.e("onPostExecute 2");
+        super.onPostExecute(result);
+    }
+
+}
+
+    
+===============================================================================================
+51
+A:This is how I handle this in my code:
+
+if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB ) {
+    new MyAsyncTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+} else {
+    new MyAsyncTask().execute();
+}
+
+
+And replace MyAsyncTask with yours Task1 and Task2 respectively. Basically change in AsyncTask appeared in Honeycomb (see Android SDK docs here in "Order of execution" section), so before that, you launch it as usual, for HC and up, use executeOnExecutor() if you do not like new behaviour (noone does, I think)
+    

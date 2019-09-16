@@ -1,0 +1,60 @@
+37
+Q:I am using okhttp 2.0 in my Android app and didn't find a way to set some common User Agent for all outgoing requests.
+
+I thought I could do something like
+
+OkHttpClient client = new OkHttpClient();
+client.setDefaultUserAgent(...)
+
+
+...but there's no such method or similar.
+Of course I could provide some extension utility method which would wrap a RequestBuilder to attach .header("UserAgent") and then I would use it for building all my requests, but I thought maybe I missed some existing and simpler way?
+    
+===============================================================================================
+81
+A:You can use an interceptor to add the User-Agent header to all your requests.
+
+For more information about okHttp interceptors see https://github.com/square/okhttp/wiki/Interceptors
+
+Example implementation of this interceptor:
+
+/* This interceptor adds a custom User-Agent. */
+public class UserAgentInterceptor implements Interceptor {
+
+    private final String userAgent;
+
+    public UserAgentInterceptor(String userAgent) {
+        this.userAgent = userAgent;
+    }
+
+    @Override
+    public Response intercept(Chain chain) throws IOException {
+        Request originalRequest = chain.request();
+        Request requestWithUserAgent = originalRequest.newBuilder()
+            .header("User-Agent", userAgent)
+            .build();
+        return chain.proceed(requestWithUserAgent);
+    }
+}
+
+
+Test for the UserAgentInterceptor:
+
+public void testUserAgentIsSetInRequestHeader() throws Exception {
+
+    MockWebServer server = new MockWebServer();
+    server.enqueue(new MockResponse().setBody("OK"));
+    server.play();
+    String url = server.getUrl("/").toString();
+
+    OkHttpClient client = new OkHttpClient();
+    client.networkInterceptors().add(new UserAgentInterceptor("foo/bar"));
+    Request testRequest = new Request.Builder().url(url).build()
+    String result = client.newCall(testRequest).execute().body().string();
+    assertEquals("OK", result);
+
+    RecordedRequest request = server.takeRequest();
+    assertEquals("foo/bar", request.getHeader("User-Agent"));
+}
+
+    

@@ -1,0 +1,106 @@
+280
+Q:I want to make a pause between two lines of code, Let me explain a bit: 
+
+-> the user clicks a button (a card in fact) and I show it by changing the background of this button: 
+
+thisbutton.setBackgroundResource(R.drawable.icon);
+
+
+-> after let's say 1 second, I need to go back to the previous state of the button by changing back its background: 
+
+thisbutton.setBackgroundResource(R.drawable.defaultcard);
+
+
+-> I've tried to pause the thread between these two lines of code with:
+
+try {
+    Thread.sleep(1000);
+} catch (InterruptedException e) {
+    // TODO Auto-generated catch block
+    e.printStackTrace();
+}
+
+
+However, this does not work. Maybe it's the process and not the Thread that I need to pause?
+
+I've also tried (but it doesn't work):
+
+new Reminder(5);
+
+
+With this:
+
+public class Reminder {
+
+Timer timer;
+
+        public Reminder(int seconds) {
+            timer = new Timer();
+            timer.schedule(new RemindTask(), seconds*1000);
+        }
+
+        class RemindTask extends TimerTask {
+            public void run() {
+                System.out.format("Time's up!%n");
+                timer.cancel(); //Terminate the timer thread
+            }
+        }  
+    }
+
+
+How can I pause/sleep the thread or process?
+    
+===============================================================================================
+440
+A:One solution to this problem is to use the Handler.postDelayed() method. Some Google training materials suggest the same solution.
+
+@Override
+public void onClick(View v) {
+    my_button.setBackgroundResource(R.drawable.icon);
+
+    Handler handler = new Handler(); 
+    handler.postDelayed(new Runnable() {
+         @Override 
+         public void run() { 
+              my_button.setBackgroundResource(R.drawable.defaultcard); 
+         } 
+    }, 2000); 
+}
+
+
+However, some have pointed out that the solution above causes a memory leak because it uses a non-static inner and anonymous class which implicitly holds a reference to its outer class, the activity.  This is a problem when the activity context is garbage collected.  
+
+A more complex solution that avoids the memory leak subclasses the Handler and Runnable with static inner classes inside the activity since static inner classes do not hold an implicit reference to their outer class:
+
+private static class MyHandler extends Handler {}
+private final MyHandler mHandler = new MyHandler();
+
+public static class MyRunnable implements Runnable {
+    private final WeakReference<Activity> mActivity;
+
+    public MyRunnable(Activity activity) {
+        mActivity = new WeakReference<>(activity);
+    }
+
+    @Override
+    public void run() {
+        Activity activity = mActivity.get();
+        if (activity != null) {
+            Button btn = (Button) activity.findViewById(R.id.button);
+            btn.setBackgroundResource(R.drawable.defaultcard);
+        }
+    }
+}
+
+private MyRunnable mRunnable = new MyRunnable(this);
+
+public void onClick(View view) {
+    my_button.setBackgroundResource(R.drawable.icon);
+
+    // Execute the Runnable in 2 seconds
+    mHandler.postDelayed(mRunnable, 2000);
+}
+
+
+Note that the Runnable uses a WeakReference to the Activity, which is necessary in a static class that needs access to the UI.
+    

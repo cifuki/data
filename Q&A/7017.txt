@@ -1,0 +1,125 @@
+37
+Q:I'm trying to provide an in-app Activity which displays thumbnails of photos in the
+device's media store, and allow the user to select one.  After the user makes a
+selection, the application reads the original full-size image and does things with it.
+
+I'm using the following code to create a Cursor over all the images on the external
+storage:
+
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView( R.layout.image_select );
+
+    mGridView = (GridView) findViewById( R.id.image_select_grid );
+
+    // Query for all images on external storage
+    String[] projection = { MediaStore.Images.Media._ID };
+    String selection = "";
+    String [] selectionArgs = null;
+    mImageCursor = managedQuery( MediaStore.Images.Thumbnails.EXTERNAL_CONTENT_URI,
+                                 projection, selection, selectionArgs, null );
+
+    // Initialize an adapter to display images in grid
+    if ( mImageCursor != null ) {
+        mImageCursor.moveToFirst();
+        mAdapter = new LazyCursorAdapter(this, mImageCursor, R.drawable.image_select_default);
+        mGridView.setAdapter( mAdapter );
+    } else {
+        Log.i(TAG, "System media store is empty.");
+    }
+}
+
+
+And the following code to load the thumbnail image (Android 2.x code is shown):
+
+// ...
+// Build URI to the main image from the cursor
+int imageID = cursor.getInt( cursor.getColumnIndex(MediaStore.Images.Media._ID) );
+Uri uri = Uri.withAppendedPath( MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                Integer.toString(imageID) );
+loadThumbnailImage( uri.toString() );
+// ...
+
+protected Bitmap loadThumbnailImage( String url ) {
+    // Get original image ID
+    int originalImageId = Integer.parseInt(url.substring(url.lastIndexOf("/") + 1, url.length()));
+
+    // Get (or create upon demand) the micro thumbnail for the original image.
+    return MediaStore.Images.Thumbnails.getThumbnail(mContext.getContentResolver(),
+                        originalImageId, MediaStore.Images.Thumbnails.MICRO_KIND, null);
+}
+
+
+And the following code to load the original image from the URL once the user makes a selection:
+
+public Bitmap loadFullImage( Context context, Uri photoUri  ) {
+    Cursor photoCursor = null;
+
+    try {
+        // Attempt to fetch asset filename for image
+        String[] projection = { MediaStore.Images.Media.DATA };
+        photoCursor = context.getContentResolver().query( photoUri, 
+                                                    projection, null, null, null );
+
+        if ( photoCursor != null && photoCursor.getCount() == 1 ) {
+            photoCursor.moveToFirst();
+            String photoFilePath = photoCursor.getString(
+                photoCursor.getColumnIndex(MediaStore.Images.Media.DATA) );
+
+            // Load image from path
+            return BitmapFactory.decodeFile( photoFilePath, null );
+        }
+    } finally {
+        if ( photoCursor != null ) {
+            photoCursor.close();
+        }
+    }
+
+    return null;
+}
+
+
+The problem I'm seeing on some Android devices, including my own personal phone, is that the
+cursor I get from the query in onCreate() contains a few entries for which the actual full-sized image file (JPG or PNG) is missing. (In the case of my phone, the images had been imported and subsequently erased by iPhoto).
+
+The orphaned entries may or may not have thumbnails, depending upon whether thumbnails where generated before the actual media file when AWOL.  The end result is that the app displays thumbnails for images that don't actually exist.
+
+I have a few questions:
+
+
+Is there a query I can make to the MediaStore content provider that will filter out
+images with missing media in the returned Cursor?
+Is there a means, or an API to force the MediaStore to rescan, and eliminate the orphan entries? On my phone, I USB-mounted then unmounted the external media, which is supposed to trigger a rescan. But the orphan entries remain.
+Or is there something fundamentally wrong with my approach that's causing this problem?
+
+
+Thanks.
+    
+===============================================================================================
+61
+A:Okay, I've found the problem with this code sample.
+
+In the onCreate() method, I had this line:
+
+mImageCursor = managedQuery( MediaStore.Images.Thumbnails.EXTERNAL_CONTENT_URI,
+                             projection, selection, selectionArgs, null );
+
+
+The problem here is that it's querying for the thumbnails, rather than the actual images.  The camera app on HTC devices does not create thumbnails by default, and so this query will fail to return images that do not already have thumbnails calculated.
+
+Instead, query for the actual images themselves:
+
+mImageCursor = managedQuery( MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                             projection, selection, selectionArgs, null );
+
+
+This will return a cursor containing all the full-sized images on the system.  You can then call:
+
+Bitmap bm = MediaStore.Images.Thumbnails.getThumbnail(context.getContentResolver(),
+        imageId, MediaStore.Images.Thumbnails.MINI_KIND, null);
+
+
+which will return the medium-sized thumbnail for the associated full-size image, generating it if necessary.  To get the micro-sized thumbnail, just use MediaStore.Images.Thumbnails.MICRO_KIND instead.
+
+This also solved the problem of finding thumbnails that have dangling references to the original full-sized images.
+    

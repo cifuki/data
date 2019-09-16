@@ -1,0 +1,56 @@
+35
+Q:I'm trying to have a remote config parameter using the new Remote Config feature of Firebase, and I'm having an issue.
+
+Here's my Remote Config console: 
+
+I'm doing a fetch and update in my Application's onCreate():
+
+final FirebaseRemoteConfig remoteConfig = FirebaseRemoteConfig.getInstance();
+remoteConfig.fetch().addOnCompleteListener(new OnCompleteListener<Void>() {
+    @Override
+    public void onComplete(@NonNull Task<Void> task) {
+        if (task.isSuccessful()) {
+            remoteConfig.activateFetched();
+        }
+    }
+});
+
+
+And here's how I'm reading it:
+
+FirebaseRemoteConfig remoteConfig = FirebaseRemoteConfig.getInstance();
+String value = remoteConfig.getString("active_subscriptions");
+
+
+Value is returning null.
+
+If I call remoteConfig.getInfo().getLastFetchStatus(), it returns LAST_FETCH_STATUS_SUCCESS, so it seems the fetch is going through successfully.
+
+Any idea why my value is blank?
+    
+===============================================================================================
+18
+A:Workaround found! See below
+
+I'm running into the "silent completion" thing - I call "fetch" but onComplete, onSuccess, or onFailure listeners never fire. I tried moving it to an activity onCreate, and still nothing happened, and therefore, the config items never get loaded from the server. I've got Developer Mode enabled, and am calling fetch with a cache value of 0.
+
+I was able to (once) put a breakpoint on the line "public void onComplete(@NonNull Task task) {", which got hit, and then I was able to step through and the onComplete fired. I was then unable to reproduce this same result any other way, including doing the same thing (I think) a second time.
+
+Seems like a timing or concurrency issue, but that makes little sense, given this is an asynchronous call.
+
+Workaround
+
+If you fetch from Activity#onResume (or, I presume, Activity#onStart), it works perfectly. Calling fetch from Activity#onCreate or Application#onCreate results in a call that seemingly never gets handled, and in fact, performance of the app degrades noticeably after the fetch begins, so I think there's a looper running or something.*
+
+Workaround #2
+
+If you really want this to run from Application#onCreate (which I do), this seems to work as well:
+
+new Handler().postDelayed(new Runnable() {
+    @Override
+    public void run() {
+        // Run mFirebaseRemoteConfig.fetch(timeout) here, and it works
+    }
+}, 0);
+
+    

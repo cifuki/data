@@ -1,0 +1,43 @@
+82
+Q:I have an android app that needs to check if there's already a record in the database, and if not, process some things and eventually insert it, and simply read the data from the database if the data does exist. I'm using a subclass of SQLiteOpenHelper to create and get a rewritable instance of SQLiteDatabase, which I thought automatically took care of creating the table if it didn't already exist (since the code to do that is in the onCreate(...) method). 
+
+However, when the table does NOT yet exist, and the first method ran upon the SQLiteDatabase object I have is a call to query(...), my logcat shows an error of "I/Database(26434): sqlite returned: error code = 1, msg = no such table: appdata", and sure enough, the appdata table isn't being created.
+
+Any ideas on why? 
+
+I'm looking for either a method to test if the table exists (because if it doesn't, the data's certainly not in it, and I don't need to read it until I write to it, which seems to create the table properly), or a way to make sure that it gets created, and is just empty, in time for that first call to query(...)
+
+EDIT
+
+This was posted after the two answers below:
+
+I think I may have found the problem. I for some reason decided that a different SQLiteOpenHelper was supposed to be created for each table, even though both access the same database file. I think refactoring that code to only use one OpenHelper, and creating both tables inside it's onCreate may work better...
+    
+===============================================================================================
+118
+A:Try this one:
+
+public boolean isTableExists(String tableName, boolean openDb) {
+    if(openDb) {
+        if(mDatabase == null || !mDatabase.isOpen()) {
+            mDatabase = getReadableDatabase();
+        }
+
+        if(!mDatabase.isReadOnly()) {
+            mDatabase.close();
+            mDatabase = getReadableDatabase();
+        }
+    }
+
+    Cursor cursor = mDatabase.rawQuery("select DISTINCT tbl_name from sqlite_master where tbl_name = '"+tableName+"'", null);
+    if(cursor!=null) {
+        if(cursor.getCount()>0) {
+                            cursor.close();
+            return true;
+        }
+                    cursor.close();
+    }
+    return false;
+}
+
+    

@@ -1,0 +1,78 @@
+35
+Q:If you want to set the style of a Button you create from code you have to do something like this;
+
+Button  btn  = new Button (mActivity, null, R.attr.someattribute);
+
+
+in attrs.xml, you set up a reference
+
+<attr name="someStyleRef" format="reference"/>
+
+
+In styles.xml, you define a theme
+
+<resources>
+  <style name="Theme.SomeTheme" parent="android:style/Theme.Black">
+     <item name="someStyleRef">@style/someStyle</item>
+  </style>
+</resources>
+
+
+That lates in styles.xml is defined as for example
+
+<style name="someStyle">
+        <item name="android:layout_width">2px</item>
+        <item name="android:layout_height">fill_parent</item>
+        <item name="android:background">@drawable/actionbar_compat_separator</item>
+ </style>
+
+
+This works, and this is, according to my understanding, the way to set a style on a View  from code in Android. This seems overly Complex. The button's third constructor Argument could easily have accepted a style ID R.style.XXX
+
+Can anyone explain why this extra complexity is needed? 
+    
+===============================================================================================
+65
+A:It has to do with the encouraged patterns within Android around using Views. This isn't the intended approach for what it looks like you're trying to do. First I'll explain what this mechanism is for and then suggest an approach for your app.
+
+The third argument to View constructors that takes an attr resource is generally used when implementing View subclasses and as you've shown, lets you specify a theme attribute to use as a reference to the View's default style. If you had a special kind of button called AwesomeButton you might implement its constructors like this:
+
+public class AwesomeButton extends Button {
+    public AwesomeButton(Context context) {
+        this(context, null);
+    }
+
+    public AwesomeButton(Context context, AttributeSet attrs) {
+        this(context, attrs, R.attr.awesomeButtonStyle);
+    }
+
+    public AwesomeButton(Context context, AttributeSet attrs, int defStyleAttr) {
+        super(context, attrs, defStyleAttr) {
+        final TypedArray a = context.obtainStyledAttributes(attrs,
+                R.styleable.AwesomeButton, defStyleAttr, 0);
+        // Read AwesomeButton-specific style attributes from a
+        a.recycle();
+    }
+
+    // More code
+}
+
+
+When Android's LayoutInflater inflates views it uses the 2-argument constructor with the arguments (Context, AttributeSet). The R.attr constant is passed through to the 3-argument version and then down to Button's 3-argument constructor in the super call. This means that Button will read default styling info for the things it encapsulates from AwesomeButton's default style as specified in your theme. Some Views within Android differ from their superclass only in the default style they use. (Button is actually one of these.)
+
+You specify android:layout_width and android:layout_height in your style but this can be problematic. LayoutParams (any attribute that starts with layout_) are specific to the parent view, not the view they appear on. This is why you always pass the intended parent view as the second parameter to LayoutInflater#inflate - it tells the inflater which class should be responsible for interpreting the LayoutParams. If you skip this you will often find that your LayoutParams don't behave as you expect and are often ignored outright. By convention we don't put LayoutParams in styles even though in some special cases it sort of works. 
+
+It looks like you're trying to use a style as a sort of template. Is there a reason not to use a layout resource for this and specify the styling there?
+
+final LayoutInflater inflater = LayoutInflater.from(mActivity);
+Button btn = (Button) inflater.inflate(R.layout.styled_button, parentView, false);
+
+
+res/layout/styled_button.xml:
+
+<Button android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/my_button_background"
+        [...] />
+
+    

@@ -1,0 +1,180 @@
+36
+Q:I'm trying to get a test coverage report using Gradle Android plugin 0.10.2.
+But I still can't get a coverage report after running some tests. (connectedAndroidTest).
+
+my main module's build.gradle is :
+
+apply plugin: 'android'
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "19.0.3"
+
+    defaultConfig {
+        minSdkVersion 8
+        targetSdkVersion 19
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        debug {
+            testCoverageEnabled true
+        }
+
+        release {
+            runProguard false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+    }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile 'com.android.support:appcompat-v7:19.+'
+}
+
+
+and the buildscript section of project's build gradle is :
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.10.+'
+    }
+}
+
+
+Once I run a gradlew connectedAndroidTest from terminal, I can find coverage-instrumented-classes and code-coverage folder inside the build folder. But I can't find coverage folder in the reports folder. (Only I can see is androidTests folder)
+
+Is there anything missing for getting a jacoco coverage report? 
+    
+===============================================================================================
+100
+A:Over the hundreds of times searching the answer to getting a coverage report, I finally found an exact answer what I want.
+
+From the this blog post, I found that gradlew createDebugCoverageReport creates the jacoco coverage report. 
+
+Also, from the gradle plugin source code, the plugin uses jacoco 0.6.2.201302030002 by default. (therefore, jacoco version definition is not required if you are going to use a default version)
+
+In summary, the ESSENTIAL steps to get a jacoco coverage report with Android gradle plugin are:
+
+
+Android gradle plugin version 0.10.0 or higher (typically in your project's build.gradle)
+add testCoverageEnabled true to the build type you want (i.e. debug) 
+run $ gradlew createDebugCoverageReport or gradlew connectedCheck to get a jacoco coverage report.
+
+
+You can find your coverage report at the build/reports/coverage/{buildType}. (i.e. build/reports/coverage/debug for debug build)
+
+(Add multi-flavor case from @odiggity's comment)
+
+If your project uses multi-flavor configuration, use create{flavorName}CoverageReport instead. The coverage report will be generated at build/reports/coverage/{flavorName}/{buildType}.
+
+Example for flavor krInternal with debug build type:
+
+
+Command: ./gradlew createKrInternalDebugCoverageReport  
+Report is genarated at: build/reports/coverage/krInternal/debug
+
+
+Tip :
+
+Since you can only get a coverage report with the emulator and device with root permission, you'll get following error after running a command on the regular(non-rooted) device:
+
+05:48:33 E/Device: Error during Sync: Permission denied                         
+java.io.IOException: com.android.ddmlib.SyncException: Permission denied
+    at com.android.builder.testing.ConnectedDevice.pullFile(ConnectedDevice.java:114)
+    at com.android.builder.internal.testing.SimpleTestCallable.call(SimpleTestCallable.java:158)
+    at com.android.builder.internal.testing.SimpleTestCallable.call(SimpleTestCallable.java:42)
+    at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:303)
+    at java.util.concurrent.FutureTask.run(FutureTask.java:138)
+    at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:439)
+    at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:303)
+    at java.util.concurrent.FutureTask.run(FutureTask.java:138)
+    at java.util.concurrent.ThreadPoolExecutor$Worker.runTask(ThreadPoolExecutor.java:895)
+    at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:918)
+    at java.lang.Thread.run(Thread.java:695)   
+Caused by: com.android.ddmlib.SyncException: Permission denied
+    at com.android.ddmlib.SyncService.doPullFile(SyncService.java:511)
+    at com.android.ddmlib.SyncService.pullFile(SyncService.java:320)
+    at com.android.ddmlib.Device.pullFile(Device.java:849)
+    at com.android.builder.testing.ConnectedDevice.pullFile(ConnectedDevice.java:107)
+    ... 10 more                
+:myDirections:connectedAndroidTest FAILED      
+
+FAILURE: Build failed with an exception.
+
+
+Travis-CI build script to get code coverage
+
+Include this block in build.gradle, for all modules (library, sample, etc)
+
+android {
+    lintOptions {
+        abortOnError false
+    }
+}
+
+
+Below is the .travis-ci.yml file
+
+language: android
+jdk: oraclejdk8
+sudo: required
+
+android:
+  components:
+  # Uncomment the lines below if you want to
+  # use the latest revision of Android SDK Tools
+  - tools
+  - platform-tools
+  # The BuildTools version used by your project
+  - build-tools-28.0.3
+  # The SDK version used to compile your project
+  - android-28
+  - android-22
+  - add-on
+  # Additional components
+  - extra-google-google_play_services
+  - extra-android-support
+  - extra-google-m2repository
+  - extra-android-m2repository
+  # Specify at least one system image,
+  # if you need to run emulator(s) during your tests
+  - sys-img-armeabi-v7a-android-22
+
+  licenses:
+  - 'android-sdk-preview-license-52d11cd2'
+  - 'android-sdk-license-.+'
+  - 'google-gdk-license-.+'
+
+before_cache:
+- rm -f  $HOME/.gradle/caches/modules-2/modules-2.lock
+- rm -fr $HOME/.gradle/caches/*/plugin-resolution/
+
+cache:
+  directories:
+    - $HOME/.gradle/caches/
+    - $HOME/.gradle/wrapper/
+    - $HOME/.android/build-cache
+
+before_install:
+- yes | sdkmanager "build-tools;28.0.3"
+
+before_script:
+- echo no | android create avd --force -n test -t android-22 --abi armeabi-v7a -c 100M
+- emulator -avd test -no-audio -no-window &
+- android-wait-for-emulator
+- sleep 180
+- adb devices
+- adb shell input keyevent 82 &
+
+script:
+- ./gradlew build connectedCheck
+
+after_success:
+- bash <(curl -s https://codecov.io/bash)
+
+    

@@ -1,0 +1,308 @@
+55
+Q:I've been playing around with the MVP pattern for a few weeks now and I've come to the point where I need context to start a service and access Shared Preferences.
+
+I've read that the purpose of MVP is to decouple the view from the logic and having context within a Presenter may defeat that purpose (correct me if I'm wrong on this).
+
+Currently, I have a LoginActivity that looks something like this:
+
+LoginActivity.java
+
+public class LoginActivity extends Activity implements ILoginView {
+
+    private final String LOG_TAG = "LOGIN_ACTIVITY";
+
+    @Inject
+    ILoginPresenter mPresenter;
+    @Bind(R.id.edit_login_password)
+    EditText editLoginPassword;
+    @Bind(R.id.edit_login_username)
+    EditText editLoginUsername;
+    @Bind(R.id.progress)
+    ProgressBar mProgressBar;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_login);
+        MyApplication.getObjectGraphPresenters().inject(this);
+        mPresenter.setLoginView(this, getApplicationContext());
+    }
+
+    @Override
+    public void onStart() {
+        mPresenter.onStart();
+        ButterKnife.bind(this);
+        super.onStart();
+    }
+
+    @Override
+    public void onResume() {
+        mPresenter.onResume();
+        super.onResume();
+    }
+
+    @Override
+    public void onPause() {
+        mPresenter.onPause();
+        super.onPause();
+    }
+
+    @Override
+    public void onStop() {
+        mPresenter.onStop();
+        super.onStop();
+    }
+
+    @Override
+    public void onDestroy() {
+        ButterKnife.unbind(this);
+        super.onDestroy();
+    }
+
+    @OnClick(R.id.button_login)
+    public void onClickLogin(View view) {
+        mPresenter.validateCredentials(editLoginUsername.getText().toString(),
+                editLoginPassword.getText().toString());
+    }
+
+    @Override public void showProgress() { mProgressBar.setVisibility(View.VISIBLE); }
+
+    @Override public void hideProgress() {
+        mProgressBar.setVisibility(View.GONE);
+    }
+
+    @Override public void setUsernameError() { editLoginUsername.setError("Username Error"); }
+
+    @Override public void setPasswordError() { editLoginPassword.setError("Password Error"); }
+
+    @Override public void navigateToHome() {
+        startActivity(new Intent(this, HomeActivity.class));
+        finish();
+    }
+}
+
+
+Presenter Interface   ILoginPresenter.java
+
+public interface ILoginPresenter {
+    public void validateCredentials(String username, String password);
+
+
+    public void onUsernameError();
+
+    public void onPasswordError();
+
+    public void onSuccess(LoginEvent event);
+
+    public void setLoginView(ILoginView loginView, Context context);
+
+    public void onResume();
+
+    public void onPause();
+
+    public void onStart();
+
+    public void onStop();
+}
+
+
+Lastly, my Presenter:
+
+LoginPresenterImpl.java
+
+public class LoginPresenterImpl implements ILoginPresenter {
+
+    @Inject
+    Bus bus;
+
+    private final String LOG_TAG = "LOGIN_PRESENTER";
+    private ILoginView loginView;
+    private Context context;
+    private LoginInteractorImpl loginInteractor;
+
+    public LoginPresenterImpl() {
+        MyApplication.getObjectGraph().inject(this);
+        this.loginInteractor = new LoginInteractorImpl();
+    }
+
+    /**
+     * This method is set by the activity so that way we have context of the interface
+     * for the activity while being able to inject this presenter into the activity.
+     *
+     * @param loginView
+     */
+    @Override
+    public void setLoginView(ILoginView loginView, Context context) {
+        this.loginView = loginView;
+        this.context = context;
+
+        if(SessionUtil.isLoggedIn(this.context)) {
+            Log.i(LOG_TAG, "User logged in already");
+            this.loginView.navigateToHome();
+        }
+    }
+
+    @Override
+    public void validateCredentials(String username, String password) {
+        loginView.showProgress();
+        loginInteractor.login(username, password, this);
+    }
+
+    @Override
+    public void onUsernameError() {
+        loginView.setUsernameError();
+        loginView.hideProgress();
+    }
+
+    @Override
+    public void onPasswordError() {
+        loginView.setPasswordError();
+        loginView.hideProgress();
+    }
+
+    @Subscribe
+    @Override
+    public void onSuccess(LoginEvent event) {
+        if (event.getIsSuccess()) {
+            SharedPreferences.Editor editor =
+                    context.getSharedPreferences(SharedPrefs.LOGIN_PREFERENCES
+                            .isLoggedIn, 0).edit();
+            editor.putString("logged_in", "true");
+            editor.commit();
+
+            loginView.navigateToHome();
+            loginView.hideProgress();
+        }
+    }
+
+    @Override
+    public void onStart() {
+        bus.register(this);
+    }
+
+    @Override
+    public void onStop() {
+        bus.unregister(this);
+
+    }
+
+    @Override
+    public void onPause() {
+
+    }
+
+    @Override
+    public void onResume() {
+    }
+}
+
+
+As you can see, I passed the context from the Activity into my Presenter just so I can access the Shared Preferences. I'm quite worried about passing the context into my presenter. Is this an okay thing to do? Or should I be doing it some other way?
+
+EDIT Implemented Jahnold's 3rd preference
+
+So let's ignore the interface and implementation because it's pretty much the entire thing. So now I'm injecting the interface for the Sharedpreference into my presenter. Here's my code for the AppModule
+
+AppModule.java 
+
+@Module(library = true,
+    injects = {
+            LoginInteractorImpl.class,
+            LoginPresenterImpl.class,
+            HomeInteractorImpl.class,
+            HomePresenterImpl.class,
+
+    }
+)
+public class AppModule {
+
+    private MyApplication application;
+
+    public AppModule(MyApplication application) {
+        this.application = application;
+    }
+
+    @Provides
+    @Singleton
+    public RestClient getRestClient() {
+        return new RestClient();
+    }
+
+    @Provides
+    @Singleton
+    public Bus getBus() {
+        return new Bus(ThreadEnforcer.ANY);
+    }
+
+    @Provides
+    @Singleton
+    public ISharedPreferencesRepository getSharedPreferenceRepository() { return new SharedPreferencesRepositoryImpl(application.getBaseContext()); }
+
+    }
+}
+
+
+The way I get the context is from MyApplication.java
+
+When the application begins, I make sure to create this Object graph with this line of code:
+
+objectGraph = ObjectGraph.create(new AppModule(this));
+
+
+Is this okay? I mean I now don't have to pass the context from the activity into my presenter, but I still have context of the application.
+    
+===============================================================================================
+71
+A:It has been some time since you asked this question but I thought it would be useful to provide an answer anyway.  I would strongly suggest that the presenter should have no concept of the Android Context (or any other Android classes).  By completely separating your Presenter code from the Android system code you are able to test it on the JVM without the complication of mocking system components.
+
+To achieve this I think you have three options.
+
+Access SharedPreferences from the View
+
+This is my least favourite of the three as accessing SharedPreferences is not a view action.  However it does keep the Android system code in the Activity away from the Presenter.  In your view interface have a method:
+
+boolean isLoggedIn();
+
+
+which can be called from the presenter.
+
+Inject SharedPreferences Using Dagger
+
+As you are already using Dagger to inject the event bus you could add SharedPreferences to your ObjectGraph and as such would get a SharedPreferences instance which has been constructed using the ApplicationContext.  This was you get the them without having to pass a Context into your presenter.
+
+The downside of this approach is that you are still passing in an Android system class (SharedPreferences) and would have to mock it when you wanted to test the Presenter.
+
+Create a SharePreferencesRepository Interface
+
+This is my preferred method for accessing SharedPreferences data from within a Presenter.  Basically you treat SharedPreferences as a model and have a repository interface for it.
+
+Your interface would be similar to:
+
+public interface SharedPreferencesRepository {
+
+    boolean isLoggedIn();
+}
+
+
+You can then have a concrete implementation of this:
+
+public class SharedPreferencesRepositoryImpl implements SharedPreferencesRepository {
+
+    private SharedPreferences prefs;
+
+    public SharedPreferencesRepositoryImpl(Context context) {
+
+        prefs = PreferenceManager.getDefaultSharedPreferences(context);
+    }
+
+    @Override
+    public boolean isLoggedIn() {
+
+        return prefs.getBoolean(Constants.IS_LOGGED_IN, false);
+    }
+
+}
+
+
+It is the SharedPreferencesRepository interface that you then inject with Dagger into your Presenter.  This way a very simple mock can be provided at runtime during tests.  During normal operation the concrete implementation is provided.
+    

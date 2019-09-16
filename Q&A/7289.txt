@@ -1,0 +1,147 @@
+36
+Q:A few weeks ago I posted a question How to override resources depending on buildType.
+And just yesterday there was a gradle plugin release for android.
+Based on this post on G+ I decided to write this question.
+
+The problem I have described in detail:
+
+I want to create some resource values depending on the buildType, but this doesn't work properly:
+The file "generated.xml" will be only created if I make a complete build over the command line:
+
+gradlew build
+
+
+But I also get an error by building the complete project over comannd line:
+
+* What went wrong: Execution failed for task ':app:merge<buildVariant>Resources'.
+Unsupported type 'String' in file C:\\Users\\...\\build\\res\\generated\\release\\values\\generated.xml
+
+
+Every other build-trial doesn't create this file. I tried following:
+
+
+over IDE: 
+
+
+rebuild project
+execute external task "assembleBuildVariant"
+
+over command line:
+
+
+gradlew assembleBuildVariant
+
+
+
+Strange gradle console output:
+
+:app:generateBuildVariantResValues UP-TO-DATE
+
+
+My build.gradle:
+
+buildTypes {
+    debug{
+        buildConfigField "String", "FOO", "\\"FOO DEBUG\\""
+        resValue "String", "RES FOO", "RES FOO DEBUG"
+    }
+    release {
+        buildConfigField "String", "FOO", "\\"FOO RELEASE\\""
+        resValue "String", "RES FOO", "RES FOO RELEASE"
+    }
+}
+
+
+My "generated.xml":
+
+
+<!-- Automatically generated file. DO NOT MODIFY -->
+
+<!-- Values from build type: release -->
+<item name="RES FOO" type="String">RES FOO RELEASE</item>
+
+
+
+
+My question:
+
+Is this a bug or did I miss something? And why this file isn't created by a Rebuild over the IDE?
+
+My build.gradle (UPDATE 2014-02-10 based on rciovatis answer):
+
+defaultConfig {
+    minSdkVersion 14
+    targetSdkVersion 19
+    versionCode 1
+    versionName "1.0"
+    resValue "string", "RES_FOO", "RES FOO"
+}
+
+buildTypes {
+    debug{
+        buildConfigField "String", "FOO", "\\"FOO DEBUG\\""
+        resValue "string", "RES_FOO", "RES FOO DEBUG"
+    }
+    release {
+        buildConfigField "String", "FOO", "\\"FOO RELEASE\\""
+        resValue "string", "RES_FOO", "RES FOO RELEASE"
+    }
+}
+
+
+UPDATE 2014-02-14 IT WORKS:
+
+After an update of the gradle android plugin everything works fine:
+
+In /build/res/all/ you should see following folders:
+
+
+all
+generated (-> here you find the generated resource values by resValue)
+
+
+The first folder all contains all merged resources. In the direction all/<buildVariant>/values/values.xml you should find the generated resources, in my case:
+
+// for buildType DEBUG
+<item name="TESTFOO" type="string">TEST FOO DEBUG</item>
+// for buildType RELEASE
+<item name="TESTFOO" type="string">TEST FOO RELEASE</item>
+
+
+To get the values in code just use the generated resource like all others:
+
+getResources().getString(R.string.TESTFOO)
+
+    
+===============================================================================================
+62
+A:I solved adding the resources also in the defaultConfig block. For you it would be something like:
+
+android {
+    defaultConfig {
+        resValue "string", "RES_FOO", "RES FOO RELEASE"
+    }
+
+    buildTypes {
+        debug{
+            buildConfigField "String", "FOO", "\\"FOO DEBUG\\""
+            resValue "string", "RES_FOO", "RES FOO DEBUG"
+        }
+        release {
+            buildConfigField "String", "FOO", "\\"FOO RELEASE\\""
+            resValue "string", "RES_FOO", "RES FOO RELEASE"
+        }
+    }
+}
+
+
+Please note that:
+
+
+item type must be string and not String
+item name must not contain spaces (as normal resource name)
+
+
+EDIT:
+Since 0.8.3 it should works fine just declaring the resValue in the build type block.
+    

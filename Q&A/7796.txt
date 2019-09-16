@@ -1,0 +1,90 @@
+34
+Q:While using RxJava and Retrofit 2 I am trying to create Unit Tests to cover when my app receives specific responses.
+
+The issue I have is that with Retrofit 2 I cannot see a nice way of creating a retrofit.Response object without the use of reflection.
+
+@Test
+public void testLogin_throwsLoginBadRequestExceptionWhen403Error() {
+
+
+    Request.Builder requestBuilder = new Request.Builder();
+    requestBuilder.get();
+    requestBuilder.url("http://localhost");
+
+    Response.Builder responseBuilder = new Response.Builder();
+    responseBuilder.code(403);
+    responseBuilder.protocol(Protocol.HTTP_1_1);
+    responseBuilder.body(ResponseBody.create(MediaType.parse("application/json"), "{\\"key\\":[\\"somestuff\\"]}"));
+    responseBuilder.request(requestBuilder.build());
+
+    retrofit.Response<LoginResponse> aResponse = null;
+
+    try {
+        Constructor<retrofit.Response> constructor= (Constructor<retrofit.Response>) retrofit.Response.class.getDeclaredConstructors()[0];
+        constructor.setAccessible(true);
+        aResponse = constructor.newInstance(responseBuilder.build(), null, null);
+    } catch (Exception ex) {
+        //reflection error
+    }
+
+    doReturn(Observable.just(aResponse)).when(mockLoginAPI).login(anyObject());
+
+    TestSubscriber testSubscriber = new TestSubscriber();
+    loginAPIService.login(loginRequest).subscribe(testSubscriber);
+
+    Throwable resultError = (Throwable) testSubscriber.getOnErrorEvents().get(0);
+    assertTrue(resultError instanceof LoginBadRequestException);
+}
+
+
+I have tried using the following but this creates an OkHttp Response vs a Retrofit Response.
+
+    Request.Builder requestBuilder = new Request.Builder();
+    requestBuilder.get();
+    requestBuilder.url("http://localhost");
+
+    Response.Builder responseBuilder = new Response.Builder();
+    responseBuilder.code(403);
+    responseBuilder.protocol(Protocol.HTTP_1_1);
+
+    
+===============================================================================================
+52
+A:The retrofit.Response class has static factory methods to create instances:
+
+public static <T> Response<T> success(T body) {
+  /* ... */
+}
+
+public static <T> Response<T> success(T body, com.squareup.okhttp.Response rawResponse) {
+  /* ... */
+}
+
+public static <T> Response<T> error(int code, ResponseBody body) {
+  /* ... */
+}
+
+public static <T> Response<T> error(ResponseBody body, com.squareup.okhttp.Response rawResponse) {
+  /* ... */
+}
+
+
+For example:
+
+Account account = ...;
+retrofit.Response<Account> aResponse = retrofit.Response.success(account);
+
+
+Or:
+
+retrofit.Response<Account> aResponse = retrofit.Response.error(
+  403, 
+  ResponseBody.create(
+    MediaType.parse("application/json"),
+    "{\\"key\\":[\\"somestuff\\"]}"
+  )
+);
+
+
+This falls under Effective Java Item 1: Consider static factory methods instead of constructors.
+    

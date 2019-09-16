@@ -1,0 +1,248 @@
+28
+Q:I'm switching my project over to using Gradle and an internal SonaType Nexus for hosting my dependencies. My core project depends on library project A and library project A has a dependency on library project B. 
+
+My issue is that as soon as I add LibA to my main project I get this error: 
+"Module version com.example:LibA:1.1 depends on libraries but is not a library itself"
+
+I have no issues adding library projects with jar dependencies with the same build script. I have seen people doing this successfully with LOCAL (in the project) android libraries but no one doing it with maven repos. 
+
+Is this a bug in gradle or did I misconfigure the library builds?
+
+Core Project Build
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.6.+'
+    }
+}
+apply plugin: 'android'
+
+repositories {
+    maven {
+        url "http://localhost:8081/nexus/content/repositories/releases/"
+    }
+
+    maven {
+        url "http://localhost:8081/nexus/content/repositories/central/"
+    }
+}
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "19.0.0"
+
+    defaultConfig {
+        minSdkVersion 14
+        targetSdkVersion 19
+    }
+}
+
+dependencies {
+    compile 'com.android.support:support-v4:+'
+    compile('com.example:LibA:1.+')
+}
+
+
+LibA Build
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.6.+'
+    }
+}
+
+apply plugin: 'android-library'
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "19.0.0"
+
+    defaultConfig {
+        minSdkVersion 9
+        targetSdkVersion 17
+
+        versionCode = "3"
+        versionName = "1.2"
+    }
+
+    android {
+        sourceSets {
+            main {
+                manifest.srcFile 'AndroidManifest.xml'
+                java.srcDirs = ['src']
+                resources.srcDirs = ['src']
+                aild.srcDirs = ['src']
+                renderscript.srcDirs = ['src']
+                res.srcDirs = ['res']
+                assets.srcDirs = ['assets']
+            }
+
+        }
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        compile ('com.example:LibB:1.+')
+    } ...
+
+
+LibB Build
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.6.+'
+    }
+}
+
+apply plugin: 'android-library'
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "19.0.0"
+
+    defaultConfig {
+        minSdkVersion 9
+        targetSdkVersion 17
+
+        versionCode = "1"
+        versionName = "1.0"
+    }
+
+    android {
+        sourceSets {
+            main {
+                manifest.srcFile 'AndroidManifest.xml'
+                java.srcDirs = ['src']
+                resources.srcDirs = ['src']
+                aild.srcDirs = ['src']
+                renderscript.srcDirs = ['src']
+                res.srcDirs = ['res']
+                assets.srcDirs = ['assets']
+            }
+
+        }
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+    } ...
+
+
+Edit: Adding -info output for the error.
+
+* What went wrong:
+A problem occurred configuring project ':GradleTest'.
+> Failed to notify project evaluation listener.
+   > Module version com.example:LibA:1.+ depends on libraries but is not a library itself
+
+
+Edit 2: Adding my local maven upload script for LibA
+
+apply plugin: 'maven'
+apply plugin: 'signing'
+
+group = "com.example"
+version = defaultConfig.versionName
+
+configurations {
+    archives {
+        extendsFrom configurations.default
+    }
+}
+
+signing {
+    required { has("release") && gradle.taskGraph.hasTask("uploadArchives") }
+    sign configurations.archives
+}
+
+
+uploadArchives {
+    configuration = configurations.archives
+    repositories.mavenDeployer {
+        beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+        repository(url: sonatypeRepo) {
+            authentication(userName: sonatypeUsername,
+                    password: sonatypePassword)
+        }
+
+        pom.project {
+            name 'com-example'
+            packaging 'aar'
+            description 'none'
+            url 'https://internal github link'
+
+            scm {
+                url 'scm:git@https://internal github link'
+                connection 'git@https://internal github link'
+                developerConnection 'git@https://internal github link'
+            }
+
+            licenses {
+                license {
+                    name 'example'
+                    url 'example'
+                    distribution 'example'
+                }
+            }
+
+            developers {
+                developer {
+                    id 'example'
+                    name 'example'
+                    email 'example'
+                }
+            }
+
+            groupId "com.example"
+            artifactId rootProject.name //LibA
+            version defaultConfig.versionName
+        }
+    }
+}
+
+    
+===============================================================================================
+2
+A:Your line in the dependencies to include LibA is wrong. To include a library project, use this:
+
+compile project(':LibA')
+
+
+If the library's directory isn't at the root of your project directory, you'll need to specify a colon-delimited path. For example, if your directory structure is:
+
+
+projectFolder
+  |
+  +--coreProject
+  |
+  +--libraries
+      |
+      +--LibA
+      |
+      +--LibB
+
+
+your dependency will be:
+
+compile project(':libraries:LibA')
+
+
+This is the same as the notation you use in your settings.gradle file.
+    

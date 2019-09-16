@@ -1,0 +1,127 @@
+27
+Q:I am using retrofit:2.0.0-beta4 for my android app.
+
+I tried to add a user with Retrofit, the user is correctly created in Database, however I got the following error:
+
+03-14 06:04:27.731 30572-30600/com.lehuo.lehuoandroid D/OkHttp: CALLING POST SP_User_CreateUser....your new user_id:48
+{"data":{"user_id":"48","nickname":null,"password":null,"status":null},"status":1,"msg":"OK"}
+03-14 06:04:27.731 30572-30600/com.lehuo.lehuoandroid D/OkHttp: <-- END HTTP (147-byte body)
+03-14 06:04:27.732 30572-30600/com.lehuo.lehuoandroid E/My\xc2\xa0Jobs: error while executing job
+     com.google.gson.stream.MalformedJsonException: Use JsonReader.setLenient(true) to accept malformed JSON at line 1 column 1 path $
+         at com.google.gson.stream.JsonReader.syntaxError(JsonReader.java:1573)
+         at com.google.gson.stream.JsonReader.checkLenient(JsonReader.java:1423)
+         at com.google.gson.stream.JsonReader.doPeek(JsonReader.java:587)
+         at com.google.gson.stream.JsonReader.peek(JsonReader.java:429)
+         at com.google.gson.internal.bind.ReflectiveTypeAdapterFactory$Adapter.read(ReflectiveTypeAdapterFactory.java:202)
+         at com.google.gson.TypeAdapter.fromJson(TypeAdapter.java:260)
+         at retrofit2.converter.gson.GsonResponseBodyConverter.convert(GsonResponseBodyConverter.java:32)
+         at retrofit2.converter.gson.GsonResponseBodyConverter.convert(GsonResponseBodyConverter.java:23)
+         at retrofit2.OkHttpCall.parseResponse(OkHttpCall.java:213)
+         at retrofit2.OkHttpCall.execute(OkHttpCall.java:177)
+         at retrofit2.ExecutorCallAdapterFactory$ExecutorCallbackCall.execute(ExecutorCallAdapterFactory.java:87)
+         at com.lehuo.lehuoandroid.async.NetworkJob.callNet(NetworkJob.java:30)
+         at com.lehuo.lehuoandroid.async.CreateUserJob.onRun(CreateUserJob.java:34)
+         at com.path.android.jobqueue.BaseJob.safeRun(BaseJob.java:108)
+         at com.path.android.jobqueue.JobHolder.safeRun(JobHolder.java:60)
+         at com.path.android.jobqueue.executor.JobConsumerExecutor$JobConsumer.run(JobConsumerExecutor.java:201)
+         at java.lang.Thread.run(Thread.java:818)
+
+
+The returned result from server is :
+
+{"data":{"user_id":"48","nickname":null,"password":null,"status":null},"status":1,"msg":"OK"}
+
+
+This is correct json format, I don't understand why I get such exception?
+
+Here us my interface:
+
+public class ApiResult<T> {
+    public T data;
+    public int status;
+    public String msg;
+}
+
+public interface ApiUsers {
+    @POST("/users/new")
+    public Call<ApiResult<User>> createUser(@Body User user);
+}
+
+public class User {
+    public int user_id;
+    public String registration;
+    public int registration_type;
+    public String avatar;
+    public String nickname;
+    public String password;
+    public String status;
+
+}
+
+public class Api {
+
+    // TODO modify the value
+    public static final String BASE_URL = "xxx";
+
+    private static Api instance = new Api();
+
+    public static Api getInstance() {
+        return instance;
+    }
+
+    private Api(){}
+
+    public Retrofit getRetrofit() {
+        HttpLoggingInterceptor interceptor = new HttpLoggingInterceptor();
+        interceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
+        OkHttpClient client = new OkHttpClient.Builder()
+                .addInterceptor(interceptor)
+                .retryOnConnectionFailure(true)
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .build();
+
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl(BASE_URL)
+                .client(client)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+
+        return retrofit;
+    }
+
+    public <S> S createService(Class<S> serviceClass) {
+        return getRetrofit().create(serviceClass);
+    }
+}
+
+
+The caller code is:
+
+ApiUsers api = Api.getInstance().createService(ApiUsers.class);
+Call<ApiResult<User>> call = api.createUser(user);
+CreateUserMessage message = new CreateUserMessage();
+callNet(call, message);
+
+
+Could anyone give any clue?
+    
+===============================================================================================
+68
+A:Finally I solved my problem which is not related to the json lenient mode, something wrong with my POST response (there some other non json output before the json data).
+
+Here is the response from JakeWharton regarding how to set Gson lenient mode:
+
+make sure that you have\xef\xbc\x9a
+\xe3\x80\x80\xe3\x80\x80\xe3\x80\x80compile 'com.google.code.gson:gson:2.6.1'
+
+Gson gson = new GsonBuilder()
+        .setLenient()
+        .create();
+
+Retrofit retrofit = new Retrofit.Builder()
+        .baseUrl(BASE_URL)
+        .client(client)
+        .addConverterFactory(GsonConverterFactory.create(gson))
+        .build();
+
+    

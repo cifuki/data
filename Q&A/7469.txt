@@ -1,0 +1,183 @@
+35
+Q:I would like to create a Jar out of an Android library project. It is set up the following way:
+
+ProjectName
+    \\- lib
+    |   \\- lib
+    |       \\- armeabi
+    |           \\- libNativeFirst.so
+    |           \\- libNativeSecond.so
+    \\- src
+        \\- main
+            \\- java
+                \\- com.package.sdk
+                    \\- PackageSDK.java
+
+
+I would like for all of this to be packaged in a Jar, but without revealing the source code present in PackageSDK.java.
+
+I set up my build.gradle file like so:
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.5.+'
+    }
+}
+
+apply plugin: 'android-library'
+
+repositories {
+    mavenCentral()
+}
+
+android {
+    compileSdkVersion 18
+    buildToolsVersion "18.0.1"
+
+    defaultConfig {
+        minSdkVersion 10
+        targetSdkVersion 18
+    }
+
+    sourceSets {
+        main {
+            java {
+                srcDir 'src/main/java'
+            }
+            resources {
+                srcDir 'src/../lib'
+            }
+        }
+    }
+}
+
+task jar(type: Jar) {
+    from android.sourceSets.main.allSource
+}
+
+
+When I run gradlew clean jar in the project's directory, a Jar file is created in ProjectName\\build\\libs called ProjectName.jar. It's structure is as follows:
+
+ProjectName.jar
+    \\- lib
+    |   \\- armeabi
+    |       \\- libNativeFirst.so
+    |       \\- libNativeSecond.so
+    \\- com
+        \\- package
+            \\- sdk
+                \\- PackageSDK.java
+
+
+I would like for the compiled PackageSDK.class to be included instead of the PackageSDK.java file when executing the jar task. What can I change to achieve this?
+
+Edit:
+
+Per Ben Manes's suggestion, I changed the configuration of the sourceSets to the following:
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+        }
+        resources {
+            srcDir 'src/../lib'
+        }
+        output {
+            classesDir 'build/classes'
+            resourcesDir 'build/javaResources'
+        }
+    }
+}
+
+
+And the jar task to the following:
+
+task jar(type: Jar) {
+    from android.sourceSets.main.output
+}
+
+
+Gradle is now giving me this output:
+
+Could not find method output() for arguments [build_25r1m0a3etn5cudtt5odlegprd$_run_closure2_closure9_closure10_closure13@138532dc] on source set main.
+    
+===============================================================================================
+69
+A:Note: The answer has been edited. Please see the 07/28/2014 update below.
+
+Here is a solution I ended up coming up with. There may be a better way available, but I have not found it yet.
+
+android {
+    compileSdkVersion 18
+    buildToolsVersion "18.0.1"
+
+    defaultConfig {
+        minSdkVersion 10
+        targetSdkVersion 18
+    }
+
+    sourceSets {
+        main {
+            java {
+                srcDir 'src/main/java'
+            }
+            resources {
+                srcDir 'src/../lib'
+            }
+        }
+    }
+}
+
+task clearJar(type: Delete) {
+    delete 'build/libs/ProjectName.jar'
+}
+
+task makeJar(type: Copy) {
+    from('build/bundles/release/')
+    into('build/libs/')
+    include('classes.jar')
+    rename ('classes.jar', 'ProjectName.jar')
+}
+
+makeJar.dependsOn(clearJar, build)
+
+
+Running gradlew makeJar creates a ProjectName.jar in the build/libs directory. The structure of this jar is as follows:
+
+ProjectName.jar
+    \\- lib
+    |   \\- armeabi
+    |       \\- libNativeFirst.so
+    |       \\- libNativeSecond.so
+    \\- com
+        \\- package
+            \\- sdk
+                \\- PackageSDK.class
+
+
+This is the exact result I needed. I am now able to use ProjectName.jar successfully in other projects.
+
+EDIT: While I am able to use the resulting jar in projects within Android Studio, I cannot do so in projects created in ADT due to a warning about native code being present inside a jar file. Supposedly there is a flag to turn off this check in settings, but it does not function correctly. Thus, if you want to create a library that uses native code, those using ADT will have to manually copy the armeabi directory into libs/.
+
+07/28/2014 Update:
+
+As of Android Studio 0.8.0, Gradle output directories have been changed and the configuration outlined above will not work. I have changed my configuration to the following:
+
+task clearJar(type: Delete) {
+    delete 'build/outputs/ProjectName.jar'
+}
+
+task makeJar(type: Copy) {
+    from('build/intermediates/bundles/release/')
+    into('build/outputs/')
+    include('classes.jar')
+    rename ('classes.jar', 'ProjectName.jar')
+}
+
+
+IMPORTANT: Please note that ProjectName.jar will now be placed into build/outputs/ and NOT into build/libs/.
+    

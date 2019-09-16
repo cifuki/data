@@ -1,0 +1,415 @@
+92
+Q:Currently I am trying to deal with a strange Exception when opening a BluetoothSocket on my Nexus 7 (2012), with Android 4.3 (Build JWR66Y, I guess the second 4.3 update). I have seen some related postings (e.g. https://stackoverflow.com/questions/13648373/bluetoothsocket-connect-throwing-exception-read-failed), but none seems to provide a workaround for this issue. Also, as suggested in these threads, re-pairing does not help, and constantly trying to connect (through a stupid loop) also has no effect.
+
+I am dealing with an embedded device (a noname OBD-II car adapter, similar to http://images04.olx.com/ui/15/53/76/1316534072_254254776_2-OBD-II-BLUTOOTH-ADAPTERSCLEAR-CHECK-ENGINE-LIGHTS-WITH-YOUR-PHONE-Oceanside.jpg). My Android 2.3.7 phone does not have any issues connecting, and the Xperia of a colleague (Android 4.1.2) also works. Another Google Nexus (I dont know if 'One' or 'S', but not '4') also fails with Android 4.3.
+
+Here is the Snippet of the connection establishment. It is running in its own Thread, created within a Service.
+
+private class ConnectThread extends Thread {
+
+    private static final UUID EMBEDDED_BOARD_SPP = UUID
+        .fromString("00001101-0000-1000-8000-00805F9B34FB");
+
+    private BluetoothAdapter adapter;
+    private boolean secure;
+    private BluetoothDevice device;
+    private List<UUID> uuidCandidates;
+    private int candidate;
+    protected boolean started;
+
+    public ConnectThread(BluetoothDevice device, boolean secure) {
+        logger.info("initiliasing connection to device "+device.getName() +" / "+ device.getAddress());
+        adapter = BluetoothAdapter.getDefaultAdapter();
+        this.secure = secure;
+        this.device = device;
+
+        setName("BluetoothConnectThread");
+
+        if (!startQueryingForUUIDs()) {
+            this.uuidCandidates = Collections.singletonList(EMBEDDED_BOARD_SPP);
+            this.start();
+        } else{
+            logger.info("Using UUID discovery mechanism.");
+        }
+        /*
+         * it will start upon the broadcast receive otherwise
+         */
+    }
+
+    private boolean startQueryingForUUIDs() {
+        Class<?> cl = BluetoothDevice.class;
+
+        Class<?>[] par = {};
+        Method fetchUuidsWithSdpMethod;
+        try {
+            fetchUuidsWithSdpMethod = cl.getMethod("fetchUuidsWithSdp", par);
+        } catch (NoSuchMethodException e) {
+            logger.warn(e.getMessage());
+            return false;
+        }
+
+        Object[] args = {};
+        try {
+            BroadcastReceiver receiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    BluetoothDevice deviceExtra = intent.getParcelableExtra("android.bluetooth.device.extra.DEVICE");
+                    Parcelable[] uuidExtra = intent.getParcelableArrayExtra("android.bluetooth.device.extra.UUID");
+
+                    uuidCandidates = new ArrayList<UUID>();
+                    for (Parcelable uuid : uuidExtra) {
+                        uuidCandidates.add(UUID.fromString(uuid.toString()));
+                    }
+
+                    synchronized (ConnectThread.this) {
+                        if (!ConnectThread.this.started) {
+                            ConnectThread.this.start();
+                            ConnectThread.this.started = true;
+                            unregisterReceiver(this);
+                        }
+
+                    }
+                }
+
+            };
+            registerReceiver(receiver, new IntentFilter("android.bleutooth.device.action.UUID"));
+            registerReceiver(receiver, new IntentFilter("android.bluetooth.device.action.UUID"));
+
+            fetchUuidsWithSdpMethod.invoke(device, args);
+        } catch (IllegalArgumentException e) {
+            logger.warn(e.getMessage());
+            return false;
+        } catch (IllegalAccessException e) {
+            logger.warn(e.getMessage());
+            return false;
+        } catch (InvocationTargetException e) {
+            logger.warn(e.getMessage());
+            return false;
+        }           
+
+        return true;
+    }
+
+    public void run() {
+        boolean success = false;
+        while (selectSocket()) {
+
+            if (bluetoothSocket == null) {
+                logger.warn("Socket is null! Cancelling!");
+                deviceDisconnected();
+                openTroubleshootingActivity(TroubleshootingActivity.BLUETOOTH_EXCEPTION);
+            }
+
+            // Always cancel discovery because it will slow down a connection
+            adapter.cancelDiscovery();
+
+            // Make a connection to the BluetoothSocket
+            try {
+                // This is a blocking call and will only return on a
+                // successful connection or an exception
+                bluetoothSocket.connect();
+                success = true;
+                break;
+
+            } catch (IOException e) {
+                // Close the socket
+                try {
+                    shutdownSocket();
+                } catch (IOException e2) {
+                    logger.warn(e2.getMessage(), e2);
+                }
+            }
+        }
+
+        if (success) {
+            deviceConnected();
+        } else {
+            deviceDisconnected();
+            openTroubleshootingActivity(TroubleshootingActivity.BLUETOOTH_EXCEPTION);
+        }
+    }
+
+    private boolean selectSocket() {
+        if (candidate >= uuidCandidates.size()) {
+            return false;
+        }
+
+        BluetoothSocket tmp;
+        UUID uuid = uuidCandidates.get(candidate++);
+        logger.info("Attempting to connect to SDP "+ uuid);
+        try {
+            if (secure) {
+                tmp = device.createRfcommSocketToServiceRecord(
+                        uuid);
+            } else {
+                tmp = device.createInsecureRfcommSocketToServiceRecord(
+                        uuid);
+            }
+            bluetoothSocket = tmp;
+            return true;
+        } catch (IOException e) {
+            logger.warn(e.getMessage() ,e);
+        }
+
+        return false;
+    }
+
+}
+
+
+The code is failing at bluetoothSocket.connect(). I am getting a java.io.IOException: read failed, socket might closed, read ret: -1. This is the corresponding source at GitHub: https://github.com/android/platform_frameworks_base/blob/android-4.3_r2/core/java/android/bluetooth/BluetoothSocket.java#L504
+Its called through readInt(), called from https://github.com/android/platform_frameworks_base/blob/android-4.3_r2/core/java/android/bluetooth/BluetoothSocket.java#L319
+
+Some metadata dump of the used socket resulted in the following information. These are exactly the same on Nexus 7 and my 2.3.7 phone.
+
+Bluetooth Device 'OBDII'
+Address: 11:22:33:DD:EE:FF
+Bond state: 12 (bonded)
+Type: 1
+Class major version: 7936
+Class minor version: 7936
+Class Contents: 0
+Contents: 0
+
+
+I have some other OBD-II adapters (more expansives) and they all work. Is there any chance, that I am missing something or might this be a bug in Android?
+    
+===============================================================================================
+123
+A:I have finally found a workaround. The magic is hidden under the hood of the BluetoothDevice class (see https://github.com/android/platform_frameworks_base/blob/android-4.3_r2/core/java/android/bluetooth/BluetoothDevice.java#L1037).
+
+Now, when I receive that exception, I instantiate a fallback BluetoothSocket, similar to the source code below. As you can see, invoking the hidden method createRfcommSocket via reflections. I have no clue why this method is hidden. The source code defines it as public though...
+
+Class<?> clazz = tmp.getRemoteDevice().getClass();
+Class<?>[] paramTypes = new Class<?>[] {Integer.TYPE};
+
+Method m = clazz.getMethod("createRfcommSocket", paramTypes);
+Object[] params = new Object[] {Integer.valueOf(1)};
+
+fallbackSocket = (BluetoothSocket) m.invoke(tmp.getRemoteDevice(), params);
+fallbackSocket.connect();
+
+
+connect() then does not fail any longer. I have experienced a few issues still. Basically, this sometimes blocks and fails. Rebooting the SPP-Device (plug off / plug in) helps in such cases. Sometimes I also get another Pairing request after connect() even when the device is already bonded.
+
+UPDATE:
+
+here is a complete class, containing some nested classes. for a real implementation these could be held as seperate classes.
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.lang.reflect.Method;
+import java.util.List;
+import java.util.UUID;
+
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
+import android.util.Log;
+
+public class BluetoothConnector {
+
+    private BluetoothSocketWrapper bluetoothSocket;
+    private BluetoothDevice device;
+    private boolean secure;
+    private BluetoothAdapter adapter;
+    private List<UUID> uuidCandidates;
+    private int candidate;
+
+
+    /**
+     * @param device the device
+     * @param secure if connection should be done via a secure socket
+     * @param adapter the Android BT adapter
+     * @param uuidCandidates a list of UUIDs. if null or empty, the Serial PP id is used
+     */
+    public BluetoothConnector(BluetoothDevice device, boolean secure, BluetoothAdapter adapter,
+            List<UUID> uuidCandidates) {
+        this.device = device;
+        this.secure = secure;
+        this.adapter = adapter;
+        this.uuidCandidates = uuidCandidates;
+
+        if (this.uuidCandidates == null || this.uuidCandidates.isEmpty()) {
+            this.uuidCandidates = new ArrayList<UUID>();
+            this.uuidCandidates.add(UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"));
+        }
+    }
+
+    public BluetoothSocketWrapper connect() throws IOException {
+        boolean success = false;
+        while (selectSocket()) {
+            adapter.cancelDiscovery();
+
+            try {
+                bluetoothSocket.connect();
+                success = true;
+                break;
+            } catch (IOException e) {
+                //try the fallback
+                try {
+                    bluetoothSocket = new FallbackBluetoothSocket(bluetoothSocket.getUnderlyingSocket());
+                    Thread.sleep(500);                  
+                    bluetoothSocket.connect();
+                    success = true;
+                    break;  
+                } catch (FallbackException e1) {
+                    Log.w("BT", "Could not initialize FallbackBluetoothSocket classes.", e);
+                } catch (InterruptedException e1) {
+                    Log.w("BT", e1.getMessage(), e1);
+                } catch (IOException e1) {
+                    Log.w("BT", "Fallback failed. Cancelling.", e1);
+                }
+            }
+        }
+
+        if (!success) {
+            throw new IOException("Could not connect to device: "+ device.getAddress());
+        }
+
+        return bluetoothSocket;
+    }
+
+    private boolean selectSocket() throws IOException {
+        if (candidate >= uuidCandidates.size()) {
+            return false;
+        }
+
+        BluetoothSocket tmp;
+        UUID uuid = uuidCandidates.get(candidate++);
+
+        Log.i("BT", "Attempting to connect to Protocol: "+ uuid);
+        if (secure) {
+            tmp = device.createRfcommSocketToServiceRecord(uuid);
+        } else {
+            tmp = device.createInsecureRfcommSocketToServiceRecord(uuid);
+        }
+        bluetoothSocket = new NativeBluetoothSocket(tmp);
+
+        return true;
+    }
+
+    public static interface BluetoothSocketWrapper {
+
+        InputStream getInputStream() throws IOException;
+
+        OutputStream getOutputStream() throws IOException;
+
+        String getRemoteDeviceName();
+
+        void connect() throws IOException;
+
+        String getRemoteDeviceAddress();
+
+        void close() throws IOException;
+
+        BluetoothSocket getUnderlyingSocket();
+
+    }
+
+
+    public static class NativeBluetoothSocket implements BluetoothSocketWrapper {
+
+        private BluetoothSocket socket;
+
+        public NativeBluetoothSocket(BluetoothSocket tmp) {
+            this.socket = tmp;
+        }
+
+        @Override
+        public InputStream getInputStream() throws IOException {
+            return socket.getInputStream();
+        }
+
+        @Override
+        public OutputStream getOutputStream() throws IOException {
+            return socket.getOutputStream();
+        }
+
+        @Override
+        public String getRemoteDeviceName() {
+            return socket.getRemoteDevice().getName();
+        }
+
+        @Override
+        public void connect() throws IOException {
+            socket.connect();
+        }
+
+        @Override
+        public String getRemoteDeviceAddress() {
+            return socket.getRemoteDevice().getAddress();
+        }
+
+        @Override
+        public void close() throws IOException {
+            socket.close();
+        }
+
+        @Override
+        public BluetoothSocket getUnderlyingSocket() {
+            return socket;
+        }
+
+    }
+
+    public class FallbackBluetoothSocket extends NativeBluetoothSocket {
+
+        private BluetoothSocket fallbackSocket;
+
+        public FallbackBluetoothSocket(BluetoothSocket tmp) throws FallbackException {
+            super(tmp);
+            try
+            {
+              Class<?> clazz = tmp.getRemoteDevice().getClass();
+              Class<?>[] paramTypes = new Class<?>[] {Integer.TYPE};
+              Method m = clazz.getMethod("createRfcommSocket", paramTypes);
+              Object[] params = new Object[] {Integer.valueOf(1)};
+              fallbackSocket = (BluetoothSocket) m.invoke(tmp.getRemoteDevice(), params);
+            }
+            catch (Exception e)
+            {
+                throw new FallbackException(e);
+            }
+        }
+
+        @Override
+        public InputStream getInputStream() throws IOException {
+            return fallbackSocket.getInputStream();
+        }
+
+        @Override
+        public OutputStream getOutputStream() throws IOException {
+            return fallbackSocket.getOutputStream();
+        }
+
+
+        @Override
+        public void connect() throws IOException {
+            fallbackSocket.connect();
+        }
+
+
+        @Override
+        public void close() throws IOException {
+            fallbackSocket.close();
+        }
+
+    }
+
+    public static class FallbackException extends Exception {
+
+        /**
+         * 
+         */
+        private static final long serialVersionUID = 1L;
+
+        public FallbackException(Exception e) {
+            super(e);
+        }
+
+    }
+}
+
+    

@@ -1,0 +1,80 @@
+38
+Q:Could not find any good solution calculating textview height where text was set before rendering textview to layout. Any help please
+    
+===============================================================================================
+65
+A:2 solutions
+
+Used solution 1 at first and found solution 2 later on. Both work, it's really what you prefer. 
+
+Important is to make sure you got all the dimensions right since mixing font sizes in sp or px will give quite a difference depending on what screen you test on. 
+
+A very basic example project is available at https://github.com/hanscappelle/SO-3654321
+
+Solution 1 using TextView and MeasureSpec
+
+Main issue with original question is TextView in below method should be configured as our TextView which should be rendered to layout. I think this solution is valuable for many people who faced this problem.
+
+public static int getHeight(Context context, CharSequence text, int textSize, int deviceWidth, Typeface typeface,int padding) {
+            TextView textView = new TextView(context);
+            textView.setPadding(padding,0,padding,padding);
+            textView.setTypeface(typeface);
+            textView.setText(text, TextView.BufferType.SPANNABLE);
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSize);
+            int widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(deviceWidth, View.MeasureSpec.AT_MOST);
+            int heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+            textView.measure(widthMeasureSpec, heightMeasureSpec);
+            return textView.getMeasuredHeight();
+        }
+
+
+And an example of how to use this:
+
+// retrieve deviceWidth
+int deviceWidth;
+WindowManager wm = (WindowManager) textView.getContext().getSystemService(Context.WINDOW_SERVICE);
+Display display = wm.getDefaultDisplay();
+if(android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB_MR2){
+    Point size = new Point();
+    display.getSize(size);
+    deviceWidth = size.x;
+} else {
+    deviceWidth = display.getWidth();
+}
+// the text to check for
+String exampleTextToMeasure = "some example text that will be long enough to make this example split over multiple lines so we can't easily predict the final height";
+//  some dimensions from dimes resources to take into account
+int textSize = getContext().getResources().getDimensionPixelSize(R.dimen.text_size);
+int padding = getContext().getResources().getDimensionPixelSize(R.dimen.text_padding);
+
+// final calculation of textView height
+int measuredTextHeight = getHeight(getContext(), exampleTextToMeasure, textSize, deviceWidth, TypeFace.DEFAULT, padding); 
+
+
+Solution 2 using TextPaint and StaticLayout
+
+This method relies on a TextPaint and StaticLayout which also gives reliable results on all API levels I've tested so far. Pay good attention to units of dimensions; all should be in pixels!
+
+Source: Measuring text height to be drawn on Canvas ( Android )
+
+    public static int method1UsingTextPaintAndStaticLayout(
+            final CharSequence text,
+            final int textSize, // in pixels
+            final int deviceWidth, // in pixels
+            final int padding // in pixels
+    ) {
+
+        TextPaint myTextPaint = new TextPaint();
+        myTextPaint.setAntiAlias(true);
+        // this is how you would convert sp to pixels based on screen density
+        //myTextPaint.setTextSize(16 * context.getResources().getDisplayMetrics().density);
+        myTextPaint.setTextSize(textSize);
+        Layout.Alignment alignment = Layout.Alignment.ALIGN_NORMAL;
+        float spacingMultiplier = 1;
+        float spacingAddition = padding; // optionally apply padding here
+        boolean includePadding = padding != 0;
+        StaticLayout myStaticLayout = new StaticLayout(text, myTextPaint, deviceWidth, alignment, spacingMultiplier, spacingAddition, includePadding);
+        return myStaticLayout.getHeight();
+    }
+
+    

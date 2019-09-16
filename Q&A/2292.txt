@@ -1,0 +1,165 @@
+89
+Q:if android.hardware.Camera is deprecated and you cannot use the variable Camera, then what would be the alternative to this?
+    
+===============================================================================================
+95
+A:API Documentation
+
+According to the Android developers guide for android.hardware.Camera, they state:
+
+
+  We recommend using the new android.hardware.camera2 API for new applications.
+
+
+On the information page about android.hardware.camera2, (linked above), it is stated:
+
+
+  The android.hardware.camera2 package provides an interface to individual camera devices connected to an Android device. It replaces the deprecated Camera class.
+
+
+The problem
+
+When you check that documentation you'll find that the implementation of these 2 Camera API's are very different.
+
+For example getting camera orientation on android.hardware.camera
+
+@Override
+public int getOrientation(final int cameraId) {
+    Camera.CameraInfo info = new Camera.CameraInfo();
+    Camera.getCameraInfo(cameraId, info);
+    return info.orientation;
+}
+
+
+Versus android.hardware.camera2 
+
+@Override
+public int getOrientation(final int cameraId) {
+    try {
+        CameraManager manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+        String[] cameraIds = manager.getCameraIdList();
+        CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraIds[cameraId]);
+        return characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+    } catch (CameraAccessException e) {
+        // TODO handle error properly or pass it on
+        return 0;
+    }
+}
+
+
+This makes it hard to switch from one to another and write code that can handle both implementations. 
+
+Note that in this single code example I already had to work around the fact that the olde camera API works with int primitives for camera IDs while the new one works with String objects. For this example I quickly fixed that by using the int as an index in the new API. If the camera's returned aren't always in the same order this will already cause issues. Alternative approach is to work with String objects and String representation of the old int cameraIDs which is probably safer.
+
+One away around
+
+Now to work around this huge difference you can implement an interface first and reference that interface in your code. 
+
+Here I'll list some code for that interface and the 2 implementations. You can limit the implementation to what you actually use of the camera API to limit the amount of work.
+
+In the next section I'll quickly explain how to load one or another. 
+
+The interface wrapping all you need, to limit this example I only have 2 methods here.
+
+public interface CameraSupport {
+    CameraSupport open(int cameraId);
+    int getOrientation(int cameraId);
+}
+
+
+Now have a class for the old camera hardware api:
+
+@SuppressWarnings("deprecation")
+public class CameraOld implements CameraSupport {
+
+    private Camera camera;
+
+    @Override
+    public CameraSupport open(final int cameraId) {
+        this.camera = Camera.open(cameraId);
+        return this;
+    }
+
+    @Override
+    public int getOrientation(final int cameraId) {
+       Camera.CameraInfo info = new Camera.CameraInfo();
+       Camera.getCameraInfo(cameraId, info);
+       return info.orientation;
+    }
+}
+
+
+And another one for the new hardware api:
+
+public class CameraNew implements CameraSupport {
+
+    private CameraDevice camera;
+    private CameraManager manager;
+
+    public CameraNew(final Context context) {
+        this.manager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+    }
+
+    @Override
+    public CameraSupport open(final int cameraId) {
+        try {
+            String[] cameraIds = manager.getCameraIdList();
+            manager.openCamera(cameraIds[cameraId], new CameraDevice.StateCallback() {
+                @Override
+                public void onOpened(CameraDevice camera) {
+                    CameraNew.this.camera = camera;
+                }
+
+                @Override
+                public void onDisconnected(CameraDevice camera) {
+                    CameraNew.this.camera = camera;
+                    // TODO handle
+                }
+
+                @Override
+                public void onError(CameraDevice camera, int error) {
+                    CameraNew.this.camera = camera;
+                    // TODO handle
+                }
+            }, null);
+        } catch (Exception e) {
+            // TODO handle
+        }
+        return this;
+    }
+
+    @Override
+    public int getOrientation(final int cameraId) {
+        try {
+            String[] cameraIds = manager.getCameraIdList();
+            CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraIds[cameraId]);
+            return characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+        } catch (CameraAccessException e) {
+            // TODO handle
+            return 0;
+        }
+    }
+}
+
+
+Loading the proper API
+
+Now to load either your CameraOld or CameraNew class you'll have to check the API level since CameraNew is only available from api level 21.
+
+If you have dependency injection set up already you can do so in your module when providing the CameraSupport implementation. Example:
+
+@Module public class CameraModule {
+
+    @Provides
+    CameraSupport provideCameraSupport(){
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            return new CameraNew(context);
+        } else {
+            return new CameraOld();
+        }
+    } 
+}
+
+
+If you don't use DI you can just make a utility or use Factory pattern to create the proper one. Important part is that the API level is checked.
+    

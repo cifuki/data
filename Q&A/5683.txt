@@ -1,0 +1,151 @@
+44
+Q:Previously, I'm using the following old support libraries "23.1.1".
+
+compile 'com.android.support:appcompat-v7:23.1.1'
+compile 'com.android.support:support-v4:23.1.1'
+compile 'com.android.support:preference-v7:23.1.1'
+compile 'com.android.support:preference-v14:23.1.1'
+compile 'com.android.support:design:23.1.1'
+compile 'com.android.support:recyclerview-v7:23.1.1'
+
+
+It works pretty well. Here's how my RecyclerView looks like
+
+
+
+Now, I wish to migrate to "23.2.1", due to some bug fixes done.
+
+compile 'com.android.support:appcompat-v7:23.2.1'
+compile 'com.android.support:support-v4:23.2.1'
+compile 'com.android.support:preference-v7:23.2.1'
+compile 'com.android.support:preference-v14:23.2.1'
+compile 'com.android.support:design:23.2.1'
+compile 'com.android.support:recyclerview-v7:23.2.1'
+
+
+However, suddenly, all my RecyclerView items, seem to fill up the RecyclerView entire height.
+
+
+
+
+
+Here's the code snippet of my layout file : https://gist.github.com/yccheok/241a0d38d56305a1be24d09b54eb1600
+
+What really puzzle me is that, although I'm using "wrap_content" in my recycler view item layout, it doesn't work as expected.
+
+I don't use any custom layout manager for my RecyclerView.
+
+From http://developer.android.com/tools/support-library/index.html, I realize 23.2.1 makes quite a number of changes on RecyclerView this time.
+
+
+Fixed bugs related to various measure-spec methods. (Issue 201856)
+Reduced the lockdown period in which RecyclerView does not allow adapter changes while calculating a layout or scroll. (Issue 202046)
+Fixed a crash when calling notifyItemChanged() on an item that is out of view. (Issue 202136)
+Fixed a crash that occurs when RecyclerView.LayoutManager adds and removes a view in the same measurement pass. (Issue 193958)
+
+
+What I suspect most is https://code.google.com/p/android/issues/detail?id=201856 , as it involves changing various measure-spec methods
+
+So far, I try to reproduce the problem with a simple RecyclerView project, with 23.2.1 but failed! It doesn't have "item fills up the RecyclerView entire height" problem. My guess is that, my simple project doesn't simulate the complex layout structure of my production project. My production project is having the following layout
+
+<Activity>
+    <Fragment>
+        <View Pager>
+            <Fragment>
+                <RecyclerView />
+            </Fragment>
+        </View Pager>
+    </Fragment>
+</Activity>
+
+
+After debugging for few hours, I'm still cannot find root cause for such problem, any hint?
+
+Thanks.
+
+What I had tried
+
+I had tried to change RecyclerView 
+
+from
+
+<android.support.v7.widget.RecyclerView
+    android:id="@+id/recycler_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+
+
+to
+
+<android.support.v7.widget.RecyclerView
+    android:id="@+id/recycler_view"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+
+
+It looks good initially. However, when you perform scrolling, thing doesn't work as expected : https://www.youtube.com/watch?v=U2EChFn6WkI
+
+UPDATE: I finally figure out the root cause
+
+Is mistake at my side! Since I need to have different margin for the last row item, here's my adapter code.
+
+@Override
+public void onBindViewHolder(ViewHolder holder, int position) {
+    final List<TransactionSummary> transactionSummaries = buyArray.transactionSummaries;
+
+    if (position == transactionSummaries.size() - 1) {
+        holder.itemView.setLayoutParams(lastLayoutParams);
+    } else {
+        holder.itemView.setLayoutParams(normalLayoutParams);
+    }
+
+
+Unfortunately, lastLayoutParams and normalLayoutParams is being initialized as
+
+    normalLayoutParams = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.MATCH_PARENT
+    );
+
+    lastLayoutParams = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.MATCH_PARENT
+    );
+
+
+Using LinearLayout.LayoutParams.WRAP_CONTENT solve the problem.
+    
+===============================================================================================
+17
+A:Update
+
+It appears that you are updating the LayoutParam for your View in your Adapter.
+
+It is possible to tell this because your UI appears absolutely fine until you begin scrolling. This means that your XML is correct as it is defined in your XML layout file.
+
+The fact that it changes after scrolling begins, means there is a logic error in your onBindViewHolder implementation. That is why the error appears when you scroll down, and then the error sticks when you scroll back up.
+
+Old answer
+
+Your issue is that your divider has gone rogue:
+
+<View
+    android:layout_width="1px"
+    android:layout_height="match_parent"
+    android:background="?attr/buyPortfolioSeperatorBackground"
+    android:layout_marginRight="5dp"
+    android:layout_marginLeft="5dp" />
+
+
+For testing purposes, set it to:
+
+<View
+    android:layout_width="1px"
+    android:layout_height="30dp"
+    android:background="?attr/buyPortfolioSeperatorBackground"
+    android:layout_marginRight="5dp"
+    android:layout_marginLeft="5dp" />
+
+
+Make sure you change both of them!
+    

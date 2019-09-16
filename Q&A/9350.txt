@@ -1,0 +1,210 @@
+29
+Q:After reading and try'n'error for days, I\xc2\xb4m giving up and ask for help.
+
+< edit >
+I am using ActionBarSherlock.
+< /edit >
+
+What I want to achieve:
+A ListView with a custom layout for each row, where the user can select multiple list items.
+A selected list item should have a different background color. When there is at least one item selected, a contextual action bar (CAB) should be shown.
+It should look more or less like the multiple selection of emails in the GMail app. The only difference is that in the gmail app the selection is done by clicking the checkbox of a row, whereas I don\xc2\xb4t want to have a checkbox, but a row should be selected no matter, where the user clicks.
+
+
+What I tried:
+Following this tutorial, using a Checkable row layout with some logic to change the background color when the check state was toggled, I got everything working except that I could not register a click listener like OnItemClickListener on the ListView to show the CAB. Neither providing a click listener for each row View helped because this prevented to change the background color of the selected items.
+I also tried adding a MultiChoiceModeListener to the ListView like that
+
+    listView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE_MODAL);
+    listView.setMultiChoiceModeListener(new MultiChoiceModeListener() { //.. });
+
+
+With the same result, no background color change.
+
+What I am looking for: A hint or a tutorial or sample code how to do this. If you need some code snippets to help, let me know.
+    
+===============================================================================================
+36
+A:See if the code helps you(it's basically a ListActivity with a custom adapter to hold the status of checked items(+ different background)):
+
+public class CABSelection extends ListActivity {
+
+    private ArrayList<String> mItems = new ArrayList<String>();
+    private SelectionAdapter mAdapter;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        for (int i = 0; i < 24; i++) {
+            mItems.add("Name" + i);
+        }
+        // R.layout.adapters_cabselection_row is a LinearLayout(with green
+        // background(#99cc00)) that wraps an ImageView and a TextView
+        mAdapter = new SelectionAdapter(this,
+                R.layout.adapters_cabselection_row, R.id.the_text, mItems);
+        setListAdapter(mAdapter);
+        getListView().setChoiceMode(ListView.CHOICE_MODE_MULTIPLE_MODAL);
+        getListView().setMultiChoiceModeListener(new MultiChoiceModeListener() {
+
+            private int nr = 0;
+
+            @Override
+            public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+                MenuInflater inflater = getMenuInflater();
+                inflater.inflate(R.menu.cabselection_menu, menu);
+                return true;
+            }
+
+            @Override
+            public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+                return false;
+            }
+
+            @Override
+            public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+                StringBuilder sb = new StringBuilder();
+                Set<Integer> positions = mAdapter.getCurrentCheckedPosition();
+                for (Integer pos : positions) {
+                    sb.append(" " + pos + ",");
+                }               
+                switch (item.getItemId()) {
+                case R.id.edit_entry:
+                    Toast.makeText(CABSelection.this, "Edited entries: " + sb.toString(),
+                            Toast.LENGTH_SHORT).show();
+                    break;
+                case R.id.delete_entry:
+                    Toast.makeText(CABSelection.this, "Deleted entries : " + sb.toString(),
+                            Toast.LENGTH_SHORT).show();
+                    break;
+                case R.id.finish_it:
+                    nr = 0;
+                    mAdapter.clearSelection();
+                    Toast.makeText(CABSelection.this, "Finish the CAB!",
+                            Toast.LENGTH_SHORT).show();
+                    mode.finish();
+                }
+                return false;
+            }
+
+            @Override
+            public void onDestroyActionMode(ActionMode mode) {
+                nr = 0;
+                mAdapter.clearSelection();
+            }
+
+            @Override
+            public void onItemCheckedStateChanged(ActionMode mode,
+                    int position, long id, boolean checked) {
+                if (checked) {
+                    nr++;
+                    mAdapter.setNewSelection(position, checked);                    
+                } else {
+                    nr--;
+                    mAdapter.removeSelection(position);                 
+                }
+                mode.setTitle(nr + " rows selected!");
+
+            }
+
+        });
+    }
+
+    @Override
+    protected void onListItemClick(ListView l, View v, int position, long id) {
+        l.setItemChecked(position, !mAdapter.isPositionChecked(position));
+    }
+
+    private class SelectionAdapter extends ArrayAdapter<String> {
+
+        private HashMap<Integer, Boolean> mSelection = new HashMap<Integer, Boolean>();
+
+        public SelectionAdapter(Context context, int resource,
+                int textViewResourceId, List<String> objects) {
+            super(context, resource, textViewResourceId, objects);
+        }
+
+        public void setNewSelection(int position, boolean value) {
+            mSelection.put(position, value);
+            notifyDataSetChanged();
+        }
+
+        public boolean isPositionChecked(int position) {
+            Boolean result = mSelection.get(position);
+            return result == null ? false : result;
+        }
+
+        public Set<Integer> getCurrentCheckedPosition() {
+            return mSelection.keySet();
+        }
+
+        public void removeSelection(int position) {
+            mSelection.remove(position);
+            notifyDataSetChanged();
+        }
+
+        public void clearSelection() {
+            mSelection = new HashMap<Integer, Boolean>();
+            notifyDataSetChanged();
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            View v = super.getView(position, convertView, parent);//let the adapter handle setting up the row views
+            v.setBackgroundColor(Color.parseColor("#99cc00")); //default color
+            if (mSelection.get(position) != null) {
+                v.setBackgroundColor(Color.RED);// this is a selected position so make it red
+            }
+            return v;
+        }
+
+    }
+
+}
+
+
+The R.layout.adapters_cabselection_row is a custom layout for the row(a very simple one) with a green background:
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#99cc00" >
+
+    <ImageView
+        android:id="@+id/imageView1"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:src="@drawable/ic_launcher" />
+
+    <TextView
+        android:id="@+id/the_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="#ffffff"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+</LinearLayout>
+
+
+R.menu.cabselection_menu is a menu file with 3 options(edit, delete, finish the CAB) which don't do anything except pop a Toast with a message regarding the rows selected:
+
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android" >
+
+    <item
+        android:id="@+id/edit_entry"
+        android:icon="@android:drawable/ic_menu_edit"
+        android:title="Edit!"/>
+    <item
+        android:id="@+id/delete_entry"
+        android:icon="@android:drawable/ic_menu_delete"
+        android:title="Delete!"/>
+    <item
+        android:id="@+id/finish_it"
+        android:icon="@android:drawable/ic_menu_crop"
+        android:title="Get me out!"/>
+
+</menu>
+
+    

@@ -1,0 +1,68 @@
+108
+Q:I can't seem to grasp why this is happening. This code:
+
+mProgressDialog = ProgressDialog.show(this, "", getString(R.string.loading), true);
+
+
+works just fine. However, this code:
+
+mProgressDialog = ProgressDialog.show(getApplicationContext(), "", getString(R.string.loading), true);
+
+
+throws the following exception:
+
+W/WindowManager(  569): Attempted to add window with non-application token WindowToken{438bee58 token=null}.  Aborting.
+D/AndroidRuntime( 2049): Shutting down VM
+W/dalvikvm( 2049): threadid=3: thread exiting with uncaught exception (group=0x4001aa28)
+E/AndroidRuntime( 2049): Uncaught handler: thread main exiting due to uncaught exception
+E/AndroidRuntime( 2049): java.lang.RuntimeException: Unable to start activity ComponentInfo{com.tastekid.TasteKid/com.tastekid.TasteKid.YouTube}: android.view.WindowManager$BadTokenException: Unable to add window -- token null is not for an application
+E/AndroidRuntime( 2049):    at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2401)
+E/AndroidRuntime( 2049):    at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2417)
+E/AndroidRuntime( 2049):    at android.app.ActivityThread.access$2100(ActivityThread.java:116)
+E/AndroidRuntime( 2049):    at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1794)
+E/AndroidRuntime( 2049):    at android.os.Handler.dispatchMessage(Handler.java:99)
+E/AndroidRuntime( 2049):    at android.os.Looper.loop(Looper.java:123)
+E/AndroidRuntime( 2049):    at android.app.ActivityThread.main(ActivityThread.java:4203)
+E/AndroidRuntime( 2049):    at java.lang.reflect.Method.invokeNative(Native Method)
+E/AndroidRuntime( 2049):    at java.lang.reflect.Method.invoke(Method.java:521)
+E/AndroidRuntime( 2049):    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:791)
+E/AndroidRuntime( 2049):    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:549)
+E/AndroidRuntime( 2049):    at dalvik.system.NativeStart.main(Native Method)
+E/AndroidRuntime( 2049): Caused by: android.view.WindowManager$BadTokenException: Unable to add window -- token null is not for an application
+E/AndroidRuntime( 2049):    at android.view.ViewRoot.setView(ViewRoot.java:460)
+E/AndroidRuntime( 2049):    at android.view.WindowManagerImpl.addView(WindowManagerImpl.java:177)
+E/AndroidRuntime( 2049):    at android.view.WindowManagerImpl.addView(WindowManagerImpl.java:91)
+E/AndroidRuntime( 2049):    at android.app.Dialog.show(Dialog.java:238)
+E/AndroidRuntime( 2049):    at android.app.ProgressDialog.show(ProgressDialog.java:107)
+E/AndroidRuntime( 2049):    at android.app.ProgressDialog.show(ProgressDialog.java:90)
+E/AndroidRuntime( 2049):    at com.tastekid.TasteKid.YouTube.onCreate(YouTube.java:45)
+E/AndroidRuntime( 2049):    at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1123)
+E/AndroidRuntime( 2049):    at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2364)
+E/AndroidRuntime( 2049):    ... 11 more
+
+
+Any ideas why this is happening? I'm calling this from the onCreate method.
+    
+===============================================================================================
+42
+A:Which API version are you using? If I'm right about what the problem is then this was fixed in Android 1.6 (API version 4).
+
+It looks like the object reference that getApplicationContext() is returning just points to null. I think you're having a problem similar to one I had in that some of the code in the onCreate() is being run before the window is actually done being built. This is going to be a hack, but try launching a new Thread in a few hundred milliseconds (IIRC: 300-400 seemed to work for me, but you'll need to tinker) that opens your ProgressDialog and starts anything else you needed (eg. network IO). Something like this:
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    // do all your other stuff here
+
+    new Handler().postDelayed(new Runnable() {
+        @Override
+        public void run() {
+            mProgressDialog = ProgressDialog.show(
+               YouTube.this.getApplicationContext(), "",
+               YouTube.this.getString(R.string.loading), true);
+
+            // start time consuming background process here
+        }
+    }, 1000); // starting it in 1 second
+}
+
+    

@@ -1,0 +1,94 @@
+32
+Q:I use okhttp to be my httpclient. I think it's a good api but the doc is not so detailed.
+
+how to use it to make a http post request with file uploading?
+
+public Multipart createMultiPart(File file){
+    Part part = (Part) new Part.Builder().contentType("").body(new File("1.png")).build();
+    //how to  set part name?
+    Multipart m = new Multipart.Builder().addPart(part).build();
+    return m;
+}
+public String postWithFiles(String url,Multipart m) throws  IOException{
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    m.writeBodyTo(out)
+    ;
+    Request.Body body =  Request.Body.create(MediaType.parse("application/x-www-form-urlencoded"),
+            out.toByteArray());
+
+    Request req = new Request.Builder().url(url).post(body).build();
+    return client.newCall(req).execute().body().string();
+
+}
+
+
+my question is:
+
+
+how to set part name? in the form, the file should be named file1.  
+how to add other fields in the form?
+
+    
+===============================================================================================
+16
+A:Note: this answer is for okhttp 1.x/2.x. For 3.x, see this other answer.
+
+The class Multipart from mimecraft encapsulates the whole HTTP body and can handle regular fields like so:
+
+Multipart m = new Multipart.Builder()
+        .type(Multipart.Type.FORM)
+        .addPart(new Part.Builder()
+                .body("value")
+                .contentDisposition("form-data; name=\\"non_file_field\\"")
+                .build())
+        .addPart(new Part.Builder()
+                .contentType("text/csv")
+                .body(aFile)
+                .contentDisposition("form-data; name=\\"file_field\\"; filename=\\"file1\\"")
+                .build())
+        .build();
+
+
+Take a look at examples of multipart/form-data encoding to get a sense of how you need to construct the parts.
+
+Once you have a Multipart object, all that's left to do is specify the right Content-Type header and pass on the body bytes to the request.
+
+Since you seem to be working with the v2.0 of the OkHttp API, which I don't have experience with, this is just guess code: 
+
+// You'll probably need to change the MediaType to use the Content-Type
+// from the multipart object
+Request.Body body =  Request.Body.create(
+        MediaType.parse(m.getHeaders().get("Content-Type")),
+        out.toByteArray());
+
+
+For OkHttp 1.5.4, here is a stripped down code I'm using which is adapted from a sample snippet:
+
+OkHttpClient client = new OkHttpClient();
+OutputStream out = null;
+try {
+    URL url = new URL("http://www.example.com");
+    HttpURLConnection connection = client.open(url);
+    for (Map.Entry<String, String> entry : multipart.getHeaders().entrySet()) {
+        connection.addRequestProperty(entry.getKey(), entry.getValue());
+    }
+    connection.setRequestMethod("POST");
+    // Write the request.
+    out = connection.getOutputStream();
+    multipart.writeBodyTo(out);
+    out.close();
+
+    // Read the response.
+    if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+        throw new IOException("Unexpected HTTP response: "
+                + connection.getResponseCode() + " " + connection.getResponseMessage());
+    }
+} finally {
+    // Clean up.
+    try {
+        if (out != null) out.close();
+    } catch (Exception e) {
+    }
+}
+
+    

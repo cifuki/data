@@ -1,0 +1,100 @@
+49
+Q:I am using Recyclerview with CardView. I am aware how to control speed on list view. But not for Recyclerview.
+
+I searched a lot in found class name SmoothScroll. How to use that? I have no Idea! Right now Recyclerview by default scroll is fast.
+
+UPDATE:
+
+I Summarized Gil Answer with this
+    
+===============================================================================================
+99
+A:It's unclear what you mean when you say "smoothScroll". You could be referring to the automatic "smoothScrollToPosition" which will automatically scroll to a specified position, you could be talking about manual scrolling and you could be talking about flinging. For the sake of prosperity, I will attempt to answer all of these issues now.
+
+1. Automatic smooth scrolling.
+
+Inside your layout manager, you need to implement the smoothScrollToPosition method:
+
+    @Override
+    public void smoothScrollToPosition(RecyclerView recyclerView, State state, int position)
+    {
+        // A good idea would be to create this instance in some initialization method, and just set the target position in this method.
+        LinearSmoothScroller smoothScroller = new LinearSmoothScroller(getContext())
+        {
+            @Override
+            public PointF computeScrollVectorForPosition(int targetPosition)
+            {
+                int yDelta = calculateCurrentDistanceToPosition(targetPosition);
+                return new PointF(0, yDelta);
+            }
+
+            // This is the important method. This code will return the amount of time it takes to scroll 1 pixel.
+            // This code will request X milliseconds for every Y DP units.
+            @Override
+            protected float calculateSpeedPerPixel(DisplayMetrics displayMetrics)
+            {
+                return X / TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, Y, displayMetrics);
+            }
+
+        };
+        smoothScroller.setTargetPosition(position);
+
+        startSmoothScroll(smoothScroller);
+    }
+
+
+In this example, I use a helper method named "calculateCurrentDistanceToPosition". This can be a bit tricky, since it involves keeping track of your current scroll position, and calculating the scroll position of a given y position. You can find an example of how to keep track of the recycler's scroll y here. 
+
+Calculating the scroll y of a given position is really dependent on what your recycler is displaying. Assuming all your items are the same height, you can calculate this by performing the following calculation:
+
+targetScrollY = targetPosition * itemHeight
+
+
+Then, to calculate the distance you need to scroll, simply subtract the current scroll y with the target scroll y:
+
+private int calculateCurrentDistanceToPosition(int targetPosition) {
+    int targetScrollY = targetPosition * itemHeight;
+    return targetScrollY - currentScrollY;
+}
+
+
+2. Slowing down manual scrolling.
+
+Once again, you need to edit your layout manager, this time - the scrollVerticallyBy method:
+
+    @Override
+    public int scrollVerticallyBy(int delta, Recycler recycler, State state)
+    {
+       // write your limiting logic here to prevent the delta from exceeding the limits of your list.
+
+       int prevDelta = delta;
+       if (getScrollState() == SCROLL_STATE_DRAGGING)
+            delta = (int)(delta > 0 ? Math.max(delta * MANUAL_SCROLL_SLOW_RATIO, 1) : Math.min(delta * MANUAL_SCROLL_SLOW_RATIO, -1));  
+
+       // MANUAL_SCROLL_SLOW_RATIO is between 0 (no manual scrolling) to 1 (normal speed) or more (faster speed).
+       // write your scrolling logic code here whereby you move each view by the given delta
+
+        if (getScrollState() == SCROLL_STATE_DRAGGING)
+            delta = prevDelta;
+
+        return delta;
+    }
+
+
+Edit: In the above method, I call "getScrollState()". This is a method of RecyclerView. In this implementation, my custom LayoutManager is a nested class of my custom RecyclerView. If this doesn't work for you, you can try to grab the scroll state via some interface pattern.
+
+3. Slow down the fling speed
+
+Here you want to scale down the fling velocity. You will need to override the fling method inside your RecyclerView subclass:
+
+@Override
+public boolean fling(int velocityX, int velocityY)
+{
+     velocityY *= FLING_SCALE_DOWN_FACTOR; // (between 0 for no fling, and 1 for normal fling, or more for faster fling).
+
+     return super.fling(velocityX, velocityY);
+}
+
+
+It's difficult for me to provide a more tailored solution, since you didn't post any of your code, or provide much information about your setup, but I hope this covers most bases and will help you find the best solution for you.
+    

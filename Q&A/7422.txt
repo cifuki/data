@@ -1,0 +1,193 @@
+35
+Q:I'm running my tests using gradle testFlavorType
+
+JSONObject jsonObject1 = new JSONObject();
+JSONObject jsonObject2 = new JSONObject();
+jsonObject1.put("test", "test");
+jsonObject2.put("test", "test");
+assertEquals(jsonObject1.get("test"), jsonObject2.get("test"));
+
+
+The above test succeeds.
+
+jsonObject = new SlackMessageRequest(channel, message).buildBody();
+String channelAssertion = jsonObject.getString(SlackMessageRequest.JSON_KEY_CHANNEL);
+String messageAssertion = jsonObject.getString(SlackMessageRequest.JSON_KEY_TEXT);
+assertEquals(channel, channelAssertion);
+assertEquals(message, messageAssertion);
+
+
+But the above two requests fail. The stack trace says that channelAssertion and messageAssertion are null, but not sure why. My question is: Why are the above two asserts failing?
+
+Below is the SlackMessageRequest.
+
+public class SlackMessageRequest
+        extends BaseRequest {
+    // region Variables
+
+    public static final String JSON_KEY_TEXT = "text";
+    public static final String JSON_KEY_CHANNEL = "channel";
+
+    private String mChannel;
+    private String mMessage;
+
+    // endregion
+
+    // region Constructors
+
+    public SlackMessageRequest(String channel, String message) {
+        mChannel = channel;
+        mMessage = message;
+    }
+
+    // endregion
+
+    // region Methods
+
+    @Override
+    public MethodType getMethodType() {
+        return MethodType.POST;
+    }    
+
+    @Override
+    public JSONObject buildBody() throws JSONException {
+        JSONObject body = new JSONObject();
+        body.put(JSON_KEY_TEXT, getMessage());
+        body.put(JSON_KEY_CHANNEL, getChannel());
+        return body;
+    }
+
+    @Override
+    public String getUrl() {
+        return "http://localhost:1337";
+    }
+
+    public String getMessage() {
+        return mMessage;
+    }
+
+    public String getChannel() {
+        return mChannel;
+    }
+
+// endregion
+}
+
+
+Below is the stacktrace:
+
+junit.framework.ComparisonFailure: expected:<@tk> but was:<null>
+    at junit.framework.Assert.assertEquals(Assert.java:100)
+    at junit.framework.Assert.assertEquals(Assert.java:107)
+    at junit.framework.TestCase.assertEquals(TestCase.java:269)
+    at com.example.app.http.request.SlackMessageRequestTest.testBuildBody(SlackMessageRequestTest.java:30)
+    at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+    at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+    at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+    at java.lang.reflect.Method.invoke(Method.java:483)
+    at junit.framework.TestCase.runTest(TestCase.java:176)
+    at junit.framework.TestCase.runBare(TestCase.java:141)
+    at junit.framework.TestResult$1.protect(TestResult.java:122)
+    at junit.framework.TestResult.runProtected(TestResult.java:142)
+    at junit.framework.TestResult.run(TestResult.java:125)
+    at junit.framework.TestCase.run(TestCase.java:129)
+    at junit.framework.TestSuite.runTest(TestSuite.java:252)
+    at junit.framework.TestSuite.run(TestSuite.java:247)
+    at org.junit.internal.runners.JUnit38ClassRunner.run(JUnit38ClassRunner.java:86)
+    at org.gradle.api.internal.tasks.testing.junit.JUnitTestClassExecuter.runTestClass(JUnitTestClassExecuter.java:86)
+    at org.gradle.api.internal.tasks.testing.junit.JUnitTestClassExecuter.execute(JUnitTestClassExecuter.java:49)
+    at org.gradle.api.internal.tasks.testing.junit.JUnitTestClassProcessor.processTestClass(JUnitTestClassProcessor.java:64)
+    at org.gradle.api.internal.tasks.testing.SuiteTestClassProcessor.processTestClass(SuiteTestClassProcessor.java:50)
+    at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+    at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+    at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+    at java.lang.reflect.Method.invoke(Method.java:483)
+    at org.gradle.messaging.dispatch.ReflectionDispatch.dispatch(ReflectionDispatch.java:35)
+    at org.gradle.messaging.dispatch.ReflectionDispatch.dispatch(ReflectionDispatch.java:24)
+    at org.gradle.messaging.dispatch.ContextClassLoaderDispatch.dispatch(ContextClassLoaderDispatch.java:32)
+    at org.gradle.messaging.dispatch.ProxyDispatchAdapter$DispatchingInvocationHandler.invoke(ProxyDispatchAdapter.java:93)
+    at com.sun.proxy.$Proxy2.processTestClass(Unknown Source)
+    at org.gradle.api.internal.tasks.testing.worker.TestWorker.processTestClass(TestWorker.java:106)
+    at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+    at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+    at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+    at java.lang.reflect.Method.invoke(Method.java:483)
+    at org.gradle.messaging.dispatch.ReflectionDispatch.dispatch(ReflectionDispatch.java:35)
+    at org.gradle.messaging.dispatch.ReflectionDispatch.dispatch(ReflectionDispatch.java:24)
+    at org.gradle.messaging.remote.internal.hub.MessageHub$Handler.run(MessageHub.java:360)
+    at org.gradle.internal.concurrent.DefaultExecutorFactory$StoppableExecutorImpl$1.run(DefaultExecutorFactory.java:64)
+    at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+    at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+    at java.lang.Thread.run(Thread.java:745)
+
+
+EDIT 5:55PM EST
+
+I've figured out that I can log with System.out.println("") and then see the results by running gradle testFlavorType --debug and by trial and error I've discovered the following weird situation:
+
+@Override
+public JSONObject buildBody() throws JSONException {
+    System.out.println("buildBody mChannel = " + mChannel);
+    System.out.println("buildBody mMessage = " + mMessage);
+    JSONObject body = new JSONObject();
+    body.put(JSON_KEY_TEXT, getMessage());
+    body.put(JSON_KEY_CHANNEL, getChannel());
+
+    if (body.length() != 0) {
+        Iterator<String> keys = body.keys();
+
+        if (keys.hasNext()) {
+            do {
+                String key = keys.next();
+                System.out.println("keys: " + key);
+            } while (keys.hasNext());
+        }
+    } else {
+        System.out.println("There are no keys????");
+    }
+
+    return body;
+}
+
+
+For some reason, "There are no keys????" is printing out?!?!?!?! Why?!
+
+EDIT 6:20PM EST
+
+I've figured out how to debug unit tests. According to the debugger, the assigned JSONObject is returning "null". I have no clue what this means (see below). Since I think this is relevant, my gradle file includes the following:
+
+testOptions {
+    unitTests.returnDefaultValues = true
+}
+
+
+It's especially strange because if I construct a JSONObject inside the test, then everything works fine. But if it is part of the original application's code, then it doesn't work and does the above.
+
+
+    
+===============================================================================================
+45
+A:The class JSONObject is part of the android SDK. That means that is not available for unit testing by default.
+
+From http://tools.android.com/tech-docs/unit-testing-support
+
+
+  The android.jar file that is used to run unit tests does not contain
+  any actual code - that is provided by the Android system image on real
+  devices. Instead, all methods throw exceptions (by default). This is
+  to make sure your unit tests only test your code and do not depend on
+  any particular behaviour of the Android platform (that you have not
+  explicitly mocked e.g. using Mockito).
+
+
+When you set the test options to
+
+testOptions {
+    unitTests.returnDefaultValues = true
+}
+
+
+you are fixing the "Method ... not mocked." problem, but the outcome is that when your code uses new JSONObject() you are not using the real method, you are using a mock method that doesn't do anything, it just returns a default value. That's the reason the object is null.
+
+You can find different ways of solving the problem in this question: Android methods are not mocked when using Mockito
+    

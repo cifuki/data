@@ -1,0 +1,58 @@
+99
+Q:I am doing a https post and I'm getting an exception of ssl exception Not trusted server certificate. If i do normal http it is working perfectly fine. Do I have to accept the server certificate somehow?
+    
+===============================================================================================
+45
+A:I'm making a guess, but if you want an actual handshake to occur, you have to let android know of your certificate.  If you want to just accept no matter what, then use this pseudo-code to get what you need with the Apache HTTP Client:
+
+SchemeRegistry schemeRegistry = new SchemeRegistry ();
+
+schemeRegistry.register (new Scheme ("http",
+    PlainSocketFactory.getSocketFactory (), 80));
+schemeRegistry.register (new Scheme ("https",
+    new CustomSSLSocketFactory (), 443));
+
+ThreadSafeClientConnManager cm = new ThreadSafeClientConnManager (
+    params, schemeRegistry);
+
+
+return new DefaultHttpClient (cm, params);
+
+
+CustomSSLSocketFactory:
+
+public class CustomSSLSocketFactory extends org.apache.http.conn.ssl.SSLSocketFactory
+{
+private SSLSocketFactory FACTORY = HttpsURLConnection.getDefaultSSLSocketFactory ();
+
+public CustomSSLSocketFactory ()
+    {
+    super(null);
+    try
+        {
+        SSLContext context = SSLContext.getInstance ("TLS");
+        TrustManager[] tm = new TrustManager[] { new FullX509TrustManager () };
+        context.init (null, tm, new SecureRandom ());
+
+        FACTORY = context.getSocketFactory ();
+        }
+    catch (Exception e)
+        {
+        e.printStackTrace();
+        }
+    }
+
+public Socket createSocket() throws IOException
+{
+    return FACTORY.createSocket();
+}
+
+ // TODO: add other methods like createSocket() and getDefaultCipherSuites().
+ // Hint: they all just make a call to member FACTORY 
+}
+
+
+FullX509TrustManager is a class that implements javax.net.ssl.X509TrustManager, yet none of the methods actually perform any work, get a sample here.
+
+Good Luck!
+    

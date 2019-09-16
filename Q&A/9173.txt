@@ -1,0 +1,82 @@
+29
+Q:I have a webview in my Layout. By default, a search form is opened in it. On search, a listing section appears below the search form. If any link in the list is clicked, the details page opened. Now I want to controlled the back navigation for the webview. I placed this code in Activity.
+
+    @Override
+        public boolean onKeyDown(int keyCode, KeyEvent event) {
+
+            Log.d("TYPE", TYPE);
+
+            WebView myWebView = null;
+            if (TYPE.equalsIgnoreCase("REPORT_ACTIVITY"))
+                myWebView = reportView;
+
+            if (TYPE.equalsIgnoreCase("FEEDBACK_ACTIVITY"))
+                myWebView = feedbackView;
+
+            if (myWebView != null)
+                // Check if the key event was the Back button and if there's history
+                if ((keyCode == KeyEvent.KEYCODE_BACK) && myWebView.canGoBack()) {
+                    myWebView.goBack();
+                    return true;
+                }
+            // If it wasn't the Back key or there's no web page history, bubble up
+            // to the default
+            // system behavior (probably exit the activity)
+            return super.onKeyDown(keyCode, event);
+        }
+
+private WebViewClient webViewClient = new WebViewClient() {
+  public void onPageStarted(WebView view, String url, Bitmap favicon) {
+            Log.d("onPageStarted", "onPageStarted");
+            loadProgressBarBox.setVisibility(View.VISIBLE);
+            //view.setVisibility(View.GONE);
+        }
+
+        public void onPageFinished(WebView view, String url) {
+            Log.d("onPageFinished", "onPageFinished");
+            loadProgressBarBox.setVisibility(View.GONE);
+        }
+
+        public void onReceivedError(WebView view, int errorCode,
+                String description, String failingUrl) {
+
+            Log.d("Error", "Error code: " + errorCode + "/" + description);
+       }
+
+}
+
+
+I have also set a WebViewClient with the WebView. When I going back using back button it is working fine for any version 4.4. But when I am trying in Android 4.4, it is coming back fine from details page to listing page. But as soon as I am trying to go back again, its throwing error code -1 and ERR_CACHE_MISS in description. No page is displayed.
+
+09-04 06:59:05.666: D/Error(1102): Error code: -1/net::ERR_CACHE_MISS
+
+
+How to solve this problem in Android 4.4? 
+    
+===============================================================================================
+59
+A:This error actually stems from outside of your application in most cases (occasionally it's just a missing INTERNET permission, but that doesn't sound like the case here).
+
+I was typing out an explanation, but found a much more straightforward example that doubles as an explanation in this answer to another question. Here's the relevant bits, re-hashed a little:
+
+
+Joe fills in an order form with his credit card information
+The server processes that information and returns a confirmation/receipt page that's marked with no-cache in the header, meaning it will always be requested from the server.
+Joe goes to another page.
+Joe clicks back because he wants to double check something, taking him to the confirmation page.
+
+
+The problem arises from that last step. The confirmation page was marked with no-cache, so it has to be requested from the server again. But to show the same page correctly, the same data that was passed the first time needs to get sent again.
+
+This results in Joe getting billed twice, since a new request is being made with the same information as last time. Joe will not be a happy camper when he finds two charges on his account and an extra pair of tents on his doorstep.
+
+It seems this situation was common enough that it is now a standard error across most browsers, and apparently, newer versions of Android. The error actually originates from Chromium, which is why you'll see the same error in Google Chrome, and why you only see it in 4.4 (which introduced a new version of the WebView based on Chromium). 
+
+In fact, you have actually probably seen it before, it's the message that shows up in most browsers warning you with something along the lines of "To refresh this page, the browser will have to resend data...yada yada yada".
+
+This is Android 4.4's way warning you of what's going on. How to fix it really depends on what you're connecting to, but if you search for this situation, you'll find that it's fairly common, and has fixes. The exact trigger of the error is actually when the request can't be serviced from cache (in this case, no-cache is causing that). 
+
+Depending on the nature of the request, maybe no-cache isn't actually needed. 
+
+But from your application's perspective, the main problem is, onReceiveError is a sort of "last resort" for the WebView. Errors you get there have propagated from underlying system. And once you end up there, you can't continue the page load as it stands. So you don't have a chance to allow that resend, and you can't give the user that option, unlike, say Google Chrome does.
+    

@@ -1,0 +1,122 @@
+30
+Q:I have been trying to use Android's AudioManager.setMicrophoneMute() without much success. That is, it simply refuses to mute the microphone, no matter what I do. 
+
+I searched the web for some clues and I found several references reporting similar experience:
+
+
+AudioManger.setMicrophoneMute functionality not working??
+setMicrophoneMute(boolean) doesn't work on some devices
+Unable to mute the microphone in Android
+
+
+Which begs the question: Does AudioManager.setMicrophoneMute() work at all? Is it only a stub method, waiting to be implemented in some future version of Android? If not, how does it work? What do I need to make it work? What are the conditions that make it work as its name implies?
+
+EDIT: I noticed that the documentation for this method says:
+
+
+  This method should only be used by applications that replace the
+  platform-wide management of audio settings or the main telephony
+  application.
+
+
+What does this mean? Why would I want to replace the platform-wide management? Do I really need to do that? If so, how do I do that?
+
+EDIT: The answer below is great but I still don't understand:
+
+
+How is that flag (SET_MIC_MUTE in database) being used?
+When does this flag actually disconnect the microphone signal from
+the pre-amplifier circuit inside the phone?
+If it doesn't do that, who does that?
+If nothing does that, how is this "mute" expected to work?
+
+
+Please explain. Thanks.
+    
+===============================================================================================
+23
+A:To elaborate on an00b:s answer above and the edited version of the question we have to dig deeper into the source code. IAudioflinger is the interface to the AudioFlinger service and the call to
+
+virtual status_t setMicMute(bool state)
+{
+    Parcel data, reply;
+    data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
+    data.writeInt32(state);
+    remote()->transact(SET_MIC_MUTE, data, &reply);
+    return reply.readInt32();
+}
+
+
+is actually the Binder transaction to mute the microphone. The receiving side of the Binder call looks like:
+
+status_t BnAudioFlinger::onTransact(uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags)  { 
+    switch(code) {
+        ...
+        case SET_MIC_MUTE: {
+            CHECK_INTERFACE(IAudioFlinger, data, reply);
+            int state = data.readInt32();
+            reply->writeInt32( setMicMute(state) );
+            return NO_ERROR;
+        } break;
+    ...
+    }
+}
+
+
+and calls to the actual implementation of setMicMute in the AudioFlinger. Next step is to look at this function:
+
+status_t AudioFlinger::setMicMute(bool state) {
+    // check calling permissions
+    if (!settingsAllowed()) {
+        return PERMISSION_DENIED;
+    }
+
+    AutoMutex lock(mHardwareLock);
+    mHardwareStatus = AUDIO_HW_SET_MIC_MUTE;
+    status_t ret = mAudioHardware->setMicMute(state);
+    mHardwareStatus = AUDIO_HW_IDLE;
+    return ret;
+}
+
+
+Here we can note two things. The first is that there is a permissions check to be able to mute the microphone. The permission being checked for in settingsAllowed is android.permission.MODIFY_AUDIO_SETTINGS so as mentioned in one of the comments above the first requirement for muting the microphone is that your application has declared that it needs this permission. The next thing to note is that we now call in to the hardware specific version of setMicMute using mAudioHardware->setMicMute(state). 
+
+For more info on the way the hardware is plugged study the file AudioHardwareInterface.cpp. Basically it ends up in a libhardware with an extern C call to createAudioHardware which plugs in the correct AudioHardWare for the platform. There are also switches for using an A2DP based hardware, a generic one for the emulator and stubbing the audio. Assumed that you are working on an actual device the implementation is then very much hardware depending. To get a feel for it we can use the available audiohardware from Crespo (Nexus S) as an example. 
+
+status_t AudioHardware::setMicMute(bool state) {
+    LOGV("setMicMute(%d) mMicMute %d", state, mMicMute);
+    sp<AudioStreamInALSA> spIn;
+    {
+        AutoMutex lock(mLock);
+        if (mMicMute != state) {
+            mMicMute = state;
+            // in call mute is handled by RIL
+            if (mMode != AudioSystem::MODE_IN_CALL) {
+                spIn = getActiveInput_l();
+            }
+        }
+    }
+
+    if (spIn != 0) {
+        spIn->standby();
+    }
+
+    return NO_ERROR;
+}
+
+
+Based on this example we may wrap up with a discussion of the implementation of audio routing in smartphones. As you can see in the Crespo implementation the mic mute call will only be respected if you are not in a call. The reason for this is that audio is routed through the analog baseband which handles power regulation, amplification and other things. When in a call the voice audio is often handled by analog baseband and modem CPU together and is not routed throught the application CPU. In that case you may need to go through the modem CPU through the RIL in order to mute the microphone. But since this behavior is hardware dependent there is no general solution.
+
+To give the short version to your 4 additional questions:
+
+
+The flag is passed on through several layers of code until it ends up in the hardware specific mute microphone.
+The mic is disconnected when the hardware specific code has run except when in a call at least on some devices.
+When setMicrophoneMute does not mute the mic, i.e. when in a call it may be possible to do that using one of the telephony API:s, I would suggest studying the phone app.
+Based on the current implementation mute seems to work when not in a call but there may be hardware specific issues on platforms we have not studied here.
+
+
+EDIT:
+
+Did some more digging and the way to send a mute command to the modem CPU is via the internal Phone interface that is part of the com.android.internal.telephony package that is not available to SDK developers. Based on the comment you saw that this function should only be used by applications that replace audio management or the original telephony application I would guess that AudioManager.setMicrophoneMute() was supposed to always mute the microphone regardless. But since other applications probably use this they added a check in the hardware implementation in order not to mess up the state of the phone application which keeps track of muted connections as well as the microphone. The function is probably not working as supposed to right now due to hardware implementation details and the fact that mute is a much more complex operation than one would initially think when considering call states as well.
+    

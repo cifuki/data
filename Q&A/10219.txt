@@ -1,0 +1,52 @@
+27
+Q:I have an IntentService that starts an asynchronous task in another class and should then be waiting for the result.
+
+The problem is that the IntentService will finish as soon as the onHandleIntent(...) method has finished running, right?
+
+That means, normally, the IntentService will immediately shut down after starting the asynchronous task and will not be there anymore to receive the results.
+
+public class MyIntentService extends IntentService implements MyCallback {
+
+    public MyIntentService() {
+        super("MyIntentService");
+    }
+
+    @Override
+    protected final void onHandleIntent(Intent intent) {
+        MyOtherClass.runAsynchronousTask(this);
+    }
+
+}
+
+public interface MyCallback {
+
+    public void onReceiveResults(Object object);
+
+}
+
+public class MyOtherClass {
+
+    public void runAsynchronousTask(MyCallback callback) {
+        new Thread() {
+            public void run() {
+                // do some long-running work
+                callback.onReceiveResults(...);
+            }
+        }.start();
+    }
+
+}
+
+
+How can I make the snippet above work? I've already tried putting Thread.sleep(15000) (arbitrary duration) in onHandleIntent(...) after starting the task. Itseems to work.
+
+But it definitely doesn't seem to be clean solution. Maybe there are even some serious problems with that.
+
+Any better solution?
+    
+===============================================================================================
+18
+A:Use the standard Service class instead of IntentService, start your asynchronous task from the onStartCommand() callback, and destroy the Service when you receive the completion callback.
+
+The issue with that would be to correctly handle the destruction of the Service in the case of concurrently running tasks as a result of the Service being started again while it was already running. If you need to handle this case, then you might need to set up a running counter or a set of callbacks, and destroy the Service only when they are all completed.
+    

@@ -1,0 +1,130 @@
+104
+Q:In my developer console people keep reporting an error that I cannot reproduce on any phone I have. One person left a message saying he gets it when they try to open the settings screen of my battery service. As you can see from the error it says that the receiver is not registered.
+
+java.lang.RuntimeException: Unable to stop service .BatteryService@4616d688:  java.lang.IllegalArgumentException: Receiver not registered: com.app.notifyme.BatteryService$BatteryNotifyReceiver@4616d9d0
+at android.app.ActivityThread.handleStopService(ActivityThread.java:3164)
+at android.app.ActivityThread.access$3900(ActivityThread.java:129)
+at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2173)
+at android.os.Handler.dispatchMessage(Handler.java:99)
+at android.os.Looper.loop(Looper.java:143)
+at android.app.ActivityThread.main(ActivityThread.java:4701)
+at java.lang.reflect.Method.invokeNative(Native Method)
+at java.lang.reflect.Method.invoke(Method.java:521)
+at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:860)
+at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:618)
+at dalvik.system.NativeStart.main(Native Method)
+Caused by: java.lang.IllegalArgumentException: Receiver not registered:com..BatteryService$BatteryNotifyReceiver@4616d9d0
+at android.app.ActivityThread$PackageInfo.forgetReceiverDispatcher(ActivityThread.java:805)
+at android.app.ContextImpl.unregisterReceiver(ContextImpl.java:859)
+at android.content.ContextWrapper.unregisterReceiver(ContextWrapper.java:331)
+at com.app.notifyme.BatteryService.onDestroy(BatteryService.java:128)
+at android.app.ActivityThread.handleStopService(ActivityThread.java:3150)
+
+
+I register is in my onCreate
+
+@Override
+public void onCreate(){
+    super.onCreate();
+    SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(this);
+    IntentFilter filter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+    filter.addAction(Intent.ACTION_POWER_CONNECTED);
+    filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
+    registerReceiver(batteryNotifyReceiver,filter);
+    pref.registerOnSharedPreferenceChangeListener(this);
+}
+
+
+Unregister in onDestroy and also with a preference listener
+
+    @Override
+public void onDestroy(){
+    super.onDestroy();
+    unregisterReceiver(batteryNotifyReceiver);
+
+}
+
+
+and this is my receiver in the service
+
+private final class BatteryNotifyReceiver extends BroadcastReceiver {
+
+    boolean connected;
+    @Override
+    public void onReceive(Context context, Intent intent) {
+
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context); 
+        SharedPreferences.Editor edit = prefs.edit();
+
+            updatePreferences(prefs);
+
+        level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+
+
+
+        if(intent.getAction().equals(Intent.ACTION_POWER_CONNECTED)){
+            connected = true;
+        }else if(intent.getAction().equals(Intent.ACTION_POWER_DISCONNECTED)){
+            connected = false;
+        }else if(intent.getAction().equals(Intent.ACTION_BATTERY_CHANGED)){
+
+                if(level < lastLevel){
+                    if(level > 40){
+                        edit.putBoolean("first", false).commit();
+                        edit.putBoolean("second", false).commit();
+                        edit.putBoolean("third", false).commit();
+                       edit.putBoolean("fourth",false).commit();                            
+                        edit.putBoolean("fifth", false).commit();
+                    }
+                    if(level == 40){
+                        if(!first){
+                        notification(context,battColor,battBlink,battVib,battSound);
+
+                        edit.putBoolean("first", true).commit();
+                        }
+                    }else if(level == 30){
+                        if(!second){
+                        notification(context,battColor,battBlink,battVib,battSound);
+
+                        edit.putBoolean("second", true).commit();
+                        }
+                    }else if(level == 20){
+                        if(!third){
+                        notification(context,battColor,battBlink,battVib,battSound);
+
+                        edit.putBoolean("third", true).commit();
+                        }
+                    }else if(level == 15){
+                        if(!fourth){
+                        notification(context,battColor,battBlink,battVib,battSound);
+
+                        edit.putBoolean("fourth", true).commit();
+                        }
+                    }else if(level == 5){
+                        if(!fifth){
+                        notification(context,battColor,battBlink,battVib,battSound);
+
+                        edit.putBoolean("fifth", true).commit();
+                        }
+                    }
+                lastLevel = temp;
+            }
+        }           
+
+        Intent i = new Intent(context,BatteryNotifyReceiver.class);
+        context.startService(i);
+    }       
+}
+
+
+any idea why they would be getting that error?
+    
+===============================================================================================
+200
+A:The root of your problem is located here:
+
+ unregisterReceiver(batteryNotifyReceiver);
+
+
+If the receiver was already unregistered (probably in the code that you didn't include in this post) or was not registered, then call to unregisterReceiver throws IllegalArgumentException. In your case you need to just put special try/catch for this exception and ignore it (assuming you can't or don't want to control number of times you call unregisterReceiver on the same recevier).
+    

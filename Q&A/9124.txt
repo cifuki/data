@@ -1,0 +1,34 @@
+30
+Q:Let's say I have a widget for an app that has targetSDKVersion set to 26. This widget takes between 100ms and 10s to update. Most of the time under 1s. Before Android O, if onUpdate() was called on my AppWidgetProvider, I could launch a background service to update this widget. However, Android O returns an IllegalStateException if you attempt that behavior. The obvious solution of starting a foreground service seems like an extreme measure for something that will be done in under 10s 99% of the time.
+
+Possible solutions
+
+
+Start a foreground service to update the widget. Annoy the user with a notification that will be gone in 10s.
+Use JobScheduler to schedule a job as quickly as possible. Your widget may or may not get updated for a while.
+Attempt to do the work in a broadcast receiver. Lock up the UI thread for any other apps. Yuck.
+Attempt to do work in the widget receiver. Lock up the UI thread for any other apps. Yuck.
+Abuse GCM to get a background service running. A lot of work and feels hacky.
+
+
+I don't personally like any of the above solutions. Hopefully I'm missing something. 
+
+(Even more frustrating is that my app is already loaded into memory by the system calling onUpdate(). I don't see how loading my app into memory to call onUpdate(), but then not giving my app 1s to update the widget off the UI thread is saving anyone any battery life.)
+    
+===============================================================================================
+10
+A:You don't indicate what the update trigger mechanism is. You seem concerned about latency ("Your widget may or may not get updated for a while"), so I am going to assume that your concern is tied to user interaction with the app widget, such as tapping a button.
+
+
+  Use JobScheduler to schedule a job as quickly as possible. Your widget may or may not get updated for a while.
+
+
+This is a variation on "use JobIntentService", which AFAIK is the recommended solution for this sort of scenario.
+
+Other options include:
+
+
+Use getForegroundService() with PendingIntent. With this, you effectively "pinky swear" that your service will call startForeground() within the ANR timeframe. If the work takes longer than a few seconds, call startForeground() to ensure that Android doesn't get cranky. This should minimize the number of time the foreground notification appears. And, if the user tapped a button and you are still busy doing work a few seconds later, you probably want to show a notification or otherwise do something to let the user know that what they asked for is still in progress.
+Use goAsync() on BroadcastReceiver, to do work in the context of the receiver while not tying up the main application thread. I haven't tried this with Android 8.0+, so YMMV.
+
+    

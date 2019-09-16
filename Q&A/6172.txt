@@ -1,0 +1,68 @@
+41
+Q:My app creates mails with attachments, and uses an intent with Intent.ACTION_SEND to launch a mail app.
+
+It works with all the mail apps I tested with, except for the new Gmail 5.0 (it works with Gmail 4.9), where the mail opens without attachment, showing the error: "Permission denied for the attachment".
+
+There are no useful messages from Gmail on logcat. I only tested Gmail 5.0 on Android KitKat, but on multiple devices.
+
+I create the file for the attachment like this:
+
+String fileName = "file-name_something_like_this";
+FileOutputStream output = context.openFileOutput(
+        fileName, Context.MODE_WORLD_READABLE);
+
+// Write data to output...
+
+output.close();
+File fileToSend = new File(context.getFilesDir(), fileName);
+
+
+I'm aware of the security concerns with MODE_WORLD_READABLE.
+
+I send the intent like this:
+
+public static void compose(
+        Context context,
+        String address,
+        String subject,
+        String body,
+        File attachment) {
+
+    Intent emailIntent = new Intent(Intent.ACTION_SEND);
+    emailIntent.setType("message/rfc822");
+    emailIntent.putExtra(
+            Intent.EXTRA_EMAIL, new String[] { address });
+    emailIntent.putExtra(Intent.EXTRA_SUBJECT, subject);
+    emailIntent.putExtra(Intent.EXTRA_TEXT, body);
+
+    emailIntent.putExtra(
+            Intent.EXTRA_STREAM,
+            Uri.fromFile(attachment));
+
+    Intent chooser = Intent.createChooser(
+            emailIntent, 
+            context.getString(R.string.send_mail_chooser));
+
+    context.startActivity(chooser);
+}
+
+
+Is there anything I do wrong when creating the file or sending the intent? Is there a better way to start a mail app with attachment? Alternatively - has someone encountered this problem and found a workaround for it?
+
+Thanks!
+    
+===============================================================================================
+25
+A:GMail 5.0 added some security checks to attachments it receives from an Intent.  These are unrelated to unix permissions, so the fact that the file is readable doesn't matter.
+
+When the attachment Uri is a file://, it'll only accept files from external storage, the private directory of gmail itself, or world-readable files from the private data directory of the calling app.
+
+The problem with this security check is that it relies on gmail being able to find the caller app, which is only reliable when the caller has asked for result.  In your code above, you do not ask for result and therefore gmail does not know who the caller is, and rejects your file.
+
+Since it worked for you in 4.9 but not in 5.0, you know it's not a unix permission problem, so the reason must be the new checks.
+
+TL;DR answer:
+replace startActivity with startActivityForResult.
+
+Or better yet, use a content provider.
+    

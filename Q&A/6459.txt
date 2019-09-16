@@ -1,0 +1,315 @@
+39
+Q:I saw the stock Android-Developer licensing library instructions, but the overview seems to omit several key steps in the process and fails to fully explain how to get something working.
+
+Can someone provide an explicit set of operations that worked to get the licensing library set up on an Android app so it checks to ensure that a user has paid for an app in Google Play before allowing use?
+    
+===============================================================================================
+152
+A:I have been working on implementing licensing in my app for some time now and finally have it working. I wanted to share some of the things I found helpful for getting started and some problems and solutions that I found with everyone. The android dev tutorial I have linked below is ok, but it wasn't that useful for me, so I decided to make a tutorial. Enjoy, and I hope it helps you!
+
+Link to developer page here.
+
+1. Getting started
+
+Things you will need.
+
+1.1 Your Base64 unique application key
+
+How to get it:
+
+a. Go to your developer console. Link.
+
+b. If you haven't already created an application draft for your app, do it now.
+
+c. Once you have created the draft, it is a good idea to upload your .apk as Alpha or Beta. Leave it unpublished.
+
+d. Click Services & APIs
+
+e. Scroll down and find YOUR LICENSE KEY FOR THIS APPLICATION 
+
+f. Copy the key into your app like this: 
+
+private static final String BASE64_PUBLIC_KEY = "YOUR LICENSE KEY FOR THIS APPLICATION"; 
+
+
+Make sure that there are no spaces. 
+
+1.2 A salt
+
+a. What is a salt?
+
+A salt is random data that is additional input when hashing a password. They are used to defend against dictionary attacks and rainbow table attacks.
+
+b. How do I get one?
+
+This is a good link to generate a random salt. There should be exactly 20 random integers, so put 20 in for the amount of random strings to generate, each string should be 2 characters long (used for this example, it doesn't have to be). Check numeric digits, and check Identical strings are allowed. They can be negative numbers too. Try to remove any redundancy, e.g. 00 -> 0, for the sake of consistency.
+
+c. Where do I put the salt?
+
+When declaring variables just put this code in, except with your random salt.
+
+private static final byte[] SALT = new byte[] {YOUR RANDOM SALT, COMMA SEPARATED, 20 INTEGERS};
+
+
+2. Importing the LVL (Licensing) library into Eclipse and the code you need
+
+2.1 Importing the library
+
+a. Open Android SDK Manager
+
+b. Go to Extras
+
+c. Install Google Play Licensing Library
+
+d. Find your SDK install path which is listed at the top of the SDK manager.
+
+e. Once you are there, navigate to: <sdk>/extras/google/play_licensing
+
+f. In eclipse, click file then import, then Existing Android Code Into Workspace and when it asks you for the file path, navigate to the play_licensing folder and click on library.
+
+g. Once the project named library has been imported, right click it, then hit properties. Click Android on the left and navigate to the bottom and check Is Library, then hit apply. This lets eclipse know that you can use this project code as a library.
+
+h. Right click on your app that you are adding licensing to, and click properties, then hit Android. Go to the bottom and click library and add it to the build path. This should import the library to the Android Dependencies folder.
+
+i. Your project is set up to go to the next step.
+
+2.2 Variables to declare along with your SALT and KEY
+
+private Handler mHandler;
+private LicenseChecker mChecker;
+private LicenseCheckerCallback mLicenseCheckerCallback;
+boolean licensed;
+boolean checkingLicense;
+boolean didCheck;
+
+
+2.3 The code
+
+Paste this code near the bottom of your app. This implementation will notify the user if the license is not valid and prompt them to buy the app or exit it.
+
+    private void doCheck() {
+
+        didCheck = false;
+        checkingLicense = true;
+        setProgressBarIndeterminateVisibility(true);
+
+        mChecker.checkAccess(mLicenseCheckerCallback);
+    }
+
+
+    private class MyLicenseCheckerCallback implements LicenseCheckerCallback {
+
+        @Override
+        public void allow(int reason) {
+            // TODO Auto-generated method stub
+            if (isFinishing()) {
+                // Don't update UI if Activity is finishing.
+                return;
+            }               
+            Log.i("License","Accepted!");       
+
+                //You can do other things here, like saving the licensed status to a
+                //SharedPreference so the app only has to check the license once.
+
+            licensed = true;
+            checkingLicense = false;
+            didCheck = true;
+
+        }
+
+        @SuppressWarnings("deprecation")
+        @Override
+        public void dontAllow(int reason) {
+            // TODO Auto-generated method stub
+             if (isFinishing()) {
+                    // Don't update UI if Activity is finishing.
+                    return;
+                }
+                Log.i("License","Denied!");
+                Log.i("License","Reason for denial: "+reason);                                                                              
+
+                        //You can do other things here, like saving the licensed status to a
+                        //SharedPreference so the app only has to check the license once.
+
+                licensed = false;
+                checkingLicense = false;
+                didCheck = true;               
+
+                showDialog(0);
+
+        }
+
+        @SuppressWarnings("deprecation")
+        @Override
+        public void applicationError(int reason) {
+            // TODO Auto-generated method stub
+            Log.i("License", "Error: " + reason);
+            if (isFinishing()) {
+                // Don't update UI if Activity is finishing.
+                return;
+            }
+            licensed = true;
+            checkingLicense = false;
+            didCheck = false;
+
+            showDialog(0);
+        }
+
+
+    }
+
+    protected Dialog onCreateDialog(int id) {
+        // We have only one dialog.
+        return new AlertDialog.Builder(this)
+                .setTitle("UNLICENSED APPLICATION DIALOG TITLE")
+                .setMessage("This application is not licensed, please buy it from the play store.")
+                .setPositiveButton("Buy", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        Intent marketIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(
+                                "http://market.android.com/details?id=" + getPackageName()));
+                        startActivity(marketIntent);
+                        finish();
+                    }
+                })
+                .setNegativeButton("Exit", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        finish();
+                    }
+                })
+                .setNeutralButton("Re-Check", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        doCheck();
+                    }
+                })
+
+                .setCancelable(false)
+                .setOnKeyListener(new DialogInterface.OnKeyListener(){
+                    public boolean onKey(DialogInterface dialogInterface, int i, KeyEvent keyEvent) {
+                        Log.i("License", "Key Listener");
+                        finish();
+                        return true;
+                    }
+                })
+                .create();
+
+    }
+
+
+2.4 Getting your device id
+
+There has been some debate about this in the past about whether or not to use the sim serial or TelephonyManager.getDeviceId(); but it is generally recommended you use the following code to get the ANDROID_ID of your device for maximum compatibility.
+
+String deviceId = Secure.getString(getContentResolver(), Secure.ANDROID_ID);
+Log.i("Device Id", deviceId);  //AN EXAMPLE OF LOGGING THAT YOU SHOULD BE DOING :)
+
+
+2.5 Creation of the license checker
+
+a. Before you call doCheck(); you must put this code in your app to make sure everything gets created properly.
+
+mHandler = new Handler();
+mLicenseCheckerCallback = new MyLicenseCheckerCallback();
+mChecker = new LicenseChecker(this, new ServerManagedPolicy(this, new   AESObfuscator(SALT, getPackageName(), deviceId)), BASE64_PUBLIC_KEY);
+
+
+When I was doing my implemetation of LVL, I read that if you are having problems with Licensing, you can change the first this in the mChecker = new LicenseChecker(this... to getApplicationContext(), mine seemed to work without it, but just in case.
+
+2.6 Adding permissions
+
+a. There are two permissions that you need to add to your applications manifest file.
+
+<uses-permission android:name="android.permission.INTERNET"/>  
+<uses-permission android:name="com.android.vending.CHECK_LICENSE"/>        
+
+
+2.7 Make sure you have the proper imports!
+
+You have probably already done this, but I figured it would be a good place for you to check.
+
+2.8 How to call the license to be checked
+
+a. Simply call doCheck(); whenever you want to check the license. For example if the app is on its first run, do the check.
+
+3. How do I test the licensing to make sure it works before publishing it?
+
+3.1 Configuring the testing device
+
+a. I have my personal phone that I also use for testing. It is recommended that there be only one Google account registered on the phone, historically it makes things a little easier. You can check the accounts by going to Settings -> Accounts.
+
+3.2 Configuring the developer console
+
+a. Open your developer console and go to Settings on the left hand side.
+
+b. Find License Testing
+
+c. Make sure that your email address is listed under Gmail accounts with testing access
+
+d. Now, you can change the test response to whatever you like for testing purposes. The app should respond accordingly. Remember that if you are saving the data via SharedPrefs you will need to clear your app data every time you test it. Make sure that you click save after you change the test response or nothing will happen! I forgot about this multiple times and I ended up with a migraine, then I saw that stinking save button. Lol.
+
+4. Things to try
+
+4.1 Conditional license checking
+
+a. You can try this code if you are saving the didCheck data in SharedPreferences.
+
+ if(didCheck==false){
+        Toast.makeText(this, "Checking application license...",     Toast.LENGTH_SHORT).show();
+        doCheck();
+        Log.i("Checking!", "Checking license!");
+    }   
+
+
+4.2 Encrypting your SharedPreferences using SecurePreferences
+
+a. Go to this link.
+
+b. Copy and paste the code from SecurePreferences.java into a class with the exact same name into your project.
+
+c. Read the ReadMe.md for info on implementing this.
+
+5. Troubleshooting
+
+Licensing can be one heck of a headache to troubleshoot, simply because there are many more things that can go wrong. For example, there could be network problems or server problems that make you want to rip your hair out. Use of proper logging will help with this, you can also get the server response codes if there is a problem and you can trace it to the server or your app. I have had to do this on multiple occasions.
+
+5.1 I can't get my app to return anything from the server
+
+Possible Fixes:
+
+a. Make sure that your app has the correct KEY.
+
+b. Make sure you are logging each step of the progress
+
+c. Check your log for anything from the licensing service. It can be useful for figuring out where something went wrong.
+
+d. Make sure allow() and dontAllow() and applicationError() have @Override tags.
+
+5.2 My app always says LICENSED or NOT_LICENSED no matter what I set it to in the test response
+
+a. The best cure I have for this is just to wait. It seems that if you do lots of testing in a short period of time, it will always send you server code 291 which is the retry code. I waited overnight and everything worked fine the next morning.
+
+b. You can clear the data (not just cache) of the Google Play app and the Google Play Services app. Then open play back up and accept all the licenses and try again.
+
+c. Clear your app data.
+
+5.3 List of server response codes for debugging
+
+You should get these decimal values for int reason if you log them. Use this table to reference what the server is actually sending to your app.
+
+LICENSED = Hex: 0x0100, Decimal: 256
+NOT_LICENSED = Hex: 0x0231, Decimal: 561
+RETRY = Hex: 0x0123, Decimal: 291
+LICENSED_OLD_KEY = Hex: 0x2, Decimal: 2
+ERROR_NOT_MARKET_MANAGED = Hex: 0x3, Decimal: 3
+ERROR_SERVER_FAILURE = Hex: 0x4, Decimal: 4
+ERROR_OVER_QUOTA = Hex: 0x5, Decimal: 5
+ERROR_CONTACTING_SERVER = Hex: 0x101, Decimal: 257
+ERROR_INVALID_PACKAGE_NAME = Hex: 0x102, Decimal: 258 
+ERROR_NON_MATCHING_UID = Hex: 0x103, Decimal: 259
+
+
+5.4 Room for more! They will come!
+
+I hope this helps you guys! I tried to share my headaches and fixes with you guys as best I can and I hope this helps!
+
+If I made any errors, be sure to tell me about them so I can get them fixed ASAP!
+    

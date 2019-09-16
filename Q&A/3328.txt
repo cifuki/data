@@ -1,0 +1,150 @@
+67
+Q:http://marakana.com/tutorials/android/2d-graphics-example.html
+
+I am using this example below. But when I move my fingers too fast across the screen the line turns to individual dots.
+
+I am not sure whether I can speed up the drawing. Or I should connect the two last points with a straight line. The second of these two solutions seems like a good option, except when moving your finger very fast you will have long sections of a straight line then sharp curves.
+
+If there are any other solutions it would be great to hear them.
+
+Thanks for any help in advance.
+    
+===============================================================================================
+108
+A:An easy solution, as you mentioned, is to simply connect the points with a straight line.  Here's the code to do so:
+
+public void onDraw(Canvas canvas) {
+    Path path = new Path();
+    boolean first = true;
+    for(Point point : points){
+        if(first){
+            first = false;
+            path.moveTo(point.x, point.y);
+        }
+        else{
+            path.lineTo(point.x, point.y);
+        }
+    }
+    canvas.drawPath(path, paint);
+}
+
+
+make sure you change your paint from fill to stroke:
+
+paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+paint.setStyle(Paint.Style.STROKE);
+paint.setStrokeWidth(2);
+paint.setColor(Color.WHITE);
+
+
+Another option is to connect the points with iterpolation using the quadTo method:
+
+public void onDraw(Canvas canvas) {
+    Path path = new Path();
+    boolean first = true;
+    for(int i = 0; i < points.size(); i += 2){
+        Point point = points.get(i);
+        if(first){
+            first = false;
+            path.moveTo(point.x, point.y);
+        }
+
+        else if(i < points.size() - 1){
+            Point next = points.get(i + 1);
+            path.quadTo(point.x, point.y, next.x, next.y);
+        }
+        else{
+            path.lineTo(point.x, point.y);
+        }
+    }
+
+    canvas.drawPath(path, paint);
+}
+
+
+This still results in some sharp edges.
+
+If you're really ambitious, you can start to calculate the cubic splines as follows:
+
+public void onDraw(Canvas canvas) {
+    Path path = new Path();
+
+    if(points.size() > 1){
+        for(int i = points.size() - 2; i < points.size(); i++){
+            if(i >= 0){
+                Point point = points.get(i);
+
+                if(i == 0){
+                    Point next = points.get(i + 1);
+                    point.dx = ((next.x - point.x) / 3);
+                    point.dy = ((next.y - point.y) / 3);
+                }
+                else if(i == points.size() - 1){
+                    Point prev = points.get(i - 1);
+                    point.dx = ((point.x - prev.x) / 3);
+                    point.dy = ((point.y - prev.y) / 3);
+                }
+                else{
+                    Point next = points.get(i + 1);
+                    Point prev = points.get(i - 1);
+                    point.dx = ((next.x - prev.x) / 3);
+                    point.dy = ((next.y - prev.y) / 3);
+                }
+            }
+        }
+    }
+
+    boolean first = true;
+    for(int i = 0; i < points.size(); i++){
+        Point point = points.get(i);
+        if(first){
+            first = false;
+            path.moveTo(point.x, point.y);
+        }
+        else{
+            Point prev = points.get(i - 1);
+            path.cubicTo(prev.x + prev.dx, prev.y + prev.dy, point.x - point.dx, point.y - point.dy, point.x, point.y);
+        }
+    }
+    canvas.drawPath(path, paint);
+}
+
+
+Also, I found that you needed to change the following to avoid duplicate motion events:
+
+public boolean onTouch(View view, MotionEvent event) {
+    if(event.getAction() != MotionEvent.ACTION_UP){
+        Point point = new Point();
+        point.x = event.getX();
+        point.y = event.getY();
+        points.add(point);
+        invalidate();
+        Log.d(TAG, "point: " + point);
+        return true;
+    }
+    return super.onTouchEvent(event);
+}
+
+
+and add the dx & dy values to the Point class:
+
+class Point {
+    float x, y;
+    float dx, dy;
+
+    @Override
+    public String toString() {
+        return x + ", " + y;
+    }
+}
+
+
+This produces smooth lines, but sometimes has to connect the dots using a loop.
+Also, for long drawing sessions, this becomes computationally intensive to calculate.
+
+Hope that helps... fun stuff to play around with.
+
+Edit
+
+I threw together a quick project demonstrating these different techniques, including Square's suggessted signature implementation.  Enjoy: https://github.com/johncarl81/androiddraw
+    

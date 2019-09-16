@@ -1,0 +1,271 @@
+69
+Q:In my application I am uploading an image from gallery and I want to store this image in the SQLite database. How do I store a bitmap in the database? I am converting bitmap to a string and saving it in the database. While retrieving it from the database, I am not able to assign that string to ImageView since it is a string.
+
+Imageupload12 .java:
+
+ public class Imageupload12 extends Activity {
+  Button buttonLoadImage;
+  ImageView targetImage;
+  int i = 0;
+  Database database = new Database(this);
+  String i1;
+  String img;
+  @Override
+  public void onCreate(Bundle savedInstanceState) {
+   super.onCreate(savedInstanceState);
+   setContentView(R.layout.main5);
+   buttonLoadImage = (Button) findViewById(R.id.loadimage);
+   targetImage = (ImageView) findViewById(R.id.targetimage);
+
+
+   Bundle b = getIntent().getExtras();
+   if (b != null) {
+    img = b.getString("image");
+    targetImage2.setImageURI("image");
+    //i am getting error as i cant assign string to imageview.
+
+   }
+
+   buttonLoadImage.setOnClickListener(new Button.OnClickListener() {
+
+    public void onClick(View arg0) {
+     // TODO Auto-generated method stub
+     Intent intent = new Intent(Intent.ACTION_PICK,
+      android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+     Log.i("photo", "" + intent);
+     startActivityForResult(intent, i);
+     i = i + 1;
+    }
+   });
+
+  }
+
+  @Override
+  protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+
+   // TODO Auto-generated method stub
+   super.onActivityResult(requestCode, resultCode, data);
+   switch (requestCode) {
+
+    case 0:
+     if (resultCode == RESULT_OK) {
+      Uri targetUri = data.getData();
+      //             textTargetUri.setText(targetUri.toString());
+      Bitmap bitmap;
+      try {
+       bitmap = BitmapFactory.decodeStream(getContentResolver().openInputStream(targetUri));
+       targetImage.setImageBitmap(bitmap);
+
+       i1 = bitmap.toString();
+       Log.i("firstimage........", "" + i1);
+       targetImage.setVisibility(0);
+
+       SQLiteDatabase db = database.getWritableDatabase();
+       db.execSQL("INSERT INTO UPLOAD VALUES('" + i1 + "');");
+
+      } catch (FileNotFoundException e) {
+       // TODO Auto-generated catch block
+       e.printStackTrace();
+      }
+     }
+     break;
+
+
+
+   }
+
+  }
+ }
+
+
+Image.class:
+
+public class Image extends Activity {
+ Database database = new Database(this);
+ static EfficientAdapter adapter, adapter1;
+ static ListView lv1;
+
+ static SQLiteDatabase db;
+ static EfficientAdapter adp;
+ static Cursor c1;
+
+ static Vector < String > IMAGE = new Vector < String > ();
+
+ @Override
+ public void onCreate(Bundle savedInstanceState) {
+  super.onCreate(savedInstanceState);
+  setContentView(R.layout.main);
+
+  db = database.getReadableDatabase();
+  c1 = db.rawQuery("select * from UPLOAD;", null);
+
+  if (c1.moveToFirst()) {
+
+   do {
+    IMAGE.add(c1.getString(0).toString());
+
+   } while (c1.moveToNext());
+
+   c1.close();
+  }
+
+  lv1 = (ListView) findViewById(R.id.List);
+
+  adapter = new EfficientAdapter(this);
+
+
+  lv1.setAdapter(adapter);
+
+  ImageView add = (ImageView) findViewById(R.id.imv1a);
+
+
+
+  add.setOnClickListener(new OnClickListener() {
+
+   @Override
+   public void onClick(View v) {
+    // TODO Auto-generated method stub
+    IMAGE.clear();
+
+    Intent i = new Intent(Image.this, Imageupload12.class);
+    startActivity(i);
+
+
+   }
+  });
+
+
+ }
+
+
+
+ private static class EfficientAdapter extends BaseAdapter {
+
+
+  //        protected  final Context Context = null;
+  protected LayoutInflater mLayoutInflater;
+  AlertDialog.Builder aBuilder;
+  public EfficientAdapter(Context context) {
+   // TODO Auto-generated constructor stub
+   mLayoutInflater = LayoutInflater.from(context);
+  }
+
+  @Override
+  public int getCount() {
+   // TODO Auto-generated method stub
+
+   return IMAGE.size();
+  }
+
+  @Override
+  public Object getItem(int position) {
+   // TODO Auto-generated method stub
+   return position;
+  }
+
+  @Override
+  public long getItemId(int position) {
+   // TODO Auto-generated method stub
+   return position;
+  }
+
+  @Override
+  public View getView(final int position, View convertView, ViewGroup parent) {
+   // TODO Auto-generated method stub
+
+   final ViewHolder mVHolder;
+   if (convertView == null) {
+    convertView = mLayoutInflater.inflate(R.layout.pjtlistdetails, parent, false);
+
+    mVHolder = new ViewHolder();
+
+    mVHolder.t1 = (TextView) convertView.findViewById(R.id.pjtdetails);
+    mVHolder.time = (TextView) convertView.findViewById(R.id.name);
+
+
+    mVHolder.imv = (ImageButton) convertView.findViewById(R.id.editic);
+    mVHolder.imvd = (ImageView) convertView.findViewById(R.id.delete);
+    mVHolder.imvf = (ImageView) convertView.findViewById(R.id.fwd);
+
+
+
+
+
+    mVHolder.imv.setOnClickListener(new View.OnClickListener() {
+     @Override
+     public void onClick(View v) {
+
+
+
+      String img = IMAGE.elementAt(position);
+      Log.i("image...", "" + img);
+
+      Context ctx = v.getContext();
+      Intent myIntent = new Intent();
+      ctx = v.getContext();
+      myIntent.setClass(ctx, Imageupload12.class);
+      myIntent.putExtra("image", img);
+
+      ctx.startActivity(myIntent);
+
+      IMAGE.clear();
+
+     }
+    });
+    static class ViewHolder {
+
+     ImageButton imv;
+     ImageView imvd, imvf;
+    }
+   }
+  }
+ }
+}
+
+    
+===============================================================================================
+103
+A:You have to use "blob" to store image.
+
+ex: to store a image in to db:
+
+public void insertImg(int id , Bitmap img ) {   
+
+
+    byte[] data = getBitmapAsByteArray(img); // this is a function
+
+    insertStatement_logo.bindLong(1, id);       
+    insertStatement_logo.bindBlob(2, data);
+
+    insertStatement_logo.executeInsert();
+    insertStatement_logo.clearBindings() ;
+
+}
+
+ public static byte[] getBitmapAsByteArray(Bitmap bitmap) {
+    ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+    bitmap.compress(CompressFormat.PNG, 0, outputStream);       
+    return outputStream.toByteArray();
+}
+
+
+To retrieve a image from db:
+
+public Bitmap getImage(int i){
+
+    String qu = "select img  from table where feedid=" + i ;
+    Cursor cur = db.rawQuery(qu, null);
+
+    if (cur.moveToFirst()){
+        byte[] imgByte = cur.getBlob(0);
+        cur.close();
+        return BitmapFactory.decodeByteArray(imgByte, 0, imgByte.length);
+    }
+    if (cur != null && !cur.isClosed()) {
+        cur.close();
+    }       
+
+    return null;
+} 
+
+    

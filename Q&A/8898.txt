@@ -1,0 +1,205 @@
+30
+Q:I'm getting a Fail to connect to camera service exception when I run my Android app in the emulator.  I've read the various existing posts but none have fixed this.  It is clearly the Camera.open() call which is failing. I would eventually like to get the webcam going in the emulator, as many SO posts discuss, but right now just want the app to run without bombing.  I do not care whether any camera video gets shown or not, since there are other features besides the camera that I need to test, and will primarily test the camera on my device anyway.
+
+My manifest seems to be ok.  The following lines are in it:
+
+<uses-feature android:name="android.hardware.camera" />
+<uses-feature android:name="android.hardware.camera.autofocus" />
+<uses-permission android:name="android.permission.CAMERA"></uses-permission>
+
+
+In my AVD manager I have set both the front and back camera to be "Emulated" and the SD Card value to 64.  These seem to be the recommended values.  The full stack trace is now below.  Solution has to be something straightforward, but what?
+
+10-09 08:14:32.375    2628-2628/com.allinlearning.AILAndroidScanner E/AndroidRuntime\xef\xb9\x95 FATAL EXCEPTION: main
+Process: com.allinlearning.AILAndroidScanner, PID: 2628
+java.lang.RuntimeException: Fail to connect to camera service
+        at android.hardware.Camera.native_setup(Native Method)
+        at android.hardware.Camera.<init>(Camera.java:350)
+        at android.hardware.Camera.open(Camera.java:309)
+        at com.allinlearning.AILAndroidScanner.AsynCamPreview.surfaceCreated(AsynCamPreview.java:104)
+        at android.view.SurfaceView.updateWindow(SurfaceView.java:572)
+        at android.view.SurfaceView.access$000(SurfaceView.java:86)
+        at android.view.SurfaceView$3.onPreDraw(SurfaceView.java:175)
+        at android.view.ViewTreeObserver.dispatchOnPreDraw(ViewTreeObserver.java:847)
+        at android.view.ViewRootImpl.performTraversals(ViewRootImpl.java:1871)
+        at android.view.ViewRootImpl.doTraversal(ViewRootImpl.java:1000)
+        at android.view.ViewRootImpl$TraversalRunnable.run(ViewRootImpl.java:5670)
+        at android.view.Choreographer$CallbackRecord.run(Choreographer.java:761)
+        at android.view.Choreographer.doCallbacks(Choreographer.java:574)
+        at android.view.Choreographer.doFrame(Choreographer.java:544)
+        at android.view.Choreographer$FrameDisplayEventReceiver.run(Choreographer.java:747)
+        at android.os.Handler.handleCallback(Handler.java:733)
+        at android.os.Handler.dispatchMessage(Handler.java:95)
+        at android.os.Looper.loop(Looper.java:136)
+        at android.app.ActivityThread.main(ActivityThread.java:5017)
+        at java.lang.reflect.Method.invokeNative(Native Method)
+        at java.lang.reflect.Method.invoke(Method.java:515)
+        at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:779)
+        at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:595)
+        at dalvik.system.NativeStart.main(Native Method)
+
+
+The code for the entire class is below.  Again, it's the Camera.open() call that throws the exception:
+
+import java.io.IOException;
+import java.util.List;
+
+import android.graphics.Bitmap;
+import android.graphics.ImageFormat;
+import android.hardware.Camera;
+import android.os.AsyncTask;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
+import android.view.SurfaceHolder;
+import android.webkit.MimeTypeMap;
+import android.widget.ImageView;
+
+public class AsynCamPreview extends MainActivity
+        implements SurfaceHolder.Callback,  Camera.PreviewCallback
+{
+
+    private Camera mCamera;
+    public Camera.Parameters params;
+    private SurfaceHolder sHolder;
+    private ImageView myCameraPreview = null;
+    private Bitmap mBitmap = null;
+
+    // data arrays
+    private int[] pixels = null;
+    private float[] floatpixels = null;
+    private byte[] FrameData = null;
+
+    // Camera params
+    public float maxZoom;
+    private int imageFormat;
+    private int previewSizeWidth;
+    private int previewSizeHeight;
+    private int camId = 1;
+
+    // flags and counts
+    private boolean bProcessing = false;
+    private int frameCount = 0;
+    private boolean doProcessing = false;
+    public boolean mProcessInProgress = false;
+
+    public static final String TAG = "AsynCamPreview";
+
+    private long mTiming[] = new long[50];
+    private int mTimingSlot = 0;
+
+    Handler mHandler = new Handler(Looper.getMainLooper());
+
+    static {
+//      System.loadLibrary("ImageProcessing");
+        Log.i(TAG, "Native library loaded");
+    }
+
+    public AsynCamPreview(int previewLayoutWidth, int previewLayoutHeight, ImageView cameraPreview)
+    {
+        previewSizeWidth = previewLayoutWidth;
+        previewSizeHeight = previewLayoutHeight;
+        myCameraPreview =cameraPreview;
+    }
+
+
+    @Override
+    public void onPreviewFrame(byte[] data, Camera camera)
+    {
+        // Do nothing for now
+    }
+
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+        // TODO Auto-generated method stub
+        sHolder = holder;
+        if (camId == 0) {
+            mCamera = Camera.open(Camera.CameraInfo.CAMERA_FACING_FRONT);
+        }
+        else {
+            mCamera = Camera.open(Camera.CameraInfo.CAMERA_FACING_BACK);
+        }
+
+        try {
+            mCamera.setPreviewDisplay(holder);
+            mCamera.setPreviewCallback(this);
+        } catch (IOException e) {
+            mCamera.release();
+            mCamera= null;
+        }
+
+        params = mCamera.getParameters();
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width,
+                               int height) {
+        // TODO Auto-generated method stub
+        params = mCamera.getParameters();
+        List<Camera.Size> sizes = params.getSupportedPictureSizes();
+        this.params.setPreviewSize(previewSizeWidth, previewSizeHeight);
+
+        mBitmap = Bitmap.createBitmap(previewSizeWidth, previewSizeHeight,
+                Bitmap.Config.ARGB_8888);
+        myCameraPreview.setImageBitmap(mBitmap);
+
+        pixels = new int[previewSizeWidth * previewSizeHeight];
+        //floatpixels = new float[previewSizeWidth * previewSizeHeight * 3];
+        imageFormat = params.getPreviewFormat();
+        mCamera.setParameters(params);
+        mCamera.startPreview();
+
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        // TODO Auto-generated method stub
+        mCamera.setPreviewCallback(null);
+        mCamera.stopPreview();
+        mCamera.release();
+        mCamera = null;
+    }
+
+    @Override
+    public void onPause() {
+        this.mCamera.stopPreview();
+    }
+
+}
+
+    
+===============================================================================================
+35
+A:From the Android Developers Docs:
+
+
+  Calling Camera.open() throws an exception if the camera is already in use by another application, so we wrap it in a try block.
+
+
+Try wrapping that code in a try catch block like so:
+
+try {
+    releaseCameraAndPreview();
+    if (camId == 0) {
+        mCamera = Camera.open(Camera.CameraInfo.CAMERA_FACING_FRONT);
+    }
+    else {
+        mCamera = Camera.open(Camera.CameraInfo.CAMERA_FACING_BACK);
+    }
+} catch (Exception e) {
+    Log.e(getString(R.string.app_name), "failed to open Camera");
+    e.printStackTrace();
+}
+
+
+Then add this function somewhere:
+
+private void releaseCameraAndPreview() {
+    myCameraPreview.setCamera(null);
+    if (mCamera != null) {
+        mCamera.release();
+        mCamera = null;
+    }
+}
+
+    

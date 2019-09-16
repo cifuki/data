@@ -1,0 +1,238 @@
+52
+Q:I recently installed the latest Canary build of Android Studio which is currently using the Android Gradle plugin 3.0.0-alpha4 .
+
+I now get a error:
+
+Error:Failed to resolve: Could not resolve project :MyLib.
+Required by:
+project :app
+
+
+I has read: Migrate dependency configurations for local modules
+
+
+dependencies 
+
+{
+
+// This is the old method and no longer works for local
+// library modules:
+// debugCompile project(path: ':foo', configuration: 'debug')
+// releaseCompile project(path: ':foo', configuration: 'release')
+
+// Instead, simply use the following to take advantage of
+// variant-aware dependency resolution. You can learn more about
+// the 'implementation' configuration in the section about
+// new dependency configurations.
+implementation project(':foo')
+
+// You can, however, keep using variant-specific configurations when
+// targeting external dependencies. The following line adds 'app-magic'
+// as a dependency to only the 'debug' version of your module.
+
+debugImplementation 'com.example.android:app-magic:12.3' 
+}
+
+
+
+I changed: 
+
+releaseCompile project(path: ':MyLib', configuration: 'appReleaseApp')
+debugCompile project(path: ':MyLib', configuration: 'appDebug')
+
+
+to:
+
+implementation project(':MyLib')
+
+
+but i still have this error: Error:Failed to resolve: Could not resolve project :MyLib.
+
+lib gradle:
+
+apply plugin: 'com.android.library'
+
+android {
+    publishNonDefault true
+    compileSdkVersion 25
+    buildToolsVersion "25.0.3"
+    defaultConfig {
+        minSdkVersion 14
+        targetSdkVersion 25
+    }
+    buildTypes {
+        debug {
+            ...
+        }
+        releaseApp {
+            ...
+        }
+        releaseSdk {
+            ...'
+        }
+    }
+    flavorDimensions "default"
+
+    productFlavors {
+        flavor1{
+            ...
+        flavor2{
+            ...
+        }
+        flavor3{
+            ...
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(include: ['*.jar'], dir: 'libs')
+    compile 'com.android.support:appcompat-v7:25.3.1'
+    compile 'com.android.support:support-v4:25.3.1'
+    compile 'com.google.code.gson:gson:2.8.0'
+    compile 'com.google.android.gms:play-services-maps:10.2.6'
+    compile 'com.google.android.gms:play-services-gcm:10.2.6'
+    compile 'com.google.android.gms:play-services-location:10.2.6'
+}
+
+apply plugin: 'maven'
+
+uploadArchives {
+    repositories {
+        mavenDeployer {
+            repository(url: mavenLocal().url)
+        }
+    }
+}
+
+
+app gradle:
+
+apply plugin: 'com.android.application'
+
+android {
+
+    compileSdkVersion 25
+    buildToolsVersion "25.0.3"
+    defaultConfig {
+        vectorDrawables.useSupportLibrary = true
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        minSdkVersion 19
+        targetSdkVersion 25
+        versionCode 12
+        versionName "5.0.2"
+    }
+
+    buildTypes {
+        release {
+            ...
+        }
+        debug {
+            ...
+        }
+    }
+    flavorDimensions "default"
+
+    productFlavors {
+        flavor1 {
+            ...
+        }
+
+        flavor2 {
+            ...
+        }
+    }
+
+    testOptions {
+        unitTests {
+            all {
+                jvmArgs '-noverify'
+                systemProperty 'robolectric.logging.enable', true
+            }
+        }
+    }
+}
+
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
+dependencies {
+    //    releaseCompile project(path: ':MyLib', configuration: 'appRelease')
+    //    debugCompile project(path: ':MyLib', configuration: 'appDebug')
+    implementation project(':MyLib')
+
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    })
+    compile 'com.google.android.gms:play-services-maps:10.2.6'
+    compile 'com.google.android.gms:play-services-location:10.2.6'
+    compile 'com.google.android.gms:play-services-analytics:10.2.6'
+    compile 'com.google.android.gms:play-services-gcm:10.2.6'
+    compile 'com.google.code.gson:gson:2.8.0'
+    compile 'com.android.support:appcompat-v7:25.3.1'
+    compile 'com.android.support:design:25.3.1'
+    compile 'com.android.support:support-v4:25.3.1'
+    compile 'com.android.support:cardview-v7:25.3.1'
+    compile 'com.android.support:gridlayout-v7:25.3.1'
+    compile 'com.android.volley:volley:1.0.0'
+    compile 'com.facebook.stetho:stetho:1.4.1'
+    compile 'com.facebook.stetho:stetho-okhttp3:1.4.1'
+    compile 'com.android.support:percent:25.3.1'
+    compile 'com.android.support:recyclerview-v7:25.3.1'
+    compile 'com.squareup.picasso:picasso:2.5.2'
+    testCompile 'junit:junit:4.12'
+    testCompile 'org.mockito:mockito-core:2.1.0'
+    testCompile 'org.robolectric:robolectric:3.1.4'
+    testCompile 'org.assertj:assertj-core:1.7.1'
+
+    compile 'com.flipboard:bottomsheet-core:1.5.0'
+    compile 'com.flipboard:bottomsheet-commons:1.5.0'
+    compile 'com.android.support.constraint:constraint-layout:1.0.1'
+}
+
+apply plugin: 'com.google.gms.google-services'
+
+
+Please help
+    
+===============================================================================================
+52
+A:Google added more instruction how to solve it: Resolve build errors related to dependency matching
+
+Cause of build error:
+
+Your app includes a build type that a library dependency does not.
+
+
+  For example, your app includes a "staging" build type, but a
+  dependency includes only a "debug" and "release" build type.
+  
+  Note that there is no issue when a library dependency includes a build
+  type that your app does not. That's because the plugin simply never
+  requests that build type from the dependency.
+
+
+Resolution
+
+Use matchingFallbacks to specify alternative matches for a given build type, as shown below:
+
+// In the app's build.gradle file.
+android {
+    buildTypes {
+        debug {}
+        release {}
+        staging {
+            // Specifies a sorted list of fallback build types that the
+            // plugin should try to use when a dependency does not include a
+            // "staging" build type. You may specify as many fallbacks as you
+            // like, and the plugin selects the first build type that's
+            // available in the dependency.
+            matchingFallbacks = ['debug', 'qa', 'release']
+        }
+    }
+}
+
+    

@@ -1,0 +1,99 @@
+75
+Q:This question is about trying to understand the security risks involved in implementing oauth on a mobile platform like Android. Assumption here is that we have an Android application that has the consumer key/secret embedded in the code.
+
+Assuming a consumer secret has been compromised, and a hacker has gotten a hold of it, what are the consequences of this ?
+
+Compromised Consumer Secret assumptions
+Am I correct in stating that a compromised consumer secret as such has no effect on the user's security, or any data stored at the OAuth enabled provider that the user was interacting with. The data itself is not compromised and cannot be retrieved by the hacker. 
+
+The hacker would need to get a hold of a valid user access token, and that's a lot harder to get.
+
+What could a hacker do with a compromised consumer secret ?
+Am I also correct in stating the following : 
+
+
+The hacker can setup/publish an
+application that imitates my app. 
+The hacker can attract users that will go
+through the OAuth flow, retrieving an
+access token via the hackers OAuth
+dance (using the compromised consumer
+key/secret). 
+The user might think
+he's dealing with my app, as he will
+see a familiar name (consumer key)
+during the authorization process.
+When a consumer issues a request via
+the hacker, the hacker can easily
+intercept the access token, and
+combined with the consumer secret can
+now sign requests on my behalf to
+gain access to my resources.
+
+
+End-user impact
+In the assumption that 
+
+
+a hacker has setup an application /
+site using my consumer secret 
+one of my users was tricked into authorizing
+access to that application / site
+
+
+The following might happen :
+
+
+the end-user may being noticing that something fishy is going on, and inform the service provider (ex: Google) about the malicious app  
+the service provider can then revoke the consumer key/secret
+
+
+OAuth consumer (my application) impact :
+My app (containing the consumer secret) would need to be updated, as otherwise all my clients would not be able to authorize my application do to requests on their behalf anymore (as my consumer secret would no longer be valid).
+
+Delegating all OAuth traffic
+Although it would be possible to delegate a lot of the OAuth interactions via an intermediate webserver (doing the OAuth dance and sending the access token to the user), one would have to proxy all service interactions also, as the consumer key/secret is required for signing each request. Is this the only way to keep the consumer key/secret outside of the mobile app, and stored in a more secure place on the intermediate webserver ?
+
+Alternatives
+Are there alternatives for this proxy-ing ? Is it possible to store the consumer secret at the intermediate webserver, and have some kind of mechanism that the Android application (published in the market and properly signed), can do a secure request to the intermediate webserver to fetch the consumer secret and store it internally in the app ? Can a mechanism be implemented that the intermediate webserver "knows" that this is an official android app that is requesting to fetch the consumer secret, and that the intermediate webserver will only handout the consumer secret to that particular android app ?
+    
+===============================================================================================
+52
+A:Summary: I would just take the risk and keep the secret in the client app.
+
+Proxy server alternative:
+
+The only way you can reasonable mitigate the problems I list below and make the proxy-ing work, would be to go the whole nine yards - move all the business logic for dealing with the resources on the third party webservice to your proxy server, and make the client app dumb terminal with rich UI. This way, the only actions the malicious app would be able to make the proxy perform on its behalf would be only what your business logic legitimately needs.
+
+But now you get in the realm of a whole slew of other problems having to deal with reliability and scalability.
+
+Long deliberation on why simple proxy wouldn't work:
+
+
+  Some people, when confronted with a
+  problem, think \xe2\x80\x9cI know, I'll add my
+  own proxy server\xe2\x80\x9d Now they have two
+  problems. (with apologies to Jamie
+  Zawinski)
+
+
+Your assumptions are largely right. Right down to the point where you start thinking about your own server, whether it keeps the secret and proxies the calls for the client app, or it attempts to determine if the app is legitimate and give it the secret. In both approaches, you still have to solve the problem of "is this request coming from a piece of code I wrote"?
+
+Let me repeat - there is no way to distinguish on the wire that particular piece of software is running. If the data in the messages looks right, nothing can prove it's another app that's sending that message.
+
+At the end of the day, if I am writing a malicious app, I don't care if I actually know the real secret, as long as I can make somebody that knows it do a work on my behalf. So, if you think a malicious app can impersonate your app to the third party OAuth servers, why are you certain it can't impersonate your app to your proxy?
+
+But wait, there's more. The domain at which your proxy service is located, is your identity to both your clients and the OAuth provider (as shown to the end user by the OAuth provider). If a malicious app can make your server do bad stuff, not only is your key revoked, but your public web identity is also not trusted anymore.
+
+
+
+I will start with the obvious - there is no way to distinguish on the wire that particular piece of software is running. If the data in the messages looks right, nothing can prove it's another app that's sending that message.
+
+Thus, any algorithm that relies on app-side stored secret can be spoofed. OAuth's strength is that it never gives the user's credentials to the app, instead giving the app temporary credentials of it's own that the user can revoke if necessary.
+
+Of course, the weak point here is that a sufficiently good app can get the user to trust it and not revoke the credentials, before it finished its nefarious deeds.
+
+However, one way to mitigate this is Google's approach of using 3-legged OAuth, instead of the standard 2-legged. In the 3-legged OAuth, there's no pre-assigned secret, but on every authentication a new access token secret is issued, along with each access token. While ultimately this suffers from the same drawback, as a bad app can read the good app's token secret from its process, it does result in the user having to approve the app access every time it needs new access token.
+
+And of course, this also means that it's a bit more inconvenient and annoying for the user.
+    

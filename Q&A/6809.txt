@@ -1,0 +1,182 @@
+38
+Q:There should be clear implementation of how to work with Firebase notification and data. I read many answers but can't seem to make it work. here are my steps:
+
+1.) I am passing notification and data to android in PHP and it seems to be fine:
+
+$msg = array
+    (
+         "body" => $body,
+         "title" => $title,
+         "sound" => "mySound"
+    );
+
+    $data = array
+    (
+
+         "user_id" => $res_id,
+         "date" => $date,
+         "hal_id" => $hal_id,
+         "M_view" => $M_view
+    );
+
+    $fields = array
+    (
+        'registration_ids' => $registrationIds,
+        'notification' => $msg,
+        'data' => $data
+    );
+
+
+
+    $headers = array
+    (
+        'Authorization: key='.API_ACCESS_KEY,
+        'Content-Type: application/json'
+    );
+
+    $ch = curl_init();
+    curl_setopt( $ch,CURLOPT_URL, 'https://android.googleapis.com/gcm/send' );
+    curl_setopt( $ch,CURLOPT_POST, true );
+    curl_setopt( $ch,CURLOPT_HTTPHEADER, $headers );
+    curl_setopt( $ch,CURLOPT_RETURNTRANSFER, true );
+    curl_setopt( $ch,CURLOPT_SSL_VERIFYPEER, false );
+    curl_setopt( $ch,CURLOPT_POSTFIELDS, json_encode( $fields ) );
+    $result = curl_exec($ch );
+    curl_close( $ch );
+
+
+2.) when notification and data is received in Android it shows notification. When I click on this notification it opens app. But I can not figure out the way to handle the data when the app is opened. There are couple differences when app is in foreground and backround. The code that I have now is the following: 
+
+public class MyFirebaseMessagingService extends FirebaseMessagingService {
+
+private static final String TAG = "MyFirebaseMsgService";
+
+@Override
+public void onMessageReceived(RemoteMessage remoteMessage) {
+
+    String user_id = "0";
+    String date = "0";
+    String cal_id = "0";
+    String M_view = "0";
+
+    if (remoteMessage.getData().size() > 0) {
+        Log.d(TAG, "Message data payload: " + remoteMessage.getData());
+        user_id = remoteMessage.getData().get("user_id");
+        date = remoteMessage.getData().get("date");
+        hal_id = remoteMessage.getData().get("hal_id");
+        M_view = remoteMessage.getData().get("M_view");
+    }
+
+    //Calling method to generate notification
+    sendNotification(remoteMessage.getNotification().getBody(), user_id, date, hal_id, M_view);
+}
+
+private void sendNotification(String messageBody, String user_id, String date, String hal_id, String M_view) {
+    Intent intent = new Intent(this, MainActivity.class);
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+    intent.putExtra("fcm_notification", "Y");
+    intent.putExtra("user_id", user_id);
+    intent.putExtra("date", date);
+    intent.putExtra("hal_id", hal_id);
+    intent.putExtra("M_view", M_view);
+    int uniqueInt = (int) (System.currentTimeMillis() & 0xff);
+    PendingIntent pendingIntent = PendingIntent.getActivity(getApplicationContext(), uniqueInt, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT);
+
+    Uri defaultSoundUri= RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+    NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this);
+    notificationBuilder.setSmallIcon(R.drawable.ic_launcher)
+            .setContentText(messageBody)
+            .setAutoCancel(true)
+            .setSound(defaultSoundUri)
+            .setContentIntent(pendingIntent);
+
+    NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+    notificationManager.notify(0, notificationBuilder.build());
+}}
+
+
+3.) When I use the code above and when I click on notification all it does it opens the app if in background. If app in foreground then on notification click it simply dismisses notification. However, I want to receive data and open specific Activity in both scenarios (background and foreground). I have in MainActivity the following code, but I am not able to get data. fcm_notification, date, hal_id returns null.
+
+public class MainActivity extends Activity {
+ UserFunctions userFunctions;
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+}
+
+@Override
+protected void onNewIntent(Intent intent) {
+    super.onNewIntent(intent);
+    setIntent(intent);
+    Intent intent_o = getIntent();
+}
+
+@Override
+protected void onResume() {
+    super.onResume();
+    userFunctions = new UserFunctions();
+    if(userFunctions.isUserLoggedIn(getApplicationContext())){
+        Intent intent_o = getIntent();
+        String fcm_notification = intent_o.getStringExtra("fcm_notification") ;
+        String user_id = intent_o.getStringExtra("user_id");
+        String date = intent_o.getStringExtra("date");
+        String hal_id = intent_o.getStringExtra("hal_id");
+        String M_view = intent_o.getStringExtra("M_view");
+        Intent intent = new Intent(this, JobList.class);
+
+        // THIS RETURNS NULL, user_id = null
+        System.out.print("FCM" + user_id);
+        startActivity(intent);
+        finish();
+    }else{
+        // user is not logged in show login screen
+        Intent login = new Intent(this, LoginActivity.class);
+        startActivity(login);
+        // Closing dashboard screen
+        finish();
+    }
+}}
+
+
+IF anyone can direct or advice how can I retrieve data in MainActivity.java from Firebase in either scenario (foreground or background) that would be fantastic. 
+    
+===============================================================================================
+34
+A:So first off, I'll put in the detail mentioned in the Handling Messages docs.
+
+In the summary under the Both row, it shows that when the app is on foreground, the payload will be handled in your onMessageReceived().
+
+In order to open the activity from onMessageReceived(), you should check if the data you need is in the payload, if it does, call your specific activity then pass all the other details you need via intent.
+
+Now if the app is in background, it is mentioned in the docs that the notification is received by the Android system tray and that the data payload can be retrieved from the extras of the intent.
+
+Just adding in the details from my answer here which pretty much just gives the docs statement and a link to a sample:
+
+
+  Handle notification messages in a backgrounded app
+  
+  When your app is in the background, Android directs notification messages to the system tray. A user tap on the notification opens the app launcher by default.
+  
+  This includes messages that contain both notification and data payload (and all messages sent from the Notifications console). In these cases, the notification is delivered to the device's system tray, and the data payload is delivered in the extras of the intent of your launcher Activity.
+
+
+I think this answer by @ArthurThompson explains it very well:
+
+
+  When you send a notification message with a data payload (notification and data) and the app is in the background you can retrieve the data from the extras of the intent that is launched as a result of the user tapping on the notification.
+  
+  From the FCM sample which launches the MainActivity when the notification is tapped:
+
+
+if (getIntent().getExtras() != null) {
+    for (String key : getIntent().getExtras().keySet()) {
+        String value = getIntent().getExtras().getString(key);
+        Log.d(TAG, "Key: " + key + " Value: " + value);
+    }
+}
+
+    

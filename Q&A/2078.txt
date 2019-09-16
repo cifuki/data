@@ -1,0 +1,123 @@
+95
+Q:Well, here's my request. I don't know OpenGL already, and I'm not willing to learn it, I want to learn OpenGL ES directly since I'm targeting my development to android, however. I want to learn OpenGL ES in order to develop my 2D games. I chose it for performances purpose (since basic SurfaceView drawing isn't that efficient when it comes to RT games).
+My question is: where to start?
+I've spent over a month browsing Google and reading/trying some tutorials/examples I've found anywhere but to be honest, it didn't help much and this is for two reasons:
+
+
+Almost all the articles/tutorials I've came across are 3D related (I only want to learn how to do my 2D Sprites drawing)
+There's no base to start from since all the articles targets a specific things like: "How to draw a triangle (with vertices)", "How to create a Mesh"... etc.
+
+
+I've tried to read some source code too (ex.: replica island) but the codes are too complicated and contains a lot of things that aren't necessary; result: I get lost among 100 .java files with weird class names and stuff.
+
+I guess there's no course like the one I'm looking for, but I'll be very glad if somebody could give me some guidelines and some links maybe to learn what I'm up to (only OpenGL ES 2D Sprites rendering! nothing 3D).
+    
+===============================================================================================
+85
+A:I was in a similar situation.
+The way I started with openGL with start by looking at the very basic GLSurfaceView samples/demos.  
+
+Start, by setting up your app activity, and set up the basic canvas.
+
+Take a loot at the replica island source code file: GameRenderer.java for how to setup your canvas with the proper GL flags for 2D (sprite) rendering.
+You should really take a look at SpriteMethodTest by the same author of replica island: http://code.google.com/p/apps-for-android/source/browse/trunk/SpriteMethodTest
+
+See this question where I posted my own code: Using OpenGL to replace Canvas - Android
+
+After you have your canvas set up, you start by calling something like:
+gl.glClear(GL10.GL_COLOR_BUFFER_BIT);
+
+After that you're ready to render a sprite.
+First, you'll need to load the sprite into a texture: http://qdevarena.blogspot.com/2009/02/how-to-load-texture-in-android-opengl.html
+
+However, this is the tutorial that really helped me out with loading sprites:
+http://tkcodesharing.blogspot.com/2008/05/working-with-textures-in-androids.html
+
+This is how I do it, I have a class named Texture.java:
+
+public class Texture
+{
+    /*Begin public declarations*/
+    public float x = 0;
+    public float y = 0;
+    public float z = 0;
+    public float width = 0;
+    public float height = 0;
+    /*Begin Private Declarations*/
+    private GL10 gl;
+    public int[] texture;    //holds the texture in integer form
+    private int texture_name;
+    private int[] mCropWorkspace;
+    private final BitmapFactory.Options sBitmapOptions;
+
+
+/*Begin Methods*/
+public Texture( GL10 gl_obj )
+{
+    gl = gl_obj;
+    texture = new int[1];
+    mCropWorkspace = new int[4];
+    sBitmapOptions = new BitmapFactory.Options();
+    sBitmapOptions.inPreferredConfig = Bitmap.Config.RGB_565;
+    //Log.d(TAG, "Initializing Texture Object");
+}    
+public int get_texture_name( )
+{
+    return texture_name;
+}
+
+/*Loads the resource to memory*/
+public boolean Load( Bitmap bitmap ) //rename this to glLoad and don't have it as an initializer parameter
+{
+    /*many thanks to sprite method test if this works*/
+    if ( gl == null )
+    {
+        Log.e(TAG, "Failed to load resource.  Context/GL is NULL");
+        return false;
+    }
+    int error;
+
+    int textureName = -1;
+    gl.glGenTextures(1, texture, 0);
+    textureName = texture[0];
+
+    //Log.d(TAG, "Generated texture: " + textureName);
+    gl.glBindTexture(GL10.GL_TEXTURE_2D, textureName);
+    gl.glTexParameterf(GL10.GL_TEXTURE_2D, GL10.GL_TEXTURE_MIN_FILTER, GL10.GL_NEAREST);
+    gl.glTexParameterf(GL10.GL_TEXTURE_2D, GL10.GL_TEXTURE_MAG_FILTER, GL10.GL_LINEAR);
+    gl.glTexParameterf(GL10.GL_TEXTURE_2D, GL10.GL_TEXTURE_WRAP_S, GL10.GL_CLAMP_TO_EDGE);
+    gl.glTexParameterf(GL10.GL_TEXTURE_2D, GL10.GL_TEXTURE_WRAP_T, GL10.GL_CLAMP_TO_EDGE);
+    gl.glTexEnvf(GL10.GL_TEXTURE_ENV, GL10.GL_TEXTURE_ENV_MODE, GL10.GL_REPLACE);
+
+    GLUtils.texImage2D(GL10.GL_TEXTURE_2D, 0, bitmap, 0);
+
+    mCropWorkspace[0] = 0;
+    mCropWorkspace[1] = bitmap.getHeight();
+    mCropWorkspace[2] = bitmap.getWidth();
+    mCropWorkspace[3] = -bitmap.getHeight();
+
+    ((GL11) gl).glTexParameteriv(GL10.GL_TEXTURE_2D, 
+            GL11Ext.GL_TEXTURE_CROP_RECT_OES, mCropWorkspace, 0);
+
+    error = gl.glGetError();
+    if (error != GL10.GL_NO_ERROR)
+    { 
+        Log.e(TAG, "GL Texture Load Error: " + error);
+
+    }
+    //Log.d(TAG, "Loaded texture: " + textureName);
+    return true;
+ }
+}
+
+
+Then in my onDrawFrame() method I simply do:
+
+Texture texture = ...
+gl.glBindTexture(GL10.GL_TEXTURE_2D, texture.texture[0]);
+((GL11Ext) gl).glDrawTexfOES((float)(draw_x + 0.5), (float)(draw_y + 0.5), 0, tile_width, tile_height);
+
+
+That should get you going with drawing 2D sprites on an openGL canvas.
+I've noticed that there is really no straightforward tutorial on this.  Hopefully in the future I will post one in my dev blog: http://developingthedream.blogspot.com/
+    

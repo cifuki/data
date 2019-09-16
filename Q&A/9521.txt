@@ -1,0 +1,128 @@
+29
+Q:Inspired by the question if {0} quantifier actually makes sense I started playing with some regexes containing {0} quantifier and wrote this small java program that just splits a test phrase based on various test regex:
+
+private static final String TEST_STR =
+    "Just a test-phrase!! 1.2.3.. @ {(t\xc2\xb7e\xc2\xb7s\xc2\xb7t)}";
+
+private static void test(final String pattern) {
+    System.out.format("%-17s", "\\"" + pattern + "\\":");
+    System.out.println(Arrays.toString(TEST_STR.split(pattern)));
+}
+
+public static void main(String[] args) { 
+    test("");
+    test("{0}");
+    test(".{0}");
+    test("([^.]{0})?+");
+    test("(?!a){0}");
+    test("(?!a).{0}");
+    test("(?!.{0}).{0}");
+    test(".{0}(?<!a)");
+    test(".{0}(?<!.{0})");
+} 
+
+
+
+
+==> The output:
+
+"":              [, J, u, s, t,  , a,  , t, e, s, t, -, p, h, r, a, s, e, !, !,  , 1, ., 2, ., 3, ., .,  , @,  , {, (, t, \xc2\xb7, e, \xc2\xb7, s, \xc2\xb7, t, ), }]
+"{0}":           [, J, u, s, t,  , a,  , t, e, s, t, -, p, h, r, a, s, e, !, !,  , 1, ., 2, ., 3, ., .,  , @,  , {, (, t, \xc2\xb7, e, \xc2\xb7, s, \xc2\xb7, t, ), }]
+".{0}":          [, J, u, s, t,  , a,  , t, e, s, t, -, p, h, r, a, s, e, !, !,  , 1, ., 2, ., 3, ., .,  , @,  , {, (, t, \xc2\xb7, e, \xc2\xb7, s, \xc2\xb7, t, ), }]
+"([^.]{0})?+":   [, J, u, s, t,  , a,  , t, e, s, t, -, p, h, r, a, s, e, !, !,  , 1, ., 2, ., 3, ., .,  , @,  , {, (, t, \xc2\xb7, e, \xc2\xb7, s, \xc2\xb7, t, ), }]
+"(?!a){0}":      [, J, u, s, t,  , a,  , t, e, s, t, -, p, h, r, a, s, e, !, !,  , 1, ., 2, ., 3, ., .,  , @,  , {, (, t, \xc2\xb7, e, \xc2\xb7, s, \xc2\xb7, t, ), }]
+"(?!a).{0}":     [, J, u, s, t,  a,  , t, e, s, t, -, p, h, ra, s, e, !, !,  , 1, ., 2, ., 3, ., .,  , @,  , {, (, t, \xc2\xb7, e, \xc2\xb7, s, \xc2\xb7, t, ), }]
+"(?!.{0}).{0}":  [Just a test-phrase!! 1.2.3.. @ {(t\xc2\xb7e\xc2\xb7s\xc2\xb7t)}]
+".{0}(?<!a)":    [, J, u, s, t,  , a , t, e, s, t, -, p, h, r, as, e, !, !,  , 1, ., 2, ., 3, ., .,  , @,  , {, (, t, \xc2\xb7, e, \xc2\xb7, s, \xc2\xb7, t, ), }]
+".{0}(?<!.{0})": [Just a test-phrase!! 1.2.3.. @ {(t\xc2\xb7e\xc2\xb7s\xc2\xb7t)}]
+
+
+
+
+The following did not surprise me:
+
+
+"", ".{0}", and "([^.]{0})?+" just split before every character and that makes sense because of 0-quantifier.
+"(?!.{0}).{0}" and ".{0}(?<!.{0})" don't match anything. Makes sense to me: Negative Lookahead / Lookbehind for 0-quantified token won't match.
+
+
+What did surprise me:
+
+
+"{0}" & "(?!a){0}": I actually expected an Exception here, because of preceding token not quantifiable: For {0} there is simply nothing preceding and for (?!a){0} not really just a negative lookahead. Both just match before every char, why? If I try that regex in a javascript validator, I get "not quantifiable error", see demo here! Is that regex handled differently in Java & Javascript?
+"(?!a).{0}" & ".{0}(?<!a)": A little surprise also here: Those match before every char of the phrase, except before/after the a. My understanding is that in (?!a).{0} the (?!a) Negative Lookahead part asserts that it is impossible to match the a literally, but I am looking ahead .{0}. I thought it would not work with 0-quantified token, but looks like I can use Lookahead with those too.
+
+
+==> So the remaining mystery for me is why (?!a){0} is actually matching before every char in my test phrase. Shouldn't that actually be an invalid pattern and throw a PatternSyntaxException or something like that?
+
+
+
+Update:
+
+If I run the same Java code within an Android Activity the outcome is different! There the regex (?!a){0} indeed does throw an PatternSyntaxException, see:
+
+03-20 22:43:31.941: D/AndroidRuntime(2799): Shutting down VM
+03-20 22:43:31.950: E/AndroidRuntime(2799): FATAL EXCEPTION: main
+03-20 22:43:31.950: E/AndroidRuntime(2799): java.lang.RuntimeException: Unable to start activity ComponentInfo{com.appham.courseraapp1/com.appham.courseraapp1.MainActivity}: java.util.regex.PatternSyntaxException: Syntax error in regexp pattern near index 6:
+03-20 22:43:31.950: E/AndroidRuntime(2799): (?!a){0}
+03-20 22:43:31.950: E/AndroidRuntime(2799):       ^
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2180)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2230)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at android.app.ActivityThread.access$600(ActivityThread.java:141)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1234)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at android.os.Handler.dispatchMessage(Handler.java:99)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at android.os.Looper.loop(Looper.java:137)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at android.app.ActivityThread.main(ActivityThread.java:5041)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at java.lang.reflect.Method.invokeNative(Native Method)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at java.lang.reflect.Method.invoke(Method.java:511)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:793)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:560)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at dalvik.system.NativeStart.main(Native Method)
+03-20 22:43:31.950: E/AndroidRuntime(2799): Caused by: java.util.regex.PatternSyntaxException: Syntax error in regexp pattern near index 6:
+03-20 22:43:31.950: E/AndroidRuntime(2799): (?!a){0}
+03-20 22:43:31.950: E/AndroidRuntime(2799):       ^
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at java.util.regex.Pattern.compileImpl(Native Method)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at java.util.regex.Pattern.compile(Pattern.java:407)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at java.util.regex.Pattern.<init>(Pattern.java:390)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at java.util.regex.Pattern.compile(Pattern.java:381)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at java.lang.String.split(String.java:1832)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at java.lang.String.split(String.java:1813)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at com.appham.courseraapp1.MainActivity.onCreate(MainActivity.java:22)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at android.app.Activity.performCreate(Activity.java:5104)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1080)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2144)
+03-20 22:43:31.950: E/AndroidRuntime(2799):     ... 11 more
+
+
+Why regex in Android behaves different than plain Java?
+    
+===============================================================================================
+13
+A:I did some looking into the source of oracles java 1.7. 
+
+"{0}"
+
+I found some code that throws "Dangling meta character" when it finds ?, * or + in the main loop. That is, not immediately after some literal, group, "." or anywhere else where quantifiers are explicitly checked for. For some reason, { is not in that list. The result is that it falls through all checks for special characters and starts parsing for a literal string. The first character it encounters is {, which tells the parser it is time to stop parsing the literal string and check for quantifiers. 
+
+The result is that "{n}" will match empty string n times. 
+
+Another result is that a second "x{m}{n}" will first match x m times, then match empty string n times, effectively ignoring the {n}, as mentioned by @Kobi in the comments above.
+
+Seems like a bug to me, but it wouldn't surprise me if they want to keep it for backwards compatibility.
+
+"(?!a){0}"
+
+"(?!a)" is just a node which is quantifiable. You can check if the next character is an 'a' 10 times. It will return the same result each time though, so it's not very useful. In our case, it will check if the next character is an 'a' 0 times, which will always succeed.
+
+Note that as an optimization when a match has 0 length such as here, the quantifier is never greedy. This also prevents infinite recursion in the "(?!a)*" case.
+
+"(?!a).{0}" & ".{0}(?<!a)"
+
+As mentioned above, {0} performs a check 0 times, which always succeeds. It effectively ignores anything that comes before it. That means "(?!a).{0}" is the same as "(?!a)", which has the expected result. 
+
+Similar for the other one.
+
+Android is different
+
+As mentioned by @GenericJam, android is a different implementation and may have different characteristics in these edge cases. I tried looking at that source as well, but android actually uses native code there :)
+    

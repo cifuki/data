@@ -1,0 +1,153 @@
+28
+Q:I am attempting to Take a Screenshot of my Game through code and Share it through an Intent. I able to do of those things, however the screenshot always appears black. Here is the Code Related to Sharing the Screenshot:
+
+View view = MainActivity.getView();
+view.setDrawingCacheEnabled(true);
+Bitmap screen = Bitmap.createBitmap(view.getDrawingCache(true));
+.. save Bitmap
+
+
+This is in the MainActivity: 
+
+view = new GameView(this);
+view.setLayoutParams(new RelativeLayout.LayoutParams(
+            RelativeLayout.LayoutParams.FILL_PARENT,
+            RelativeLayout.LayoutParams.FILL_PARENT));
+
+public static SurfaceView getView() {
+    return view;
+}
+
+
+And the View itself:
+
+public class GameView extends SurfaceView implements SurfaceHolder.Callback {
+private static SurfaceHolder surfaceHolder;
+...etc
+
+
+And this is how I am Drawing everything:
+
+Canvas canvas = surfaceHolder.lockCanvas(null);
+        if (canvas != null) {
+                Game.draw(canvas);
+...
+
+
+Ok, based on some answers, i have constructed this:
+
+public static void share() {
+    Bitmap screen = GameView.SavePixels(0, 0, Screen.width, Screen.height);
+    Calendar c = Calendar.getInstance();
+    Date d = c.getTime();
+    String path = Images.Media.insertImage(
+            Game.context.getContentResolver(), screen, "screenShotBJ" + d
+                    + ".png", null);
+    System.out.println(path + " PATH");
+    Uri screenshotUri = Uri.parse(path);
+    final Intent emailIntent = new Intent(
+            android.content.Intent.ACTION_SEND);
+    emailIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    emailIntent.putExtra(Intent.EXTRA_STREAM, screenshotUri);
+    emailIntent.setType("image/png");
+    Game.context.startActivity(Intent.createChooser(emailIntent,
+            "Share High Score:"));
+}
+
+
+The Gameview contains the Following Method:
+
+public static Bitmap SavePixels(int x, int y, int w, int h) {
+    EGL10 egl = (EGL10) EGLContext.getEGL();
+    GL10 gl = (GL10) egl.eglGetCurrentContext().getGL();
+    int b[] = new int[w * (y + h)];
+    int bt[] = new int[w * h];
+    IntBuffer ib = IntBuffer.wrap(b);
+    ib.position(0);
+    gl.glReadPixels(x, 0, w, y + h, GL10.GL_RGBA, GL10.GL_UNSIGNED_BYTE, ib);
+    for (int i = 0, k = 0; i < h; i++, k++) {
+        for (int j = 0; j < w; j++) {
+            int pix = b[i * w + j];
+            int pb = (pix >> 16) & 0xff;
+            int pr = (pix << 16) & 0x00ff0000;
+            int pix1 = (pix & 0xff00ff00) | pr | pb;
+            bt[(h - k - 1) * w + j] = pix1;
+        }
+    }
+
+    Bitmap sb = Bitmap.createBitmap(bt, w, h, Bitmap.Config.ARGB_8888);
+    return sb;
+}
+
+
+The Screenshot is still Black. Is there something wrong with the way I am saving it perhaps?
+
+I have attempted several different methods to take the Screenshot, but none of them worked:
+The one shown in the code above was the most commonly suggested one. But it does not seem to work.
+Is this an Issue with using SurfaceView? And if so, why does view.getDrawingCache(true) even exist if I cant use it and how do I fix this?
+
+My code:
+
+public static void share() {
+    // GIVES BLACK SCREENSHOT:
+    Calendar c = Calendar.getInstance();
+    Date d = c.getTime();
+
+    Game.update();
+    Bitmap.Config conf = Bitmap.Config.RGB_565;
+    Bitmap image = Bitmap.createBitmap(Screen.width, Screen.height, conf);
+    Canvas canvas = GameThread.surfaceHolder.lockCanvas(null);
+    canvas.setBitmap(image);
+    Paint backgroundPaint = new Paint();
+    backgroundPaint.setARGB(255, 40, 40, 40);
+    canvas.drawRect(0, 0, canvas.getWidth(), canvas.getHeight(),
+            backgroundPaint);
+    Game.draw(canvas);
+    Bitmap screen = Bitmap.createBitmap(image, 0, 0, Screen.width,
+            Screen.height);
+    canvas.setBitmap(null);
+    GameThread.surfaceHolder.unlockCanvasAndPost(canvas);
+
+    String path = Images.Media.insertImage(
+            Game.context.getContentResolver(), screen, "screenShotBJ" + d
+                    + ".png", null);
+    System.out.println(path + " PATH");
+    Uri screenshotUri = Uri.parse(path);
+    final Intent emailIntent = new Intent(
+            android.content.Intent.ACTION_SEND);
+    emailIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    emailIntent.putExtra(Intent.EXTRA_STREAM, screenshotUri);
+    emailIntent.setType("image/png");
+    Game.context.startActivity(Intent.createChooser(emailIntent,
+            "Share High Score:"));
+}
+
+
+Thank you.
+    
+===============================================================================================
+54
+A:There is a great deal of confusion about this, and a few correct answers.
+
+Here's the deal:
+
+
+A SurfaceView has two parts, the Surface and the View.  The Surface is on a completely separate layer from all of the View UI elements.  The getDrawingCache() approach works on the View layer only, so it doesn't capture anything on the Surface.
+The buffer queue has a producer-consumer API, and it can have only one producer.  Canvas is one producer, GLES is another.  You can't draw with Canvas and read pixels with GLES.  (Technically, you could if the Canvas were using GLES and the correct EGL context was current when you went to read the pixels, but that's not guaranteed.  Canvas rendering to a Surface is not accelerated in any released version of Android, so right now there's no hope of it working.)
+(Not relevant for your case, but I'll mention it for completeness:) A Surface is not a frame buffer, it is a queue of buffers.  When you submit a buffer with GLES, it is gone, and you can no longer read from it.  So if you were rendering with GLES and capturing with GLES, you would need to read the pixels back before calling eglSwapBuffers().
+
+
+With Canvas rendering, the easiest way to "capture" the Surface contents is to simply draw it twice.  Create a screen-sized Bitmap, create a Canvas from the Bitmap, and pass it to your draw() function.
+
+With GLES rendering, you can use glReadPixels() before the buffer swap to grab the pixels.  There's a (less-expensive than the code in the question) implementation of the grab code in Grafika; see saveFrame() in EglSurfaceBase.
+
+If you were sending video directly to a Surface (via MediaPlayer) there would be no way to capture the frames, because your app never has access to them -- they go directly from mediaserver to the compositor (SurfaceFlinger).  You can, however, route the incoming frames through a SurfaceTexture, and render them twice from your app, once for display and once for capture.  See this question for more info.
+
+One alternative is to replace the SurfaceView with a TextureView, which can be drawn on like any other Surface.  You can then use one of the getBitmap() calls to capture a frame.  TextureView is less efficient than SurfaceView, so this is not recommended for all situations, but it's straightforward to do.
+
+If you were hoping to get a composite screen shot containing both the Surface contents and the View UI contents, you will need to capture the Canvas as above, capture the View with the usual drawing cache trick, and then composite the two manually.  Note this won't pick up the system parts (status bar, nav bar).
+
+Update: on Lollipop and later (API 21+) you can use the MediaProjection class to capture the entire screen with a virtual display.  There are some trade-offs with this approach, e.g. you're capturing the rendered screen, not the frame that was sent to the Surface, so what you get may have been up- or down-scaled to fit the window. In addition, this approach involves an Activity switch since you have to create an intent (by calling createScreenCaptureIntent on the ProjectionManager object) and wait for its result.
+
+If you want to learn more about how all this stuff works, see the Android System-Level Graphics Architecture doc.
+    

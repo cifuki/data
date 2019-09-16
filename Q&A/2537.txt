@@ -1,0 +1,223 @@
+82
+Q:I was just going through the Android Developer Site, refreshing on the Activity Life cycle, and in each code example, there is a comment beside the super class methods that says "Always call the superclass method first". 
+
+Though this makes sense in the creation half cycle: onCreate, onStart and onResume, I'm a little confused as to what is the correct procedure on the destruction half cycle : onPause,onStop,onDestroy.
+
+Destroying the instance specific resources first, before destroying superclass resources that the instance specific resources may depend upon makes sense, not the other way round.But the comments suggest otherwise. What am I missing? 
+
+Edit: Since people seem to be getting confused as to the intent in the question, what I want to know is which of the following is correct? AND WHY ?
+
+1.Google suggests
+
+    @Override
+    protected void onStop() {
+      super.onStop();  // Always call the superclass method first
+
+      //my implementation here
+    }
+
+
+2.The other way
+
+    @Override
+    protected void onStop() {
+       //my implementation here
+
+       super.onStop();  
+    }
+
+    
+===============================================================================================
+95
+A:Destroying the instance specific resources first, before destroying
+  superclass resources that the instance specific resources may depend
+  upon makes sense, not the other way round. But the comments suggest
+  otherwise. What am I missing?
+
+
+In my opinion: not a single thing.
+
+This answer from Mark (aka CommonsWare on SO) sheds light on the issue: Link - Should the call to the superclass method be the first statement?. But then, you can see the following comment left on his answer:
+
+
+  But why official doc says: "Always call the superclass method first" in onPause()?
+
+
+Back to square one. Okay, let's look at this from another angle. We know that Java Language Specification does not specify an order in which the call to super.overridenMethod() must be placed (or if the call must be placed at all). 
+
+In case of class Activity, super.overridenMethod() calls are required and enforced:
+
+if (!mCalled) {
+    throw new SuperNotCalledException(
+        "Activity " + mComponent.toShortString() +
+            " did not call through to super.onStop()");
+}
+
+
+mCalled is set to true in Activity.onStop().
+
+Now, the only detail left to debate on is the ordering. 
+
+I also know that both work
+
+Sure. Look at the method body for Activity.onPause():
+
+protected void onPause() {
+    if (DEBUG_LIFECYCLE) Slog.v(TAG, "onPause " + this);
+
+    // This is to invoke 
+    // Application.ActivityLifecyleCallbacks.onActivityPaused(Activity)
+    getApplication().dispatchActivityPaused(this);
+
+    // The flag to enforce calling of this method
+    mCalled = true;
+}
+
+
+Whichever way you sandwich the call to super.onPause(), you'll be ok. Activity.onStop() has a similar method body. But take a look at Activity.onDestroy():
+
+protected void onDestroy() {
+    if (DEBUG_LIFECYCLE) Slog.v(TAG, "onDestroy " + this);
+    mCalled = true;
+
+    // dismiss any dialogs we are managing.
+    if (mManagedDialogs != null) {
+        final int numDialogs = mManagedDialogs.size();
+        for (int i = 0; i < numDialogs; i++) {
+            final ManagedDialog md = mManagedDialogs.valueAt(i);
+            if (md.mDialog.isShowing()) {
+                md.mDialog.dismiss();
+            }
+        }
+        mManagedDialogs = null;
+    }
+
+    // close any cursors we are managing.
+    synchronized (mManagedCursors) {
+        int numCursors = mManagedCursors.size();
+        for (int i = 0; i < numCursors; i++) {
+            ManagedCursor c = mManagedCursors.get(i);
+            if (c != null) {
+                c.mCursor.close();
+            }
+        }
+        mManagedCursors.clear();
+    }
+
+    // Close any open search dialog
+    if (mSearchManager != null) {
+        mSearchManager.stopSearch();
+    }
+
+    getApplication().dispatchActivityDestroyed(this);
+}
+
+
+Here, the ordering could possibly matter depending on how your activity is setup, and whether calling super.onDestroy() would interfere with the code that follows. 
+
+As a final word, the statement Always call the superclass method first doesn't seem to have much evidence to back it up. What's worse (for the statement) is that the following code has been taken from android.app.ListActivity: 
+
+public class ListActivity extends Activity {
+
+    ....
+
+    @Override
+    protected void onDestroy() {
+        mHandler.removeCallbacks(mRequestFocus);
+        super.onDestroy();
+    }
+    ....    
+}
+
+
+And, from LunarLander sample application included in android sdk:
+
+public class LunarLander extends Activity {
+
+    ....
+
+    @Override
+    protected void onPause() {
+        mLunarView.getThread().pause(); // pause game when Activity pauses
+        super.onPause();
+    }
+    ....
+}
+
+
+Summary and worthy mentions:
+
+User Philip Sheard : Provides a scenario where a call to super.onPause() must be delayed in case of an Activity started using startActivityForResult(Intent). Setting the result using setResult(...) after super.onPause() will not work. He later clarifies on this in the comments to his answer.
+
+User Sherif elKhatib : Explains why letting superclass initialize its resources first and destroy its resources last follows from logic:
+
+
+  Let us consider a library you downloaded which has a LocationActivity
+  that contains a getLocation() function that provides the location.
+  Most probably, this activity will need to initialize its stuff in the
+  onCreate() which will force you to call the super.onCreate first. You
+  already do that because you feel it makes sense. Now, in your
+  onDestroy, you decide you want to save the Location somewhere in the
+  SharedPreferences. If you call super.onDestroy first, it is to a
+  certain extent possible that getLocation will return a null value
+  after this call because the implementation of LocationActivity
+  nullifies the location value in the onDestroy. The idea is that you
+  wouldn't blame it if this happens. Therefore, you would call
+  super.onDestroy at the end after you're done with your own onDestroy.
+
+
+He goes on to point out: if a child class is suitably isolated (in terms of resource dependency) from the parent class, the super.X() calls need not adhere to any order specification. 
+
+See his answer on this page to read through a scenario where placement of super.onDestroy() call does affect the program logic.
+
+From an answer by Mark:
+
+
+  Methods you override that are part of component creation (onCreate(),
+  onStart(), onResume(), etc.), you should chain to the superclass as
+  the first statement, to ensure that Android has its chance to do its
+  work before you attempt to do something that relies upon that work
+  having been done. 
+  
+  Methods you override that are part of component
+  destruction (onPause(), onStop(), onDestroy(), etc.), you should do
+  your work first and chain to the superclass as the last thing. That
+  way, in case Android cleans up something that your work depends upon,
+  you will have done your work first. 
+  
+  Methods that return something
+  other than void (onCreateOptionsMenu(), etc.), sometimes you chain to
+  the superclass in the return statement, assuming that you are not
+  specifically doing something that needs to force a particular return
+  value. 
+  
+  Everything else -- such as onActivityResult() -- is up to you,
+  on the whole. I tend to chain to the superclass as the first thing,
+  but unless you are running into problems, chaining later should be
+  fine.
+
+
+Bob Kerns from this thread:
+
+
+  It's a good pattern [(the pattern that Mark suggests above)], but I've found some exceptions. For example,
+  the theme I wanted to apply to my PreferenceActivity wouldn't take
+  effect unless I put it before the superclass's onCreate().
+
+
+User Steve Benett also brings attention to this: 
+
+
+  I only know one situation, where the timing of the super call is
+  necessary. If you wanna alter the standard behavior of the theme or
+  the display and such in onCreate, you have to do it before you call
+  super to see an effect. Otherwise AFAIK there is no difference at
+  which time you call it.
+
+
+User Sunil Mishra confirms that order (most likely) does not play a role when calling Activity class' methods. He also claims that calling superclass methods first is considered a best practice. However, I could not corroborate this. 
+
+User LOG_TAG : Explains why a call to superclass constructor needs to be the before everything else. In my opinion, this explanation does not add to the question being asked.
+
+End note: Trust, but verify. Most of the answers on this page follow this approach to see if the statement Always call the superclass method first has logical backing. As it turns out, it does not; at least, not in the case of class Activity . Generally, one should read through the superclass' source code to determine if ordering calls to super's methods is a requirement. 
+    

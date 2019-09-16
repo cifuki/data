@@ -1,0 +1,66 @@
+39
+Q:I am developing an application which download some files and save their text in file_content field to database. The file sizes can vary from some KBs to 10 MB. The app works for all sizes while saving. The problem occurs when using select statement on long file_content records. It gives 
+
+
+  java.lang.IllegalStateException: Couldn't read row 0, col 0 from CursorWindow
+
+
+when fetching such rows. Are there any limits on field content size? If so, then why it is letting us to save and giving error while retrieving?
+Here is my code snipped that fetches row:
+
+public String getFileContent(MyFile gc) {
+        if(!isDBOpen()) {
+            open();
+        }
+        try {
+            String mQuery = "SELECT * FROM " + DBOpenHelper.TABLE_SAVED_FILES + " WHERE " + DBOpenHelper.COLUMN_ID + " = " + gc.id;
+            Cursor mCursor = database.rawQuery(mQuery, null);
+            if(mCursor.getCount() <= 0) {
+                return null;
+            }
+            if(mCursor.moveToFirst()) {
+                return getCursorRowContent(mCursor);
+            }
+        } catch (Exception e) {
+            e.getMessage();
+        }
+        return null;
+    }
+
+    private String getCursorRowContent(Cursor mCursor) throws Exception {
+        return mCursor.getString(mCursor.getColumnIndex(DBOpenHelper.COLUMN_FILE_CONTENT));
+    }
+
+
+Any idea what is going on? I have tested it on 2 to 3 devices.
+
+Logcat output:
+
+01-29 13:41:56.520: W/CursorWindow(4121): Window is full: requested allocation 5140987 bytes, free space 2096617 bytes, window size 2097152 bytes
+01-29 13:41:56.520: E/CursorWindow(4121): Failed to read row 0, column 0 from a CursorWindow which has 0 rows, 9 columns.
+
+01-29 13:43:30.932: W/System.err(4121): java.lang.IllegalStateException: Couldn't read row 0, col 0 from CursorWindow.  Make sure the Cursor is initialized correctly before accessing data from it. 
+01-29 13:43:30.932: W/System.err(4121):     at android.database.CursorWindow.nativeGetLong(Native Method) 
+01-29 13:43:30.932: W/System.err(4121):     at android.database.CursorWindow.getLong(CursorWindow.java:507) 
+01-29 13:43:30.932: W/System.err(4121):     at android.database.AbstractWindowedCursor.getLong(AbstractWindowedCursor.java:75) 
+01-29 13:43:30.936: W/System.err(4121):     at android.database.AbstractCursor.moveToPosition(AbstractCursor.java:220) 
+01-29 13:43:30.936: W/System.err(4121):     at android.database.AbstractCursor.moveToNext(AbstractCursor.java:245) 
+01-29 13:43:30.940: W/System.err(4121):     at com.nxb.cachehead.bl.PocketQueryDataSource.getGeoCacheContent(PocketQueryDataSource.java:97) 01-29 13:43:30.940: W/System.err(4121):     at com.nxb.cachehead.bl.GPXFileCopyAsyncTask.doInBackground(GPXFileCopyAsyncTask.java:27) 
+01-29 13:43:30.940: W/System.err(4121):     at com.nxb.cachehead.bl.GPXFileCopyAsyncTask.doInBackground(GPXFileCopyAsyncTask.java:1) 
+01-29 13:43:30.940: W/System.err(4121):     at android.os.AsyncTask$2.call(AsyncTask.java:287) 
+01-29 13:43:30.944: W/System.err(4121):     at java.util.concurrent.FutureTask.run(FutureTask.java:234) 
+01-29 13:43:30.944: W/System.err(4121):     at android.os.AsyncTask$SerialExecutor$1.run(AsyncTask.java:230) 
+01-29 13:43:30.948: W/System.err(4121):     at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1080) 
+01-29 13:43:30.948: W/System.err(4121):     at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:573) 
+01-29 13:43:30.948: W/System.err(4121):     at java.lang.Thread.run(Thread.java:856)
+
+    
+===============================================================================================
+85
+A:01-29 13:41:56.520: W/CursorWindow(4121): Window is full: requested allocation 5140987 bytes, free space 2096617 bytes, window size 2097152 bytes
+
+
+Android SQLite returns rows in cursor windows that have the maximum size of 2MB as specified by config_cursorWindowSize. If your row exceeds this limit, you'll get this error.
+
+Storing large data in sqlite database is not a good idea anyway. Store files in filesystem and paths in database.
+    

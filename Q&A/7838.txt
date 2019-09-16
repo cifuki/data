@@ -1,0 +1,136 @@
+34
+Q:This question already has an answer here:
+    
+        
+            Android SDK AsyncTask doInBackground not running (subclass)
+                
+                    9 answers
+                
+        
+    
+    
+I'm having a problem with the AsyncTask class. It seems like my task stops working after  creating 4 or 5 tasks. 
+
+Im having 2 activities. MainActivity which only holds a button that starts a second activity called ImageActivity.
+
+ImageActivity is very simple. it got an onCreate that sets the layout, and then it starts a new AsyncTask that loads an image from the internet. This works fine the first few times. But than it suddenly stops working. The onPreExecute method is run every time, but not the doInBackground method. I have tried to simplify the doInBackground with a sleeping loop, and the same thing happens. I cant understand this behavour since the asynctask is both canceled and set to null in the onDestroy method. So every time i start a new ImageActivity, i also create a fresh AsyncTask.
+
+I recreate the ImageActivity and the task by hitting the back button, and than clicking the button on the MainActivity.
+
+Any ideas anyone? I'm really struggling with this one.
+
+UPDATE: Code that starts the ImageActivity (inside a button onClickListener)
+
+Intent intent = new Intent();
+intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
+intent.setClassName(this, ImageActivity.class.getName());
+startActivity(intent);
+
+
+The code above starts this activity
+
+    public class ImageActivity extends Activity {
+
+    private AsyncTask<Void, Void, Void> task;
+
+    public void onCreate(Bundle bundle) {
+        super.onCreate(bundle);
+        setContentView(R.layout.main);
+
+        task = new AsyncTask<Void, Void, Void>() {
+
+            @Override
+            protected void onPreExecute()
+            {
+                Log.d(TAG, "onPreExecute()");
+            }
+
+            @Override
+            protected Void doInBackground(Void... params)
+            {
+                Log.d(TAG, "doInBackground() -- Here is the download");
+                // downloadBitmap("http://mydomain.com/image.jpg")
+                return null;
+            }
+
+            @Override
+            protected void onPostExecute(Void res)
+            {
+                Log.d(TAG, "onPostExecute()");
+                if(isCancelled()){
+                    return;
+                }
+            }
+        }.execute();
+    }
+
+    @Override
+    protected void onDestroy()
+    {
+        super.onDestroy();
+        task.cancel(true);
+    }
+}
+
+
+UPDATE:
+
+I have tested using a combination of traditional Threads and runOnUiThread method, and it seems to work better. Now the thread runs every time.
+    
+===============================================================================================
+24
+A:Removing the AsyncTask and using a traditional Thread instead of combining it with runOnUiThread seems to work. But I still have not found the reason why the AsyncTask is so "unstable".
+
+Here is the code that works for me:
+
+public class ImageActivity extends Activity {
+
+    private Thread worker;
+
+    public void onCreate(Bundle bundle) {
+        super.onCreate(bundle);
+        setContentView(R.layout.main);
+
+        worker = new Thread(new Runnable(){
+
+            private void updateUI(final List<Object> list)
+            {
+                if(worker.isInterrupted()){
+                    return;
+                }
+                runOnUiThread(new Runnable(){
+
+                    @Override
+                    public void run()
+                    {
+                        // Update view and remove loading spinner etc...
+                    }
+                });
+            }
+
+            private List<Object> download()
+            {
+                // Simulate download
+                SystemClock.sleep(1000);
+                return new ArrayList<Object>();
+            }
+
+            @Override
+            public void run()
+            {
+                Log.d(TAG, "Thread run()");
+                updateUI(download());
+            }
+
+        });
+        worker.start(); }
+
+    @Override
+    protected void onDestroy()
+    {
+        super.onDestroy();
+        worker.interrupt();
+    }
+}
+
+    

@@ -1,0 +1,81 @@
+28
+Q:I've just built an APK using Gradle for release (ProGuard 4.9 and signed). When I launch the app it crash on this error : 
+
+E/AndroidRuntime( 8662): java.lang.AssertionError: impossible
+E/AndroidRuntime( 8662):    at java.lang.Enum$1.create(Enum.java:44)
+E/AndroidRuntime( 8662):    at java.lang.Enum$1.create(Enum.java:35)
+E/AndroidRuntime( 8662):    at libcore.util.BasicLruCache.get(BasicLruCache.java:54)
+E/AndroidRuntime( 8662):    at java.lang.Enum.getSharedConstants(Enum.java:210)
+E/AndroidRuntime( 8662):    at java.lang.Enum.valueOf(Enum.java:190)
+E/AndroidRuntime( 8662):    at kr.infli.s.Z(Inflikr.java:390)
+E/AndroidRuntime( 8662):    at kr.infli.a.ev(Inflikr.java:409)
+E/AndroidRuntime( 8662):    at kr.infli.activity.InflikrActivity.onResume(InflikrActivity.java:231)
+E/AndroidRuntime( 8662):    at android.app.Instrumentation.callActivityOnResume(Instrumentation.java:1192)
+E/AndroidRuntime( 8662):    at android.app.Activity.performResume(Activity.java:5310)
+E/AndroidRuntime( 8662):    at android.app.ActivityThread.performResumeActivity(ActivityThread.java:2778)
+E/AndroidRuntime( 8662):    at android.app.ActivityThread.handleResumeActivity(ActivityThread.java:2817)
+E/AndroidRuntime( 8662):    at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2250)
+E/AndroidRuntime( 8662):    at android.app.ActivityThread.access$800(ActivityThread.java:135)
+E/AndroidRuntime( 8662):    at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1196)
+E/AndroidRuntime( 8662):    at android.os.Handler.dispatchMessage(Handler.java:102)
+E/AndroidRuntime( 8662):    at android.os.Looper.loop(Looper.java:136)
+E/AndroidRuntime( 8662):    at android.app.ActivityThread.main(ActivityThread.java:5017)
+E/AndroidRuntime( 8662):    at java.lang.reflect.Method.invoke(Native Method)
+E/AndroidRuntime( 8662):    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:779)
+E/AndroidRuntime( 8662):    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:595)
+E/AndroidRuntime( 8662): Caused by: java.lang.NoSuchMethodException: values []
+E/AndroidRuntime( 8662):    at java.lang.Class.getMethod(Class.java:661)
+E/AndroidRuntime( 8662):    at java.lang.Class.getDeclaredMethod(Class.java:623)
+E/AndroidRuntime( 8662):    at java.lang.Enum$1.create(Enum.java:41)
+E/AndroidRuntime( 8662):    ... 20 more
+
+
+Looks like this error should not happen : https://android.googlesource.com/platform/libcore/+/9edf43dfcc35c761d97eb9156ac4254152ddbc55/libdvm/src/main/java/java/lang/Enum.java
+
+My build.gradle contains : 
+
+buildTypes {
+    release {
+        runProguard true
+        proguardFile file('./proguard-project.txt')
+        signingConfig signingConfigs.release
+    }
+}
+
+
+My proguard-project.txt contains 
+
+-useuniqueclassmembernames
+-keepattributes SourceFile,LineNumberTable
+
++ a bunch of keep class, dontnote, dontwarn,...
+
+
+When I remove ProGuard from build.gradle it do not crash.
+
+When I was using ProGuard from an Ant build it worked (I recently migrated to Gradle).
+
+Any known issue with Gradle + ProGuard ?
+
+Thanks
+    
+===============================================================================================
+50
+A:You have to tell ProGuard to keep some enum methods.
+
+The Android SDK tools use this ProGuard configuration to achieve it:
+
+# For enumeration classes, see http://proguard.sourceforge.net/manual/examples.html#enumerations
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+
+You can either add the above rule to your ProGuard configuration or you can (what I'd prefer) include the default Android rules:
+
+minifyEnabled true
+proguardFile getDefaultProguardFile('proguard-android.txt')
+proguardFile file('./proguard-project.txt')
+
+    

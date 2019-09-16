@@ -1,0 +1,116 @@
+104
+Q:I am migrating my app from GCM to FCM.
+
+When a new user install my app, the onTokenRefresh() is automatically being called. The problem is that the user is not logged in yet (No user id).
+
+How can I trigger the onTokenRefresh() after the user is logged-in?
+    
+===============================================================================================
+164
+A:The onTokenRefresh() method is going to be called whenever a new token is generated. Upon app install, it will be generated immediately (as you have found to be the case). It will also be called when the token has changed.
+
+According to the FirebaseCloudMessaging guide: 
+
+
+  You can target notifications to a single, specific device. On initial
+  startup of your app, the FCM SDK generates a registration token for
+  the client app instance.
+  
+  
+  
+  Source Link:
+  https://firebase.google.com/docs/notifications/android/console-device#access_the_registration_token
+
+
+This means that the token registration is per app. It sounds like you would like to utilize the token after a user is logged in. What I would suggest is that you save the token in the onTokenRefresh() method to internal storage or shared preferences. Then, retrieve the token from storage after a user logs in and register the token with your server as needed.
+
+If you would like to manually force the onTokenRefresh(), you can create an IntentService and delete the token instance. Then, when you call getToken, the onTokenRefresh() method will be called again.
+
+Example Code:
+
+public class DeleteTokenService extends IntentService
+{
+    public static final String TAG = DeleteTokenService.class.getSimpleName();
+
+    public DeleteTokenService()
+    {
+        super(TAG);
+    }
+
+    @Override
+    protected void onHandleIntent(Intent intent)
+    {
+        try
+        {
+            // Check for current token
+            String originalToken = getTokenFromPrefs();
+            Log.d(TAG, "Token before deletion: " + originalToken);
+
+            // Resets Instance ID and revokes all tokens.
+            FirebaseInstanceId.getInstance().deleteInstanceId();
+
+            // Clear current saved token
+            saveTokenToPrefs("");
+
+            // Check for success of empty token
+            String tokenCheck = getTokenFromPrefs();
+            Log.d(TAG, "Token deleted. Proof: " + tokenCheck);
+
+            // Now manually call onTokenRefresh()
+            Log.d(TAG, "Getting new token");
+            FirebaseInstanceId.getInstance().getToken();
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+        }
+    }
+
+    private void saveTokenToPrefs(String _token)
+    {
+        // Access Shared Preferences
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        SharedPreferences.Editor editor = preferences.edit();
+
+        // Save to SharedPreferences
+        editor.putString("registration_id", _token);
+        editor.apply();
+    }
+
+    private String getTokenFromPrefs()
+    {
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        return preferences.getString("registration_id", null);
+    }
+}
+
+
+EDIT
+
+
+  FirebaseInstanceIdService 
+  
+  public class FirebaseInstanceIdService extends Service 
+  
+  This class is deprecated. In favour of overriding
+  onNewToken in FirebaseMessagingService. Once that has been
+  implemented, this service can be safely removed.
+
+
+onTokenRefresh() is deprecated. Use onNewToken() in MyFirebaseMessagingService
+
+public class MyFirebaseMessagingService extends FirebaseMessagingService {
+
+@Override
+public void onNewToken(String s) {
+    super.onNewToken(s);
+    Log.e("NEW_TOKEN",s);
+    }
+
+@Override
+public void onMessageReceived(RemoteMessage remoteMessage) {
+    super.onMessageReceived(remoteMessage);
+    }
+} 
+
+    

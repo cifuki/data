@@ -1,0 +1,72 @@
+43
+Q:I am trying to put an extra message in my intent to pass to AlarmManager to be triggered at a later time. My onReceive triggers correctly but extras.getString() returns null
+
+Setup:
+
+public PendingIntent getPendingIntent(int uniqueRequestCode, String extra) {
+    Intent intent = new Intent(this, ActionReceiver.class);
+    intent.putExtra("EXTRA", extra);
+    PendingIntent pendingIntent = PendingIntent.getBroadcast(this, uniqueRequestCode,
+            intent, 0);
+    return pendingIntent;
+}
+
+public void setSilentLater(TimeRule timeRule) {
+    boolean[] weekdays = timeRule.getReoccurringWeekdays();
+    int dayOfWeek = 0;
+
+    for (boolean day : weekdays) {
+        dayOfWeek++;
+        if (day == true) {
+            Calendar cal = Calendar.getInstance();
+
+            AlarmManager alarmManager = (AlarmManager) this
+                    .getSystemService(Context.ALARM_SERVICE);
+
+            cal.set(Calendar.DAY_OF_WEEK, dayOfWeek);
+            cal.set(Calendar.HOUR_OF_DAY,
+                    timeRule.getStartTime().get(Calendar.HOUR_OF_DAY));
+            cal.set(Calendar.MINUTE,
+                    timeRule.getStartTime().get(Calendar.MINUTE));
+            cal.set(Calendar.SECOND, 0);
+            cal.set(Calendar.MILLISECOND, 0);
+
+            alarmManager.setRepeating(AlarmManager.RTC_WAKEUP,
+                    cal.getTimeInMillis(), 3600000 * 7, getPendingIntent(0, "RINGER_OFF"));
+  }
+ }
+}
+
+
+When this triggers, message is empty:
+
+public class ActionReceiver extends BroadcastReceiver {
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+         Bundle extras = intent.getExtras();
+         String message = extras.getString("EXTRA"); //empty        
+         if(message == "RINGER_OFF")
+         {
+             AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+             am.setRingerMode(AudioManager.RINGER_MODE_SILENT);
+         }
+         else if(message == "RINGER_ON")
+         {
+             AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+             am.setRingerMode(AudioManager.RINGER_MODE_NORMAL);
+         }
+    }
+}
+
+    
+===============================================================================================
+35
+A:I have some precisions that could help others, to be associated with the solution from Someone Somewhere. If you pass custom Parcelable objects as an extra, the operating system may not be able to process them, so an internal exception occurs and your extras are lost.
+
+With Android N, even with PendingIntent.FLAG_UPDATE_CURRENT I cannot retrieve my custom Pacelable extras.
+
+So I had to use system known Parcelable (like ParcelUuid) to reference some objects in a custom database instead of providing my whole Parcelable object.
+
+Another solution is to convert Parcelable to a byte array that is correctly recognized by the system: How to marshall and unmarshall a Parcelable to a byte array with help of Parcel?
+    

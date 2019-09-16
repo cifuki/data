@@ -1,0 +1,59 @@
+50
+Q:For testing purposes only, I am allowing my app APK to be downloaded and installed via a URL. Once downloaded on the phone, it can be launched with the Android app installer which gives the user an option to install it to their device and then run it.
+
+Consider if we downloaded and ran the app in the way described above. The main/launcher activity in my app is a login page (Activity A). Once the user is authenticated, they are taken to the main area of the application, e.g. Activity B. So now the current activity stack of this task is A > B.
+
+I then press the home button on the phone and am taken to the Android home screen. I re-launch my app via the icon in the menu, and I am taken to Activity A, instead of Activity B. Either the activity stack is now A > B > A, or there are now two separate tasks with activity stacks A > B, and A respectively. What I want is to be taken back to Activity B when I relaunch the app. Pressing back whilst in this state will take me back to Activity B.
+
+This undesired behaviour only happens if I first open the app via the installer, and not if I open the app via the home screen/menu.
+
+I looked into how the activities are being started by each mechanism. When we use the app installer, we see the following logs:
+
+INFO/ActivityManager(XXXX): Starting activity: Intent { dat=file:///mnt/sdcard/download/[my app].apk cmp=com.android.packageinstaller/.InstallAppProgress (has extras) }
+INFO/ActivityManager(XXXX): Starting activity: Intent { act=android.intent.action.MAIN flg=0x10000000 cmp=[my package]/[Activity A] }
+
+
+via launcher / home screen:
+
+INFO/ActivityManager(XXXX): Starting activity: Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=[my package]/[Activity A] }
+
+
+When started with the installer we see it is using the flag 0x10000000, but when started with the launcher we see it is using 0x10200000. It is also using an intent category.
+
+From the docs we see the flags are:
+
+public static final int FLAG_ACTIVITY_NEW_TASK
+Constant Value: 268435456 (0x10000000)
+
+public static final int FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+Constant Value: 2097152 (0x00200000)
+
+
+The flag FLAG_ACTIVITY_RESET_TASK_IF_NEEDED (which is being used when the app is launched from the launcher) seems to usually prevent a new task from being created if one already exists, and will restore the last used activity. This is the desired behaviour. Why is it not working in this situation? Is there anything I can do to make sure my application will always return me to the last Activity regardless of whether it was started through the app installer/launcher?
+
+If I use singleTask it will always take me back to the main activity (Activity A) whenever I run the app (which is also not desirable).
+
+Here is a question I found where someone is experiencing a similar problem (which has no accepted answer): App loses its ability to remember its stack when launched from another application
+
+EDIT: Checking for the flag FLAG_ACTIVITY_BROUGHT_TO_FRONT in onCreate() of our launcher activity (and then finishing if it is set) seems to fix the main symptom, but clearly the underlying issue is still there. Is there a more complete fix?
+
+EDIT2: The same result occurs when you download/run the app from the Android Market, so some of the above details may not be relevant.
+    
+===============================================================================================
+30
+A:Added the answer that antonyt provided:
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    if ((getIntent().getFlags() & Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT) != 0) {
+        // Activity was brought to front and not created,
+        // Thus finishing this will get us to the last viewed activity
+        finish();
+        return;
+    }
+
+    // Regular activity creation code...
+}
+
+    

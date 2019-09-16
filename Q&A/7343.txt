@@ -1,0 +1,33 @@
+36
+Q:I'm pretty exasperated. I'm attempting to build a turn-based multiplayer online game for Android using Google App Engine in Java as the server.
+
+They seem like a perfect fit. Android requires a Google account, and GAE uses a Google account for authentication, while being free and scalable.
+
+So before the holidays I was able to get authentication to my GAE app from my Android client using the new AccountManager API in Android 2.0. The following code allows you to access the AuthToken of the user's Google account and then use it for authentication, so that the user does not have to manually enter their account username and password:  
+
+   AccountManager mgr = AccountManager.get(this); 
+   Account[] accts = mgr.getAccountsByType("com.google"); 
+   Account acct = accts[0];
+   AccountManagerFuture<Bundle> accountManagerFuture = mgr.getAuthToken(acct, "ah", null, this, null, null);
+   Bundle authTokenBundle = accountManagerFuture.getResult(); 
+   String authToken = authTokenBundle.get(AccountManager.KEY_AUTHTOKEN).toString();
+
+
+I was then able to append the resulting AuthToken string to the appropriate URL and get a valid cookie which I could then use for all further requests. Only thing is, sometime last week it just stopped working for me. Now when I try to use the AuthToken from the above code, I don't get a cookie returned and my code throws a NullPointerException for the missing cookie.
+
+When I go back to the old way, when the user was manually entering in their Google username and password and I get the AuthToken from "https://www.google.com/accounts/ClientLogin", it works just fine.
+
+Please tell me someone out there has built an Android client for a Google App Engine app using the AuthToken from the Google account on the user's phone, and give me some clue as to why this is no longer working. 
+
+I'd really like to make this work. My alternatives are to require the user to enter their credentials (which is clunky, and which they shouldn't have to do), or going with another solution for the server.
+
+Thanks in advance.
+    
+===============================================================================================
+26
+A:Got help for this from a Google engineer. Turns out my authToken was expired. I had initially gotten the implementation working in early December (the 9th to be exact). Apparently what the AccountManager does is cache the authToken, so I had been using the same authToken since Dec. 9th. When I got back from the holidays it had expired.
+
+To solve the issue, I now call getAuthToken, then call invalidateAuthToken on that token, then call getAuthToken again. This generates a valid authToken and works just fine, even if it is a little clunky and would be unnecessary if AccountManager just got a fresh authToken each time, or did a check to see if the cached one was expired.
+
+Note that you must not mix up token type with account type: invalidateAuthToken must be called with "com.google" instead of "ah" or it will silently fail.
+    

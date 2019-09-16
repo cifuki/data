@@ -1,0 +1,99 @@
+282
+Q:According to this: http://developer.android.com/preview/features/runtime-permissions.html#coding an app can check for runtime permissions and request permissions if it hasn't been granted already. The following dialog will be displayed then:
+
+
+
+In case the user declines an important permission, imo an app should display an explanation why the permission is needed and what impact declining has. That dialog has two options:
+
+
+re-try again (permission is requested again)
+deny (app will work without that permission).
+
+
+If the user checks Never ask again however, the second dialog with the explanation shouldn't be shown, especially if the user already declined once before.
+Now the question is: how does my app know whether the user has checked the Never ask again? IMO the onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) doesn't give me that information.
+
+A second question would be: does Google have plans to incorporate a custom message in the permission dialog that would explain why the app needs the permission? That way there would never be a second dialog which would certainly make for a better ux.
+    
+===============================================================================================
+314
+A:Developer Preview 2 brings some changes to how permissions are requested by the app (see also http://developer.android.com/preview/support.html#preview2-notes).
+
+The first dialog now looks like this:
+
+
+
+There's no "Never show again" check-box (unlike developer preview 1). If the user denies the permission and if the permission is essential for the app it could present another dialog to explain the reason the app asks for that permission, e.g. like this:
+
+
+
+If the user declines again the app should either shut down if it absolutely needs that permission or keep running with limited functionality. If the user reconsiders (and selects re-try), the permission is requested again. This time the prompt looks like this:
+
+
+
+The second time the "Never ask again" check-box is shown. If the user denies again and the check-box is ticked nothing more should happen.
+Whether or not the check-box is ticked can be determined by using Activity.shouldShowRequestPermissionRationale(String), e.g. like this:
+
+if (shouldShowRequestPermissionRationale(Manifest.permission.WRITE_CONTACTS)) {...
+
+
+That's what the Android documentation says (https://developer.android.com/training/permissions/requesting.html):
+
+
+  To help find the situations where you need to provide extra
+  explanation, the system provides the
+  Activity.shouldShowRequestPermissionRationale(String) method. This
+  method returns true if the app has requested this permission
+  previously and the user denied the request. That indicates that you
+  should probably explain to the user why you need the permission.
+  
+  If the user turned down the permission request in the past and chose
+  the Don't ask again option in the permission request system dialog,
+  this method returns false. The method also returns false if the device
+  policy prohibits the app from having that permission. 
+
+
+To know if the user denied with "never ask again" you can check again the shouldShowRequestPermissionRationale method in your onRequestPermissionsResult when the user did not grant the permission.
+
+@Override
+public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    if (requestCode == REQUEST_PERMISSION) {
+        // for each permission check if the user granted/denied them
+        // you may want to group the rationale in a single dialog,
+        // this is just an example
+        for (int i = 0, len = permissions.length; i < len; i++) {
+            String permission = permissions[i];
+            if (grantResults[i] == PackageManager.PERMISSION_DENIED) {
+            // user rejected the permission
+                boolean showRationale = shouldShowRequestPermissionRationale( permission );
+                if (! showRationale) {
+                    // user also CHECKED "never ask again"
+                    // you can either enable some fall back,
+                    // disable features of your app
+                    // or open another dialog explaining
+                    // again the permission and directing to
+                    // the app setting
+                } else if (Manifest.permission.WRITE_CONTACTS.equals(permission)) {
+                    showRationale(permission, R.string.permission_denied_contacts);
+                    // user did NOT check "never ask again"
+                    // this is a good place to explain the user
+                    // why you need the permission and ask if he wants
+                    // to accept it (the rationale)
+                } else if ( /* possibly check more permissions...*/ ) {
+                }
+            }
+        }
+    }
+}
+
+
+You can open your app setting with this code:
+
+Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+Uri uri = Uri.fromParts("package", getPackageName(), null);
+intent.setData(uri);
+startActivityForResult(intent, REQUEST_PERMISSION_SETTING);
+
+
+There is no way of sending the user directly to the Authorization page.
+    

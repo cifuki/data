@@ -1,0 +1,109 @@
+87
+Q:What's the best way to mock a server for testing when using the square retrofit framework.
+
+Potential ways:
+
+
+Create a new retrofit client and set it in the RestAdapter.Builder().setClient(). This involves parsing the Request object and returning the json as a Response object.
+Implement this annotated interface as a mock class and use that in place of the version provided by RestAdapter.create() (wont test gson serialisation)
+?
+
+
+Ideally I want to have the mocked server provide json responses so I can test the gson serialisation at the same time.
+
+Any examples would be greatly appreciated.
+    
+===============================================================================================
+94
+A:Mock Retrofit 2.0 Requests for Testing
+
+As the old mechanisms like creating MockClient class and implementing it from Client are not working anymore with Retrofit 2.0, here I describe a new way of doing that. All what you need to do now is to add your custom interceptors for OkHttpClient like it is shown below. FakeInterceptor class just overrides intercept method and in the case if application is in DEBUG mode return given JSON. 
+
+RestClient.java
+
+public final class RestClient {
+
+    private static IRestService mRestService = null;
+
+    public static IRestService getClient() {
+        if(mRestService == null) {
+            final OkHttpClient client = new OkHttpClient();
+            // ***YOUR CUSTOM INTERCEPTOR GOES HERE***
+            client.interceptors().add(new FakeInterceptor());
+
+            final Retrofit retrofit = new Retrofit.Builder()
+                            // Using custom Jackson Converter to parse JSON
+                            // Add dependencies:
+                            // com.squareup.retrofit:converter-jackson:2.0.0-beta2
+                    .addConverterFactory(JacksonConverterFactory.create())
+                            // Endpoint
+                    .baseUrl(IRestService.ENDPOINT)
+                    .client(client)
+                    .build();
+
+            mRestService = retrofit.create(IRestService.class);
+        }
+        return mRestService;
+    }
+}
+
+
+IRestService.java
+
+public interface IRestService {
+
+    String ENDPOINT = "http://www.vavian.com/";
+
+    @GET("/")
+    Call<Teacher> getTeacherById(@Query("id") final String id);
+}
+
+
+FakeInterceptor.java
+
+public class FakeInterceptor implements Interceptor { 
+    // FAKE RESPONSES.
+    private final static String TEACHER_ID_1 = "{\\"id\\":1,\\"age\\":28,\\"name\\":\\"Victor Apoyan\\"}";
+    private final static String TEACHER_ID_2 = "{\\"id\\":1,\\"age\\":16,\\"name\\":\\"Tovmas Apoyan\\"}";
+
+    @Override
+    public Response intercept(Chain chain) throws IOException {
+        Response response = null;
+        if(BuildConfig.DEBUG) {
+            String responseString;
+            // Get Request URI.
+            final URI uri = chain.request().url().uri();
+            // Get Query String.
+            final String query = uri.getQuery();
+            // Parse the Query String.
+            final String[] parsedQuery = query.split("=");
+            if(parsedQuery[0].equalsIgnoreCase("id") && parsedQuery[1].equalsIgnoreCase("1")) {
+                responseString = TEACHER_ID_1;
+            }
+            else if(parsedQuery[0].equalsIgnoreCase("id") && parsedQuery[1].equalsIgnoreCase("2")){
+                responseString = TEACHER_ID_2;
+            }
+            else {
+                responseString = "";
+            }
+
+            response = new Response.Builder()
+                    .code(200)
+                    .message(responseString)
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_0)
+                    .body(ResponseBody.create(MediaType.parse("application/json"), responseString.getBytes()))
+                    .addHeader("content-type", "application/json")
+                    .build();
+        }
+        else {
+            response = chain.proceed(chain.request());
+        }
+
+        return response;
+    }
+}
+
+
+Source code of project on GitHub
+    

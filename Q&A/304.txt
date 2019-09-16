@@ -1,0 +1,98 @@
+323
+Q:I'm capturing an image and setting it to image view.
+
+public void captureImage() {
+
+    Intent intentCamera = new Intent("android.media.action.IMAGE_CAPTURE");
+    File filePhoto = new File(Environment.getExternalStorageDirectory(), "Pic.jpg");
+    imageUri = Uri.fromFile(filePhoto);
+    MyApplicationGlobal.imageUri = imageUri.getPath();
+    intentCamera.putExtra(MediaStore.EXTRA_OUTPUT, imageUri);
+    startActivityForResult(intentCamera, TAKE_PICTURE);
+}
+
+@Override
+protected void onActivityResult(int requestCode, int resultCode, Intent intentFromCamera) {
+    super.onActivityResult(requestCode, resultCode, intentFromCamera);
+
+    if (resultCode == RESULT_OK && requestCode == TAKE_PICTURE) {
+
+        if (intentFromCamera != null) {
+            Bundle extras = intentFromCamera.getExtras();
+            if (extras.containsKey("data")) {
+                bitmap = (Bitmap) extras.get("data");
+            }
+            else {
+                bitmap = getBitmapFromUri();
+            }
+        }
+        else {
+            bitmap = getBitmapFromUri();
+        }
+        // imageView.setImageBitmap(bitmap);
+        imageView.setImageURI(imageUri);
+    }
+    else {
+    }
+}
+
+public Bitmap getBitmapFromUri() {
+
+    getContentResolver().notifyChange(imageUri, null);
+    ContentResolver cr = getContentResolver();
+    Bitmap bitmap;
+
+    try {
+        bitmap = android.provider.MediaStore.Images.Media.getBitmap(cr, imageUri);
+        return bitmap;
+    }
+    catch (Exception e) {
+        e.printStackTrace();
+        return null;
+    }
+}
+
+
+But the problem is, the image on some devices every time it gets rotated. For example, on a Samsung device it works good, but on a Sony Xperia the image gets rotated by 90 degrees and on Toshiba Thrive (tablet) by 180 degrees.
+    
+===============================================================================================
+390
+A:Most phone cameras are landscape, meaning if you take the photo in portrait, the resulting photos will be rotated 90 degrees. In this case, the camera software should populate the Exif data with the orientation that the photo should be viewed in.
+
+Note that the below solution depends on the camera software/device manufacturer populating the Exif data, so it will work in most cases, but it is not a 100% reliable solution.
+
+ExifInterface ei = new ExifInterface(photoPath);
+int orientation = ei.getAttributeInt(ExifInterface.TAG_ORIENTATION,
+                                     ExifInterface.ORIENTATION_UNDEFINED);
+
+Bitmap rotatedBitmap = null;
+switch(orientation) {
+
+    case ExifInterface.ORIENTATION_ROTATE_90:
+        rotatedBitmap = rotateImage(bitmap, 90);
+        break;
+
+    case ExifInterface.ORIENTATION_ROTATE_180:
+        rotatedBitmap = rotateImage(bitmap, 180);
+        break;
+
+    case ExifInterface.ORIENTATION_ROTATE_270:
+        rotatedBitmap = rotateImage(bitmap, 270);
+        break;
+
+    case ExifInterface.ORIENTATION_NORMAL:
+    default:
+        rotatedBitmap = bitmap;
+}
+
+
+Here is the rotateImage method:
+
+public static Bitmap rotateImage(Bitmap source, float angle) {
+    Matrix matrix = new Matrix();
+    matrix.postRotate(angle);
+    return Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(),
+                               matrix, true);
+}
+
+    

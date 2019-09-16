@@ -1,0 +1,166 @@
+63
+Q:At the moment I'm developing an Android app that is based on third party code. I started to set breakpoints for understanding the code and soon ran into a problem. Suddenly I couldn't get Android Studio to stop at breakpoints anymore.
+
+I tried to set the breakpoints within onCreate methods, within buttons' OnClickListeners - nothing worked. Now I found out that the only place it works is inside the app module. As the project just has one single activity class in the app module and everything else is provided within library modules in fact I can't debug at all.
+
+I assume there's something wrong in the AndroidManifest.xml or more likely in the build.gradle file. As I just switched from Eclipse to Android Studio, all of this gradle stuff is pretty new to me. 
+
+If I hover over a library breakpoint while the app is running, it tells me that "no executable code [is] found at line ...". I assume this is the cause of my problem, but I have no idea about how to fix it.
+
+Are there any "usual suspects" among the entries in build.gradle that could cause my problem?
+
+I already did clean my project and invalidated the cache without success. I even tried the suggestion to add <activity> entries inside the library module for the fragments inside.
+
+Edit: I'm using the most current version of Android Studio (version 1.1.0 from February 18) which should have the similar bug fixed that existed some time ago.
+
+The contents of build.gradle in the app module:
+
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion project.ANDROID_BUILD_TOOLS_VERSION
+
+    defaultConfig {
+        minSdkVersion Integer.parseInt(project.MIN_SDK)
+        targetSdkVersion  Integer.parseInt(project.ANDROID_BUILD_TARGET_SDK_VERSION)
+    }
+
+    signingConfigs {
+        release {
+            keyAlias 'xxx'
+            keyPassword 'xxx'
+            storeFile file('xxx')
+            storePassword 'xxx'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+            signingConfig signingConfigs.release
+            debuggable false
+            jniDebuggable false
+            zipAlignEnabled true
+        }
+        debug {
+            minifyEnabled false
+            debuggable true
+        }
+    }
+
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE.txt'
+    }
+    productFlavors {
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile project(':firebase_plugin')
+}
+
+
+And the build.gradle of library module:
+
+apply plugin: 'com.android.library'
+android {
+
+    compileSdkVersion 19
+    buildToolsVersion project.ANDROID_BUILD_TOOLS_VERSION
+    defaultConfig {
+        minSdkVersion Integer.parseInt(project.MIN_SDK)
+        targetSdkVersion Integer.parseInt(project.ANDROID_BUILD_TARGET_SDK_VERSION)
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            zipAlignEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+        }
+        debug {
+            minifyEnabled false
+            debuggable true
+        }
+    }
+
+    productFlavors {
+    }
+
+}
+
+dependencies {
+    // Facebook SDK
+    compile project(':facebook')
+
+    // Used for StringUtils
+    compile files('libs/commons-lang3-3.3.2.jar')
+    // Bug tracking
+    compile files('libs/bugsense-3.6.1.jar')
+    compile fileTree(include: ['*.jar'], dir: 'libs')
+    //Google Play Services - For Google Maps
+    compile('com.google.android.gms:play-services:5.0.89') {
+        exclude group: 'com.google.android', module: 'support-v4'
+    }
+    // Support Library.
+    compile 'com.android.support:support-v13:18.0.+'
+
+    compile('com.android.support:appcompat-v7:19.1.0') {
+        exclude group: 'com.google.android', module: 'support-v4'
+    }
+    // Volley - Networking library from google.
+    compile('com.mcxiaoke.volley:library:1.0.0') {
+        exclude group: 'com.google.android', module: 'support-v4'
+    }
+    // Has is own support library in it so need to exclude it so no TOP_LEVEL_EXCEPTION will occur.
+    compile('de.greenrobot:greendao:1.3.0') {
+        exclude group: 'com.google.android', module: 'support-v4'
+    }
+    // Firebase
+    compile('com.firebase:firebase-simple-login:1.4.2') {
+        exclude group: 'com.android.support', module: 'support-v4'
+    }
+    // Super Toast
+    compile('com.github.johnpersano:supertoasts:1.3.4@aar') {
+        exclude group: 'com.android.support', module: 'support-v4'
+    }
+    // Croping images
+    compile('com.soundcloud.android:android-crop:0.9.10@aar') {
+        exclude group: 'com.android.support', module: 'support-v4'
+    }
+    compile('com.github.chrisbanes.actionbarpulltorefresh:library:0.9.9') {
+        exclude group: 'com.android.support', module: 'support-v4'
+    }
+}
+
+
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE.txt'
+    }
+    productFlavors {
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile project(':firebase_plugin')
+}
+
+
+
+    
+===============================================================================================
+84
+A:As stated in the comments of this issue, setting minifyEnabled false in the debug build is the best practice. By setting this variable in the app module you are disabling the entire proguard build process. It is useful when optimizing the release build, but gives some problems if you are testing and developing.
+    

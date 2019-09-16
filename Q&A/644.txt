@@ -1,0 +1,349 @@
+210
+Q:The problem:
+
+Getting the user's current location within a threshold ASAP and at the same time conserve battery.
+
+Why the problem is a problem:
+
+First off, android has two providers; network and GPS. Sometimes network is better and sometimes the GPS is better.
+
+By "better" I mean speed vs. accuracy ratio.
+I'm willing to sacrifice a few meters in accuracy if I can get the location almost instant and without turning on the GPS.
+
+Secondly, if you request updates for location changes nothing is sent if the current location is stable.
+
+Google has an example of determining the "best" location here: http://developer.android.com/guide/topics/location/obtaining-user-location.html#BestEstimate
+But I think it's no where near as good as it should/could be.
+
+I'm kind of confused why google hasn't a normalized API for location, the developer shouldn't have to care where the location is from, you should just specify what you want and the phone should choose for you.
+
+What I need help with:
+
+I need to find a good way to determine the "best" location, maybe though some heuristic or maybe through some 3rd party library.
+
+This does not mean determine the best provider!
+I'm probably gonna use all providers and picking the best of them.
+
+Background of the app:
+
+The app will collect the user's location at a fixed interval (let say every 10 minutes or so) and send it to a server.
+The app should conserve as much battery as possible and the location should have X (50-100?) meters accuracy.
+
+The goal is to later be able to plot the user's path during the day on a map so I need sufficient accuracy for that.
+
+Misc:
+
+What do you think are reasonable values on desired and accepted accuracies?
+I've been using 100m as accepted and 30m as desired, is this to much to ask?
+I'd like to be able to plot the user's path on a map later.
+Is 100m for desired and 500m for accepted better?
+
+Also, right now I have the GPS on for a maximum of 60 seconds per location update, is this too short to get a location if you're indoors with an accuracy of maybe 200m?
+
+
+
+This is my current code, any feedback is appreciated (apart from the lack of error checking which is TODO):
+
+protected void runTask() {
+    final LocationManager locationManager = (LocationManager) context
+            .getSystemService(Context.LOCATION_SERVICE);
+    updateBestLocation(locationManager
+            .getLastKnownLocation(LocationManager.GPS_PROVIDER));
+    updateBestLocation(locationManager
+            .getLastKnownLocation(LocationManager.NETWORK_PROVIDER));
+    if (getLocationQuality(bestLocation) != LocationQuality.GOOD) {
+        Looper.prepare();
+        setLooper(Looper.myLooper());
+        // Define a listener that responds to location updates
+        LocationListener locationListener = new LocationListener() {
+
+            public void onLocationChanged(Location location) {
+                updateBestLocation(location);
+                if (getLocationQuality(bestLocation) != LocationQuality.GOOD)
+                    return;
+                // We're done
+                Looper l = getLooper();
+                if (l != null) l.quit();
+            }
+
+            public void onProviderEnabled(String provider) {}
+
+            public void onProviderDisabled(String provider) {}
+
+            public void onStatusChanged(String provider, int status,
+                    Bundle extras) {
+                // TODO Auto-generated method stub
+                Log.i("LocationCollector", "Fail");
+                Looper l = getLooper();
+                if (l != null) l.quit();
+            }
+        };
+        // Register the listener with the Location Manager to receive
+        // location updates
+        locationManager.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER, 1000, 1, locationListener,
+                Looper.myLooper());
+        locationManager.requestLocationUpdates(
+                LocationManager.NETWORK_PROVIDER, 1000, 1,
+                locationListener, Looper.myLooper());
+        Timer t = new Timer();
+        t.schedule(new TimerTask() {
+
+            @Override
+            public void run() {
+                Looper l = getLooper();
+                if (l != null) l.quit();
+                // Log.i("LocationCollector",
+                // "Stopping collector due to timeout");
+            }
+        }, MAX_POLLING_TIME);
+        Looper.loop();
+        t.cancel();
+        locationManager.removeUpdates(locationListener);
+        setLooper(null);
+    }
+    if (getLocationQuality(bestLocation) != LocationQuality.BAD) 
+        sendUpdate(locationToString(bestLocation));
+    else Log.w("LocationCollector", "Failed to get a location");
+}
+
+private enum LocationQuality {
+    BAD, ACCEPTED, GOOD;
+
+    public String toString() {
+        if (this == GOOD) return "Good";
+        else if (this == ACCEPTED) return "Accepted";
+        else return "Bad";
+    }
+}
+
+private LocationQuality getLocationQuality(Location location) {
+    if (location == null) return LocationQuality.BAD;
+    if (!location.hasAccuracy()) return LocationQuality.BAD;
+    long currentTime = System.currentTimeMillis();
+    if (currentTime - location.getTime() < MAX_AGE
+            && location.getAccuracy() <= GOOD_ACCURACY)
+        return LocationQuality.GOOD;
+    if (location.getAccuracy() <= ACCEPTED_ACCURACY)
+        return LocationQuality.ACCEPTED;
+    return LocationQuality.BAD;
+}
+
+private synchronized void updateBestLocation(Location location) {
+    bestLocation = getBestLocation(location, bestLocation);
+}
+
+// Pretty much an unmodified version of googles example
+protected Location getBestLocation(Location location,
+        Location currentBestLocation) {
+    if (currentBestLocation == null) {
+        // A new location is always better than no location
+        return location;
+    }
+    if (location == null) return currentBestLocation;
+    // Check whether the new location fix is newer or older
+    long timeDelta = location.getTime() - currentBestLocation.getTime();
+    boolean isSignificantlyNewer = timeDelta > TWO_MINUTES;
+    boolean isSignificantlyOlder = timeDelta < -TWO_MINUTES;
+    boolean isNewer = timeDelta > 0;
+    // If it's been more than two minutes since the current location, use
+    // the new location
+    // because the user has likely moved
+    if (isSignificantlyNewer) {
+        return location;
+        // If the new location is more than two minutes older, it must be
+        // worse
+    } else if (isSignificantlyOlder) {
+        return currentBestLocation;
+    }
+    // Check whether the new location fix is more or less accurate
+    int accuracyDelta = (int) (location.getAccuracy() - currentBestLocation
+            .getAccuracy());
+    boolean isLessAccurate = accuracyDelta > 0;
+    boolean isMoreAccurate = accuracyDelta < 0;
+    boolean isSignificantlyLessAccurate = accuracyDelta > 200;
+    // Check if the old and new location are from the same provider
+    boolean isFromSameProvider = isSameProvider(location.getProvider(),
+            currentBestLocation.getProvider());
+    // Determine location quality using a combination of timeliness and
+    // accuracy
+    if (isMoreAccurate) {
+        return location;
+    } else if (isNewer && !isLessAccurate) {
+        return location;
+    } else if (isNewer && !isSignificantlyLessAccurate
+            && isFromSameProvider) {
+        return location;
+    }
+    return bestLocation;
+}
+
+/** Checks whether two providers are the same */
+private boolean isSameProvider(String provider1, String provider2) {
+    if (provider1 == null) {
+        return provider2 == null;
+    }
+    return provider1.equals(provider2);
+}
+
+    
+===============================================================================================
+164
+A:Looks like we're coding the same application ;-)
+Here is my current implementation. I'm still in the beta testing phase of my GPS uploader app, so there might be many possible improvements. but it seems to work pretty well so far.
+
+/**
+ * try to get the 'best' location selected from all providers
+ */
+private Location getBestLocation() {
+    Location gpslocation = getLocationByProvider(LocationManager.GPS_PROVIDER);
+    Location networkLocation =
+            getLocationByProvider(LocationManager.NETWORK_PROVIDER);
+    // if we have only one location available, the choice is easy
+    if (gpslocation == null) {
+        Log.d(TAG, "No GPS Location available.");
+        return networkLocation;
+    }
+    if (networkLocation == null) {
+        Log.d(TAG, "No Network Location available");
+        return gpslocation;
+    }
+    // a locationupdate is considered 'old' if its older than the configured
+    // update interval. this means, we didn't get a
+    // update from this provider since the last check
+    long old = System.currentTimeMillis() - getGPSCheckMilliSecsFromPrefs();
+    boolean gpsIsOld = (gpslocation.getTime() < old);
+    boolean networkIsOld = (networkLocation.getTime() < old);
+    // gps is current and available, gps is better than network
+    if (!gpsIsOld) {
+        Log.d(TAG, "Returning current GPS Location");
+        return gpslocation;
+    }
+    // gps is old, we can't trust it. use network location
+    if (!networkIsOld) {
+        Log.d(TAG, "GPS is old, Network is current, returning network");
+        return networkLocation;
+    }
+    // both are old return the newer of those two
+    if (gpslocation.getTime() > networkLocation.getTime()) {
+        Log.d(TAG, "Both are old, returning gps(newer)");
+        return gpslocation;
+    } else {
+        Log.d(TAG, "Both are old, returning network(newer)");
+        return networkLocation;
+    }
+}
+
+/**
+ * get the last known location from a specific provider (network/gps)
+ */
+private Location getLocationByProvider(String provider) {
+    Location location = null;
+    if (!isProviderSupported(provider)) {
+        return null;
+    }
+    LocationManager locationManager = (LocationManager) getApplicationContext()
+            .getSystemService(Context.LOCATION_SERVICE);
+    try {
+        if (locationManager.isProviderEnabled(provider)) {
+            location = locationManager.getLastKnownLocation(provider);
+        }
+    } catch (IllegalArgumentException e) {
+        Log.d(TAG, "Cannot acces Provider " + provider);
+    }
+    return location;
+}
+
+
+Edit: here is the part that requests the periodic updates from the location providers:
+
+public void startRecording() {
+    gpsTimer.cancel();
+    gpsTimer = new Timer();
+    long checkInterval = getGPSCheckMilliSecsFromPrefs();
+    long minDistance = getMinDistanceFromPrefs();
+    // receive updates
+    LocationManager locationManager = (LocationManager) getApplicationContext()
+            .getSystemService(Context.LOCATION_SERVICE);
+    for (String s : locationManager.getAllProviders()) {
+        locationManager.requestLocationUpdates(s, checkInterval,
+                minDistance, new LocationListener() {
+
+                    @Override
+                    public void onStatusChanged(String provider,
+                            int status, Bundle extras) {}
+
+                    @Override
+                    public void onProviderEnabled(String provider) {}
+
+                    @Override
+                    public void onProviderDisabled(String provider) {}
+
+                    @Override
+                    public void onLocationChanged(Location location) {
+                        // if this is a gps location, we can use it
+                        if (location.getProvider().equals(
+                                LocationManager.GPS_PROVIDER)) {
+                            doLocationUpdate(location, true);
+                        }
+                    }
+                });
+        // //Toast.makeText(this, "GPS Service STARTED",
+        // Toast.LENGTH_LONG).show();
+        gps_recorder_running = true;
+    }
+    // start the gps receiver thread
+    gpsTimer.scheduleAtFixedRate(new TimerTask() {
+
+        @Override
+        public void run() {
+            Location location = getBestLocation();
+            doLocationUpdate(location, false);
+        }
+    }, 0, checkInterval);
+}
+
+public void doLocationUpdate(Location l, boolean force) {
+    long minDistance = getMinDistanceFromPrefs();
+    Log.d(TAG, "update received:" + l);
+    if (l == null) {
+        Log.d(TAG, "Empty location");
+        if (force)
+            Toast.makeText(this, "Current location not available",
+                    Toast.LENGTH_SHORT).show();
+        return;
+    }
+    if (lastLocation != null) {
+        float distance = l.distanceTo(lastLocation);
+        Log.d(TAG, "Distance to last: " + distance);
+        if (l.distanceTo(lastLocation) < minDistance && !force) {
+            Log.d(TAG, "Position didn't change");
+            return;
+        }
+        if (l.getAccuracy() >= lastLocation.getAccuracy()
+                && l.distanceTo(lastLocation) < l.getAccuracy() && !force) {
+            Log.d(TAG,
+                    "Accuracy got worse and we are still "
+                      + "within the accuracy range.. Not updating");
+            return;
+        }
+        if (l.getTime() <= lastprovidertimestamp && !force) {
+            Log.d(TAG, "Timestamp not never than last");
+            return;
+        }
+    }
+    // upload/store your location here
+}
+
+
+Things to consider:
+
+
+do not request GPS updates too often, it drains battery power. I currently
+use 30 min as default for my application. 
+add a 'minimum distance to last known location' check. without this, your points 
+will "jump around" when GPS is not available and the location is being triangulated
+from the cell towers. or you can check if the new location is outside of the accuracy
+value from the last known location.
+
+    

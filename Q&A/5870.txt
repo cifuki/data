@@ -1,0 +1,369 @@
+43
+Q:I'm working on an Android app that requires both client and server certificate authentication. I have an SSLClient class that I created that works beautifully on regular desktop Java SE 6. I've moved it into my Android project and I'm getting the following error: "KeyStore JKS implementation not found".
+
+I've looked online a bit and it looks like there's a possibility that Java Keystores are not supported on Android (awesome!) but I have a feeling there's more to it than that because none of the sample code I've found resembles what I'm trying to do at all. Everything I found talks about using an http client rather than raw SSL sockets. I need SSL sockets for this application.
+
+Below is the code in my SSLClient.java file. It reads the keystore and truststore, creates an SSL socket connection to the server, then runs a loop while waiting for input lines from the server then handles them as they come in by calling a method in a different class. I'm very interested to hear from anyone with any experience doing SSL sockets on the Android platform.
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.security.AccessControlException;
+import java.security.KeyManagementException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
+
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManagerFactory;
+import otherpackege.OtherClass;
+
+import android.content.Context;
+import android.util.Log;
+
+public class SSLClient 
+{
+    static SSLContext ssl_ctx;
+
+    public SSLClient(Context context)
+    {
+        try
+        {
+            // Setup truststore
+            KeyStore trustStore = KeyStore.getInstance("BKS");
+            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            InputStream trustStoreStream = context.getResources().openRawResource(R.raw.mysrvtruststore);
+            trustStore.load(trustStoreStream, "testtest".toCharArray());
+            trustManagerFactory.init(trustStore);
+
+            // Setup keystore
+            KeyStore keyStore = KeyStore.getInstance("BKS");
+            KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            InputStream keyStoreStream = context.getResources().openRawResource(R.raw.clientkeystore);
+keyStore.load(keyStoreStream, "testtest".toCharArray());
+            keyManagerFactory.init(keyStore, "testtest".toCharArray());
+
+            Log.d("SSL", "Key " + keyStore.size());
+            Log.d("SSL", "Trust " + trustStore.size());
+
+            // Setup the SSL context to use the truststore and keystore
+            ssl_ctx = SSLContext.getInstance("TLS");
+            ssl_ctx.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null);
+
+            Log.d("SSL", "keyManagerFactory " + keyManagerFactory.getKeyManagers().length);
+            Log.d("SSL", "trustManagerFactory " + trustManagerFactory.getTrustManagers().length);
+        }
+        catch (NoSuchAlgorithmException nsae)
+        {
+            Log.d("SSL", nsae.getMessage());
+        }
+        catch (KeyStoreException kse)
+        {
+            Log.d("SSL", kse.getMessage());
+        }
+        catch (IOException ioe)
+        {
+            Log.d("SSL", ioe.getMessage());
+        }
+        catch (CertificateException ce)
+        {
+            Log.d("SSL", ce.getMessage());
+        }
+        catch (KeyManagementException kme)
+        {
+            Log.d("SSL", kme.getMessage());
+        }
+        catch(AccessControlException ace)
+        {
+            Log.d("SSL", ace.getMessage());
+        }
+        catch(UnrecoverableKeyException uke)
+        {
+            Log.d("SSL", uke.getMessage());
+        }
+
+        try
+        {
+            Handler handler = new Handler();
+            handler.start();
+        }
+        catch (IOException ioException) 
+        {
+            ioException.printStackTrace();
+        }
+     }  
+}
+
+//class Handler implements Runnable 
+class Handler extends Thread
+{
+    private SSLSocket socket;
+    private BufferedReader input;
+    static public PrintWriter output;
+
+    private String serverUrl = "174.61.103.206";
+    private String serverPort = "6000";
+
+    Handler(SSLSocket socket) throws IOException
+    {
+
+    }
+    Handler() throws IOException
+    {
+
+    }
+
+    public void sendMessagameInfoge(String message)
+    {
+        Handler.output.println(message);
+    }
+
+    @Override
+    public void run() 
+    {
+        String line;
+
+        try 
+        {
+            SSLSocketFactory socketFactory = (SSLSocketFactory) SSLClient.ssl_ctx.getSocketFactory();
+            socket = (SSLSocket) socketFactory.createSocket(serverUrl, Integer.parseInt(serverPort));
+            this.input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            Handler.output = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()));
+            Log.d("SSL", "Created the socket, input, and output!!");
+
+            do
+            {
+                line = input.readLine();
+                while (line == null)
+                {
+                    line = input.readLine();
+                }
+
+                // Parse the message and do something with it
+                // Done in a different class
+                OtherClass.parseMessageString(line);
+            }
+            while ( !line.equals("exit|") );
+        }
+        catch (IOException ioe)
+        {
+            System.out.println(ioe);
+        }
+        finally 
+        {
+            try 
+            {
+                input.close();
+                output.close();
+                socket.close();
+            } 
+            catch(IOException ioe) 
+            {
+            } 
+            finally 
+            {
+
+            }
+        }
+    }
+}
+
+
+
+
+Update:
+Making some good progress on this problem. Found out that JKS is indeed not supported, neither is directly choosing the SunX509 type. I've updated my code above to reflect these changes. I'm still having an issue with it apparently not loading the keystore and truststore. I'll update as I figure out more.
+
+
+
+Update2:
+I was doing my keystore and truststore file loading in a desktop Java way rather than the correct Android way. The files must be put in the res/raw folder and loaded using getResources(). I'm now getting a count of 1 and 1 for the keystore and truststore size which means they're loading. I'm still crashing on an exception, but getting closer! I'll update when I get this working.
+
+
+
+Update3:
+Looks like everything is working now with the exception of my keystore being set up incorrectly. If I disable client side authentication on the server, it connects without issue. When I leave it enabled, I get a handling exception: javax.net.ssl.SSLHandshakeException: null cert chain error. So it looks like I'm not setting up the certificate chain correctly. I've posted another question asking how to create a client keystore in the BKS format with the proper certificate chain: How to create a BKS (BouncyCastle) format Java Keystore that contains a client certificate chain
+    
+===============================================================================================
+46
+A:Android supports certificates in the BKS, P12 and other formats. 
+
+For BKS format:
+Use portecle to convert your certificates (.p12 and .crt) to .bks.
+
+You need 2 files in your /res/raw folder: 
+truststore.bks trust certificate for the server (converted from .cer file)
+
+client.bks/client.p12 - the client certificate (converted from a .p12 file that contains the client certificate and the client key)
+
+import java.io.*;
+import java.security.KeyStore;
+
+import javax.net.ssl.*;
+
+import org.apache.http.*;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.params.HttpClientParams;
+import org.apache.http.conn.ClientConnectionManager;
+import org.apache.http.conn.params.*;
+import org.apache.http.conn.scheme.*;
+import org.apache.http.conn.ssl.SSLSocketFactory;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.conn.tsccm.ThreadSafeClientConnManager;
+import org.apache.http.params.*;
+
+import android.app.Activity;
+import android.os.Bundle;
+
+public class SslTestActivity extends Activity {
+
+  /** Called when the activity is first created. */
+  @Override
+  public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.main);
+
+    try {
+      // setup truststore to provide trust for the server certificate
+
+      // load truststore certificate
+      InputStream clientTruststoreIs = getResources().openRawResource(R.raw.truststore);
+      KeyStore trustStore = null;
+      trustStore = KeyStore.getInstance("BKS");
+      trustStore.load(clientTruststoreIs, "MyPassword".toCharArray());
+
+      System.out.println("Loaded server certificates: " + trustStore.size());
+
+      // initialize trust manager factory with the read truststore
+      TrustManagerFactory trustManagerFactory = null;
+      trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+      trustManagerFactory.init(trustStore);
+
+      // setup client certificate
+
+      // load client certificate
+      InputStream keyStoreStream = getResources().openRawResource(R.raw.client);
+      KeyStore keyStore = null;
+      keyStore = KeyStore.getInstance("BKS");
+      keyStore.load(keyStoreStream, "MyPassword".toCharArray());
+
+      System.out.println("Loaded client certificates: " + keyStore.size());
+
+      // initialize key manager factory with the read client certificate
+      KeyManagerFactory keyManagerFactory = null;
+      keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+      keyManagerFactory.init(keyStore, "MyPassword".toCharArray());
+
+
+      // initialize SSLSocketFactory to use the certificates
+      SSLSocketFactory socketFactory = null;
+      socketFactory = new SSLSocketFactory(SSLSocketFactory.TLS, keyStore, "MyTestPassword2010",
+          trustStore, null, null);
+
+      // Set basic data
+      HttpParams params = new BasicHttpParams();
+      HttpProtocolParams.setVersion(params, HttpVersion.HTTP_1_1);
+      HttpProtocolParams.setContentCharset(params, "UTF-8");
+      HttpProtocolParams.setUseExpectContinue(params, true);
+      HttpProtocolParams.setUserAgent(params, "Android app/1.0.0");
+
+      // Make pool
+      ConnPerRoute connPerRoute = new ConnPerRouteBean(12);
+      ConnManagerParams.setMaxConnectionsPerRoute(params, connPerRoute);
+      ConnManagerParams.setMaxTotalConnections(params, 20);
+
+      // Set timeout
+      HttpConnectionParams.setStaleCheckingEnabled(params, false);
+      HttpConnectionParams.setConnectionTimeout(params, 20 * 1000);
+      HttpConnectionParams.setSoTimeout(params, 20 * 1000);
+      HttpConnectionParams.setSocketBufferSize(params, 8192);
+
+      // Some client params
+      HttpClientParams.setRedirecting(params, false);
+
+      // Register http/s shemas!
+      SchemeRegistry schReg = new SchemeRegistry();
+      schReg.register(new Scheme("http", PlainSocketFactory.getSocketFactory(), 80));
+      schReg.register(new Scheme("https", socketFactory, 443));
+      ClientConnectionManager conMgr = new ThreadSafeClientConnManager(params, schReg);
+      DefaultHttpClient sClient = new DefaultHttpClient(conMgr, params);
+
+      HttpGet httpGet = new HttpGet("https://server/path/service.wsdl");
+      HttpResponse response = sClient.execute(httpGet);
+      HttpEntity httpEntity = response.getEntity();
+
+      InputStream is = httpEntity.getContent();
+      BufferedReader read = new BufferedReader(new InputStreamReader(is));
+      String query = null;
+      while ((query = read.readLine()) != null)
+        System.out.println(query);
+
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+  }
+
+}
+
+
+
+
+Update:
+
+You can also load .crt files for the trust store directly without converting them to BKS:
+
+    private static KeyStore loadTrustStore(String[] certificateFilenames) {
+        AssetManager assetsManager = GirdersApp.getInstance().getAssets();
+
+        int length = certificateFilenames.length;
+        List<Certificate> certificates = new ArrayList<Certificate>(length);
+        for (String certificateFilename : certificateFilenames) {
+          InputStream is;
+          try {
+            is = assetsManager.open(certificateFilename, AssetManager.ACCESS_BUFFER);
+            Certificate certificate = KeyStoreManager.loadX509Certificate(is);
+            certificates.add(certificate);
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+
+        Certificate[] certificatesArray = certificates.toArray(new Certificate[certificates.size()]);
+          return new generateKeystore(certificatesArray);
+      }
+
+ /**
+   * Generates keystore congaing the specified certificates.
+   *
+   * @param certificates certificates to add in keystore
+   * @return keystore with the specified certificates
+   * @throws KeyStoreException if keystore can not be generated.
+   */
+  public KeyStore generateKeystore(Certificate[] certificates) throws RuntimeException {
+      // construct empty keystore
+      KeyStore keyStore = KeyStore.getInstance(keyStoreType);
+
+      // initialize keystore
+      keyStore.load(null, null);
+
+      // load certificates into keystore
+      int length = certificates.length;
+      for (int i = 0; i < length; i++) {
+        Certificate certificate = certificates[i];
+        keyStore.setEntry(String.valueOf(i), new KeyStore.TrustedCertificateEntry(certificate),
+            null);
+      }
+      return keyStore;
+  }
+
+
+Same goes for the KeyStore with the client certificate, you can use the .p12 file directly without converting it to BKS.
+    

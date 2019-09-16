@@ -1,0 +1,129 @@
+76
+Q:When I try to add onTouchListner() to a button, it gets me the
+
+
+  Button has setOnTouchListener called on it but does not override
+  performClick 
+
+
+warning. Does anyone know how to fix it?
+
+
+
+btnleftclick.setOnTouchListener(new View.OnTouchListener() {
+    @Override
+    public boolean onTouch(View view, MotionEvent motionEvent) {
+        return false;
+    }
+});
+
+
+Error:
+
+
+  Custom view has setOnTouchListener called on it but does not override
+  performClick If a View that overrides onTouchEvent or uses an
+  OnTouchListener does not also implement performClick and call it when
+  clicks are detected, the View may not handle accessibility actions
+  properly. Logic handling the click actions should ideally be placed in
+  View#performClick as some accessibility services invoke performClick
+  when a click action should occur.
+
+    
+===============================================================================================
+78
+A:This warning comes up because Android wants to remind you to think about the blind or visually impaired people who may be using your app. I suggest you watch this video for a quick overview about what that is like.
+
+The standard UI views (like Button, TextView, etc.) are all set up to provide blind users with appropriate feedback through Accessibility services. When you try to handle touch events yourself, you are in danger of forgetting to provide that feedback. This is what the warning is for. 
+
+Option 1: Create a custom view
+
+Handling touch events is normally something that is done in a custom view. Don't dismiss this option too quickly. It's not really that difficult. Here is a full example of a TextView that is overridden to handle touch events:
+
+public class CustomTextView extends AppCompatTextView {
+
+    public CustomTextView(Context context) {
+        super(context);
+    }
+
+    public CustomTextView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        super.onTouchEvent(event);
+
+        switch (event.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                return true;
+
+            case MotionEvent.ACTION_UP:
+                performClick();
+                return true;
+        }
+        return false;
+    }
+
+    // Because we call this from onTouchEvent, this code will be executed for both
+    // normal touch events and for when the system calls this using Accessibility
+    @Override
+    public boolean performClick() {
+        super.performClick();
+        doSomething();
+        return true;
+    }
+
+    private void doSomething() {
+        Toast.makeText(getContext(), "did something", Toast.LENGTH_SHORT).show();
+    }
+}
+
+
+Then you would just use it like this:
+
+<com.example.myapp.CustomTextView
+    android:id="@+id/textview"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:padding="20dp"
+    android:text="Click me to do something"/>
+
+
+See my other answer for more details about making a custom view.
+
+Option 2: Silencing the warning
+
+Other times it might be better to just silence the warning. For example, I'm not sure what it is you want to do with a Button that you need touch events for. If you were to make a custom button and called performClick() in onTouchEvent like I did above for the custom TextView, then it would get called twice every time because Button already calls performClick(). 
+
+Here are a couple reasons you might want to just silence the warning:
+
+
+The work you are performing with your touch event is only visual. It doesn't affect the actual working of your app.
+You are cold-hearted and don't care about making the world a better place for blind people. 
+You are too lazy to copy and paste the code I gave you in Option 1 above.
+
+
+Add the following line to the beginning of the method to suppress the warning:
+
+@SuppressLint("ClickableViewAccessibility")
+
+
+For example:
+
+@SuppressLint("ClickableViewAccessibility")
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_main);
+
+    Button myButton = findViewById(R.id.my_button);
+    myButton.setOnTouchListener(new View.OnTouchListener() {
+        @Override
+        public boolean onTouch(View view, MotionEvent motionEvent) {
+            return false;
+        }
+    });
+}
+
+    

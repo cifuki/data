@@ -1,0 +1,116 @@
+33
+Q:I would like to get a byte buffer from an audio asset using the OpenSL ES FileDescriptor object, so I can enqueue it repeatedly to a SimpleBufferQueue, instead of using SL interfaces to play/stop/seek the file.
+
+There are three main reasons why I would like to manage the sample bytes directly:
+
+
+OpenSL uses an AudioTrack layer to play/stop/etc for Player Objects.  This does not only introduce unwanted overhead, but it also has several bugs, and rapid starts/stops of the player cause lots of problems.
+I need to manipulate the byte buffer directly for custom DSP effects.
+The clips I'm going to be playing are small, and can all be loaded into memory to avoid file I/O overhead.  Plus, enqueueing my own buffers will allow me to reduce latency by writing 0's to the output sink, and simply switching to sample bytes when they are playing, rather than STOPPING, PAUSING and PLAYING the AudioTrack.
+
+
+Okay, so justifications complete - here's what I've tried - I have a Sample struct which contains, essentially, an input and output track, and a byte array to hold the samples.  The input is my FileDescriptor player, and the output is a SimpleBufferQueue object.  Here's my struct:
+
+typedef struct Sample_ {
+    // buffer to hold all samples
+    short *buffer;      
+    int totalSamples;
+
+    SLObjectItf fdPlayerObject;
+    // file descriptor player interfaces
+    SLPlayItf fdPlayerPlay;
+    SLSeekItf fdPlayerSeek;
+    SLMuteSoloItf fdPlayerMuteSolo;
+    SLVolumeItf fdPlayerVolume;
+    SLAndroidSimpleBufferQueueItf fdBufferQueue;
+
+    SLObjectItf outputPlayerObject; 
+    SLPlayItf outputPlayerPlay; 
+    // output buffer interfaces
+    SLAndroidSimpleBufferQueueItf outputBufferQueue;        
+} Sample;
+
+
+after initializing a file player fdPlayerObject, and malloc-ing memory for my byte buffer with
+
+sample->buffer = malloc(sizeof(short)*sample->totalSamples);
+
+
+I'm getting its BufferQueue interface with
+
+// get the buffer queue interface
+result = (*(sample->fdPlayerObject))->GetInterface(sample->fdPlayerObject, SL_IID_ANDROIDSIMPLEBUFFERQUEUE, &(sample->fdBufferQueue));
+
+
+Then I instantiate an output player:
+
+// create audio player for output buffer queue
+const SLInterfaceID ids1[] = {SL_IID_ANDROIDSIMPLEBUFFERQUEUE};
+const SLboolean req1[] = {SL_BOOLEAN_TRUE};
+result = (*engineEngine)->CreateAudioPlayer(engineEngine, &(sample->outputPlayerObject), &outputAudioSrc, &audioSnk,
+                                               1, ids1, req1);
+
+// realize the output player
+result = (*(sample->outputPlayerObject))->Realize(sample->outputPlayerObject, SL_BOOLEAN_FALSE);
+assert(result == SL_RESULT_SUCCESS);
+
+// get the play interface
+result = (*(sample->outputPlayerObject))->GetInterface(sample->outputPlayerObject, SL_IID_PLAY, &(sample->outputPlayerPlay));
+assert(result == SL_RESULT_SUCCESS);
+
+// get the buffer queue interface for output
+result = (*(sample->outputPlayerObject))->GetInterface(sample->outputPlayerObject, SL_IID_ANDROIDSIMPLEBUFFERQUEUE,
+                                                   &(sample->outputBufferQueue));
+assert(result == SL_RESULT_SUCCESS);    
+
+  // set the player's state to playing
+result = (*(sample->outputPlayerPlay))->SetPlayState(sample->outputPlayerPlay, SL_PLAYSTATE_PLAYING);
+assert(result == SL_RESULT_SUCCESS);
+
+
+When I want to play the sample, I am using:
+
+Sample *sample = &samples[sampleNum];
+// THIS WORKS FOR SIMPLY PLAYING THE SAMPLE, BUT I WANT THE BUFFER DIRECTLY 
+//    if (sample->fdPlayerPlay != NULL) {
+//        // set the player's state to playing
+//        (*(sample->fdPlayerPlay))->SetPlayState(sample->fdPlayerPlay, SL_PLAYSTATE_PLAYING);
+//    }
+
+// fill buffer with the samples from the file descriptor
+(*(sample->fdBufferQueue))->Enqueue(sample->fdBufferQueue, sample->buffer,sample->totalSamples*sizeof(short));
+// write the buffer to the outputBufferQueue, which is already playing
+(*(sample->outputBufferQueue))->Enqueue(sample->outputBufferQueue, sample->buffer, sample->totalSamples*sizeof(short));
+
+
+However, this causes my app to freeze and shut down.  Something is wrong here.
+Also, I would prefer to not get the samples from the File Descriptor's BufferQueue each time.  Instead, I'd like to permanently store it in a byte array, and Enqueue that to the output whenever I like.  
+    
+===============================================================================================
+6
+A:Decoding to PCM is available at API level 14 and higher.
+
+When you create decoder player you need set Android simple buffer queue as the data sink:
+
+// For init use something like this:
+SLDataLocator_AndroidFD locatorIn = {SL_DATALOCATOR_ANDROIDFD, decriptor, start, length};
+SLDataFormat_MIME dataFormat = {SL_DATAFORMAT_MIME, NULL, SL_CONTAINERTYPE_UNSPECIFIED};
+SLDataSource audioSrc = {&locatorIn, &dataFormat};
+
+SLDataLocator_AndroidSimpleBufferQueue loc_bq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
+SLDataSink audioSnk = { &loc_bq, NULL };
+
+const SLInterfaceID ids[2] = {SL_IID_PLAY, SL_IID_ANDROIDSIMPLEBUFFERQUEUE};
+const SLboolean req[2] = {SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE};
+
+SLresult result = (*engineEngine)->CreateAudioPlayer(engineEngine, &(sample->fdPlayerObject), &outputAudioSrc, &audioSnk, 2, ids1, req1);
+
+
+For decoder queue you need enqueue a set of empty buffers to the Android simple buffer queue, which will be filled with PCM data.
+
+Also you need register a callback handler with the decoder queue which will be called when PCM data will be ready. The callback handler should process the PCM data, re-enqueue the now-empty buffer, and then return. The application is responsible for keeping track of decoded buffers; the callback parameter list does not include sufficient information to indicate which buffer was filled or which buffer to enqueue next.
+
+Decode to PCM supports pause and initial seek. Volume control, effects, looping, and playback rate are not supported.
+
+Read Decode audio to PCM from OpenSL ES for Android for more details.
+    

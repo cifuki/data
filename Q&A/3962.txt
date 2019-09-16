@@ -1,0 +1,120 @@
+58
+Q:How do you set the state of a fragment extending BottomSheetDialogFragment to expanded using BottomSheetBehavior#setState(STATE_EXPANDED) using the Android Support Design Library (v23.2.1)?
+
+https://code.google.com/p/android/issues/detail?id=202396 says:
+
+
+  Bottom sheets are set to STATE_COLLAPSED at first. Call BottomSheetBehavior#setState(STATE_EXPANDED) if you want to expand it. Note that you cannot call the method before view layouts.
+
+
+The suggested practice requires a view to be inflated first, but I'm not sure how I'll set the BottomSheetBehaviour onto a fragment (BottomSheetDialogFragment).
+
+View bottomSheet = coordinatorLayout.findViewById(R.id.bottom_sheet);  
+BottomSheetBehavior behavior = BottomSheetBehavior.from(bottomSheet);  
+
+    
+===============================================================================================
+142
+A:"Note that you cannot call the method before view layouts."
+
+
+The above text is the clue.
+
+Dialogs have a listener that is fired once the dialog is shown. The dialog cannot be shown if it isn't layed out.
+
+So, in the onCreateDialog() of your modal bottom sheet (BottomSheetFragment), just before returning the dialog (or anywhere, once you have a reference to the dialog), call:
+
+// This listener's onShow is fired when the dialog is shown
+dialog.setOnShowListener(new DialogInterface.OnShowListener() {
+    @Override
+    public void onShow(DialogInterface dialog) {
+
+        // In a previous life I used this method to get handles to the positive and negative buttons
+        // of a dialog in order to change their Typeface. Good ol' days.
+
+        BottomSheetDialog d = (BottomSheetDialog) dialog;
+
+        // This is gotten directly from the source of BottomSheetDialog
+        // in the wrapInBottomSheet() method
+        FrameLayout bottomSheet = (FrameLayout) d.findViewById(android.support.design.R.id.design_bottom_sheet);
+
+        // Right here!
+        BottomSheetBehavior.from(bottomSheet)
+            .setState(BottomSheetBehavior.STATE_EXPANDED);
+    }
+});
+
+
+In my case, my custom BottomSheet turned out to be:
+
+@SuppressWarnings("ConstantConditions")
+public class ShareBottomSheetFragment extends AppCompatDialogFragment {
+
+    @NonNull @Override
+    public Dialog onCreateDialog(Bundle savedInstanceState) {
+
+        BottomSheetDialog dialog =
+                new BottomSheetDialog(getActivity(), R.style.Haute_Dialog_ShareImage);
+
+        dialog.setContentView(R.layout.dialog_share_image);
+
+        dialog.findViewById(R.id.cancel).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                dismiss();
+            }
+        });
+
+        dialog.setOnShowListener(new DialogInterface.OnShowListener() {
+            @Override
+            public void onShow(DialogInterface dialog) {
+                BottomSheetDialog d = (BottomSheetDialog) dialog;
+
+                FrameLayout bottomSheet = (FrameLayout) d.findViewById(android.support.design.R.id.design_bottom_sheet);
+                BottomSheetBehavior.from(bottomSheet).setState(BottomSheetBehavior.STATE_EXPANDED);
+            }
+        });
+
+        SwitchCompat switchview = (SwitchCompat) dialog.findViewById(R.id.switchview);
+        switchview.setTypeface(FontCache.get(dialog.getContext(), lookup(muli, NORMAL)));
+
+        return dialog;
+    }
+}
+
+
+Let me know if this helps.
+
+UPDATE
+
+Note that you can also override BottomSheetDialogFragment as:
+
+public class SimpleInitiallyExpandedBottomSheetFragment extends BottomSheetDialogFragment {
+
+    @NonNull @Override
+    public Dialog onCreateDialog(Bundle savedInstanceState) {
+
+        BottomSheetDialog dialog = (BottomSheetDialog) super.onCreateDialog(savedInstanceState);
+
+        dialog.setOnShowListener(new DialogInterface.OnShowListener() {
+            @Override
+            public void onShow(DialogInterface dialog) {
+                BottomSheetDialog d = (BottomSheetDialog) dialog;
+
+                FrameLayout bottomSheet = (FrameLayout) d.findViewById(android.support.design.R.id.design_bottom_sheet);
+                BottomSheetBehavior.from(bottomSheet).setState(BottomSheetBehavior.STATE_EXPANDED);
+            }
+        });
+
+        // Do something with your dialog like setContentView() or whatever
+        return dialog;
+    }
+}
+
+
+But I really dont see why anyone would want to do that as the base BottomSheetFragment doesn't do anything other than return a BottomSheetDialog.
+
+UPDATE FOR ANDROIDX
+
+When using AndroidX, the resource previously found at android.support.design.R.id.design_bottom_sheet can now be found at com.google.android.material.R.id.design_bottom_sheet.
+    

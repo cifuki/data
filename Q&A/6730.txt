@@ -1,0 +1,50 @@
+38
+Q:Basically I need a pause (based on just a few seconds) to be put into one action so that the user can see what happens before the next action is taken.  So for blackjack, when it's the dealer's turn and he decides to hit,  he hits, a card is added, and then he decides what to do next.  So before he decides on what to do next,  I want the code to pause so it can be "seen" as to what the dealer is doing this way the dealer doesn't complete his actions in less than a second and the player only sees the results.  
+
+Thanks in advance!
+
+I should note I have tried using wait(insert number here); but i am told by eclipse that it causes a stack interception error or something of the sort and throws an exception,  thus doing nothing : (
+
+Well this is interesting,  (the way I've programed the things is "interesting" to say the least)  I did the Thread.sleep(5000) and threw it under a try catch, it does sleep for 5 seconds and then continues doing the code.  However my updates to views don't show until after I press a button(Is really hating event driven programming).  
+    
+===============================================================================================
+96
+A:Learning to think in terms of events is indeed the key here. You can do it. :)
+
+The first rule is: never stall the UI thread. The UI thread is responsible for keeping your app feeling responsive. Any work you do there should not block; do what you need to do and return as quickly as possible. Definitely avoid doing I/O on the UI thread. (There are some places where you can't really help it due to lifecycle requirements, for example saving app state in onPause.) If you ever call Thread.sleep on the UI thread you are doing it wrong.
+
+Android enforces this with the "Application not responding" (or "ANR") error that the user sees. Whenever you see this in an Android app it means the developer did something that caused the UI thread to stall for too long. If the device is really bogged down for some reason this error might not actually be the app developer's fault, but usually it means the app is doing something wrong.
+
+You can use this model to your advantage by posting your own events. This gives you an easy way to tell your app, "do this later." In Android the key to posting your own events is in the Handler class. The method postDelayed lets you schedule a Runnable that will be executed after a certain number of milliseconds.
+
+If you have an Activity that looks something like this:
+
+public class MyActivity extends Activity {
+    private Handler mHandler = new Handler();
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        mHandler.postDelayed(new Runnable() {
+            public void run() {
+                doStuff();
+            }
+        }, 5000);
+    }
+
+    private void doStuff() {
+        Toast.makeText(this, "Delayed Toast!", Toast.LENGTH_SHORT).show();
+    }
+}
+
+
+Then 5 seconds after the activity is created you will see the toast created in doStuff.
+
+If you're writing a custom View it's even easier. Views have their own postDelayed method that will get everything posted to the correct Handler and you don't need to create your own.
+
+The second rule is: Views should only be modified on the UI thread. Those exceptions you're getting and ignoring mean something went wrong and if you ignore them your app will probably start misbehaving in interesting ways. If your app does most of its work in other threads you can post events directly to the view you want to modify so that the modifications will run correctly.
+
+If you have a reference to your Activity from that part of your code you can also use Activity#runOnUIThread, which does exactly what the name implies. You might prefer this approach if posting to a single view doesn't really make sense in context.
+
+As for updates to views not appearing until you hit a button, what kind of views are these? Are they custom views that are drawing these updates? If so, are you remembering to call invalidate after data changes to trigger the redraw? Views only redraw themselves after they have been invalidated.
+    

@@ -1,0 +1,119 @@
+87
+Q:I have a ttf font file in my assets folder. I know how to use it for textviews with:
+
+Typeface externalFont=Typeface.createFromAsset(getAssets(), "fonts/HelveticaNeueLTCom-Lt.ttf");
+textview1.setTypeface(externalFont);
+
+
+I have defined look for my spinner text in it's own xml file (as usuall in android):
+
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android" 
+android:id="@+android:id/text1"
+style="?android:attr/spinnerItemStyle"
+android:singleLine="true"
+android:textColor="#ffffff"
+android:gravity="center" 
+android:layout_width="fill_parent"
+android:layout_height="wrap_content"
+android:ellipsize="marquee" />
+
+
+I just can't reference this textview from code, i always get null pointer exceptions. E.g. i tried:
+
+TextView spinner_text=(TextView)findViewById(R.id.text1);
+spinner_text.setTypeface(externalFont);
+
+
+Is it possible to select my external font even for my spinner text defined in it's own xml?
+
+Thank you.
+
+EDIT with answer:
+
+This works:
+
+String [] items = new String[2];
+    items[0]="Something1";
+    items[1]="Something2";
+
+ArrayAdapter<String> adapter = new ArrayAdapter<String>(this,
+                    R.layout.spinaca, items) {
+
+         public View getView(int position, View convertView, ViewGroup parent) {
+                 View v = super.getView(position, convertView, parent);
+
+                 Typeface externalFont=Typeface.createFromAsset(getAssets(), "fonts/HelveticaNeueLTCom-Lt.ttf");
+                 ((TextView) v).setTypeface(externalFont);
+
+                 return v;
+         }
+
+
+         public View getDropDownView(int position,  View convertView,  ViewGroup parent) {
+                  View v =super.getDropDownView(position, convertView, parent);
+
+                 Typeface externalFont=Typeface.createFromAsset(getAssets(), "fonts/HelveticaNeueLTCom-Lt.ttf");
+                 ((TextView) v).setTypeface(externalFont);
+                 v.setBackgroundColor(Color.GREEN);
+
+                 return v;
+         }
+ };
+
+
+     adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);                                 
+     spinner.setAdapter(adapter);
+
+
+It may be necessary to add
+
+import android.view.ViewGroup;
+
+
+To your list of imports at the top of your file. For some reason Eclipse doesn't make this suggestion when it doesn't recognize the ViewGroup class involved in the code.
+    
+===============================================================================================
+78
+A:This is what worked for me (using ideas both from CommonsWare's and gsanllorente's answers):
+
+private static class MySpinnerAdapter extends ArrayAdapter<String> {
+    // Initialise custom font, for example:
+    Typeface font = Typeface.createFromAsset(getContext().getAssets(),
+                        "fonts/Blambot.otf");
+
+    // (In reality I used a manager which caches the Typeface objects)
+    // Typeface font = FontManager.getInstance().getFont(getContext(), BLAMBOT);
+
+    private MySpinnerAdapter(Context context, int resource, List<String> items) {
+        super(context, resource, items);
+    }
+
+    // Affects default (closed) state of the spinner
+    @Override
+    public View getView(int position, View convertView, ViewGroup parent) {
+        TextView view = (TextView) super.getView(position, convertView, parent);
+        view.setTypeface(font);
+        return view;
+    }
+
+    // Affects opened state of the spinner
+    @Override
+    public View getDropDownView(int position, View convertView, ViewGroup parent) {
+        TextView view = (TextView) super.getDropDownView(position, convertView, parent);
+        view.setTypeface(font);
+        return view;
+    }
+}
+
+
+If you, like me, originally populated the Spinner using ArrayAdapter.createFromResource() and an array resource (as in Spinner documentation), then you'd use MySpinnerAdapter like this: 
+
+MySpinnerAdapter<String> adapter = new MySpinnerAdapter(
+        getContext(),
+        R.layout.view_spinner_item,
+        Arrays.asList(getResources().getStringArray(R.array.my_array))
+);
+spinner.setAdapter(adapter);
+
+    

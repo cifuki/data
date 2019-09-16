@@ -1,0 +1,113 @@
+98
+Q:Is it possible to change the datepicker (and also the timepicker) colour scheme for android 5.0?
+
+I've tryed setting the accent colours, but this doesn't work (both with and without android:):
+
+<!-- colorPrimary is used for the default action bar background -->
+<item name="colorPrimary">@color/purple</item>
+
+<!-- colorPrimaryDark is used for the status bar -->
+<item name="colorPrimaryDark">@color/purple_tint</item>
+
+<!-- colorAccent is used as the default value for colorControlActivated
+     which is used to tint widgets -->
+<item name="colorAccent">@color/purple_tint</item>
+
+
+From original:
+
+
+To something like this:
+
+    
+===============================================================================================
+290
+A:The reason why Neil's suggestion results in a fullscreen DatePicker is the choice of parent theme:
+
+<!-- Theme.AppCompat.Light is not a dialog theme -->
+<style name="DialogTheme" parent="**Theme.AppCompat.Light**">
+    <item name="colorAccent">@color/blue_500</item>
+</style>
+
+
+Moreover, if you go this route, you have to specify the theme while creating the DatePickerDialog:
+
+// R.style.DialogTheme
+new DatePickerDialog(MainActivity.this, R.style.DialogTheme, new DatePickerDialog.OnDateSetListener() {
+    @Override
+    public void onDateSet(DatePicker view, int year, int monthOfYear, int dayOfMonth) {
+        //DO SOMETHING
+    }
+}, 2015, 02, 26).show();
+
+
+This, in my opinion, is not good. One should try to keep the styling out of java and inside styles.xml/themes.xml.
+
+I do agree that Neil's suggestion, with a bit of change (changing the parent theme to say, Theme.Material.Light.Dialog) will get you the desired result. But, here's the other way:
+
+On first inspection, we come across datePickerStyle which defines things such as: headerBackground(what you are trying to change), dayOfWeekBackground, and a few other text-colors and text-styles.
+
+Overriding this attribute in your app's theme will not work. DatePickerDialog uses a separate theme assignable by the attribute datePickerDialogTheme. So, for our changes to take affect, we must override datePickerStyle inside an overriden datePickerDialogTheme.
+
+Here we go:
+
+Override datePickerDialogTheme inside your app's base theme:
+
+<style name="AppBaseTheme" parent="android:Theme.Material.Light">
+    ....
+    <item name="android:datePickerDialogTheme">@style/MyDatePickerDialogTheme</item>
+</style>
+
+
+Define MyDatePickerDialogTheme. The choice of parent theme will depend on what your app's base theme is: it could be either Theme.Material.Dialog or Theme.Material.Light.Dialog:
+
+<style name="MyDatePickerDialogTheme" parent="android:Theme.Material.Light.Dialog">
+    <item name="android:datePickerStyle">@style/MyDatePickerStyle</item>
+</style>
+
+
+We have overridden datePickerStyle with the style MyDatePickerStyle. The choice of parent will once again depend on what your app's base theme is: either Widget.Material.DatePicker or Widget.Material.Light.DatePicker. Define it as per your requirements:
+
+<style name="MyDatePickerStyle" parent="@android:style/Widget.Material.Light.DatePicker">
+    <item name="android:headerBackground">@color/chosen_header_bg_color</item>
+</style>
+
+
+Currently, we are only overriding headerBackground which by default is set to ?attr/colorAccent (this is also why Neil suggestion works in changing the background). But there's quite a lot of customization possible:
+
+dayOfWeekBackground
+dayOfWeekTextAppearance
+headerMonthTextAppearance
+headerDayOfMonthTextAppearance
+headerYearTextAppearance
+headerSelectedTextColor
+yearListItemTextAppearance
+yearListSelectorColor
+calendarTextColor
+calendarSelectedTextColor
+
+
+If you don't want this much control (customization), you don't need to override datePickerStyle. colorAccent controls most of the DatePicker's colors. So, overriding just colorAccent inside MyDatePickerDialogTheme should work:
+
+<style name="MyDatePickerDialogTheme" parent="android:Theme.Material.Light.Dialog">
+    <item name="android:colorAccent">@color/date_picker_accent</item>
+
+    <!-- No need to override 'datePickerStyle' -->
+    <!-- <item name="android:datePickerStyle">@style/MyDatePickerStyle</item> -->
+</style>
+
+
+Overriding colorAccent gives you the added benefit of changing OK & CANCEL text colors as well. Not bad.
+
+This way you don't have to provide any styling information to DatePickerDialog's constructor. Everything has been wired properly:
+
+DatePickerDialog dpd = new DatePickerDialog(this, new DatePickerDialog.OnDateSetListener() {
+    @Override
+    public void onDateSet(DatePicker view, int year, int monthOfYear, int dayOfMonth) {
+
+    }
+ }, 2015, 5, 22);
+
+ dpd.show();
+
+    

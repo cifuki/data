@@ -1,0 +1,179 @@
+30
+Q:I'm creating a notification with RemoteViews from a custom Service, which is running with notification in a foreground mode (that is, service will remain active as long as notification is visible to user). Notification is set as Ongoing so user cannot swipe it off.
+
+I'd like to change for example bitmap shown in ImageView, contained within remote view's layout or change text value in a TextView. Layout in remote view is set with XML layout file.
+
+My problem is that once notification is created and visible to user, if I call any of RemoteViews's functions like setImageViewResource() to change Bitmap shown in an ImageView, the change is not visible, unless I do call setImageViewResource() I call afterwards:
+
+NotificationManager.notify( id, notification );
+
+
+or 
+
+Service.startForeground(id,notification);
+
+
+This doesn't sound right to me though. I can't believe that to update RemoteViews UI in a notification that is already created, I have to re-initialize notification. If I have Button control in a notification, it updates itself on touch and release. So there's gotta be a way to do this properly, but I don't know how.
+
+Here is my code which creates notification inside my Service instance:
+
+this.notiRemoteViews = new MyRemoteViews(this,this.getApplicationContext().getPackageName(),R.layout.activity_noti1);
+
+Notification.Builder notibuilder = new Notification.Builder(this.getApplicationContext());
+notibuilder.setContentTitle("Test");
+notibuilder.setContentText("test");
+notibuilder.setSmallIcon(R.drawable.icon2);
+notibuilder.setOngoing(true);
+
+this.manager = (NotificationManager)this.getSystemService(Context.NOTIFICATION_SERVICE);
+this.noti = notibuilder.build();
+this.noti.contentView = this.notiRemoteViews;
+this.noti.bigContentView = this.notiRemoteViews;
+this.startForeground(NOTIFICATION_ID, this.noti);
+
+
+And function that 'forces' UI changes to notification:
+
+public void updateNotiUI(){
+    this.startForeground(NOTIFICATION_ID, this.noti);
+}
+
+
+Within MyRemoteViews class, when required, I do this to make changes to UI:
+
+this.setImageViewResource(R.id.iconOFF, R.drawable.icon_off2);
+this.ptMyService.updateNotiUI();
+
+
+Can anyone tell me what is the correct way of updating UI components of a RemoteViews in the notification?
+    
+===============================================================================================
+49
+A:Here's a detail example for you to update the notification using RemoteViews:
+
+private static final int NOTIF_ID = 1234;
+private NotificationCompat.Builder mBuilder;
+private NotificationManager mNotificationManager;
+private RemoteViews mRemoteViews;
+private Notification mNotification;
+...
+
+// call this method to setup notification for the first time
+private void setUpNotification(){
+
+    mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+
+    // we need to build a basic notification first, then update it
+    Intent intentNotif = new Intent(this, MainActivity.class);
+    intentNotif.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    PendingIntent pendIntent = PendingIntent.getActivity(this, 0, intentNotif, PendingIntent.FLAG_UPDATE_CURRENT);
+
+    // notification's layout
+    mRemoteViews = new RemoteViews(getPackageName(), R.layout.custom_notification_small);
+    // notification's icon
+    mRemoteViews.setImageViewResource(R.id.notif_icon, R.drawable.ic_launcher);
+    // notification's title
+    mRemoteViews.setTextViewText(R.id.notif_title, getResources().getString(R.string.app_name));
+    // notification's content
+    mRemoteViews.setTextViewText(R.id.notif_content, getResources().getString(R.string.content_text));
+
+    mBuilder = new NotificationCompat.Builder(this);
+
+    CharSequence ticker = getResources().getString(R.string.ticker_text);
+    int apiVersion = Build.VERSION.SDK_INT;
+
+    if (apiVersion < VERSION_CODES.HONEYCOMB) {
+        mNotification = new Notification(R.drawable.ic_launcher, ticker, System.currentTimeMillis());
+        mNotification.contentView = mRemoteViews;
+        mNotification.contentIntent = pendIntent;
+
+        mNotification.flags |= Notification.FLAG_NO_CLEAR; //Do not clear the notification
+        mNotification.defaults |= Notification.DEFAULT_LIGHTS;
+
+        // starting service with notification in foreground mode
+        startForeground(NOTIF_ID, mNotification);
+
+    }else if (apiVersion >= VERSION_CODES.HONEYCOMB) {
+        mBuilder.setSmallIcon(R.drawable.ic_launcher)
+                .setAutoCancel(false)
+                .setOngoing(true)
+                .setContentIntent(pendIntent)
+                .setContent(mRemoteViews)
+                .setTicker(ticker);
+
+        // starting service with notification in foreground mode
+        startForeground(NOTIF_ID, mBuilder.build());
+    }
+}
+
+// use this method to update the Notification's UI
+private void updateNotification(){
+
+    int api = Build.VERSION.SDK_INT;
+    // update the icon
+    mRemoteViews.setImageViewResource(R.id.notif_icon, R.drawable.icon_off2);
+    // update the title
+    mRemoteViews.setTextViewText(R.id.notif_title, getResources().getString(R.string.new_title));
+    // update the content
+    mRemoteViews.setTextViewText(R.id.notif_content, getResources().getString(R.string.new_content_text));
+
+    // update the notification
+    if (api < VERSION_CODES.HONEYCOMB) {
+        mNotificationManager.notify(NOTIF_ID, mNotification);
+    }else if (api >= VERSION_CODES.HONEYCOMB) {
+        mNotificationManager.notify(NOTIF_ID, mBuilder.build());
+    }
+}
+
+
+Layout for the Notification, i.e. res/layout/custom_notification_small.xml:
+
+<!-- We have to set the height to 64dp, this is the rule of the small notification -->
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="64dp"
+    android:orientation="horizontal"
+    android:id="@+id/notif_small"
+    android:background="@drawable/notification_background">
+
+    <ImageView
+        android:id="@+id/notif_icon"
+        android:contentDescription="@string/notif_small_desc"
+        android:layout_width="47dp"
+        android:layout_height="wrap_content"
+        android:layout_centerVertical="true"
+        android:layout_alignParentLeft="true"
+        android:src="@drawable/ic_launcher"
+        android:layout_marginLeft="7dp"
+        android:layout_marginRight="9dp"/>
+
+    <TextView
+        android:id="@+id/notif_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_toRightOf="@id/notif_icon"
+        android:singleLine="true"
+        android:paddingTop="8dp"
+        android:textSize="17sp"
+        android:textStyle="bold"
+        android:textColor="#000000"
+        android:text="@string/app_name"/>
+
+    <TextView
+        android:id="@+id/notif_content"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_toRightOf="@id/notif_icon"
+        android:paddingBottom="9dp"
+        android:layout_alignParentBottom="true"
+        android:singleLine="true"
+        android:textSize="13sp"
+        android:textColor="#575757"
+        android:text="Content" />
+</RelativeLayout>
+
+
+Hope this example helps you a lot!
+
+NOTE: You can't update the custom NotificationCompat on pre-Honeycomb, so I added an alternative way to update it on pre-Honeycomb, i.e. checking the API level first and use the deprecated Notification instead. 
+    

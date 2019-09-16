@@ -1,0 +1,224 @@
+38
+Q:I have a digital clock widget. How can I use a custom font from assets/fonts as the default font in the textview showing the clock?
+
+This is my code:
+
+    package android.tristan.widget.digiclock;
+
+import java.util.Calendar;
+
+import android.app.PendingIntent;
+import android.app.Service;
+import android.appwidget.AppWidgetManager;
+import android.appwidget.AppWidgetProvider;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.IBinder;
+import android.os.Vibrator;
+import android.text.format.DateFormat;
+import android.widget.RemoteViews;
+
+
+public class DigiClock extends AppWidgetProvider {
+
+    @Override
+    public void onDisabled(Context context) {
+        super.onDisabled(context);
+        context.stopService(new Intent(context, UpdateService.class));
+    }
+    public void onReceive(Context context, Intent intent)
+    {
+        super.onReceive(context, intent);
+
+        if(intent.getAction().equals("android.tristan.widget.digiclock.CLICK"))
+        {
+          Vibrator vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+          vibrator.vibrate(50);           
+            final Intent alarmClockIntent = new Intent(Intent.ACTION_MAIN, null);
+            alarmClockIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            final ComponentName cn = new ComponentName("com.android.deskclock", "com.android.deskclock.AlarmClock");
+            alarmClockIntent.setComponent(cn);
+            alarmClockIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(alarmClockIntent);
+        }
+        if(intent.getAction().equals("android.tristan.widget.digiclock.CLICK_2"))
+        {
+          Vibrator vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+          vibrator.vibrate(50);
+           final Intent calendarIntent = new Intent(Intent.ACTION_MAIN, null);
+           calendarIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            final ComponentName cn = new ComponentName("com.android.calendar", "com.android.calendar.LaunchActivity");
+            calendarIntent.setComponent(cn);
+            calendarIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(calendarIntent);       
+        }
+    }
+
+    @Override
+    public void onEnabled(Context context) {
+        super.onEnabled(context);
+        context.startService(new Intent(UpdateService.ACTION_UPDATE));
+    }
+
+    @Override
+    public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
+        super.onUpdate(context, appWidgetManager, appWidgetIds);
+        context.startService(new Intent(UpdateService.ACTION_UPDATE));
+        final int Top = appWidgetIds.length;
+        final int Bottom = appWidgetIds.length;
+        for (int i=0; i<Top; i++)
+        {
+            int[] appWidgetId = appWidgetIds;
+            RemoteViews top=new RemoteViews(context.getPackageName(), R.layout.main);
+            Intent clickintent=new Intent("android.tristan.widget.digiclock.CLICK");
+            PendingIntent pendingIntentClick=PendingIntent.getBroadcast(context, 0, clickintent, 0);
+            top.setOnClickPendingIntent(R.id.TopRow, pendingIntentClick);
+            appWidgetManager.updateAppWidget(appWidgetId, top);
+        }
+        for (int i=0; i<Bottom; i++)
+        {
+            int[] appWidgetId = appWidgetIds;
+            RemoteViews bottom=new RemoteViews(context.getPackageName(), R.layout.main);
+            Intent clickintent=new Intent("android.tristan.widget.digiclock.CLICK_2");
+            PendingIntent pendingIntentClick=PendingIntent.getBroadcast(context, 0, clickintent, 0);
+            bottom.setOnClickPendingIntent(R.id.BottomRow, pendingIntentClick);
+            appWidgetManager.updateAppWidget(appWidgetId, bottom);
+        }
+}
+
+    public static final class UpdateService extends Service {
+
+       static final String ACTION_UPDATE = "android.tristan.widget.digiclock.action.UPDATE";
+
+        private final static IntentFilter sIntentFilter;
+
+        private final static String FORMAT_12_HOURS = "h:mm";
+        private final static String FORMAT_24_HOURS = "kk:mm";
+
+        private String mTimeFormat;
+        private String mDateFormat;
+        private String mDayFormat;
+        private Calendar mCalendar;
+
+        static {
+            sIntentFilter = new IntentFilter();
+            sIntentFilter.addAction(Intent.ACTION_TIME_TICK);
+            sIntentFilter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+            sIntentFilter.addAction(Intent.ACTION_TIME_CHANGED);
+        }
+
+        @Override
+        public void onCreate() {
+            super.onCreate();
+            reinit();
+            registerReceiver(mTimeChangedReceiver, sIntentFilter);
+         }
+
+        @Override
+        public void onDestroy() {
+            super.onDestroy();
+            unregisterReceiver(mTimeChangedReceiver);
+        }
+
+        @Override
+        public void onStart(Intent intent, int startId) {
+            super.onStart(intent, startId);
+
+            if (ACTION_UPDATE.equals(intent.getAction())) {
+                update();
+            }
+        }
+
+        @Override
+        public IBinder onBind(Intent intent) {
+            return null;
+        }
+
+
+        private void update() {
+            mCalendar.setTimeInMillis(System.currentTimeMillis());
+            final CharSequence time = DateFormat.format(mTimeFormat, mCalendar);
+            final CharSequence date = DateFormat.format(mDateFormat, mCalendar);
+            final CharSequence day = DateFormat.format(mDayFormat, mCalendar);
+
+            RemoteViews views = new RemoteViews(getPackageName(), R.layout.main);
+            views.setTextViewText(R.id.Time, time);
+            views.setTextViewText(R.id.Day, day);
+            views.setTextViewText(R.id.Date, date);
+
+            ComponentName widget = new ComponentName(this, DigiClock.class);
+            AppWidgetManager manager = AppWidgetManager.getInstance(this);
+            manager.updateAppWidget(widget, views);
+        }
+
+        private void reinit() {
+            mDayFormat = getString(R.string.day_format);
+            mDateFormat = getString(R.string.date_format);
+            mTimeFormat = is24HourMode(this) ? FORMAT_24_HOURS : FORMAT_12_HOURS;
+            mCalendar = Calendar.getInstance();
+        }
+
+        private static boolean is24HourMode(final Context context) {
+            return android.text.format.DateFormat.is24HourFormat(context);
+        }
+
+        private final BroadcastReceiver mTimeChangedReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                final String action = intent.getAction();
+
+                if (action.equals(Intent.ACTION_TIME_CHANGED) ||
+                    action.equals(Intent.ACTION_TIMEZONE_CHANGED))
+                {
+                    reinit();
+                }
+
+                update();
+            }
+        };
+    }
+}
+
+    
+===============================================================================================
+60
+A:What is needed is to render the font onto a canvas, and then pass it on to a bitmap and assign that to an ImageView. Like so:
+
+public Bitmap buildUpdate(String time) 
+{
+    Bitmap myBitmap = Bitmap.createBitmap(160, 84, Bitmap.Config.ARGB_4444);
+    Canvas myCanvas = new Canvas(myBitmap);
+    Paint paint = new Paint();
+    Typeface clock = Typeface.createFromAsset(this.getAssets(),"Clockopia.ttf");
+    paint.setAntiAlias(true);
+    paint.setSubpixelText(true);
+    paint.setTypeface(clock);
+    paint.setStyle(Paint.Style.FILL);
+    paint.setColor(Color.WHITE);
+    paint.setTextSize(65);
+    paint.setTextAlign(Align.CENTER);
+    myCanvas.drawText(time, 80, 60, paint);
+    return myBitmap;
+}
+
+
+That's the part doing the font to image thingie, and this is how to use it:
+
+String time = (String) DateFormat.format(mTimeFormat, mCalendar);
+RemoteViews views = new RemoteViews(getPackageName(), R.layout.main);
+views.setImageViewBitmap(R.id.TimeView, buildUpdate(time));
+
+
+As you might notice, this code just shows the current time in the imageview, but it can easily be adjusted to whatever needs.
+
+Edit:
+
+ARGB_4444 is deprecated for ARGB_8888 as stated in the documentation
+
+
+  This field was deprecated in API level 13. Because of the poor quality of this configuration, it is advised to use ARGB_8888 instead.   
+
+    

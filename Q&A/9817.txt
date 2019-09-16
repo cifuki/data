@@ -1,0 +1,95 @@
+28
+Q:I am recording video with MediaRecorder. My code works fine on 2.3.3 but fails on 4.0.3.
+
+The issue is following: the code mediaRecorder.stop() throws the RuntimeExeption
+
+java.lang.RuntimeException: stop failed.
+    at android.media.MediaRecorder.stop(Native Method)
+
+
+with LogCat message
+
+04-05 15:10:51.815: E/MediaRecorder(15709): stop failed: -1007
+
+
+UPDATE
+
+I've found, that MediaPlayer reports an error (via MediaPlayer.OnErrorListener) almost immediately after the start. Error code is 100 (media server died), extra -1007.
+
+UPDATE 2
+Code to prepare the MediaRecorder
+
+            c = Camera.open();
+
+    ...
+
+    // Step 1: Unlock and set camera to MediaRecorder
+    camera.unlock();
+    mediaRecorder.setCamera(camera);
+
+    // Step 2: Set sources
+    mediaRecorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER);
+    mediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+
+    // Step 3: Set a CamcorderProfile (requires API Level 8 or higher)
+    CamcorderProfile profile = CamcorderProfile
+            .get(CamcorderProfile.QUALITY_HIGH);
+
+    // manual set up!
+
+    mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+
+    mediaRecorder.setVideoEncodingBitRate(profile.videoBitRate);
+    mediaRecorder.setVideoFrameRate(profile.videoFrameRate);
+    mediaRecorder.setVideoSize(profile.videoFrameWidth,
+            profile.videoFrameHeight);
+
+    mediaRecorder.setAudioChannels(profile.audioChannels);
+    mediaRecorder.setAudioEncodingBitRate(profile.audioBitRate);
+    mediaRecorder.setAudioSamplingRate(profile.audioSampleRate);
+
+    mediaRecorder.setAudioEncoder(profile.audioCodec);
+    //mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.MPEG_4_SP);
+    mediaRecorder.setVideoEncoder(profile.videoCodec);
+
+    // mediaRecorder.setProfile(profile);
+
+    // Step 4: Set output file
+    mediaRecorder.setOutputFile("somefile.mp4");
+
+    // Step 5: Set the preview output
+    mediaRecorder.setPreviewDisplay(preview.getHolder().getSurface());
+
+    // Step 6: Prepare configured MediaRecorder
+    try {
+        mediaRecorder.prepare();
+    } catch ...
+    { release mediaRecorder}
+
+
+then I simplyCall mediaRecorder.start()
+please note, that I need video to be encoded into mp4 format.
+This code works on Samsng Galaxy GIO (android 2.3.3) and fails as described on Acer E305 (android 4.0.2)
+
+Any ideas?
+Thanks.
+    
+===============================================================================================
+22
+A:Solved it at last.
+The issue was setting the preview size before setting the actual preview for the camera. The preview size MUST be equal to the selected video size.
+
+CamcorderProfile profile = [get required profile];
+
+Camera.Parameters parameters = mCamera.getParameters();
+parameters.setPreviewSize(profile.videoFrameWidth,profile.videoFrameHeight);
+mCamera.setParameters(parameters);
+
+mCamera.setPreviewDisplay([surface holder]);
+mCamera.startPreview();
+
+...
+
+//configure MediaRecorder and call MediaRecorder.start()
+
+    

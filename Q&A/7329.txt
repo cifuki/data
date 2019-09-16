@@ -1,0 +1,106 @@
+36
+Q:I'm trying to do something which really ought to be quite easy, but it's driving me crazy. I'm trying to launch an activity when a home screen widget is pressed, such as a configuration activity for the widget. I think I've followed word for word the tutorial on the Android Developers website, and even a few unofficial tutorials as well, but I must be missing something important as it doesn't work.
+
+Here is the code:
+
+public class VolumeChangerWidget extends AppWidgetProvider {
+
+public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds){
+    final int N = appWidgetIds.length;
+
+    for (int i=0; i < N; i++) {
+        int appWidgetId = appWidgetIds[i];
+
+        Log.d("Steve", "Running for appWidgetId " + appWidgetId);
+        Toast.makeText(context, "Hello from onUpdate", Toast.LENGTH_SHORT);
+        Log.d("Steve", "After the toast line");
+
+        Intent intent = new Intent(context, WidgetTest.class);
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, intent, 0);
+
+        RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget);
+        views.setOnClickPendingIntent(R.id.button, pendingIntent);
+
+        appWidgetManager.updateAppWidget(appWidgetId, views);
+    }
+}
+
+
+}
+
+When adding the widget to the homescreen, Logcat shows the two debugging lines, though not the Toast. (Any ideas why not?) However, more vexing is that when I then click on the button with the PendingIntent associated with it, nothing happens at all. I know the "WidgetTest" activity can run because if I set up an Intent from within the main activity, it launches fine.
+
+In case it matters, here is the Android Manifest file:
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+package="com.steve"
+android:versionCode="1"
+android:versionName="1.0">
+<application android:icon="@drawable/icon" android:label="@string/app_name">
+    <activity android:name=".Volume_Change_Program"
+              android:label="@string/app_name">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+    </activity>
+
+    <activity android:name=".WidgetTest"
+              android:label="@string/hello">
+        <intent_filter>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent_filter>
+    </activity>
+
+    <receiver android:name=".VolumeChangerWidget" >
+        <intent-filter>
+            <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+        </intent-filter>
+        <meta-data  android:name="android.appwidget.provider"
+                    android:resource="@xml/volume_changer_info" />
+    </receiver>
+
+</application>
+<uses-sdk android:minSdkVersion="3" />
+
+
+ 
+
+Is there a way to test where the fault is? I.e. is the fault that the button isn't linked properly to the PendingIntent, or that the PendingIntent or Intent isn't finding WidgetTest.class, etc?
+
+Thanks very much for your help!
+
+Steve
+    
+===============================================================================================
+9
+A:I was having the same issue. I discovered that the fix is to call an update through the appwidget manager. here is an example of how to do that in onEnabled. It appears it needs to be done in both onEnabled and onUpdated so that when device is powering on your click intent is also intialized - in onUpdated the params already provide the reference to the manager, luckily.
+
+@Override 
+    public void onEnabled(Context context) {  
+          //Log.v("toggle_widget","Enabled is being called"); 
+
+          AppWidgetManager mgr = AppWidgetManager.getInstance(context); 
+          //retrieve a ref to the manager so we can pass a view update 
+
+          Intent i = new Intent(); 
+          i.setClassName("yourdoman.yourpackage", "yourdomain.yourpackage.yourclass"); 
+          PendingIntent myPI = PendingIntent.getService(context, 0, i, 0); 
+          //intent to start service 
+
+        // Get the layout for the App Widget 
+        RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.togglelayout); 
+
+        //attach the click listener for the service start command intent 
+        views.setOnClickPendingIntent(R.id.toggleButton, myPI); 
+
+        //define the componenet for self 
+        ComponentName comp = new ComponentName(context.getPackageName(), ToggleWidget.class.getName()); 
+
+        //tell the manager to update all instances of the toggle widget with the click listener 
+        mgr.updateAppWidget(comp, views); 
+} 
+
+    

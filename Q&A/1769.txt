@@ -1,0 +1,73 @@
+107
+Q:I have a TextView which is rendering basic HTML, containing 2+ links. I need to capture clicks on the links and open the links -- in my own internal WebView (not in the default browser.)
+
+The most common method to handle link rendering seems to be like this:
+
+String str_links = "<a href='http://google.com'>Google</a><br /><a href='http://facebook.com'>Facebook</a>";
+text_view.setLinksClickable(true);
+text_view.setMovementMethod(LinkMovementMethod.getInstance());
+text_view.setText( Html.fromHtml( str_links ) );
+
+
+However, this causes the links to open in the default internal web browser (showing the "Complete Action Using..." dialog).
+
+I tried implementing a onClickListener, which properly gets triggered when the link is clicked, but I don't know how to determine WHICH link was clicked...
+
+text_view.setOnClickListener(new OnClickListener(){
+
+    public void onClick(View v) {
+        // what now...?
+    }
+
+});
+
+
+Alternatively, I tried creating a custom LinkMovementMethod class and implementing onTouchEvent...
+
+public boolean onTouchEvent(TextView widget, Spannable text, MotionEvent event) {
+    String url = text.toString();
+    // this doesn't work because the text is not necessarily a URL, or even a single link... 
+    // eg, I don't know how to extract the clicked link from the greater paragraph of text
+    return false;
+}
+
+
+Ideas?
+
+
+
+Example solution
+
+I came up with a solution which parses the links out of a HTML string and makes them clickable, and then lets you respond to the URL.
+    
+===============================================================================================
+204
+A:Based upon another answer, here's a function setTextViewHTML() which parses the links out of a HTML string and makes them clickable, and then lets you respond to the URL.
+
+protected void makeLinkClickable(SpannableStringBuilder strBuilder, final URLSpan span)
+{
+    int start = strBuilder.getSpanStart(span);
+    int end = strBuilder.getSpanEnd(span);
+    int flags = strBuilder.getSpanFlags(span);
+    ClickableSpan clickable = new ClickableSpan() {
+        public void onClick(View view) {
+            // Do something with span.getURL() to handle the link click...
+        }
+    };
+    strBuilder.setSpan(clickable, start, end, flags);
+    strBuilder.removeSpan(span);
+}
+
+protected void setTextViewHTML(TextView text, String html)
+{
+    CharSequence sequence = Html.fromHtml(html);
+    SpannableStringBuilder strBuilder = new SpannableStringBuilder(sequence);
+    URLSpan[] urls = strBuilder.getSpans(0, sequence.length(), URLSpan.class);   
+    for(URLSpan span : urls) {
+        makeLinkClickable(strBuilder, span);
+    }
+    text.setText(strBuilder);
+    text.setMovementMethod(LinkMovementMethod.getInstance());       
+}
+
+    

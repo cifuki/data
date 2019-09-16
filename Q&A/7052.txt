@@ -1,0 +1,75 @@
+37
+Q:I have a ViewPager that loads three pages at a time. If I swipe from page 1 to page 2 then to 3, the first page(fragment) goes to  onPause(). Then, if I swipe to the second page, 1st page comes to onResume() even though the page 1 is still not visible to the user. So, my question is: how to distinguish between the first and second page in code? For example, if I have to run a piece of code when the fragment is visible, how is that done?
+    
+===============================================================================================
+41
+A:The FragmentPagerAdapter keeps additional fragments, besides the one shown, in resumed state. The solution is to implement a custom OnPageChangeListener and create a new method for when the fragment is shown.
+
+1) Create LifecycleManager Interface The interface will have two methods and each ViewPager\xe2\x80\x99s Fragment will implement it. These methods Are as follows:
+
+public interface FragmentLifecycle {
+
+    public void onPauseFragment();
+    public void onResumeFragment();
+
+}
+
+
+2) Let each Fragment implement the interface Add iplements statement for each class declaration:
+
+public class FragmentBlue extends Fragment implements FragmentLifecycle
+public class FragmentGreen extends Fragment implements FragmentLifecycle
+public class FragmentPink extends Fragment implements FragmentLifecycle
+
+
+3) Implement interface methods in each fragment In order to check that it really works as expected, I will just log the method call and show Toast:
+
+@Override
+public void onPauseFragment() {
+    Log.i(TAG, "onPauseFragment()");
+    Toast.makeText(getActivity(), "onPauseFragment():" + TAG, Toast.LENGTH_SHORT).show(); 
+}
+
+@Override
+public void onResumeFragment() {
+    Log.i(TAG, "onResumeFragment()");
+    Toast.makeText(getActivity(), "onResumeFragment():" + TAG, Toast.LENGTH_SHORT).show(); 
+}
+
+
+4) Call interface methods on ViewPager page change You can set OnPageChangeListener on ViewPager and get callback each time when ViewPager shows another page:
+
+pager.setOnPageChangeListener(pageChangeListener);
+
+
+5) Implement OnPageChangeListener to call your custom Lifecycle methods
+
+Listener knows the new position and can call the interface method on new Fragment with the help of PagerAdapter. I can here call onResumeFragment() for new fragment and onPauseFragment() on the current one.
+
+I need to store also the current fragment\xe2\x80\x99s position (initially the current position is equal to 0), since I don\xe2\x80\x99t know whether the user scrolled from left to right or from right to left. See what I mean in code:
+
+private OnPageChangeListener pageChangeListener = new OnPageChangeListener() {
+
+    int currentPosition = 0;
+
+    @Override
+    public void onPageSelected(int newPosition) {
+
+        FragmentLifecycle fragmentToShow = (FragmentLifecycle)pageAdapter.getItem(newPosition);
+        fragmentToShow.onResumeFragment();
+
+        FragmentLifecycle fragmentToHide = (FragmentLifecycle)pageAdapter.getItem(currentPosition);
+        fragmentToHide.onPauseFragment();
+
+        currentPosition = newPosition;
+    }
+
+    @Override
+    public void onPageScrolled(int arg0, float arg1, int arg2) { }
+
+    public void onPageScrollStateChanged(int arg0) { }
+};
+
+
+I didn't write the code. Full tutorial here: http://looksok.wordpress.com/2013/11/02/viewpager-with-detailed-fragment-lifecycle-onresumefragment-including-source-code/
+    

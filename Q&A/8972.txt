@@ -1,0 +1,191 @@
+30
+Q:I am trying to make my app better and code more maintainable using Dagger2 I caught general idea, but still cannot figure out how scopes are managed by Dagger2
+I injected dagger into my project (sounds funny). 
+I created ApplicationComonent component and it works perfectly in my project.
+Here is my code.
+
+@Singleton
+@Component(modules = {
+        ApplicationModule.class,
+        ThreadingModule.class,
+        NetworkModule.class,
+        DatabaseModule.class,
+        ServiceModule.class,
+        ParseModule.class,
+        PreferencesSessionModule.class})
+
+public interface ApplicationComponent {
+    ActivityComponent activityComponent(ActivityModule activityModule);
+
+    void inject(BaseActivity baseActivity);
+
+    void inject(MainAppActivity mainAppActivity);
+
+    void inject(MyApplication application);
+
+    void inject(BaseFragment baseFragment);
+
+    void inject(MyService service);
+
+    void inject(RegistrationIntentService service);
+}
+
+
+I create my component instance in MyApplication class like this 
+
+private void initializeAndInjectComponent() {
+        mApplicationComponent =
+                DaggerApplicationComponent
+                        .builder()
+                        .threadingModule(new ThreadingModule(1))
+                        .applicationModule(new ApplicationModule(this))
+                        .networkModule(new NetworkModule(
+                                MyService.API_SERVER_BASE_URL,
+                                MyService.TIMEOUT))
+                        .build();
+        mApplicationComponent.inject(this);
+    }
+
+
+And I can obtain component in order to inject in in my Activities 
+
+    MyApplication application = MyApplication.get(this);
+    application.getApplicationComponent().inject(this);
+
+
+Everything works perfectly.
+
+To add each method as well as module class is annotated with @Singleton scope, all modules related to the ApplicationComponent
+
+Now I want to make dependencies better and I have seen a lot of examples with custom scopes like @PerActivity, @PerFragment. I have a lot of questions, but about this later.
+
+So I created ActivityComponent 
+
+@PerActivity
+@Subcomponent(
+        modules = {
+                NetworkServiceModule.class,
+                ActivityModule.class,
+                PermissionModule.class
+        })
+public interface ActivityComponent {
+    Activity activity();
+
+    void inject(BaseActivity baseActivity);
+}
+
+
+All modules looks like this 
+
+@PerActivity
+@Module
+public class ActivityModule {
+    private Activity mActivity;
+
+    public ActivityModule(Activity activity) {
+        this.mActivity = activity;
+    }
+
+    @Provides
+    @PerActivity
+    Activity provideActivity() {
+        return this.mActivity;
+    }
+}
+
+
+I have following dependencies in my BaseActivity 
+
+// Dependencies from ApplicationComponent
+    @Inject
+    protected ApplicationSettingsManager mApplicationSettingsManager;
+    @Inject
+    protected ScheduledThreadPoolExecutor mPoolExecutor;
+// Dependencies from ActivityComponent
+    @Inject
+    protected SpiceManager mSpiceManager;
+    @Inject
+    protected PermissionController mPermissionController;
+
+
+And in my onCreate() method I am injecting as following 
+
+    MyApplication application = MyApplication.get(this);
+    application.getApplicationComponent().activityComponent(new ActivityModule(this)).inject(this);
+
+
+Before creating subcomponent ActivityComponent it was 
+
+   MyApplication application = MyApplication.get(this);
+        application.getApplicationComponent().inject(this);
+
+
+Now I got an error 
+
+Error:(34, 10) error: com.octo.android.robospice.SpiceManager cannot be provided without an @Inject constructor or from an @Provides- or @Produces-annotated method.
+BaseActivity.mSpiceManager
+[injected field of type: com.octo.android.robospice.SpiceManager mSpiceManager]
+
+
+I cannot figure out where is problem, what I missed.
+My questions about scopes in dagger2.
+
+Everything but @Singleton is ignored by Dagger 2, am I right ? 
+I don't understand how life of component is managed ? I have only one idea 
+
+
+When you use @Singleton annotation dagger is creating object in some static pool that will exist during whole application lifecycle, and will be destroyed when JVM process (dalvik VM,ART) instance will be destroyed.  
+When you use any other annotation is just for you as developer to better maintain code, @PerActivity, @PerFragment is just custom annotation nothing more. And in case you place @PerFragment component in Application class it will live as long as Application lives. Am I right ?  
+So I understand this like this, if dagger finds @Singleton annotation it will add static reference to component when it is created first time and in case of any other annotation it won't hold reference to component.
+
+
+I would be very grateful for any help with problems described above.
+
+UPDATE
+
+Thank you David Medenjak for great answer, I got much better understanding of Dagger2.
+
+I have also just found the problem, as far as I am using separate Activity component now, I forgot about two lines in ApplicationComponent and change inejction in my MainActivity to ActivityComponent instead of ApplicationComponent,  so for sure it couldn't resolve dependencies from subcomponent.
+
+ void inject(BaseActivity baseActivity);
+
+ void inject(MainAppActivity mainAppActivity);
+
+
+Now everything works perfectly, I like Dagger2 and separated architecture.
+    
+===============================================================================================
+60
+A:A bit radical, but to simplify things:
+All Scope annotations are nothing but syntactic sugar—including @Singleton.
+
+Scopes mostly just provide compile time checks. Cyclic dependencies, or errors about things that you might have missed. @Singleton is just like any other scope, the only difference is that it is an already existing annotation and you don't have to create it yourself. You could just use @MySingleton instead.
+
+
+  [...] dagger is creating object in some static pool that will exists during whole application lifecycle
+
+
+No. Dagger does nothing static. You have component objects. Those components hold your objects created by modules. If an object in a component has the scope of the component, it will only be created once in that exact component. If you decide to create 2 AppComponent objects, you will have 2 objects of each @Singleton annotated object, each within its component. This is why you should keep the reference to the component. Most implementations that I have seen or used hence keep their AppComponent within their  Application. If you do this, you can use it like a singleton—it is still just a POJO.
+
+
+  [...]you place @PerFragment component in Application class it will live as long as Application lives.
+
+
+Yes. As already covered by the paragraph above, it is just an object. Keep the reference, you keep the objects. Throw it away or create a new one and you have new objects (defined within in this component / scope). You should although not keep activity or fragment scoped components any place besides in activities or fragments respectively, since keeping them e.g. in your app component will most likely lead to a memory leak. (If it doesn't, you probably would not have needed the activity or fragment scope.)
+
+
+  if dagger finds @Singleton annotation it will add static reference to component when it is created first time and in case of any other annotation it won't hold reference to component.
+
+
+Again, no. Nothing static. Plain old java objects. You can have multiple @Singleton components with their own objects, but you probably shouldn't (Although this is what makes instrumentation testing possible / easy—just swap components.)
+
+
+
+Your mentioned error
+
+
+  SpiceManager cannot be provided without an @Inject constructor or from an @Provides- or @Produces-annotated method.
+
+
+This means that the component you are trying to inject your object with can not find any way to produce or provide a SpiceManager. Make sure you provide it from your AppComponent or some other place, are not missing any annotations, etc.
+    

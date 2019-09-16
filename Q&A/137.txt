@@ -1,0 +1,250 @@
+478
+Q:Fragments seem to be very nice for separation of UI logic into some modules. But along with ViewPager its lifecycle is still misty to me. So Guru thoughts are badly needed! 
+
+Edit
+
+See dumb solution below ;-)
+
+Scope
+
+Main activity has a ViewPager with fragments. Those fragments could implement a little bit different logic for other (submain) activities, so the fragments' data is filled via a callback interface inside the activity. And everything works fine on first launch, but!...
+
+Problem
+
+When the activity gets recreated (e.g. on orientation change) so do the ViewPager's fragments. The code (you'll find below) says that every time the activity is created I try to create a new ViewPager fragments adapter the same as fragments (maybe this is the problem) but FragmentManager already has all these fragments stored somewhere (where?) and starts the recreation mechanism for those. So the recreation mechanism calls the "old" fragment's onAttach, onCreateView, etc. with my callback interface call for initiating data via the Activity's implemented method. But this method points to the newly created fragment which is created via the Activity's onCreate method.
+
+Issue
+
+Maybe I'm using wrong patterns but even Android 3 Pro book doesn't have much about it. So, please, give me one-two punch and point out how to do it the right way. Many thanks!
+
+Code
+
+Main Activity
+
+public class DashboardActivity extends BasePagerActivity implements OnMessageListActionListener {
+
+private MessagesFragment mMessagesFragment;
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    Logger.d("Dash onCreate");
+    super.onCreate(savedInstanceState);
+
+    setContentView(R.layout.viewpager_container);
+    new DefaultToolbar(this);
+
+    // create fragments to use
+    mMessagesFragment = new MessagesFragment();
+    mStreamsFragment = new StreamsFragment();
+
+    // set titles and fragments for view pager
+    Map<String, Fragment> screens = new LinkedHashMap<String, Fragment>();
+    screens.put(getApplicationContext().getString(R.string.dashboard_title_dumb), new DumbFragment());
+    screens.put(getApplicationContext().getString(R.string.dashboard_title_messages), mMessagesFragment);
+
+    // instantiate view pager via adapter
+    mPager = (ViewPager) findViewById(R.id.viewpager_pager);
+    mPagerAdapter = new BasePagerAdapter(screens, getSupportFragmentManager());
+    mPager.setAdapter(mPagerAdapter);
+
+    // set title indicator
+    TitlePageIndicator indicator = (TitlePageIndicator) findViewById(R.id.viewpager_titles);
+    indicator.setViewPager(mPager, 1);
+
+}
+
+/* set of fragments callback interface implementations */
+
+@Override
+public void onMessageInitialisation() {
+
+    Logger.d("Dash onMessageInitialisation");
+    if (mMessagesFragment != null)
+        mMessagesFragment.loadLastMessages();
+}
+
+@Override
+public void onMessageSelected(Message selectedMessage) {
+
+    Intent intent = new Intent(this, StreamActivity.class);
+    intent.putExtra(Message.class.getName(), selectedMessage);
+    startActivity(intent);
+}
+
+
+BasePagerActivity aka helper
+
+public class BasePagerActivity extends FragmentActivity {
+
+BasePagerAdapter mPagerAdapter;
+ViewPager mPager;
+}
+
+
+Adapter
+
+public class BasePagerAdapter extends FragmentPagerAdapter implements TitleProvider {
+
+private Map<String, Fragment> mScreens;
+
+public BasePagerAdapter(Map<String, Fragment> screenMap, FragmentManager fm) {
+
+    super(fm);
+    this.mScreens = screenMap;
+}
+
+@Override
+public Fragment getItem(int position) {
+
+    return mScreens.values().toArray(new Fragment[mScreens.size()])[position];
+}
+
+@Override
+public int getCount() {
+
+    return mScreens.size();
+}
+
+@Override
+public String getTitle(int position) {
+
+    return mScreens.keySet().toArray(new String[mScreens.size()])[position];
+}
+
+// hack. we don't want to destroy our fragments and re-initiate them after
+@Override
+public void destroyItem(View container, int position, Object object) {
+
+    // TODO Auto-generated method stub
+}
+
+}
+
+
+Fragment
+
+public class MessagesFragment extends ListFragment {
+
+private boolean mIsLastMessages;
+
+private List<Message> mMessagesList;
+private MessageArrayAdapter mAdapter;
+
+private LoadMessagesTask mLoadMessagesTask;
+private OnMessageListActionListener mListener;
+
+// define callback interface
+public interface OnMessageListActionListener {
+    public void onMessageInitialisation();
+    public void onMessageSelected(Message selectedMessage);
+}
+
+@Override
+public void onAttach(Activity activity) {
+    super.onAttach(activity);
+    // setting callback
+    mListener = (OnMessageListActionListener) activity;
+    mIsLastMessages = activity instanceof DashboardActivity;
+
+}
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+    inflater.inflate(R.layout.fragment_listview, container);
+    mProgressView = inflater.inflate(R.layout.listrow_progress, null);
+    mEmptyView = inflater.inflate(R.layout.fragment_nodata, null);
+    return super.onCreateView(inflater, container, savedInstanceState);
+}
+
+@Override
+public void onActivityCreated(Bundle savedInstanceState) {
+    super.onActivityCreated(savedInstanceState);
+
+    // instantiate loading task
+    mLoadMessagesTask = new LoadMessagesTask();
+
+    // instantiate list of messages
+    mMessagesList = new ArrayList<Message>();
+    mAdapter = new MessageArrayAdapter(getActivity(), mMessagesList);
+    setListAdapter(mAdapter);
+}
+
+@Override
+public void onResume() {
+    mListener.onMessageInitialisation();
+    super.onResume();
+}
+
+public void onListItemClick(ListView l, View v, int position, long id) {
+    Message selectedMessage = (Message) getListAdapter().getItem(position);
+    mListener.onMessageSelected(selectedMessage);
+    super.onListItemClick(l, v, position, id);
+}
+
+/* public methods to load messages from host acitivity, etc... */
+}
+
+
+Solution
+
+The dumb solution is to save the fragments inside onSaveInstanceState (of host Activity) with putFragment and get them inside onCreate via getFragment. But I still have a strange feeling that things shouldn't work like that... See code below:
+
+    @Override
+protected void onSaveInstanceState(Bundle outState) {
+
+    super.onSaveInstanceState(outState);
+    getSupportFragmentManager()
+            .putFragment(outState, MessagesFragment.class.getName(), mMessagesFragment);
+}
+
+protected void onCreate(Bundle savedInstanceState) {
+    Logger.d("Dash onCreate");
+    super.onCreate(savedInstanceState);
+
+    ...
+    // create fragments to use
+    if (savedInstanceState != null) {
+        mMessagesFragment = (MessagesFragment) getSupportFragmentManager().getFragment(
+                savedInstanceState, MessagesFragment.class.getName());
+                StreamsFragment.class.getName());
+    }
+    if (mMessagesFragment == null)
+        mMessagesFragment = new MessagesFragment();
+    ...
+}
+
+    
+===============================================================================================
+443
+A:When the FragmentPagerAdapter adds a fragment to the FragmentManager, it uses a special tag based on the particular position that the fragment will be placed. FragmentPagerAdapter.getItem(int position) is only called when a fragment for that position does not exist. After rotating, Android will notice that it already created/saved a fragment for this particular position and so it simply tries to reconnect with it with FragmentManager.findFragmentByTag(), instead of creating a new one. All of this comes free when using the FragmentPagerAdapter and is why it is usual to have your fragment initialisation code inside the getItem(int) method.
+
+Even if we were not using a FragmentPagerAdapter, it is not a good idea to create a new fragment every single time in Activity.onCreate(Bundle). As you have noticed, when a fragment is added to the FragmentManager, it will be recreated for you after rotating and there is no need to add it again. Doing so is a common cause of errors when working with fragments.
+
+A usual approach when working with fragments is this:
+
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    ...
+
+    CustomFragment fragment;
+    if (savedInstanceState != null) {
+        fragment = (CustomFragment) getSupportFragmentManager().findFragmentByTag("customtag");
+    } else {
+        fragment = new CustomFragment();
+        getSupportFragmentManager().beginTransaction().add(R.id.container, fragment, "customtag").commit(); 
+    }
+
+    ...
+
+}
+
+
+When using a FragmentPagerAdapter, we relinquish fragment management to the adapter, and do not have to perform the above steps. By default, it will only preload one Fragment in front and behind the current position (although it does not destroy them unless you are using FragmentStatePagerAdapter). This is controlled by ViewPager.setOffscreenPageLimit(int). Because of this, directly calling methods on the fragments outside of the adapter is not guaranteed to be valid, because they may not even be alive. 
+
+To cut a long story short, your solution to use putFragment to be able to get a reference afterwards is not so crazy, and not so unlike the normal way to use fragments anyway (above). It is difficult to obtain a reference otherwise because the fragment is added by the adapter, and not you personally. Just make sure that the offscreenPageLimit is high enough to load your desired fragments at all times, since you rely on it being present. This bypasses lazy loading capabilities of the ViewPager, but seems to be what you desire for your application.
+
+Another approach is to override FragmentPageAdapter.instantiateItem(View, int) and save a reference to the fragment returned from the super call before returning it (it has the logic to find the fragment, if already present).
+
+For a fuller picture, have a look at some of the source of FragmentPagerAdapter (short) and ViewPager (long).
+    

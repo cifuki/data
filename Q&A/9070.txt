@@ -1,0 +1,148 @@
+30
+Q:On the android material design principles page, one of the examples shows a FAB expanding into a new full screen. (Under "Full Screen")
+
+http://www.google.com/design/spec/components/buttons-floating-action-button.html#buttons-floating-action-button-transitions
+
+I've tried to implement the same effect in my app, but with little success.
+I managed to create a FAB that expands into a view using this code as reference: https://gist.github.com/chris95x8/882b5c5d0aa2096236ba.
+
+It worked, but I was wondering whether I could apply the same effect to an activity transition. I've tried looking it up and playing with it myself but could not find anything that might work.  
+
+I know I could make the FAB expand into a Fragment and not a whole new activity, but I'm not sure if that's what being done, and whether that's optimal or not.
+
+And so my question is, is there a way to implement the fab-expanding reveal effect as an activity transition, or is it supposed to just reveal a new fragment?
+    
+===============================================================================================
+29
+A:I am developing an app which expands a FloatingActionButton into a new Activity. I'm not sure that if you like my implementation, but please see pictures at first:
+
+
+
+
+
+
+
+
+
+
+
+So the first picture shows MainActivity and the last one shows SecondActivity, which is "expanded" from FAB.
+
+Now, I want to mention that I'm not actually expanding a FAB into a new Activity but I can let user feel that the new page is expanded from that FAB, and I think that's enough for both developers and users.
+
+Here's implementation:
+
+Preparation:
+
+
+A FloatingActionButton of course,
+Visit https://github.com/kyze8439690/RevealLayout and import this library to your project. It is used to play reveal animation. It has a custom BakedBezierInterpolator to control reveal animation and make it material-styled.
+
+
+Steps:
+
+
+create activity_main.xml like this:
+
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!--Your main content here-->
+
+    <RevealLayout
+        android:id="@+id/reveal_layout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="invisible">
+
+        <View
+            android:id="@+id/reveal_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="invisible"/>
+
+    </RevealLayout>
+
+</FrameLayout>
+
+find Views:
+
+mRevealLayout = (RevealLayout) findViewById(R.id.reveal_layout);
+mRevealView = findViewById(R.id.reveal_view);
+
+expand when user clicks FAB:
+
+mFab.setOnClickListener(new View.OnClickListener() {
+    @Override
+    public void onClick(View v) {
+        mFab.setClickable(false); // Avoid naughty guys clicking FAB again and again...
+        int[] location = new int[2];
+        mFab.getLocationOnScreen(location);
+        location[0] += mFab.getWidth() / 2;
+        location[1] += mFab.getHeight() / 2;
+
+        final Intent intent = new Intent(MainActivity.this, SecondActivity.class);
+
+        mRevealView.setVisibility(View.VISIBLE);
+        mRevealLayout.setVisibility(View.VISIBLE);
+
+        mRevealLayout.show(location[0], location[1]); // Expand from center of FAB. Actually, it just plays reveal animation.
+        mFab.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                startActivity(intent);
+                /**
+                 * Without using R.anim.hold, the screen will flash because of transition
+                 * of Activities.
+                 */
+                overridePendingTransition(0, R.anim.hold);
+            }
+        }, 600); // 600 is default duration of reveal animation in RevealLayout
+        mFab.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                mFab.setClickable(true);
+                mRevealLayout.setVisibility(View.INVISIBLE);
+                mViewToReveal.setVisibility(View.INVISIBLE);
+            }
+        }, 960); // Or some numbers larger than 600.
+    }
+});
+
+
+And here is hold.xml in res/anim:
+
+<set
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shareInterpolator="false">
+
+    <translate
+        android:duration="960" <!-- Enough-large time is OK -->
+        android:fromXDelta="0%"
+        android:fromYDelta="0%"
+        android:toXDelta="0%"
+        android:toYDelta="0%"/>
+
+</set>
+
+
+
+That's all.
+
+Improvements:
+
+
+RevealLayout has a bug(plays rectangular instead of circular reveal animation) for devices under API 17(Android 4.2), you can add these lines in constructor of it:
+
+if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) {
+    setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+}
+
+If your SecondActivity contains complicated contents, a simple View used as reveal_view in the layout.xml isn't enough/perfect. You can include the second layout inside the RevealLayout reveal_layout. It seems wasteful and hard to control if the second layout won't appear same at every time. But for me, it will. So you can make other improvements if you should.
+If you want to implement totally same animation shown in Material Design Guide, you can set layout_height of the RevealLayout into a specific number instead of match_parent. After expanding animation ends(or some time after the animation plays, which should make the whole process of animation smoothly), then you can animate translationY. The important point is, just cheat users visually by controlling animation duration.
+
+
+Finally, this is my own experience/attempt and I'm a beginner in developing Android apps. If there are any mistakes/further improvements, please leave comments/edit my answer. Thank you.
+    

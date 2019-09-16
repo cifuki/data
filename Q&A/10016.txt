@@ -1,0 +1,208 @@
+27
+Q:I would like to remove ActionBarSherlock from my application and replace it with the standard ActionBarCompat. 
+
+
+How do I implement ActionBarCompat?
+How do I migrate the Activites?
+Which imports replace the ActionBarSherlock imports?
+What are typical problems?
+
+    
+===============================================================================================
+71
+A:I did some migrating and wrote down all the issues I encountered. None were serious but took time to research. I was able to migrate a quite big application in a couple hours after knowing all this. May this help to speed up migration process. 
+
+How do I convert from ActionBarSherlock to ActionBarCompat?
+
+Note: Since the Support Library's v22.1.0, the class ActionBarActivity is deprecated. You should use AppCompatActivity instead. Read here for more information: What's the enhancement of AppCompatActivity over ActionBarActivity?
+
+== Switch the libraries ==
+
+Go to app properties and remove ActionBarSherlock and add ActionBarCompat instead. This requires the v7 appcompat library to be present, see http://developer.android.com/tools/support-library/setup.html for details. Follow the instructions precisely, ActionBarCompat needs to be a library project.
+
+Parallel does not work (easily) as a lot of attributes are in both libraries.
+
+Do not be discouraged by hundreds of errors after replacing the libraries. The vast majority goes away automatically.
+
+== Fix XML errors ==
+
+First thing is to fix all XML errors to allow compiling and find other errors.
+
+Replace the sherlock theme with ActionBarCompat Theme, e.g. 
+<style name="AppBaseTheme" parent="@style/Theme.AppCompat.Light.DarkActionBar">
+
+Remove double attr, e.g. <attr name="buttonBarStyle" format="reference" />.
+
+For now remove all your individual action bar styles. See further down how to handle these.
+
+== Fix build errors ==
+
+Pick the easiest activities first. ActionBarCompat does not distinguish Activity and FragmentActivity, both are now ActionBarActivity.
+
+Remove the ActionBarSherlock imports and extend to ActionBarActivity (import android.support.v7.app.ActionBarActivity;)
+
+After saving, this should dramatically reduce errors in the activity.
+
+Fix the errors around the menues first and disregard fragment errors for now, they should be going away later.
+
+== Replacements ==
+
+Imports:
+
+
+import com.actionbarsherlock.app.SherlockActivity; -> import android.support.v7.app.ActionBarActivity;
+import com.actionbarsherlock.app.SherlockFragmentActivity; -> import android.support.v7.app.ActionBarActivity;
+import com.actionbarsherlock.app.SherlockFragment; -> import android.support.v4.app.Fragment;
+import com.actionbarsherlock.app.SherlockListFragment; -> import android.support.v4.app.ListFragment;
+import com.actionbarsherlock.app.SherlockListActivity; -> import android.support.v7.app.ActionBarActivity; (see ListActivity / SherlockListActivity)
+import com.actionbarsherlock.view.Menu; -> import android.view.Menu; 
+import com.actionbarsherlock.view.MenuItem; -> import android.view.MenuItem;
+import com.actionbarsherlock.view.MenuInflater; -> import android.view.MenuInflater;
+import com.actionbarsherlock.view.Window; -> import android.view.Window; 
+import com.actionbarsherlock.widget.SearchView; -> import android.support.v7.widget.SearchView;
+import com.actionbarsherlock.widget.SearchView.OnQueryTextListener -> import android.support.v7.widget.SearchView.OnQueryTextListener;
+
+
+Code Replacements:
+
+
+SherlockActivity -> ActionBarActivity
+SherlockFragmentActivity -> ActionBarActivity
+SherlockListActivity -> ListActivity (see ListActivity / SherlockListActivity)
+SherlockListFragment -> ListFragment;
+getSupportMenuInflater -> getMenuInflater
+getSherlockActivity() -> getActivity()
+com.actionbarsherlock.widget.SearchView.OnQueryTextListener() -> OnQueryTextListener (see SearchView)
+m.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS); -> MenuItemCompat.setShowAsAction(m, MenuItem.SHOW_AS_ACTION_ALWAYS);
+
+
+Typical Code changes for ActionBarCompat
+
+
+getActionBar() -> getSupportActionBar()
+invalidateOptionsMenu() -> supportInvalidateOptionsMenu()
+
+
+== Fragment ==
+
+The fragment does not cater for ActionBarCompat functionality. This is a problem when trying to call getSupportActionBar.
+
+This can be solved by using the onAttach method:
+
+@Override
+public void onAttach(Activity activity) {
+  super.onAttach(activity);
+  ((ActionBarActivity)activity).getSupportActionBar().setDisplayHomeAsUpEnabled(false);
+}
+
+
+Usually this is better controlled in the FragmentActivity.
+
+== SearchView ==
+
+This turned out to be a bit of a hassle.
+
+Replace something like this:
+
+MenuItem searchItem = menu.findItem(R.id.action_search);
+SearchView searchView = (SearchView) searchItem.getActionView();
+
+
+with
+
+MenuItem searchItem = menu.findItem(R.id.action_search);
+SearchView searchView = (SearchView) MenuItemCompat.getActionView(searchItem);
+
+
+You also have to adjust your menu:
+
+<menu xmlns:android="http://schemas.android.com/apk/res/android" >
+<item
+    android:id="@+id/action_search"
+    android:actionViewClass="com.actionbarsherlock.widget.SearchView"
+    android:icon="@android:drawable/ic_menu_search"
+    android:orderInCategory="80"
+    android:showAsAction="always|collapseActionView"
+    android:title="@string/action_search"/>
+</menu>
+
+
+with 
+
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:app="http://schemas.android.com/apk/res-auto" >
+<item
+    android:id="@+id/action_search"
+    android:icon="@android:drawable/ic_menu_search"
+    android:orderInCategory="80"
+    android:title="@string/action_search"
+    app:actionViewClass="android.support.v7.widget.SearchView"
+    app:showAsAction="always|collapseActionView"/>
+</menu>
+
+
+app: needs to be defined to have compatibility with android versions before 11.
+SearchView needs to be support class v7.
+
+== ListActivity / SherlockListActivity ==
+
+The ListActivity is not supported ActionBarCompat, therefore the crucial functions of the ListActivity need to be implemented manual, which is rather simple:
+
+private ListView mListView;
+
+protected ListView getListView() {
+   if (mListView == null) {
+    mListView = (ListView) findViewById(android.R.id.list);
+   }
+   return mListView;
+}
+
+protected void setListAdapter(ListAdapter adapter) {
+  getListView().setAdapter(adapter);
+}
+
+protected ListAdapter getListAdapter() {
+   ListAdapter adapter = getListView().getAdapter();
+   if (adapter instanceof HeaderViewListAdapter) {
+      return ((HeaderViewListAdapter)adapter).getWrappedAdapter();
+   } else {
+      return adapter;
+   }
+}
+
+
+== Styles ==
+
+A styled action bar can be achieved, see original google posting:
+http://android-developers.blogspot.de/2013/08/actionbarcompat-and-io-2013-app-source.html
+
+A styled searchView box is more difficult:
+This works:
+
+MenuItem searchItem = menu.findItem(R.id.action_search);
+SearchView searchView = (SearchView) MenuItemCompat.getActionView(searchItem);
+SearchView.SearchAutoComplete theTextArea = (SearchView.SearchAutoComplete) searchView.findViewById(R.id.search_src_text);
+theTextArea.setTextColor(getResources().getColor(R.color.yourColor));
+
+
+See these posts:
+
+
+Changing the cursor color in SearchView without ActionBarSherlock
+Change appcompat's SearchView text and hint color
+
+
+== Example == 
+
+Google Navigation Drawer with Action Bar Sherlock includes all original code (now aiming to support library) and formatting. Only some attributes had to be replaced with similar ones as they are only available from v11 onwards.
+
+Download at: https://github.com/GunnarBs/NavigationDrawerWithActionBarCompat
+
+== See also ==
+
+
+http://android-developers.blogspot.de/2013/08/actionbarcompat-and-io-2013-app-source.html
+http://developer.android.com/reference/android/support/v7/app/ActionBar.html
+http://www.grokkingandroid.com/migrating-actionbarsherlock-actionbarcompat/
+
+    

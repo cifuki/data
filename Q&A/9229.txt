@@ -1,0 +1,147 @@
+29
+Q:I am trying to automatically capture and log Android lifecycle events using ActivityLifecycleCallbacks, however documentation on this matter is scarce, to say the least:
+
+    public void registerActivityLifecycleCallbacks (Application.ActivityLifecycleCallbacks callback)
+
+
+I don't want to have to extend the Activity class or override the existing lifecycle methods (onCreate, onResume, etc...)  I'm looking to have a separate class listening for these events and acting accordingly. 
+
+Does anyone have any experience in this, or have links to good solid documentation or tutorials on how this works?  Specifically, how to register for ActivityLifecycleCallbacks, and how to handle them?
+    
+===============================================================================================
+33
+A:I did my own implementation of Application.ActivityLifecycleCallbacks. I'm using SherlockActivity, but for normal Activity class might work.
+
+First, I'm creating an interface that have all methods for track the activities lifecycle:
+
+public interface ActivityLifecycleCallbacks{
+    public void onActivityStopped(Activity activity);
+    public void onActivityStarted(Activity activity);
+    public void onActivitySaveInstanceState(Activity activity, Bundle outState);
+    public void onActivityResumed(Activity activity);
+    public void onActivityPaused(Activity activity);
+    public void onActivityDestroyed(Activity activity);
+    public void onActivityCreated(Activity activity, Bundle savedInstanceState);
+}
+
+
+Second, I implemented this interface in my Application's class:
+
+public class MyApplication extends Application implements my.package.ActivityLifecycleCallbacks{
+
+    @Override
+    public void onCreate() {
+        super.onCreate();           
+    }
+
+    @Override
+    public void onActivityStopped(Activity activity) {
+        Log.i("Tracking Activity Stopped", activity.getLocalClassName());
+
+    }
+
+    @Override
+    public void onActivityStarted(Activity activity) {
+        Log.i("Tracking Activity Started", activity.getLocalClassName());
+
+    }
+
+    @Override
+    public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
+        Log.i("Tracking Activity SaveInstanceState", activity.getLocalClassName());
+    }
+
+    @Override
+    public void onActivityResumed(Activity activity) {
+        Log.i("Tracking Activity Resumed", activity.getLocalClassName());
+    }
+
+    @Override
+    public void onActivityPaused(Activity activity) {
+        Log.i("Tracking Activity Paused", activity.getLocalClassName());
+    }
+
+    @Override
+    public void onActivityDestroyed(Activity activity) {
+        Log.i("Tracking Activity Destroyed", activity.getLocalClassName());
+    }
+
+    @Override
+    public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+        Log.i("Tracking Activity Created", activity.getLocalClassName());
+    }
+}
+
+
+Third, I'm creating a class that extends from SherlockActivity: 
+
+public class MySherlockActivity extends SherlockActivity {
+
+    protected MyApplication nMyApplication;
+
+    protected void onCreate(Bundle savedInstanceState) {
+        // TODO Auto-generated method stub
+        super.onCreate(savedInstanceState);
+        nMyApplication = (MyApplication) getApplication();
+        nMyApplication.onActivityCreated(this, savedInstanceState);
+    }
+
+    protected void onResume() {
+        // TODO Auto-generated method stub
+        super.onResume();
+        nMyApplication.onActivityResumed(this);
+    }
+
+    @Override
+    protected void onPause() {
+        // TODO Auto-generated method stub
+        super.onPause();
+        nMyApplication.onActivityPaused(this);
+    }
+
+    @Override
+    protected void onDestroy() {
+        // TODO Auto-generated method stub
+        super.onDestroy();
+        nMyApplication.onActivityDestroyed(this);
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        nMyApplication.onActivityStarted(this);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        nMyApplication.onActivityStopped(this);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        nMyApplication.onActivitySaveInstanceState(this, outState);
+    }   
+}
+
+
+Fourth, all class that extend from SherlockActivity, I replaced for MySherlockActivity:
+
+public class MainActivity extends MySherlockActivity{
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+    }
+
+}
+
+
+Now, in the logcat you will see the logs programmed in the Interface implementation made in MyApplication.
+
+UPDATE
+
+This implementation was tested from API Level 9 (Gingerbread), API Level 12 (Honeycomb)  and API Level 17 (Jelly Bean) and works fine. Might works in Android's older versions.
+    

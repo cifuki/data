@@ -1,0 +1,51 @@
+55
+Q:Does anybody know how to attach a session cookie to the request using com.android.volley library?
+When I log in to a web site it gives me a session cookie. Browser would send that cookie back with any subsequent request. Volley does not seem to do that, at least not automatically.
+
+Thanks.
+    
+===============================================================================================
+58
+A:Volley doesn't actually make HTTP requests itself, and thus doesn't manage Cookies directly. It instead uses an instance of HttpStack to do this. There are two main implementations:
+
+
+HurlStack: Uses HttpUrlConnection under the hood
+HttpClientStack: uses Apache HttpClient under the hood
+
+
+Cookie management is the responsibility of those HttpStacks. And they each handle Cookies differently.
+
+If you need to support < 2.3, then you should use the HttpClientStack:
+
+Configure an HttpClient instance, and pass that to Volley for it to use under the hood:
+
+// If you need to directly manipulate cookies later on, hold onto this client
+// object as it gives you access to the Cookie Store
+DefaultHttpClient httpclient = new DefaultHttpClient();
+
+CookieStore cookieStore = new BasicCookieStore();
+httpclient.setCookieStore( cookieStore );
+
+HttpStack httpStack = new HttpClientStack( httpclient );
+RequestQueue requestQueue = Volley.newRequestQueue( context, httpStack  );
+
+
+The advantage with this vs manually inserting cookies into the headers is that you get actual cookie management. Cookies in your store will properly respond to HTTP controls that expire or update them.
+
+I've gone a step further and sub-classed BasicCookieStore so that I can automatically persist my cookies to disk.
+
+HOWEVER! If you don't need to support older versions of Android. Just use this method:
+
+// CookieStore is just an interface, you can implement it and do things like
+// save the cookies to disk or what ever.
+CookieStore cookieStore = new MyCookieStore();
+CookieManager manager = new CookieManager( cookieStore, CookiePolicy.ACCEPT_ALL );
+CookieHandler.setDefault( manager  );
+
+// Optionally, you can just use the default CookieManager
+CookieManager manager = new CookieManager();
+CookieHandler.setDefault( manager  );
+
+
+HttpURLConnection will query the CookieManager from that implicitly. HttpUrlConnection is also more performant and a bit cleaner to implement and work with IMO.
+    

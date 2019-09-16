@@ -1,0 +1,161 @@
+75
+Q:I am using following code for handling row clicks. (source)
+
+static class RecyclerTouchListener implements RecyclerView.OnItemTouchListener {
+
+    private GestureDetector gestureDetector;
+    private ClickListener clickListener;
+
+    public RecyclerTouchListener(Context context, final RecyclerView recyclerView, final ClickListener clickListener) {
+        this.clickListener = clickListener;
+        gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onSingleTapUp(MotionEvent e) {
+                return true;
+            }
+
+            @Override
+            public void onLongPress(MotionEvent e) {
+                View child = recyclerView.findChildViewUnder(e.getX(), e.getY());
+                if (child != null && clickListener != null) {
+                    clickListener.onLongClick(child, recyclerView.getChildPosition(child));
+                }
+            }
+        });
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(RecyclerView rv, MotionEvent e) {
+
+        View child = rv.findChildViewUnder(e.getX(), e.getY());
+        if (child != null && clickListener != null && gestureDetector.onTouchEvent(e)) {
+            clickListener.onClick(child, rv.getChildPosition(child));
+        }
+        return false;
+    }
+
+    @Override
+    public void onTouchEvent(RecyclerView rv, MotionEvent e) {
+    }
+}
+
+
+This works however, if I want to have say a delete button on each row. I am not sure to how to implement that with this.
+
+I attached OnClick listener to delete button which works (deletes the row) but it also fires the onclick on full row.
+
+Can anybody help me in how to avoid full row click if a single button is clicked.
+
+Thanks.
+    
+===============================================================================================
+120
+A:this is how I handle multiple onClick events inside a recyclerView:
+
+Edit : Updated to include callbacks (as mentioned in other comments).  I have used a WeakReference in the ViewHolder to eliminate a potential memory leak.
+
+Define interface :
+
+public interface ClickListener {
+
+    void onPositionClicked(int position);
+
+    void onLongClicked(int position);
+}
+
+
+Then the Adapter : 
+
+public class MyAdapter extends RecyclerView.Adapter<MyAdapter.MyViewHolder> {
+
+    private final ClickListener listener;
+    private final List<MyItems> itemsList;
+
+    public MyAdapter(List<MyItems> itemsList, ClickListener listener) {
+        this.listener = listener;
+        this.itemsList = itemsList;
+    }
+
+    @Override public MyViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+        return new MyViewHolder(LayoutInflater.from(parent.getContext()).inflate(R.layout.my_row_layout), parent, false), listener);
+    }
+
+    @Override public void onBindViewHolder(MyViewHolder holder, int position) {
+        // bind layout and data etc..
+    }
+
+    @Override public int getItemCount() {
+        return itemsList.size();
+    }
+
+    public static class MyViewHolder extends RecyclerView.ViewHolder implements View.OnClickListener, View.OnLongClickListener {
+
+        private ImageView iconImageView;
+        private TextView iconTextView;
+        private WeakReference<ClickListener> listenerRef;
+
+        public MyViewHolder(final View itemView, ClickListener listener) {
+            super(itemView);
+
+            listenerRef = new WeakReference<>(listener);
+            iconImageView = (ImageView) itemView.findViewById(R.id.myRecyclerImageView);
+            iconTextView = (TextView) itemView.findViewById(R.id.myRecyclerTextView);
+
+            itemView.setOnClickListener(this);
+            iconTextView.setOnClickListener(this);
+            iconImageView.setOnLongClickListener(this);
+        }
+
+        // onClick Listener for view
+        @Override
+        public void onClick(View v) {
+
+            if (v.getId() == iconTextView.getId()) {
+                Toast.makeText(v.getContext(), "ITEM PRESSED = " + String.valueOf(getAdapterPosition()), Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(v.getContext(), "ROW PRESSED = " + String.valueOf(getAdapterPosition()), Toast.LENGTH_SHORT).show();
+            }
+
+            listenerRef.get().onPositionClicked(getAdapterPosition());
+        }
+
+
+        //onLongClickListener for view
+        @Override
+        public boolean onLongClick(View v) {
+
+            final AlertDialog.Builder builder = new AlertDialog.Builder(v.getContext());
+            builder.setTitle("Hello Dialog")
+                    .setMessage("LONG CLICK DIALOG WINDOW FOR ICON " + String.valueOf(getAdapterPosition()))
+                    .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+
+                        }
+                    });
+
+            builder.create().show();
+            listenerRef.get().onLongClicked(getAdapterPosition());
+            return true;
+        }
+    }
+}
+
+
+Then in your activity/fragment - whatever you can implement : Clicklistener - or anonymous class if you wish like so :
+
+MyAdapter adapter = new MyAdapter(myItems, new ClickListener() {
+            @Override public void onPositionClicked(int position) {
+                // callback performed on click
+            }
+
+            @Override public void onLongClicked(int position) {
+                // callback performed on click
+            }
+        });
+
+
+To get which item was clicked you match the view id i.e. v.getId() == whateverItem.getId()
+
+Hope this approach helps!
+    

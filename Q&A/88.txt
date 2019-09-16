@@ -1,0 +1,165 @@
+625
+Q:I got a AsyncTask that is supposed to check the network access to a host name. But the doInBackground() is never timed out. Anyone have a clue?
+
+public class HostAvailabilityTask extends AsyncTask<String, Void, Boolean> {
+
+    private Main main;
+
+    public HostAvailabilityTask(Main main) {
+        this.main = main;
+    }
+
+    protected Boolean doInBackground(String... params) {
+        Main.Log("doInBackground() isHostAvailable():"+params[0]);
+
+        try {
+            return InetAddress.getByName(params[0]).isReachable(30); 
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return false;       
+    }
+
+    protected void onPostExecute(Boolean... result) {
+        Main.Log("onPostExecute()");
+
+        if(result[0] == false) {
+            main.setContentView(R.layout.splash);
+            return;
+        }
+
+        main.continueAfterHostCheck();
+    }   
+}
+
+    
+===============================================================================================
+493
+A:Network connection / Internet access
+
+
+isConnectedOrConnecting() (used in most answers) checks for any network connection
+To know whether any of those networks have internet access, use one of the following
+
+
+A) Ping a Server (easy)
+
+// ICMP 
+public boolean isOnline() {
+    Runtime runtime = Runtime.getRuntime();
+    try {
+        Process ipProcess = runtime.exec("/system/bin/ping -c 1 8.8.8.8");
+        int     exitValue = ipProcess.waitFor();
+        return (exitValue == 0);
+    }
+    catch (IOException e)          { e.printStackTrace(); }
+    catch (InterruptedException e) { e.printStackTrace(); }
+
+    return false;
+}
+
+
++ could run on main thread
+
+- does not work on some old devices (Galays S3, etc.), it blocks a while if no internet is available.
+
+B) Connect to a Socket on the Internet (advanced)
+
+// TCP/HTTP/DNS (depending on the port, 53=DNS, 80=HTTP, etc.)
+public boolean isOnline() {
+    try {
+        int timeoutMs = 1500;
+        Socket sock = new Socket();
+        SocketAddress sockaddr = new InetSocketAddress("8.8.8.8", 53);
+
+        sock.connect(sockaddr, timeoutMs);
+        sock.close();
+
+        return true;
+    } catch (IOException e) { return false; }
+}
+
+
++ very fast (either way), works on all devices, very reliable
+
+- can't run on the UI thread
+
+This works very reliably, on every device, and is very fast. It needs to run in a separate task though (e.g. ScheduledExecutorService or AsyncTask).
+
+Possible Questions
+
+
+Is it really fast enough?
+
+Yes, very fast ;-)
+Is there no reliable way to check internet, other than testing something on the internet?
+
+Not as far as I know, but let me know, and I will edit my answer.
+What if the DNS is down?
+
+Google DNS (e.g. 8.8.8.8) is the largest public DNS in the world. As of 2013 it served 130 billion requests a day. Let 's just say, your app would probably not be the talk of the day.
+Which permissions are required?
+
+<uses-permission android:name="android.permission.INTERNET" />
+
+
+Just internet access - surprise ^^ (Btw have you ever thought about, how some of the methods suggested here could even have a remote glue about internet access, without this permission?)
+
+
+ 
+
+Extra: One-shot AsyncTask Example
+
+class InternetCheck extends AsyncTask<Void,Void,Boolean> {
+
+    private Consumer mConsumer;
+    public  interface Consumer { void accept(Boolean internet); }
+
+    public  InternetCheck(Consumer consumer) { mConsumer = consumer; execute(); }
+
+    @Override protected Boolean doInBackground(Void... voids) { try {
+        Socket sock = new Socket();
+        sock.connect(new InetSocketAddress("8.8.8.8", 53), 1500);
+        sock.close();
+        return true;
+    } catch (IOException e) { return false; } }
+
+    @Override protected void onPostExecute(Boolean internet) { mConsumer.accept(internet); }
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+// Usage
+
+    new InternetCheck(internet -> { /* do something with boolean response */ });
+
+
+Extra: One-shot RxJava/RxAndroid Example (Kotlin)
+
+fun hasInternetConnection(): Single<Boolean> {
+  return Single.fromCallable {
+    try {
+      // Connect to Google DNS to check for connection
+      val timeoutMs = 1500
+      val socket = Socket()
+      val socketAddress = InetSocketAddress("8.8.8.8", 53)
+
+      socket.connect(socketAddress, timeoutMs)
+      socket.close()
+
+      true
+    } catch (e: IOException) {
+      false
+    }
+  }
+  .subscribeOn(Schedulers.io())
+  .observeOn(AndroidSchedulers.mainThread())
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+    // Usage
+
+    hasInternetConnection().subscribe { hasInternet -> /* do something */}
+
+    

@@ -1,0 +1,130 @@
+39
+Q:I have been trying to get path of captured image in order to delete image. Found many answers on StackOverflow but none of them are working for me. I got the following answer:
+
+private String getLastImagePath() {
+    final String[] imageColumns = { MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DATA };
+    final String imageOrderBy = MediaStore.Images.Media._ID + " DESC";
+    Cursor imageCursor = POS.this.getContentResolver().query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, imageColumns,
+            null, null, imageOrderBy);
+    if (imageCursor.moveToFirst()) {
+        // int id = imageCursor.getInt(imageCursor
+        // .getColumnIndex(MediaStore.Images.Media._ID));
+        String fullPath = imageCursor.getString(imageCursor
+                .getColumnIndex(MediaStore.Images.Media.DATA));
+        return fullPath;
+    } else {
+        return "";
+    }
+}
+
+
+This code works in Samsung tab but doesn't work in Lenovo tab and i-ball tab.
+So, can anyone help me find another solution to do the same? 
+Any help will be appreciated. Thank you.
+
+This is my onActivityResult:
+
+if (requestCode == CmsInter.CAMERA_REQUEST && resultCode == RESULT_OK) {
+    //Bitmap photo = null;
+    //photo = (Bitmap) data.getExtras().get("data");
+
+    String txt = "";
+    if (im != null) {
+        String result = "";
+        //im.setImageBitmap(photo);
+        im.setTag("2");
+        int index = im.getId();
+        String path = getLastImagePath();
+        try {
+            bitmap1 = BitmapFactory.decodeFile(path, options);
+            bitmap = Bitmap.createScaledBitmap(bitmap1, 512, 400, false);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos);
+            byte[] bytData = baos.toByteArray();
+            try {
+                baos.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            result = Base64.encode(bytData);
+            bytData = null;
+        } catch (OutOfMemoryError ooM) {
+            System.out.println("OutOfMemory Exception----->" + ooM);
+            bitmap1.recycle();
+            bitmap.recycle();
+        } finally {
+            bitmap1.recycle();
+            bitmap.recycle();
+        }
+    }
+}
+
+    
+===============================================================================================
+93
+A:Try like this
+
+Pass Camera Intent like below
+
+Intent intent = new Intent(this);
+startActivityForResult(intent, REQ_CAMERA_IMAGE);
+
+
+And after capturing image Write an OnActivityResult as below
+
+protected void onActivityResult(int requestCode, int resultCode, Intent data) {  
+    if (requestCode == CAMERA_REQUEST && resultCode == RESULT_OK) {
+        Bitmap photo = (Bitmap) data.getExtras().get("data"); 
+        imageView.setImageBitmap(photo);
+        knop.setVisibility(Button.VISIBLE);
+
+
+        // CALL THIS METHOD TO GET THE URI FROM THE BITMAP
+        Uri tempUri = getImageUri(getApplicationContext(), photo);
+
+        // CALL THIS METHOD TO GET THE ACTUAL PATH
+        File finalFile = new File(getRealPathFromURI(tempUri));
+
+        System.out.println(mImageCaptureUri);
+    }  
+}
+
+public Uri getImageUri(Context inContext, Bitmap inImage) {
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    inImage.compress(Bitmap.CompressFormat.JPEG, 100, bytes);
+    String path = Images.Media.insertImage(inContext.getContentResolver(), inImage, "Title", null);
+    return Uri.parse(path);
+}
+
+public String getRealPathFromURI(Uri uri) {
+    String path = "";
+    if (getContentResolver() != null) {
+        Cursor cursor = getContentResolver().query(uri, null, null, null, null);
+        if (cursor != null) {
+            cursor.moveToFirst();
+            int idx = cursor.getColumnIndex(MediaStore.Images.ImageColumns.DATA);
+            path = cursor.getString(idx);
+            cursor.close();
+        }
+    }
+    return path;
+}
+
+
+And check log
+
+Edit:
+
+Lots of people are asking how to not get a thumbnail. You need to add this code instead for the getImageUri method:
+
+public Uri getImageUri(Context inContext, Bitmap inImage) {
+    Bitmap OutImage = Bitmap.createScaledBitmap(inImage, 1000, 1000,true);
+    String path = MediaStore.Images.Media.insertImage(inContext.getContentResolver(), OutImage, "Title", null);
+    return Uri.parse(path);
+}
+
+
+The other method Compresses the file. You can adjust the size by changing the number 1000,1000
+    

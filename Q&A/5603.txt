@@ -1,0 +1,89 @@
+44
+Q:I have a OnItemSelectedListener for my Spinner, but it is not called when the selected item is the same as the previous one. Apparently the OnClickListener is not an option for a Spinner.
+I need to catch everytime a user click on an item. Any idea?
+
+Maybe the fact that this Spinner is inside the ActionBar disturbs normal behavior?
+
+@Override
+public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+    inflater.inflate(R.menu.tracklist_menu, menu);
+    Spinner spinner = (Spinner) menu.findItem(R.id.option_ordering_spinner)
+            .getActionView();
+    spinner.setAdapter(mSpinnerAdapter);
+    spinner.setSelection(PrefsHelper.getOrderingSpinnerPos(prefs));
+    spinner.setOnItemSelectedListener(new OnItemSelectedListener() {
+
+        @Override
+        public void onItemSelected(AdapterView<?> parent, View view,
+                int position, long id) {
+            String str = "selected";
+            System.out.println(str);
+            if (optionMenuInitialized) {
+
+                switch (position) {
+                case 0:
+                    // rdm
+                    getActivity()
+                            .sendBroadcast(
+                                    new Intent(
+                                            MyIntentAction.DO_RESHUFFLE_PLAYLIST));
+                    smp.setCurrentTracklistCursorPos(-1);
+                    trackAdapter.notifyDataSetChanged();
+                    break;
+                case 1:
+                    // artist
+                    getActivity()
+                            .sendBroadcast(
+                                    new Intent(
+                                            MyIntentAction.DO_ORDER_PLAYLIST_BY_ARTIST));
+                    smp.setCurrentTracklistCursorPos(-1);
+                    trackAdapter.notifyDataSetChanged();
+                    break;
+                case 2:
+                    // folder
+                    getActivity()
+                            .sendBroadcast(
+                                    new Intent(
+                                            MyIntentAction.DO_ORDER_PLAYLIST_BY_FOLDER));
+                    smp.setCurrentTracklistCursorPos(-1);
+                    trackAdapter.notifyDataSetChanged();
+                    break;
+                }
+                PrefsHelper.setOrderingSpinnerPos(prefEditor, position);
+                prefEditor.commit();
+            }
+            optionMenuInitialized = true;
+        }
+
+        @Override
+        public void onNothingSelected(AdapterView<?> parent) {
+        }
+    });
+}
+
+    
+===============================================================================================
+85
+A:Ok, I finally found a solution, by creating my own class extending Spinner :
+
+public class MySpinner extends Spinner {
+OnItemSelectedListener listener;
+
+public MySpinner(Context context, AttributeSet attrs) {
+    super(context, attrs);
+}
+
+@Override
+public void setSelection(int position) {
+    super.setSelection(position);
+    if (listener != null)
+        listener.onItemSelected(null, null, position, 0);
+}
+
+public void setOnItemSelectedEvenIfUnchangedListener(
+        OnItemSelectedListener listener) {
+    this.listener = listener;
+}
+}
+
+    

@@ -1,0 +1,85 @@
+61
+Q:The developer documentation has seemed to have failed me here.  I can create a static widget without thinking, I can even create a widget like the analogue clock widget that will update itself, however, I can not for the life of me figure out how to create a widget that reacts to when a user clicks on it.  Here is the best code sample that the developer documentation gives to what a widget activity should contain (the only other hint being the API demos, which only creates a static widget):
+
+public class ExampleAppWidgetProvider extends AppWidgetProvider {
+    public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
+        final int N = appWidgetIds.length;
+
+        // Perform this loop procedure for each App Widget that belongs to this provider
+        for (int i=0; i<N; i++) {
+            int appWidgetId = appWidgetIds[i];
+
+            // Create an Intent to launch ExampleActivity
+            Intent intent = new Intent(context, ExampleActivity.class);
+            PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, intent, 0);
+
+            // Get the layout for the App Widget and attach an on-click listener to the button
+            RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.appwidget_provider_layout);
+            views.setOnClickPendingIntent(R.id.button, pendingIntent);
+
+            // Tell the AppWidgetManager to perform an update on the current App Widget
+            appWidgetManager.updateAppWidget(appWidgetId, views);
+        }
+    }
+}
+
+
+from: The Android Developer Documentation's Widget Page
+
+So, it looks like pending intent is called when the widget is clicked, which is based off of an intent (I'm not quite sure what the difference between an intent and a pending intent is), and the intent is for the ExampleActivity class.  So I made my sample activity class a simple activity that when created, would create a mediaplayer object, and start it (it wouldn't ever release the object, so it would eventually crash, here is it's code:
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    MediaPlayer mp = MediaPlayer.create(getApplicationContext(), R.raw.sound);
+    mp.start();
+}
+
+
+However, when I added the widget to the home screen, and clicked on it, nothing played, in fact, nothing played when I set the update timer to just a few hundred milliseconds (in the appwidget provider xml file).  Furthermore, I set break points and found out that not only was it never reaching the activity, but no break points I set would ever get triggered.  (I still haven't figured out why that is), however, logcat seemed to indicate that the activity class file was being run.
+
+So, is there anything I can do to get an appwidget to respond to a click?  As the onClickPendingIntent() method is the closest I have found to a onClick type of method.
+
+Thank you very much.
+    
+===============================================================================================
+126
+A:First, add a static variable with a constant. 
+
+public static String YOUR_AWESOME_ACTION = "YourAwesomeAction";
+
+
+Then you need to add the action to the intent before you add the intent to the pending intent: 
+
+Intent intent = new Intent(context, widget.class);
+intent.setAction(YOUR_AWESOME_ACTION);
+
+
+(Where widget.class is the class of your AppWidgetProvider, your current class)
+
+You then need to create a PendingIntent with getBroadcast
+
+PendingIntent pendingIntent = PendingIntent.getBroadcast(context, 0, intent, 0);
+
+
+Set the onClickPendingIntent for the clickable view in your widget
+
+remoteView.setOnClickPendingIntent(R.id.widgetFrameLayout, pendingIntent);
+
+
+Next, override the onReceive method in the same class:
+
+@Override
+public void onReceive(Context context, Intent intent) {
+ super.onReceive(context, intent);
+
+
+And then respond to your button presses by querying the intent returned for your action within the onReceive method:
+
+if (intent.getAction().equals(YOUR_AWESOME_ACTION)) {
+   //do some really cool stuff here
+}
+
+
+And that should do it!
+    

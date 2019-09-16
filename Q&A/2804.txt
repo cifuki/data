@@ -1,0 +1,60 @@
+76
+Q:I have a problem with my app that if the user clicks the button multiple times quickly, then multiple events are generated before even my dialog holding the button disappears
+
+I know a solution by setting a boolean variable as a flag when a button is clicked so future clicks can be prevented until the dialog is closed. However I have many buttons and having to do this everytime for every buttons seems to be an overkill. Is there no other way in android (or maybe some smarter solution) to allow only only event action generated per button click?
+
+What's even worse is that multiple quick clicks seems to generate multiple event action before even the first action is handled so if I want to disable the button in the first click handling method, there are already existing events actions in the queue waiting to be handled!
+
+Please help
+Thanks
+    
+===============================================================================================
+99
+A:Here's a 'debounced' onClick listener that I wrote recently.
+You tell it what the minimum acceptable number of milliseconds between clicks is.
+Implement your logic in onDebouncedClick instead of onClick
+
+import android.os.SystemClock;
+import android.view.View;
+
+import java.util.Map;
+import java.util.WeakHashMap;
+
+/**
+ * A Debounced OnClickListener
+ * Rejects clicks that are too close together in time.
+ * This class is safe to use as an OnClickListener for multiple views, and will debounce each one separately.
+ */
+public abstract class DebouncedOnClickListener implements View.OnClickListener {
+
+    private final long minimumIntervalMillis;
+    private Map<View, Long> lastClickMap;
+
+    /**
+     * Implement this in your subclass instead of onClick
+     * @param v The view that was clicked
+     */
+    public abstract void onDebouncedClick(View v);
+
+    /**
+     * The one and only constructor
+     * @param minimumIntervalMillis The minimum allowed time between clicks - any click sooner than this after a previous click will be rejected
+     */
+    public DebouncedOnClickListener(long minimumIntervalMillis) {
+        this.minimumIntervalMillis = minimumIntervalMillis;
+        this.lastClickMap = new WeakHashMap<>();
+    }
+
+    @Override 
+    public void onClick(View clickedView) {
+        Long previousClickTimestamp = lastClickMap.get(clickedView);
+        long currentTimestamp = SystemClock.uptimeMillis();
+
+        lastClickMap.put(clickedView, currentTimestamp);
+        if(previousClickTimestamp == null || Math.abs(currentTimestamp - previousClickTimestamp) > minimumIntervalMillis) {
+            onDebouncedClick(clickedView);
+        }
+    }
+}
+
+    

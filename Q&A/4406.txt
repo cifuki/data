@@ -1,0 +1,55 @@
+54
+Q:I have an URI image file, and I want to reduce its size to upload it. Initial image file size depends from mobile to mobile (can be 2MB as can be 500KB), but I want final size to be about 200KB, so that I can upload it.
+From what I read, I have (at least) 2 choices:
+
+
+Using BitmapFactory.Options.inSampleSize, to subsample original image and get a smaller image;
+Using Bitmap.compress to compress the image specifying compression quality.
+
+
+What's the best choice?
+
+
+
+I was thinking to initially resize image width/height until width or height is above 1000px (something like 1024x768 or others), then compress image with decreasing quality until file size is above 200KB. Here's an example:
+
+int MAX_IMAGE_SIZE = 200 * 1024; // max final file size
+Bitmap bmpPic = BitmapFactory.decodeFile(fileUri.getPath());
+if ((bmpPic.getWidth() >= 1024) && (bmpPic.getHeight() >= 1024)) {
+    BitmapFactory.Options bmpOptions = new BitmapFactory.Options();
+    bmpOptions.inSampleSize = 1;
+    while ((bmpPic.getWidth() >= 1024) && (bmpPic.getHeight() >= 1024)) {
+        bmpOptions.inSampleSize++;
+        bmpPic = BitmapFactory.decodeFile(fileUri.getPath(), bmpOptions);
+    }
+    Log.d(TAG, "Resize: " + bmpOptions.inSampleSize);
+}
+int compressQuality = 104; // quality decreasing by 5 every loop. (start from 99)
+int streamLength = MAX_IMAGE_SIZE;
+while (streamLength >= MAX_IMAGE_SIZE) {
+    ByteArrayOutputStream bmpStream = new ByteArrayOutputStream();
+    compressQuality -= 5;
+    Log.d(TAG, "Quality: " + compressQuality);
+    bmpPic.compress(Bitmap.CompressFormat.JPEG, compressQuality, bmpStream);
+    byte[] bmpPicByteArray = bmpStream.toByteArray();
+    streamLength = bmpPicByteArray.length;
+    Log.d(TAG, "Size: " + streamLength);
+}
+try {
+    FileOutputStream bmpFile = new FileOutputStream(finalPath);
+    bmpPic.compress(Bitmap.CompressFormat.JPEG, compressQuality, bmpFile);
+    bmpFile.flush();
+    bmpFile.close();
+} catch (Exception e) {
+    Log.e(TAG, "Error on saving file");
+}
+
+
+Is there a better way to do it? Should I try to keep using all 2 methods or only one? Thanks
+    
+===============================================================================================
+29
+A:Using Bitmap.compress() you just specify compression algorithm and by the way compression operation takes rather big amount of time. If you need to play with sizes for reducing memory allocation for your image, you exactly need to use scaling of your image using Bitmap.Options, computing bitmap bounds at first and then decoding it to your specified size.
+
+The best sample that I found on StackOverflow is this one. 
+    

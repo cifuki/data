@@ -1,0 +1,189 @@
+112
+Q:My ListFragment code 
+
+public class ItemFragment extends ListFragment {
+
+    private DatabaseHandler dbHelper;
+    private static final String TITLE = "Items";
+    private static final String LOG_TAG = "debugger";
+    private ItemAdapter adapter;
+    private List<Item> items;
+
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.item_fragment_list, container, false);        
+        return view;
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.setHasOptionsMenu(true);
+        super.onCreate(savedInstanceState);
+        getActivity().setTitle(TITLE);
+        dbHelper = new DatabaseHandler(getActivity());
+        items = dbHelper.getItems(); 
+        adapter = new ItemAdapter(getActivity().getApplicationContext(), items);
+        this.setListAdapter(adapter);
+
+    }
+
+
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        items.clear();
+        items = dbHelper.getItems(); //reload the items from database
+        adapter.notifyDataSetChanged();
+    }
+
+    @Override
+    public void onListItemClick(ListView l, View v, int position, long id) {
+        super.onListItemClick(l, v, position, id);
+        if(dbHelper != null) { //item is edited
+            Item item = (Item) this.getListAdapter().getItem(position);
+            Intent intent = new Intent(getActivity(), AddItemActivity.class);
+            intent.putExtra(IntentConstants.ITEM, item);
+            startActivity(intent);
+        }
+    }
+}
+
+
+My ListView
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:orientation="vertical" >
+
+    <ListView
+        android:id="@android:id/list"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content" />
+
+</LinearLayout>
+
+
+But this does not refresh the ListView. Even after restarting app the updated items are not shown. My ItemAdapter extends BaseAdapter
+
+public class ItemAdapter extends BaseAdapter{
+
+    private LayoutInflater inflater;
+    private List<Item> items;
+    private Context context;
+
+    public ProjectListItemAdapter(Context context, List<Item> items) {
+        super();
+        inflater = LayoutInflater.from(context);
+        this.context = context;
+        this.items = items;
+
+    }
+
+    @Override
+    public int getCount() {
+        return items.size();
+    }
+
+    @Override
+    public Object getItem(int position) {
+        return items.get(position);
+    }
+
+    @Override
+    public long getItemId(int position) {
+        return position;
+    }
+
+    @Override
+    public View getView(int position, View convertView, ViewGroup parent) {
+        ItemViewHolder holder = null;
+        if(convertView == null) {
+            holder = new ItemViewHolder();
+            convertView = inflater.inflate(R.layout.list_item, parent,false);
+            holder.itemName = (TextView) convertView.findViewById(R.id.topText);
+            holder.itemLocation = (TextView) convertView.findViewById(R.id.bottomText);
+            convertView.setTag(holder);
+        } else {
+            holder = (ItemViewHolder) convertView.getTag();
+        }
+        holder.itemName.setText("Name: " + items.get(position).getName());
+        holder.itemLocation.setText("Location: " + items.get(position).getLocation());
+        if(position % 2 == 0) {                                                                                 
+            convertView.setBackgroundColor(context.getResources().getColor(R.color.evenRowColor));
+        } else {    
+            convertView.setBackgroundColor(context.getResources().getColor(R.color.oddRowColor));
+        }
+        return convertView;
+    }
+
+    private static class ItemViewHolder {
+        TextView itemName;
+        TextView itemLocation;
+    }
+}
+
+
+Can someone help please?
+    
+===============================================================================================
+222
+A:Look at your onResume method in ItemFragment:
+
+@Override
+public void onResume() {
+    super.onResume();
+    items.clear();
+    items = dbHelper.getItems(); // reload the items from database
+    adapter.notifyDataSetChanged();
+}
+
+
+what you just have updated before calling notifyDataSetChanged() is not the adapter's field private List<Item> items; but the identically declared field of the fragment. The adapter still stores a reference to list of items you passed when you created the adapter (e.g. in fragment's onCreate).
+The shortest (in sense of number of changes) but not elegant way to make your code behave as you expect is simply to replace the line:
+
+    items = dbHelper.getItems(); // reload the items from database
+
+
+with 
+
+    items.addAll(dbHelper.getItems()); // reload the items from database
+
+
+A more elegant solution:
+
+1) remove items private List<Item> items; from ItemFragment - we need to keep reference to them only in adapter
+
+2) change onCreate to :
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    super.setHasOptionsMenu(true);
+    getActivity().setTitle(TITLE);
+    dbHelper = new DatabaseHandler(getActivity());
+    adapter = new ItemAdapter(getActivity(), dbHelper.getItems());
+    setListAdapter(adapter);
+}
+
+
+3) add method in ItemAdapter:
+
+public void swapItems(List<Item> items) {
+    this.items = items;
+    notifyDataSetChanged();
+}
+
+
+4) change your onResume to:
+
+@Override
+public void onResume() {
+    super.onResume();
+    adapter.swapItems(dbHelper.getItems());
+}
+
+    

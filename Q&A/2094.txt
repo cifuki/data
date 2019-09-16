@@ -1,0 +1,139 @@
+94
+Q:I have a very simple AsyncTask implementation example and am having problem in testing it using Android JUnit framework. 
+
+It works just fine when I instantiate and execute it in normal application. 
+However when it's executed from any of Android Testing framework classes (i.e. AndroidTestCase, ActivityUnitTestCase, ActivityInstrumentationTestCase2 etc) it behaves strangely: 
+
+
+It executes doInBackground() method correctly 
+However it doesn't invokes any of its notification methods (onPostExecute(), onProgressUpdate(), etc) -- just silently ignores them without showing any errors.
+
+
+This is very simple AsyncTask example:
+
+package kroz.andcookbook.threads.asynctask;
+
+import android.os.AsyncTask;
+import android.util.Log;
+import android.widget.ProgressBar;
+import android.widget.Toast;
+
+public class AsyncTaskDemo extends AsyncTask<Integer, Integer, String> {
+
+AsyncTaskDemoActivity _parentActivity;
+int _counter;
+int _maxCount;
+
+public AsyncTaskDemo(AsyncTaskDemoActivity asyncTaskDemoActivity) {
+    _parentActivity = asyncTaskDemoActivity;
+}
+
+@Override
+protected void onPreExecute() {
+    super.onPreExecute();
+    _parentActivity._progressBar.setVisibility(ProgressBar.VISIBLE);
+    _parentActivity._progressBar.invalidate();
+}
+
+@Override
+protected String doInBackground(Integer... params) {
+    _maxCount = params[0];
+    for (_counter = 0; _counter <= _maxCount; _counter++) {
+        try {
+            Thread.sleep(1000);
+            publishProgress(_counter);
+        } catch (InterruptedException e) {
+            // Ignore           
+        }
+    }
+}
+
+@Override
+protected void onProgressUpdate(Integer... values) {
+    super.onProgressUpdate(values);
+    int progress = values[0];
+    String progressStr = "Counting " + progress + " out of " + _maxCount;
+    _parentActivity._textView.setText(progressStr);
+    _parentActivity._textView.invalidate();
+}
+
+@Override
+protected void onPostExecute(String result) {
+    super.onPostExecute(result);
+    _parentActivity._progressBar.setVisibility(ProgressBar.INVISIBLE);
+    _parentActivity._progressBar.invalidate();
+}
+
+@Override
+protected void onCancelled() {
+    super.onCancelled();
+    _parentActivity._textView.setText("Request to cancel AsyncTask");
+}
+
+}
+
+
+This is a test case. Here AsyncTaskDemoActivity is a very simple Activity providing UI for testing AsyncTask in mode:
+
+package kroz.andcookbook.test.threads.asynctask;
+import java.util.concurrent.ExecutionException;
+import kroz.andcookbook.R;
+import kroz.andcookbook.threads.asynctask.AsyncTaskDemo;
+import kroz.andcookbook.threads.asynctask.AsyncTaskDemoActivity;
+import android.content.Intent;
+import android.test.ActivityUnitTestCase;
+import android.widget.Button;
+
+public class AsyncTaskDemoTest2 extends ActivityUnitTestCase<AsyncTaskDemoActivity> {
+AsyncTaskDemo _atask;
+private Intent _startIntent;
+
+public AsyncTaskDemoTest2() {
+    super(AsyncTaskDemoActivity.class);
+}
+
+protected void setUp() throws Exception {
+    super.setUp();
+    _startIntent = new Intent(Intent.ACTION_MAIN);
+}
+
+protected void tearDown() throws Exception {
+    super.tearDown();
+}
+
+public final void testExecute() {
+    startActivity(_startIntent, null, null);
+    Button btnStart = (Button) getActivity().findViewById(R.id.Button01);
+    btnStart.performClick();
+    assertNotNull(getActivity());
+}
+
+}
+
+
+All this code is working just fine, except the fact that AsyncTask doesn't invoke it's notification methods when executed by within Android Testing Framework. Any ideas?
+    
+===============================================================================================
+124
+A:I met a similar problem while implementing some unit-test. I had to test some service which worked with Executors, and I needed to have my service callbacks sync-ed with the test methods from my ApplicationTestCase classes. Usually the test method itself finished before the callback would be accessed, so the data sent via the callbacks would not be tested. Tried applying the @UiThreadTest bust still didn't work.
+
+I found the following method, which worked, and I still use it. I simply use CountDownLatch signal objects to implement the wait-notify (you can use synchronized(lock){... lock.notify();}, however this results in ugly code) mechanism.
+
+public void testSomething(){
+final CountDownLatch signal = new CountDownLatch(1);
+Service.doSomething(new Callback() {
+
+  @Override
+  public void onResponse(){
+    // test response data
+    // assertEquals(..
+    // assertTrue(..
+    // etc
+    signal.countDown();// notify the count down latch
+  }
+
+});
+signal.await();// wait for callback
+}
+
+    

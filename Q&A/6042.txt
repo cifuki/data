@@ -1,0 +1,735 @@
+42
+Q:My question is kind of complex so bear with me as I try to lay it out nicely what I am struggling with.
+
+Goal
+
+Have an ASP.NET website that lets users register & sign-in via Username/Password or Social (Facebook, Twitter, Google, etc) that also has an API. This API needs to be locked down with [Authorize]. The API needs to be able to be accessed by mobile clients (Android, iOS, etc) that can be signed in via Username/Password or Social (Facebook, Twitter, Google, etc).
+
+Background
+
+So I have done sites that can do one or two things from my goal but not all together. There are great examples online and built in examples into VS projects that show how to let the user register and sign-in via social apps but they are only for the website and not for mobile. I have done a website that an Android app uses Username/Password to authenticate with that API, but nothing with OAuth or Social credentials.
+
+I started out using this page as a reference but I have no clue how to take that and make it work for my website logging in and for my mobile app logging in.
+
+This guy makes it sound so easy but doesn't show any code for this.
+
+Question
+
+Is there a tutorial or GitHub example somewhere that can get me to my goal? I basically want a website where people can register a username/password or use their social account AND also let the user do the same (register & login) via a mobile device. The mobile device will basically just use the API to push/pull data, but I am unsure how to incorporate social logins with my API. I assume I need to use OAuth and go that route but I cannot find any good examples that show how to do this for both web and mobile.
+
+Or maybe is the right solution is to have the webpage be all cookie auth and the API be a separate "web site" and be all token auth and they both tie to the same database?
+    
+===============================================================================================
+32
+A:I've successfully done this very task within my own ASP.NET MVC application using ASP.NET Identity, but then hit the issue you mention: I need this to work using Web API as well so that my mobile app can interact natively.
+
+I was unfamiliar with the article you linked, but after reading through it, I noticed that a lot of the work and code their is not necessary and complicates functionality that already exists within ASP.NET Identity.
+
+Here are my recommendations, and I am assuming you are using ASP.NET Identity V2 which is equivalent to the packages surrounding MVC5 (not the new MVC6 vNext). This will allow both your website AND mobile application via API to authenticate both with a local login (username/password) and an external OAuth provider both from MVC web views on your website and through Web API calls from your mobile application:
+
+Step 1. When creating your project, insure you have both the required packages for MVC and Web API included. In the ASP.NET Project Selection dialog you will have the option to select the checkboxes, insure MVC and Web API are both checked. If you didn't already do this when you created your project, I would recommend creating a new project and migrating your existing code over versus searching and manually adding the dependencies and template code.
+
+Step 2. Inside your Startup.Auth.cs file, you will need code to tell OWIN to use cookie authentication, allow external sign in cookies, and support OAuth bearer tokens (This is how Web API calls will authenticate). These are relevant excerpts from my working project codebase:
+
+Startup.Auth.cs
+
+// Enable the application to use a cookie to store information for the signed in user
+        // and to use a cookie to temporarily store information about a user logging in with a third party login provider
+        app.UseCookieAuthentication(new CookieAuthenticationOptions
+        {
+            AuthenticationType = DefaultAuthenticationTypes.ApplicationCookie,
+            LoginPath = new PathString("/account/login"),
+            Provider = new CookieAuthenticationProvider
+            {
+                // Enables the application to validate the security stamp when the user logs in.
+                // This is a security feature which is used when you change a password or add an external login to your account.  
+                OnValidateIdentity = SecurityStampValidator.OnValidateIdentity<ApplicationUserManager, ApplicationUser>(
+                    validateInterval: TimeSpan.FromMinutes(30),
+                    regenerateIdentity: (manager, user) => user.GenerateUserIdentityAsync(manager))
+            }
+        });
+        app.UseExternalSignInCookie(DefaultAuthenticationTypes.ExternalCookie);
+
+// Configure the application for OAuth based flow
+        PublicClientId = "self";
+        OAuthOptions = new OAuthAuthorizationServerOptions
+        {
+            TokenEndpointPath = new PathString("/token"),
+            Provider = new ApplicationOAuthProvider(PublicClientId),
+            AuthorizeEndpointPath = new PathString("/api/account/externallogin"),
+            AccessTokenExpireTimeSpan = TimeSpan.FromDays(14),
+            //AllowInsecureHttp = false
+        };
+
+        // Enable the application to use bearer tokens to authenticate users
+        app.UseOAuthBearerTokens(OAuthOptions);
+
+ app.UseTwitterAuthentication(
+            consumerKey: "Twitter API Key",
+            consumerSecret: "Twitter API Secret");
+
+        app.UseFacebookAuthentication(
+            appId: "Facebook AppId",
+            appSecret: "Facebook AppSecret");
+
+
+In the above code I currently support Twitter and Facebook as external authentication providers; however, you can add additional external providers with the app.UserXYZProvider calls and additional libraries and they will plug and play with the code I provide here.
+
+Step 3. Inside your WebApiConfig.cs file, you must configure the HttpConfiguration to supress default host authentication and support OAuth bearer tokens. To explain, this tells your application to differentiate authentication types between MVC and Web API, this way you can use the typical cookie flow for the website, meanwhile your application will accept bearer tokens in the form of OAuth from the Web API without complaining or other issues.
+
+WebApiConfig.cs
+
+// Web API configuration and services
+        // Configure Web API to use only bearer token authentication.
+        config.SuppressDefaultHostAuthentication();
+        config.Filters.Add(new HostAuthenticationFilter(OAuthDefaults.AuthenticationType));
+
+
+Step 4. You need an AccountController (or equivalently purposed controller) for both MVC and Web API. In my project I have two AccountController files, one MVC controller inheriting from the base Controller class, and another AccountController inheriting from ApiController that is in a Controllers.API namespace to keep things clean. I am using the standard template AccountController code from the Web API and MVC projects. Here is the API version of the Account Controller:
+
+AccountController.cs (Controllers.API namespace)
+
+using System;
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Threading.Tasks;
+using System.Web;
+using System.Web.Http;
+using System.Web.Http.ModelBinding;
+using Microsoft.AspNet.Identity;
+using Microsoft.AspNet.Identity.Owin;
+using Microsoft.Owin.Security;
+using Microsoft.Owin.Security.Cookies;
+using Microsoft.Owin.Security.OAuth;
+
+using Disco.Models.API;
+using Disco.Providers;
+using Disco.Results;
+
+using Schloss.AspNet.Identity.Neo4j;
+using Disco.Results.API;
+
+namespace Disco.Controllers.API
+{
+    [Authorize]
+    [RoutePrefix("api/account")]
+    public class AccountController : ApiController
+    {
+        private const string LocalLoginProvider = "Local";
+        private ApplicationUserManager _userManager;
+
+        public AccountController()
+        {            
+        }
+
+        public AccountController(ApplicationUserManager userManager,
+            ISecureDataFormat<AuthenticationTicket> accessTokenFormat)
+        {
+            UserManager = userManager;
+            AccessTokenFormat = accessTokenFormat;
+        }
+
+        public ApplicationUserManager UserManager
+        {
+            get
+            {
+                return _userManager ?? Request.GetOwinContext().GetUserManager<ApplicationUserManager>();
+            }
+            private set
+            {
+                _userManager = value;
+            }
+        }
+
+        public ISecureDataFormat<AuthenticationTicket> AccessTokenFormat { get; private set; }
+
+        // GET account/UserInfo
+        [HostAuthentication(DefaultAuthenticationTypes.ExternalBearer)]
+        [Route("userinfo")]
+        public UserInfoViewModel GetUserInfo()
+        {
+            ExternalLoginData externalLogin = ExternalLoginData.FromIdentity(User.Identity as ClaimsIdentity);
+
+            return new UserInfoViewModel
+            {
+                Email = User.Identity.GetUserName(),
+                HasRegistered = externalLogin == null,
+                LoginProvider = externalLogin != null ? externalLogin.LoginProvider : null
+            };
+        }
+
+        // POST account/Logout
+        [Route("logout")]
+        public IHttpActionResult Logout()
+        {
+            Authentication.SignOut(CookieAuthenticationDefaults.AuthenticationType);
+            return Ok();
+        }
+
+        // GET account/ManageInfo?returnUrl=%2F&generateState=true
+        [Route("manageinfo")]
+        public async Task<ManageInfoViewModel> GetManageInfo(string returnUrl, bool generateState = false)
+        {
+            IdentityUser user = await UserManager.FindByIdAsync(User.Identity.GetUserId());
+
+            if (user == null)
+            {
+                return null;
+            }
+
+            List<UserLoginInfoViewModel> logins = new List<UserLoginInfoViewModel>();
+
+            foreach (UserLoginInfo linkedAccount in await UserManager.GetLoginsAsync(User.Identity.GetUserId()))
+            {
+                logins.Add(new UserLoginInfoViewModel
+                {
+                    LoginProvider = linkedAccount.LoginProvider,
+                    ProviderKey = linkedAccount.ProviderKey
+                });
+            }
+
+            if (user.PasswordHash != null)
+            {
+                logins.Add(new UserLoginInfoViewModel
+                {
+                    LoginProvider = LocalLoginProvider,
+                    ProviderKey = user.UserName,
+                });
+            }
+
+            return new ManageInfoViewModel
+            {
+                LocalLoginProvider = LocalLoginProvider,
+                Email = user.UserName,
+                Logins = logins,
+                ExternalLoginProviders = GetExternalLogins(returnUrl, generateState)
+            };
+        }
+
+        // POST account/ChangePassword
+        [Route("changepassword")]
+        public async Task<IHttpActionResult> ChangePassword(ChangePasswordBindingModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            IdentityResult result = await UserManager.ChangePasswordAsync(User.Identity.GetUserId(), model.OldPassword,
+                model.NewPassword);
+
+            if (!result.Succeeded)
+            {
+                return GetErrorResult(result);
+            }
+
+            return Ok();
+        }
+
+        // POST account/SetPassword
+        [Route("setpassword")]
+        public async Task<IHttpActionResult> SetPassword(SetPasswordBindingModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            IdentityResult result = await UserManager.AddPasswordAsync(User.Identity.GetUserId(), model.NewPassword);
+
+            if (!result.Succeeded)
+            {
+                return GetErrorResult(result);
+            }
+
+            return Ok();
+        }
+
+        // POST account/AddExternalLogin
+        [Route("addexternallogin")]
+        public async Task<IHttpActionResult> AddExternalLogin(AddExternalLoginBindingModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            Authentication.SignOut(DefaultAuthenticationTypes.ExternalCookie);
+
+            AuthenticationTicket ticket = AccessTokenFormat.Unprotect(model.ExternalAccessToken);
+
+            if (ticket == null || ticket.Identity == null || (ticket.Properties != null
+                && ticket.Properties.ExpiresUtc.HasValue
+                && ticket.Properties.ExpiresUtc.Value < DateTimeOffset.UtcNow))
+            {
+                return BadRequest("External login failure.");
+            }
+
+            ExternalLoginData externalData = ExternalLoginData.FromIdentity(ticket.Identity);
+
+            if (externalData == null)
+            {
+                return BadRequest("The external login is already associated with an account.");
+            }
+
+            IdentityResult result = await UserManager.AddLoginAsync(User.Identity.GetUserId(),
+                new UserLoginInfo(externalData.LoginProvider, externalData.ProviderKey));
+
+            if (!result.Succeeded)
+            {
+                return GetErrorResult(result);
+            }
+
+            return Ok();
+        }
+
+        // POST account/RemoveLogin
+        [Route("removelogin")]
+        public async Task<IHttpActionResult> RemoveLogin(RemoveLoginBindingModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            IdentityResult result;
+
+            if (model.LoginProvider == LocalLoginProvider)
+            {
+                result = await UserManager.RemovePasswordAsync(User.Identity.GetUserId());
+            }
+            else
+            {
+                result = await UserManager.RemoveLoginAsync(User.Identity.GetUserId(),
+                    new UserLoginInfo(model.LoginProvider, model.ProviderKey));
+            }
+
+            if (!result.Succeeded)
+            {
+                return GetErrorResult(result);
+            }
+
+            return Ok();
+        }
+
+        // GET account/ExternalLogin
+        [OverrideAuthentication]
+        [HostAuthentication(DefaultAuthenticationTypes.ExternalCookie)]
+        [AllowAnonymous]
+        [Route("externallogin", Name = "ExternalLoginAPI")]
+        public async Task<IHttpActionResult> GetExternalLogin(string provider, string error = null)
+        {
+            if (error != null)
+            {
+                return Redirect(Url.Content("~/") + "#error=" + Uri.EscapeDataString(error));
+            }
+
+            if (!User.Identity.IsAuthenticated)
+            {
+                return new ChallengeResult(provider, this);
+            }
+
+            ExternalLoginData externalLogin = ExternalLoginData.FromIdentity(User.Identity as ClaimsIdentity);
+
+            if (externalLogin == null)
+            {
+                return InternalServerError();
+            }
+
+            if (externalLogin.LoginProvider != provider)
+            {
+                Authentication.SignOut(DefaultAuthenticationTypes.ExternalCookie);
+                return new ChallengeResult(provider, this);
+            }
+
+            ApplicationUser user = await UserManager.FindAsync(new UserLoginInfo(externalLogin.LoginProvider,
+                externalLogin.ProviderKey));
+
+            bool hasRegistered = user != null;
+
+            if (hasRegistered)
+            {
+                Authentication.SignOut(DefaultAuthenticationTypes.ExternalCookie);
+
+                 ClaimsIdentity oAuthIdentity = await user.GenerateUserIdentityAsync(UserManager,
+                    OAuthDefaults.AuthenticationType);
+                ClaimsIdentity cookieIdentity = await user.GenerateUserIdentityAsync(UserManager,
+                    CookieAuthenticationDefaults.AuthenticationType);
+
+                AuthenticationProperties properties = ApplicationOAuthProvider.CreateProperties(user.UserName);
+                Authentication.SignIn(properties, oAuthIdentity, cookieIdentity);
+            }
+            else
+            {
+                IEnumerable<Claim> claims = externalLogin.GetClaims();
+                ClaimsIdentity identity = new ClaimsIdentity(claims, OAuthDefaults.AuthenticationType);
+                Authentication.SignIn(identity);
+            }
+
+            return Ok();
+        }
+
+        // GET account/ExternalLogins?returnUrl=%2F&generateState=true
+        [AllowAnonymous]
+        [Route("externallogins")]
+        public IEnumerable<ExternalLoginViewModel> GetExternalLogins(string returnUrl, bool generateState = false)
+        {
+            IEnumerable<AuthenticationDescription> descriptions = Authentication.GetExternalAuthenticationTypes();
+            List<ExternalLoginViewModel> logins = new List<ExternalLoginViewModel>();
+
+            string state;
+
+            if (generateState)
+            {
+                const int strengthInBits = 256;
+                state = RandomOAuthStateGenerator.Generate(strengthInBits);
+            }
+            else
+            {
+                state = null;
+            }
+
+            foreach (AuthenticationDescription description in descriptions)
+            {
+                ExternalLoginViewModel login = new ExternalLoginViewModel
+                {
+                    Name = description.Caption,
+                    Url = Url.Route("ExternalLogin", new
+                    {
+                        provider = description.AuthenticationType,
+                        response_type = "token",
+                        client_id = Startup.PublicClientId,
+                        redirect_uri = new Uri(Request.RequestUri, returnUrl).AbsoluteUri,
+                        state = state
+                    }),
+                    State = state
+                };
+                logins.Add(login);
+            }
+
+            return logins;
+        }
+
+        // POST account/Register
+        [AllowAnonymous]
+        [Route("register")]
+        public async Task<IHttpActionResult> Register(RegisterBindingModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var user = new ApplicationUser() { UserName = model.Email, Email = model.Email };
+
+            IdentityResult result = await UserManager.CreateAsync(user, model.Password);
+
+            if (!result.Succeeded)
+            {
+                return GetErrorResult(result);
+            }
+
+            return Ok();
+        }
+
+        // POST account/RegisterExternal
+        [OverrideAuthentication]
+        [HostAuthentication(DefaultAuthenticationTypes.ExternalBearer)]
+        [Route("registerexternal")]
+        public async Task<IHttpActionResult> RegisterExternal(RegisterExternalBindingModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var info = await Authentication.GetExternalLoginInfoAsync();
+            if (info == null)
+            {
+                return InternalServerError();
+            }
+
+            var user = new ApplicationUser() { UserName = model.Email, Email = model.Email };
+
+            IdentityResult result = await UserManager.CreateAsync(user);
+            if (!result.Succeeded)
+            {
+                return GetErrorResult(result);
+            }
+
+            result = await UserManager.AddLoginAsync(user.Id, info.Login);
+            if (!result.Succeeded)
+            {
+                return GetErrorResult(result); 
+            }
+            return Ok();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && _userManager != null)
+            {
+                _userManager.Dispose();
+                _userManager = null;
+            }
+
+            base.Dispose(disposing);
+        }
+
+        #region Helpers
+
+        private IAuthenticationManager Authentication
+        {
+            get { return Request.GetOwinContext().Authentication; }
+        }
+
+        private IHttpActionResult GetErrorResult(IdentityResult result)
+        {
+            if (result == null)
+            {
+                return InternalServerError();
+            }
+
+            if (!result.Succeeded)
+            {
+                if (result.Errors != null)
+                {
+                    foreach (string error in result.Errors)
+                    {
+                        ModelState.AddModelError("", error);
+                    }
+                }
+
+                if (ModelState.IsValid)
+                {
+                    // No ModelState errors are available to send, so just return an empty BadRequest.
+                    return BadRequest();
+                }
+
+                return BadRequest(ModelState);
+            }
+
+            return null;
+        }
+
+        private class ExternalLoginData
+        {
+            public string LoginProvider { get; set; }
+            public string ProviderKey { get; set; }
+            public string UserName { get; set; }
+
+            public IList<Claim> GetClaims()
+            {
+                IList<Claim> claims = new List<Claim>();
+                claims.Add(new Claim(ClaimTypes.NameIdentifier, ProviderKey, null, LoginProvider));
+
+                if (UserName != null)
+                {
+                    claims.Add(new Claim(ClaimTypes.Name, UserName, null, LoginProvider));
+                }
+
+                return claims;
+            }
+
+            public static ExternalLoginData FromIdentity(ClaimsIdentity identity)
+            {
+                if (identity == null)
+                {
+                    return null;
+                }
+
+                Claim providerKeyClaim = identity.FindFirst(ClaimTypes.NameIdentifier);
+
+                if (providerKeyClaim == null || String.IsNullOrEmpty(providerKeyClaim.Issuer)
+                    || String.IsNullOrEmpty(providerKeyClaim.Value))
+                {
+                    return null;
+                }
+
+                if (providerKeyClaim.Issuer == ClaimsIdentity.DefaultIssuer)
+                {
+                    return null;
+                }
+
+                return new ExternalLoginData
+                {
+                    LoginProvider = providerKeyClaim.Issuer,
+                    ProviderKey = providerKeyClaim.Value,
+                    UserName = identity.FindFirstValue(ClaimTypes.Name)
+                };
+            }
+        }
+
+        private static class RandomOAuthStateGenerator
+        {
+            private static RandomNumberGenerator _random = new RNGCryptoServiceProvider();
+
+            public static string Generate(int strengthInBits)
+            {
+                const int bitsPerByte = 8;
+
+                if (strengthInBits % bitsPerByte != 0)
+                {
+                    throw new ArgumentException("strengthInBits must be evenly divisible by 8.", "strengthInBits");
+                }
+
+                int strengthInBytes = strengthInBits / bitsPerByte;
+
+                byte[] data = new byte[strengthInBytes];
+                _random.GetBytes(data);
+                return HttpServerUtility.UrlTokenEncode(data);
+            }
+        }
+
+        #endregion
+    }
+}
+
+
+Step 5. You also need to create an ApplicationOAuthProvider so the server can generate and validate OAuth tokens. This is provided in the WebAPI sample project. This is my version of the file:
+
+ApplicationOAuthProvider.cs
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
+using Microsoft.AspNet.Identity;
+using Microsoft.AspNet.Identity.Owin;
+using Microsoft.Owin.Security;
+using Microsoft.Owin.Security.Cookies;
+using Microsoft.Owin.Security.OAuth;
+using Butler.Models;
+
+using Schloss.AspNet.Identity.Neo4j;
+
+namespace Butler.Providers
+{
+    public class ApplicationOAuthProvider : OAuthAuthorizationServerProvider
+    {
+        private readonly string _publicClientId;
+
+        public ApplicationOAuthProvider(string publicClientId)
+        {
+            if (publicClientId == null)
+            {
+                throw new ArgumentNullException("publicClientId");
+            }
+
+            _publicClientId = publicClientId;
+        }
+
+        public override async Task GrantResourceOwnerCredentials(OAuthGrantResourceOwnerCredentialsContext context)
+        {
+            var userManager = context.OwinContext.GetUserManager<ApplicationUserManager>();
+
+            ApplicationUser user = await userManager.FindAsync(context.UserName, context.Password);
+
+            if (user == null)
+            {
+                context.SetError("invalid_grant", "The user name or password is incorrect.");
+                return;
+            }
+
+            ClaimsIdentity oAuthIdentity = await user.GenerateUserIdentityAsync(userManager,
+               OAuthDefaults.AuthenticationType);
+            ClaimsIdentity cookiesIdentity = await user.GenerateUserIdentityAsync(userManager,
+                CookieAuthenticationDefaults.AuthenticationType);
+
+            AuthenticationProperties properties = CreateProperties(user.UserName);
+            AuthenticationTicket ticket = new AuthenticationTicket(oAuthIdentity, properties);
+            context.Validated(ticket);
+            context.Request.Context.Authentication.SignIn(cookiesIdentity);
+        }
+
+        public override Task TokenEndpoint(OAuthTokenEndpointContext context)
+        {
+            foreach (KeyValuePair<string, string> property in context.Properties.Dictionary)
+            {
+                context.AdditionalResponseParameters.Add(property.Key, property.Value);
+            }
+
+            return Task.FromResult<object>(null);
+        }
+
+        public override Task ValidateClientAuthentication(OAuthValidateClientAuthenticationContext context)
+        {
+            // Resource owner password credentials does not provide a client ID.
+            if (context.ClientId == null)
+            {
+                context.Validated();
+            }
+
+            return Task.FromResult<object>(null);
+        }
+
+        public override Task ValidateClientRedirectUri(OAuthValidateClientRedirectUriContext context)
+        {
+            if (context.ClientId == _publicClientId)
+            {
+                //Uri expectedRootUri = new Uri(context.Request.Uri, "/");
+
+                //if (expectedRootUri.AbsoluteUri == context.RedirectUri)
+                //{
+                    context.Validated();
+                //}
+            }
+
+            return Task.FromResult<object>(null);
+        }
+
+        public static AuthenticationProperties CreateProperties(string userName)
+        {
+            IDictionary<string, string> data = new Dictionary<string, string>
+            {
+                { "userName", userName }
+            };
+            return new AuthenticationProperties(data);
+        }
+    }
+}
+
+
+Also included is the ChallengeResult, which the Web API arm of your application will use to handle challenges provided by the external login providers to authenticate your user:
+
+ChallengeResult.cs
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Web.Http;
+
+namespace Butler.Results
+{
+    public class ChallengeResult : IHttpActionResult
+    {
+        public ChallengeResult(string loginProvider, ApiController controller)
+        {
+            LoginProvider = loginProvider;
+            Request = controller.Request;
+        }
+
+        public string LoginProvider { get; set; }
+        public HttpRequestMessage Request { get; set; }
+
+        public Task<HttpResponseMessage> ExecuteAsync(CancellationToken cancellationToken)
+        {
+            Request.GetOwinContext().Authentication.Challenge(LoginProvider);
+
+            HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            response.RequestMessage = Request;
+            return Task.FromResult(response);
+        }
+    }
+}
+
+
+With that set of code, you will be able to HTTP GET and HTTP POST the routes on the API version of the AccountController to register a user, login using username and password to receive a Bearer token, add/remove external logins, manage external logins, and most importantly for your issue, authenticate by passing in an external login token in exchange for an OAuth bearer token for you application.
+    

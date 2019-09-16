@@ -1,0 +1,120 @@
+29
+Q:I tried to get Search box to work on Action Bar Sherlock.
+
+This is my PreLocationActivity:
+
+    @ContentView(R.layout.search)
+    public class PreLocationActivity extends RoboSherlockActivity {
+
+        protected void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            //setContentView(R.layout.map_layout);
+        } 
+
+        @Override
+        public boolean onCreateOptionsMenu(Menu menu) {
+            //Used to put dark icons on light action bar
+             menu.add("Search")
+             .setIcon(R.drawable.ic_search_inverse)
+             .setActionView(R.layout.collapsible_edittext)
+             .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS | MenuItem.SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW);
+                return true;
+        }
+
+        @Override
+        public boolean onSearchRequested() {
+            return super.onSearchRequested();
+        }
+    }
+
+
+This is my SearchableActivity:
+
+@ContentView(R.layout.search)
+public class SearchableActivity extends RoboSherlockFragmentActivity {
+
+    @InjectView(R.id.addressListView) ListView addressView;
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // Get the intent, verify the action and get the query
+        Intent intent = getIntent();
+        if (Intent.ACTION_SEARCH.equals(intent.getAction())) {
+          String query = intent.getStringExtra(SearchManager.QUERY);
+          doGeoSearch(query);
+        }
+}
+
+    public void doGeoSearch(String query){
+        Geocoder geocoder;
+        ArrayList<Address> addresses;
+        ArrayList<String> address = new ArrayList<String>() ;
+        geocoder = new Geocoder(this, Locale.getDefault());
+        try {
+            addresses = (ArrayList<Address>) geocoder.getFromLocationName(query, 6);
+            Log.d("Address",String.valueOf(addresses));
+            for(int i = 0;i<addresses.size();i++)
+            {
+            String addr = new String();
+            addr.concat(addresses.get(i).getAddressLine(0));
+            addr.concat(addresses.get(i).getAddressLine(1));
+            addr = addresses.get(i).getAddressLine(0) + addresses.get(i).getLocality() + addresses.get(i).getAdminArea();
+            //addr.concat(addresses.get(i).getAddressLine(2));
+            Log.d("addr",addr);
+            address.add(addr);
+
+            }
+
+            SearchAddressAdapater addressList = new SearchAddressAdapater(getApplicationContext(),R.layout.search_list,addresses, SearchableActivity.this);
+            addressView.setAdapter(addressList);
+            //ListView addressListView = new ListView();
+        } catch (IOException e) {
+                //Handle exception
+        }
+    }
+
+
+No success at all. As in, when I type something on the Prelocation Activity and press enter, nothing is being searched. Do I have to treat it as an EditText and write a text listener for that which then calls the geoCoder and gets me the locations or is there a smarter way to go about it? 
+    
+===============================================================================================
+26
+A:private EditText search;
+
+public boolean onCreateOptionsMenu(com.actionbarsherlock.view.Menu menu)
+{
+    menu.add(0, 1, 1, R.string.menu_search).setIcon(R.drawable.ic_action_search).setActionView(R.layout.action_search).setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM | MenuItem.SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW);
+    return super.onCreateOptionsMenu(menu);
+}
+
+@Override
+public boolean onOptionsItemSelected(com.actionbarsherlock.view.MenuItem item)
+{
+    switch (item.getItemId())
+    {
+        case 1:
+        search = (EditText) item.getActionView();
+        search.addTextChangedListener(filterTextWatcher);
+        search.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0);
+    }
+}
+
+private TextWatcher filterTextWatcher = new TextWatcher()
+{
+    public void afterTextChanged(Editable s)
+    {
+    }
+
+    public void beforeTextChanged(CharSequence s, int start, int count, int after)
+    {
+    }
+
+    public void onTextChanged(CharSequence s, int start, int before, int count)
+    {
+        // your search logic here
+    }
+};
+
+    

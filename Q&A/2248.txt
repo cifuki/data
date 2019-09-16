@@ -1,0 +1,45 @@
+90
+Q:Android 7 introduced some changes to the way certificates are handled (http://android-developers.blogspot.com/2016/07/changes-to-trusted-certificate.html) and somehow I cannot make my Charles proxy work any more.
+
+My network_security_config.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>
+
+
+I'm running in debug mode. But no matter what, I get javax.net.ssl.SSLHandshakeException: java.security.cert.CertPathValidatorException: Trust anchor for certification path not found..
+
+Needless to say, I did install a pfx certificate from Settings -> Security -> Install from storage. The certificate shows in User Credentials but not in Trusted credentials -> User. On my lollipop device, the certificates are listed there. 
+
+I'm using okhttp3 as HTTP library.
+
+Any idea what I am doing wrong ?
+    
+===============================================================================================
+25
+A:Based on the troubleshooting thread of comments for the OP, the answer is to install just the proxy's CA cert as trusted, not its cert + private key.
+
+The issue was caused by two factors:
+
+
+Installing not just the MiTM proxy's CA cert but also its private key (thus enabling VPN apps on the device to decrypt/MiTM network traffic from other apps). You don't need the MiTM proxy's private key on the device.
+Android Nougat change in behavior of the Settings -> Security -> Install from storage flow for files which contain a private key in addition to cert(s). This change in behavior unmasked the above issue.
+
+
+Prior to Nougat, the Settings -> Security -> Install from storage flow for files containing a private key in addition to certs erroneously installed the certs as trusted for server authentication (e.g., HTTPS, TLS, thus making your MiTM succeed), in addition to being correctly installed as client certs used for authenticating this Android device to servers. In Nougat, the bug was fixed and these certs are no longer installed as trusted for server authentication. This prevents client authentication credentials from affecting (weaking) the security of connections to servers. In your scenario, this prevents your MiTM from succeeding.
+
+What complicates matters is that the Settings -> Security -> Install from storage does not provide an explicit way for the user to specify whether they are installing a client authentication credential (private key + cert chain) or a server authentication trust anchor (just a CA cert -- no private key needed). As a result, the Settings -> Security -> Install from storage flow guesses whether it's dealing with client/user authentication credential or server authentication trust anchor by assuming that, if a private key is specified, it must be a client/user authentication credential. In your case, it incorrectly assumed that you are installing a client/user authentication credential rather than a server authentication trust anchor.
+
+P. S. With regards to your Network Security Config, you should probably configure the app to also trust "system" trust anchors in debug mode (debug-overrides section). Otherwise debug builds of the app won't work unless connections are MiTM'd by a proxy whose CA cert is installed as trusted on the Android device.
+    

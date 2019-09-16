@@ -1,0 +1,52 @@
+30
+Q:How do I remove the observer after I receive the first result? Below are two code ways I've tried, but they both keep receiving updates even though I have removed the observer.
+
+Observer observer = new Observer<DownloadItem>() {
+        @Override
+        public void onChanged(@Nullable DownloadItem downloadItem) {
+            if(downloadItem!= null) {
+                DownloadManager.this.downloadManagerListener.onDownloadManagerFailed(null, "this item already exists");
+                return;
+            }
+            startDownload();
+            model.getDownloadByContentId(contentId).removeObservers((AppCompatActivity)context);
+        }
+    };
+    model.getDownloadByContentId(contentId).observeForever(observer);
+
+
+
+
+ model.getDownloadByContentId(contentId).observe((AppCompatActivity)context, downloadItem-> {
+             if(downloadItem!= null) {
+                this.downloadManagerListener.onDownloadManagerFailed(null, "this item already exists");
+                return;
+            }
+            startDownload();
+            model.getDownloadByContentId(contentId).removeObserver(downloadItem-> {});
+        } );
+
+    
+===============================================================================================
+23
+A:Your first one will not work, because observeForever() is not tied to any LifecycleOwner.
+
+Your second one will not work, because you are not passing the existing registered observer to removeObserver().
+
+You first need to settle on whether you are using LiveData with a LifecycleOwner (your activity) or not. My assumption is that you should be using a LifecycleOwner. In that case, use:
+
+Observer observer = new Observer<DownloadItem>() {
+    @Override
+    public void onChanged(@Nullable DownloadItem downloadItem) {
+        if(downloadItem!= null) {
+            DownloadManager.this.downloadManagerListener.onDownloadManagerFailed(null, "this item already exists");
+            return;
+        }
+        startDownload();
+        model.getDownloadByContentId(contentId).removeObservers((AppCompatActivity)context);
+    }
+};
+
+model.getDownloadByContentId(contentId).observe((AppCompatActivity)context, observer);
+
+    

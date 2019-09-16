@@ -1,0 +1,109 @@
+63
+Q:I have an app, that has an Activity that uses a ScrollView. I need to detect when user gets to the bottom of the ScrollView. I did some googleing and I found this page where is explained. But, in the example, that guys extends ScrollView. As I said, I need to extend Activity.
+
+So, I said "ok, let's try to make a custom class extending ScrollView, override the onScrollChanged() method, detect the end of the scroll, and act accordingly".
+
+I did, but in this line:
+
+scroll = (ScrollViewExt) findViewById(R.id.scrollView1);
+
+
+it throws a  java.lang.ClassCastException. I changed the <ScrollView> tags in my XML but, obviously, it doesn't work. My questions are: Why, if ScrollViewExt extends ScrollView, throws to my face a ClassCastException? is there any way to detect end of scrolling without messing too much?
+
+Thank you people.
+
+EDIT:
+As promised, here is the piece of my XML that matters:
+
+<ScrollView
+        android:id="@+id/scrollView1"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" >
+
+
+        <WebView
+            android:id="@+id/textterms"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_horizontal"
+            android:textColor="@android:color/black" />
+
+    </ScrollView>
+
+
+I changed it from TextView to WebView to be able of justifying the text inside. What i want to achieve is the "Accept button doesn't activate until the terms of the contract are fully read" thing. My extended class is called ScrollViewExt. If i change the tag ScrollView for ScrollViewExt it throws an
+
+android.view.InflateException: Binary XML file line #44: Error inflating class ScrollViewExt
+
+
+because it doesn't understand the tag ScrollViewEx. I don't think it has a solution...
+
+Thanks for your answers!
+    
+===============================================================================================
+104
+A:Did it!
+
+Aside of the fix Alexandre kindly provide me, I had to create an Interface:
+
+public interface ScrollViewListener {
+    void onScrollChanged(ScrollViewExt scrollView, 
+                         int x, int y, int oldx, int oldy);
+}
+
+
+Then, i had to override the OnScrollChanged method from ScrollView in my ScrollViewExt:
+
+public class ScrollViewExt extends ScrollView {
+    private ScrollViewListener scrollViewListener = null;
+    public ScrollViewExt(Context context) {
+        super(context);
+    }
+
+    public ScrollViewExt(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+    }
+
+    public ScrollViewExt(Context context, AttributeSet attrs) {
+        super(context, attrs);
+    }
+
+    public void setScrollViewListener(ScrollViewListener scrollViewListener) {
+        this.scrollViewListener = scrollViewListener;
+    }
+
+    @Override
+    protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+        super.onScrollChanged(l, t, oldl, oldt);
+        if (scrollViewListener != null) {
+            scrollViewListener.onScrollChanged(this, l, t, oldl, oldt);
+        }
+    }
+}
+
+
+Now, as Alexandre said, put the package name in the XML tag (my fault), make my Activity class implement the interface created before, and then, put it all together:
+
+scroll = (ScrollViewExt) findViewById(R.id.scrollView1);
+scroll.setScrollViewListener(this);
+
+
+And in the method OnScrollChanged, from the interface...
+
+@Override
+public void onScrollChanged(ScrollViewExt scrollView, int x, int y, int oldx, int oldy) {
+    // We take the last son in the scrollview
+    View view = (View) scrollView.getChildAt(scrollView.getChildCount() - 1);
+    int diff = (view.getBottom() - (scrollView.getHeight() + scrollView.getScrollY()));
+
+    // if diff is zero, then the bottom has been reached
+    if (diff == 0) {
+        // do stuff
+    }
+}
+
+
+And it worked!
+
+Thank you very much for your help, Alexandre!
+    

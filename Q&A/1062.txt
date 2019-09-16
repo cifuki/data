@@ -1,0 +1,53 @@
+149
+Q:What I'm trying to do seems very simple, but after a few days of searching I can't quite figure it out. 
+
+I have an application that allows the user to select multiple(up to 5) images. I'm using an ImageView. When the user clicks on the ImageView, I'd like to allow them the option to 
+
+
+Select the image from the gallery, or 
+Use the camera to capture an image.
+
+
+I started by using the ACTION_GET_CONTENT intent, and that works well for getting to the gallery. So then I tried using the ACTION_PICK_ACTIVITY intent to allow the user to choose camera or gallery:
+
+Intent pickIntent = new Intent(Intent.ACTION_PICK_ACTIVITY);
+Intent gallIntent=new Intent(Intent.ACTION_GET_CONTENT);
+gallIntent.setType("image/*"); 
+Intent camIntent = new Intent("android.media.action.IMAGE_CAPTURE");
+pickIntent.putExtra(Intent.EXTRA_INTENT, camIntent);
+pickIntent.putExtra(Intent.EXTRA_INTENT, gallIntent)
+pickIntent.putExtra(Intent.EXTRA_TITLE, "Select Source");
+startActivityForResult(pickIntent, IMAGE_SELECTOR);
+
+
+But it appears I can only add one EXTRA_INTENT. The menu show up as expected, but the only options are Gallery and Files....no Camera). 
+
+Is there a better/easier way to do this that I'm missing? Thanks for any help. 
+    
+===============================================================================================
+31
+A:You'll have to create your own chooser dialog merging both intent resolution results.
+
+To do this, you will need to query the PackageManager with PackageManager.queryIntentActivities() for both original intents and create the final list of possible Intents with one new Intent for each retrieved activity like this:
+
+List<Intent> yourIntentsList = new ArrayList<Intent>();
+
+List<ResolveInfo> listCam = packageManager.queryIntentActivities(camIntent, 0);
+for (ResolveInfo res : listCam) {
+    final Intent finalIntent = new Intent(camIntent);
+    finalIntent.setComponent(new ComponentName(res.activityInfo.packageName, res.activityInfo.name));
+    yourIntentsList.add(finalIntent);
+}
+
+List<ResolveInfo> listGall = packageManager.queryIntentActivities(gallIntent, 0);
+for (ResolveInfo res : listGall) {
+    final Intent finalIntent = new Intent(gallIntent);
+    finalIntent.setComponent(new ComponentName(res.activityInfo.packageName, res.activityInfo.name));
+    yourIntentsList.add(finalIntent);
+}
+
+
+(I wrote this directly here so this may not compile)
+
+Then, for more info on creating a custom dialog from a list see https://developer.android.com/guide/topics/ui/dialogs.html#AlertDialog
+    

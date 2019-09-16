@@ -1,0 +1,96 @@
+34
+Q:Well, I am doing something in which I want to disable all hard buttons of the device.
+
+Hard buttons like Power, Home, Volume up, Volume down, Search, Back.
+
+I have successfully overridden almost all buttons here except Power.
+
+So I just want you people to see and please share some ideas so that I get can away with it.
+
+I am getting the long press Power keyevent in onDispatchKeyEvent(), in the same way I want to catch the short click of the same. Moreover when pressing power I also tried to stop Screen off by getting the Broadcast of SCREEN_OFF and I succeeded in receiving it but I was not able to handle it.
+
+Thanks.
+
+Then, I had created a ReceiverScreen which receives broadcast of Screen on/off
+
+ReceiverScreen.java
+
+public class ReceiverScreen extends BroadcastReceiver {
+
+    public static boolean wasScreenOn = true;
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        if (intent.getAction().equals(Intent.ACTION_SCREEN_OFF)) {
+            // do whatever you need to do here
+            wasScreenOn = false;
+        } else if (intent.getAction().equals(Intent.ACTION_SCREEN_ON)) {
+            // and do whatever you need to do here
+            wasScreenOn = true;
+        }
+    }
+}
+
+
+DisableHardButton.java
+
+public class DisableHardButton extends Activity {
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    setContentView(R.layout.main);
+    IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_ON);
+    filter.addAction(Intent.ACTION_SCREEN_OFF);
+    BroadcastReceiver mReceiver = new ReceiverScreen();
+    registerReceiver(mReceiver, filter);
+    }
+
+@Override
+    protected void onPause() {
+        // when the screen is about to turn off
+        if (ScreenReceiver.wasScreenOn) {
+            // this is the case when onPause() is called by the system due to a screen state change
+            System.out.println("SCREEN TURNED OFF");
+
+    } else {
+        // this is when onPause() is called when the screen state has not changed
+    }
+    super.onPause();
+}
+
+@Override
+protected void onResume() {
+    // only when screen turns on
+    if (!ScreenReceiver.wasScreenOn) {
+        // this is when onResume() is called due to a screen state change
+        System.out.println("SCREEN TURNED ON");
+    } else {
+        // this is when onResume() is called when the screen state has not changed
+    }
+    super.onResume();
+}
+}
+
+    
+===============================================================================================
+51
+A:Phew. This is quite a contended question, with a great deal of commentary behind it. 
+
+Let me begin by rephrasing your question a bit. If I understand clearly, you'd like to disable all physical buttons on the device for the duration of your activity. This is inclusive of the power button, which you detect by handling the ACTION_SCREEN_OFF intent. Your current (successful) workaround for this scenario is to broadcast an ACTION_SCREEN_ON, kicking the screen back to life when it's turned off, provided the host implements this correctly. 
+
+You'd now like to go the extra mile, by rendering this action unnecessary, if (and only if) you are able to catch and handle ACTION_SCREEN_OFF before it gets sent to the system. Is this possible, and if so, how?
+
+This bears some discussion. The short version, however, is simple: this is not possible, without custom modification to your firmware or the core of the Android operating system, for a limited number of devices. 
+
+The Android system, as far as is documented, defines this as a broadcast action. Following the publish-subscribe pattern of message propagation, this message will notify all concerned parties of this action. Because this message is sent by the system, because the message stack is managed by the system, and because the message is also received by the system, your code simply isn't injected in the right place to block the reception of this message. 
+
+Furthermore, for some devices, this will be a physical switch that has no programmatic interrupt whatsoever. At best, the Android system can hope to handle for the event when it happens, which is precisely why this broadcast message is something of a special case in the service stack. To the best of my knowledge and based upon the sparse documentation on this scenario, this is why it's not an out-of-the-box, supported feature, before we consider any of the possible vectors for abuse.
+
+Your best recourse is actually a much simpler one, if you have the ability to modify the physical hardware for the device in question: restrict access to, mangle, or otherwise disable the physical power button. In many scenarios this is undesirable, but this works in situations where your Android device is being used, for example, as a point-of-sale or a public service machine. If this is unworkable, placing physical restrictions on access to the power button may be all that's required, handling for the remainder of cases (for example, spot attempts to toggle the screen) by sending ACTION_SCREEN_ON.
+
+Just remember, this strategy isn't foolproof. Do this competently and document the procedure well, lest you become fodder for the next 2600 expos\xc3\xa9.
+
+Best of luck with your application.
+    

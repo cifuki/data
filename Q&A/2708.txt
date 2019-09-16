@@ -1,0 +1,223 @@
+78
+Q:I am trying to integrate Google Sign In into my app. I don't have a back-end server, I am just getting the details of the logged on Google Account to my app.
+
+I first tried it by using Google Sign In Example but I got an error (No code changes made except for printing the stacktrace below). I just used the example SignInActivity as I don't have a back-end server.
+
+ Exception com.google.android.gms.common.api.ApiException: 12500: 
+ at com.google.android.gms.common.internal.zzb.zzz(Unknown Source)
+ at com.google.android.gms.auth.api.signin.GoogleSignIn.getSignedInAccountFromIntent(Unknown Source)
+ at com.ewise.android.api.MainActivity.onActivityResult(SignInActivity.java:89)     at android.app.Activity.dispatchActivityResult(Activity.java:7010)
+ at android.app.ActivityThread.deliverResults(ActivityThread.java:4187)
+ at android.app.ActivityThread.handleSendResult(ActivityThread.java:4234)
+ at android.app.ActivityThread.-wrap20(ActivityThread.java)
+ at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1584)
+ at android.os.Handler.dispatchMessage(Handler.java:102)
+ at android.os.Looper.loop(Looper.java:154)
+ at android.app.ActivityThread.main(ActivityThread.java:6316)
+ at java.lang.reflect.Method.invoke(Native Method)
+ at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:872)
+ at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:762)
+
+
+Code
+
+ public class SignInActivity extends AppCompatActivity implements
+         View.OnClickListener {
+
+     private static final String TAG = "SignInActivity";
+     private static final int RC_SIGN_IN = 9001;
+
+     private GoogleSignInClient mGoogleSignInClient;
+     private TextView mStatusTextView;
+
+     @Override
+     protected void onCreate(Bundle savedInstanceState) {
+         super.onCreate(savedInstanceState);
+         setContentView(R.layout.activity_main);
+
+         // Views
+         mStatusTextView = findViewById(R.id.status);
+
+         // Button listeners
+         findViewById(R.id.sign_in_button).setOnClickListener(this);
+         findViewById(R.id.sign_out_button).setOnClickListener(this);
+         findViewById(R.id.disconnect_button).setOnClickListener(this);
+
+         // [START configure_signin]
+         // Configure sign-in to request the user's ID, email address, and basic
+         // profile. ID and basic profile are included in DEFAULT_SIGN_IN.
+         GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                 .requestEmail()
+                 .build();
+         // [END configure_signin]
+
+         // [START build_client]
+         // Build a GoogleSignInClient with the options specified by gso.
+         mGoogleSignInClient = GoogleSignIn.getClient(this, gso);
+         // [END build_client]
+
+         // [START customize_button]
+         // Set the dimensions of the sign-in button.
+         SignInButton signInButton = findViewById(R.id.sign_in_button);
+         signInButton.setSize(SignInButton.SIZE_STANDARD);
+         signInButton.setColorScheme(SignInButton.COLOR_LIGHT);
+         // [END customize_button]
+     }
+
+     @Override
+     public void onStart() {
+         super.onStart();
+
+         // [START on_start_sign_in]
+         // Check for existing Google Sign In account, if the user is already signed in
+         // the GoogleSignInAccount will be non-null.
+         GoogleSignInAccount account = GoogleSignIn.getLastSignedInAccount(this);
+         updateUI(account);
+         // [END on_start_sign_in]
+     }
+
+     // [START onActivityResult]
+     @Override
+     public void onActivityResult(int requestCode, int resultCode, Intent data) {
+         super.onActivityResult(requestCode, resultCode, data);
+
+         // Result returned from launching the Intent from GoogleSignInClient.getSignInIntent(...);
+         if (requestCode == RC_SIGN_IN) {
+             // The Task returned from this call is always completed, no need to attach
+             // a listener.
+             Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
+             handleSignInResult(task);
+         }
+     }
+     // [END onActivityResult]
+
+     // [START handleSignInResult]
+     private void handleSignInResult(Task<GoogleSignInAccount> completedTask) {
+         try {
+             GoogleSignInAccount account = completedTask.getResult(ApiException.class);
+
+             // Signed in successfully, show authenticated UI.
+             updateUI(account);
+         } catch (ApiException e) {
+             // The ApiException status code indicates the detailed failure reason.
+             // Please refer to the GoogleSignInStatusCodes class reference for more information.
+             Log.w(TAG, "signInResult:failed code=" + e.getStatusCode());
+             e.printStackTrace();
+             updateUI(null);
+         }
+     }
+     // [END handleSignInResult]
+
+     // [START signIn]
+     private void signIn() {
+         Intent signInIntent = mGoogleSignInClient.getSignInIntent();
+         startActivityForResult(signInIntent, RC_SIGN_IN);
+     }
+     // [END signIn]
+
+     // [START signOut]
+     private void signOut() {
+         mGoogleSignInClient.signOut()
+                 .addOnCompleteListener(this, new OnCompleteListener<Void>() {
+                     @Override
+                     public void onComplete(@NonNull Task<Void> task) {
+                         // [START_EXCLUDE]
+                         updateUI(null);
+                         // [END_EXCLUDE]
+                     }
+                 });
+     }
+     // [END signOut]
+
+     // [START revokeAccess]
+     private void revokeAccess() {
+         mGoogleSignInClient.revokeAccess()
+                 .addOnCompleteListener(this, new OnCompleteListener<Void>() {
+                     @Override
+                     public void onComplete(@NonNull Task<Void> task) {
+                         // [START_EXCLUDE]
+                         updateUI(null);
+                         // [END_EXCLUDE]
+                     }
+                 });
+     }
+     // [END revokeAccess]
+
+     private void updateUI(@Nullable GoogleSignInAccount account) {
+         if (account != null) {
+             mStatusTextView.setText(getString(R.string.signed_in_fmt, account.getDisplayName()));
+
+             findViewById(R.id.sign_in_button).setVisibility(View.GONE);
+             findViewById(R.id.sign_out_and_disconnect).setVisibility(View.VISIBLE);
+         } else {
+             mStatusTextView.setText(R.string.signed_out);
+
+             findViewById(R.id.sign_in_button).setVisibility(View.VISIBLE);
+             findViewById(R.id.sign_out_and_disconnect).setVisibility(View.GONE);
+         }
+     }
+
+     @Override
+     public void onClick(View v) {
+         switch (v.getId()) {
+             case R.id.sign_in_button:
+                 signIn();
+                 break;
+             case R.id.sign_out_button:
+                 signOut();
+                 break;
+             case R.id.disconnect_button:
+                 revokeAccess();
+                 break;
+         }
+     }
+  }
+
+
+From what I read, the issue could be caused by SHA1 Generation.
+
+I followed the complete guide but apparently it's not working.
+
+I copied the SHA1 from gradle signingReport
+
+Variant: debug
+Config: debug
+Store: /Users/user/.android/debug.keystore
+Alias: AndroidDebugKey
+MD5: A3:16:3F:43:75:FE:07:62:6D:8D:CC:DD:21:9F:FA:1A
+SHA1: 7B:21:26:7F:D8:18:BB:0E:36:1C:82:DD:B7:28:5F:C1:2F:5C:E4:EA
+Valid until: Saturday, August 31, 2047
+----------
+Variant: release
+Config: none
+----------
+Variant: debugAndroidTest
+Config: debug
+Store: /Users/user/.android/debug.keystore
+Alias: AndroidDebugKey
+MD5: A3:16:3F:43:75:FE:07:62:6D:8D:CC:DD:21:9F:FA:1A
+SHA1: 7B:21:26:7F:D8:18:BB:0E:36:1C:82:DD:B7:28:5F:C1:2F:5C:E4:EA
+Valid until: Saturday, August 31, 2047
+----------
+Variant: debugUnitTest
+Config: debug
+Store: /Users/user/.android/debug.keystore
+Alias: AndroidDebugKey
+MD5: A3:16:3F:43:75:FE:07:62:6D:8D:CC:DD:21:9F:FA:1A
+SHA1: 7B:21:26:7F:D8:18:BB:0E:36:1C:82:DD:B7:28:5F:C1:2F:5C:E4:EA
+Valid until: Saturday, August 31, 2047
+
+
+what could be the possible cause of this? 
+
+Thanks
+
+P.S. Could this be a possible cause?
+
+Google Play services out of date.  Requires 11720000 but found 10932470
+
+    
+===============================================================================================
+31
+A:Simply update your Google Play Services to the latest version (or 11720000 in this case). If you are using AVD, Nexus 5 and 5X images support Google Play. Once the emulator is up and running, go to the Extended Controls Menu >  Google Play then update.
+    

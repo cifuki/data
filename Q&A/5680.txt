@@ -1,0 +1,126 @@
+44
+Q:I have several build types: debug, release.
+I also have two flavors pub and dev.
+
+pub flavored application depends on a pub library, the similar goes for dev flavor.
+Now I'd like the debug build type app depend on debug build of the library. The following does not work:
+
+pubReleaseCompile project(path: ':common', configuration: "pubRelease")
+devReleaseCompile project(path: ':common', configuration: "devRelease")
+pubDebugCompile project(path: ':common', configuration: "pubDebug")
+devDebugCompile project(path: ':common', configuration: "devDebug")
+
+
+Note: The library is set up to compile all variants.
+
+Is there a way to specify conditional project dependency based on both flavor and build type?
+
+EDIT: To avoid confusion here follow relevant build.gradle files from the project that I'm currently using.
+
+project/common/build.gradle (the library)
+
+apply plugin: 'com.android.library'
+apply plugin: 'com.jakewharton.hugo' // annotation-based code generated logs only in debug build
+
+android {
+  defaultPublishConfig "pubRelease"
+  publishNonDefault true // four variants of the library are built
+
+  buildTypes {
+    debug {}
+    release {
+      minifyEnabled false
+      proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+    }
+  }
+  productFlavors {
+    pub {
+      // custom build config fields
+    }
+    dev {
+      // custom build config fields
+    }
+  }
+}
+
+dependencies {
+  // ...
+}
+
+
+project/parent/build.gradle (one of the app modules using the library)
+
+apply plugin: 'com.android.application'
+apply plugin: 'com.jakewharton.hugo'
+
+android {
+  // ...
+
+  signingConfigs {
+    release {
+      // ...
+    }
+  }
+
+  buildTypes {
+    release {
+      signingConfig signingConfigs.release
+      proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-project.txt'
+      shrinkResources true
+      minifyEnabled true
+    }
+    debug {
+      versionNameSuffix '-debug'
+    }
+  }
+  productFlavors {
+    pub {
+      // custom res values
+    }
+    dev {
+      // custom res values
+    }
+  }
+}
+
+dependencies {
+  // ...
+  pubCompile project(path: ':common', configuration: "pubRelease")
+  devCompile project(path: ':common', configuration: "devRelease")
+}
+
+    
+===============================================================================================
+45
+A:Android Plugin for Gradle 3.x.x
+
+Build plugin 3.x.x uses variant-aware dependency resolution so devDebug variant of an app module will automatically use devDebug variant of its library module dependency. To answer the question, this would be enough:
+
+implementation project(':common')
+
+
+Read more here: https://developer.android.com/studio/build/dependencies.html#variant_aware
+
+Original answer
+
+I was able to find a solution here: https://github.com/JakeWharton/u2020/blob/master/build.gradle
+
+More on why my original code does not suffice is available here: https://code.google.com/p/android/issues/detail?id=162285
+
+Working solution:
+
+configurations {
+  pubDebugCompile
+  devDebugCompile
+  pubReleaseCompile
+  devReleaseCompile
+}
+
+dependencies {
+  pubReleaseCompile project(path: ':common', configuration: "pubRelease")
+  devReleaseCompile project(path: ':common', configuration: "devRelease")
+  pubDebugCompile project(path: ':common', configuration: "pubDebug")
+  devDebugCompile project(path: ':common', configuration: "devDebug")
+}
+
+    

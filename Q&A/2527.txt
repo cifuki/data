@@ -1,0 +1,53 @@
+82
+Q:I have a method with a HandlerThread. A value gets changed inside the Thread and I'd like to return it to the test() method. Is there a way to do this?
+
+public void test()
+{   
+    Thread uiThread = new HandlerThread("UIHandler"){
+        public synchronized void run(){
+            int value; 
+            value = 2; //To be returned to test()
+        }
+    };
+    uiThread.start();
+}
+
+    
+===============================================================================================
+68
+A:You can use a local final variable array. The variable needs to be of non-primitive type, so you can use an array. You also need to synchronize the two threads, for example using a CountDownLatch:
+
+public void test()
+{   
+    final CountDownLatch latch = new CountDownLatch(1);
+    final int[] value = new int[1];
+    Thread uiThread = new HandlerThread("UIHandler"){
+        @Override
+        public void run(){
+            value[0] = 2;
+            latch.countDown(); // Release await() in the test thread.
+        }
+    };
+    uiThread.start();
+    latch.await(); // Wait for countDown() in the UI thread. Or could uiThread.join();
+    // value[0] holds 2 at this point.
+}
+
+
+You can also use an Executor and a Callable like this:
+
+public void test() throws InterruptedException, ExecutionException
+{   
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    Callable<Integer> callable = new Callable<Integer>() {
+        @Override
+        public Integer call() {
+            return 2;
+        }
+    };
+    Future<Integer> future = executor.submit(callable);
+    // future.get() returns 2 or raises an exception if the thread dies, so safer
+    executor.shutdown();
+}
+
+    

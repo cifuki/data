@@ -1,0 +1,258 @@
+40
+Q:I am new to Dagger 2. I have 2 Activities, I want to use injected ViewModel for both. Here is my ViewModuleFactory :
+
+@Singleton
+public class ProductViewModelFactory implements ViewModelProvider.Factory {
+
+    private final Map<Class<? extends ViewModel>, Provider<ViewModel>> creators;
+
+    @Inject
+    public ProductViewModelFactory(Map<Class<? extends ViewModel>, Provider<ViewModel>> creators) {
+        this.creators = creators;
+    }
+
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T extends ViewModel> T create(Class<T> modelClass) {
+        Provider<? extends ViewModel> creator = creators.get(modelClass);
+        if (creator == null) {
+            for (Map.Entry<Class<? extends ViewModel>, Provider<ViewModel>> entry : creators.entrySet()) {
+                if (modelClass.isAssignableFrom(entry.getKey())) {
+                    creator = entry.getValue();
+                    break;
+                }
+            }
+        }
+        if (creator == null) {
+            throw new IllegalArgumentException("unknown viewmodel class " + modelClass);
+        }
+        try {
+            return (T) creator.get();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+
+
+My ViewModelModule:
+
+@Module
+abstract class ViewModelModule {
+    @Binds
+    @IntoMap
+    @ViewModelKey(ProductListViewModel.class)
+    abstract ViewModel bindProductListViewModel(ProductListViewModel listViewModel);
+
+    @Binds
+    @IntoMap
+    @ViewModelKey(ProductDetailsViewModel.class)
+    abstract ViewModel bindProductDetailsViewModel(ProductDetailsViewModel detailsViewModel);
+
+    @Binds
+    abstract ViewModelProvider.Factory bindViewModelFactory(ProductViewModelFactory factory);
+}
+
+
+My ViewModelKey for mapping:
+
+@Documented
+@Target({ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME)
+@MapKey
+@interface ViewModelKey {
+    Class<? extends ViewModel> value();
+}
+
+
+My ActivityModule :
+
+@Module
+public abstract class ActivityModule {
+    abstract ProductListActivity contributeProductListActivity();
+    abstract ProductDetailsActivity contributeProductDetailsActivity();
+}
+
+
+My AppModule:
+
+@Module
+class AppModule {
+
+@Provides
+    @Singleton
+    RedMartProductService provideRedMartProductService() {
+        ........
+    }
+
+    @Provides
+    @Singleton
+    ProductListRepository provideProductListRepository(ProductListRepository repository) {
+        return repository;
+    }
+
+    @Provides
+    @Singleton
+    ProductDetailsRepository provideProductDetailsRepository(ProductDetailsRepository repository) {
+        return repository;
+    }
+}
+
+
+My AppComponent:
+
+@Singleton
+@Component(modules = {AndroidInjectionModule.class, ActivityModule.class, AppModule.class})
+public interface AppComponent {
+    @Component.Builder
+    interface Builder {
+        @BindsInstance
+        Builder application(Application application);
+
+        AppComponent build();
+    }
+
+    void inject(MartApplication martApp);
+}
+
+
+My Application:
+
+public class MartApplication extends Application implements HasActivityInjector {
+
+    @Inject
+    DispatchingAndroidInjector<Activity> dispatchingAndroidInjector;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+    }
+
+    @Override
+    public DispatchingAndroidInjector<Activity> activityInjector() {
+        return dispatchingAndroidInjector;
+    }
+}
+
+
+In Activity: 
+
+@Inject
+ViewModelProvider.Factory viewModelFactory;
+.......
+AndroidInjection.inject(activity); // Throwing exception
+ListViewModel = ViewModelProviders.of(this, viewModelFactory).get(ProductListViewModel.class);
+
+
+It is throwing an exception on inject: 
+
+java.lang.IllegalArgumentException: No injector factory bound for Class<com.mymart.ui.ProductListActivity>
+
+
+Can anyone help me identify the problem in my code?
+
+.......................................................................
+
+Edit: I tried with ContributesAndroidInjector as per @azizbekian, but it resulted following error on build: 
+
+    error: [dagger.android.AndroidInjector.inject(T)] Found a dependency cycle:
+com.mymart.repository.ProductListRepository is injected at
+com.mymart.di.AppModule.provideProductListRepository(repository)
+com.mymart.repository.ProductListRepository is injected at
+com.mymart.viewmodel.ProductListViewModel.<init>(productListRepository)
+com.mymart.viewmodel.ProductListViewModel is injected at
+com.mymart.di.ViewModelModule.bindProductListViewModel(listViewModel)
+java.util.Map<java.lang.Class<? extends android.arch.lifecycle.ViewModel>,javax.inject.Provider<android.arch.lifecycle.ViewModel>> is injected at
+com.mymart.viewmodel.ProductViewModelFactory.<init>(creators)
+com.mymart.viewmodel.ProductViewModelFactory is injected at
+com.mymart.di.ViewModelModule.bindViewModelFactory(factory)
+android.arch.lifecycle.ViewModelProvider.Factory is injected at
+com.mymart.ui.ProductListActivity.viewModelFactory
+com.mymart.ui.ProductListActivity is injected at
+dagger.android.AndroidInjector.inject(arg0)
+
+
+Edit 2
+After all changes, I am facing again exception:
+
+java.lang.RuntimeException: Unable to create application com.kaushik.myredmart.MartApplication: java.lang.IllegalStateException: com.kaushik.myredmart.di.AppModule must be set
+                                                 at android.app.ActivityThread.handleBindApplication(ActivityThread.java:4710)
+                                                 at android.app.ActivityThread.-wrap1(ActivityThread.java)
+                                                 at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1405)
+                                                 at android.os.Handler.dispatchMessage(Handler.java:102)
+                                                 at android.os.Looper.loop(Looper.java:148)
+                                                 at android.app.ActivityThread.main(ActivityThread.java:5417)
+                                                 at java.lang.reflect.Method.invoke(Native Method)
+                                                 at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:726)
+                                                 at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:616)
+                                              Caused by: java.lang.IllegalStateException: com.kaushik.myredmart.di.AppModule must be set
+                                                 at com.kaushik.myredmart.di.DaggerAppComponent$Builder.build(DaggerAppComponent.java:180)
+                                                 at com.kaushik.myredmart.di.AppInjector.init(AppInjector.java:30)
+                                                 at com.kaushik.myredmart.MartApplication.onCreate(MartApplication.java:28)
+                                                 at android.app.Instrumentation.callApplicationOnCreate(Instrumentation.java:1013)
+                                                 at android.app.ActivityThread.handleBindApplication(ActivityThread.java:4707)
+                                                 at android.app.ActivityThread.-wrap1(ActivityThread.java)\xc2\xa0
+                                                 at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1405)\xc2\xa0
+                                                 at android.os.Handler.dispatchMessage(Handler.java:102)\xc2\xa0
+                                                 at android.os.Looper.loop(Looper.java:148)\xc2\xa0
+                                                 at android.app.ActivityThread.main(ActivityThread.java:5417)\xc2\xa0
+                                                 at java.lang.reflect.Method.invoke(Native Method)
+
+    
+===============================================================================================
+59
+A:I believe you have forgot to put @ContributesAndroidInjector annotation:
+
+
+
+    @Module
+    public abstract class ActivityModule {
+        @ContributesAndroidInjector
+        abstract ProductListActivity contributeProductListActivity();
+        @ContributesAndroidInjector
+        abstract ProductDetailsActivity contributeProductDetailsActivity();
+    }
+
+
+
+And include ViewModelModule within AppModule:
+
+
+
+    @Module(includes = ViewModelModule.class)
+    class AppModule {
+        ...
+    }
+
+
+
+
+
+See this code that you have wrote:
+
+@Provides
+@Singleton
+ProductListRepository provideProductListRepository(ProductListRepository repository) {
+    return repository;
+}
+
+
+What do you expect to happen? You are telling dagger "hey, dagger, whenever I ask you to provide me ProductListRepository then create(return) that object using ProductListRepository". That's not gonna work out.
+
+Most possibly what you intended was "hey, dagger, whenever I ask you to provide me an implementation of ProductListRepository then create(return) that object using ProductListRepositoryImpl":
+
+@Provides
+@Singleton
+ProductListRepository provideProductListRepository(ProductListRepositoryImpl repository) {
+    return repository;
+}
+
+
+Which may be substituted with following:
+
+@Binds
+@Singleton
+abstract ProductListRepository provideProductListRepository(ProductListRepositoryImpl repository);
+
+    

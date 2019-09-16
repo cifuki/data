@@ -1,0 +1,76 @@
+43
+Q:My question is more about what is a good practice than what is possible:
+
+
+Is it a good thing to call NoticationManager.notify() from a worker thread?
+Does the system execute it in the UI thread anyway or not?
+
+
+I always try to keep in mind that stuff concerning the UI should be executed in the UI thread and the rest in worker threads, as suggested by the Android doc about Processes And Threads:
+
+
+  Additionally, the Andoid UI toolkit is not thread-safe. So, you must
+  not manipulate your UI from a worker thread\xe2\x80\x94you must do all
+  manipulation to your user interface from the UI thread. Thus, there
+  are simply two rules to Android's single thread model:
+  
+  
+  Do not block the UI thread 
+  Do not access the Android UI toolkit from outside the UI thread
+  
+
+
+HOWEVER, I was surprised by an example given by the Android doc itself (about showing progress in Notifications), where an ongoing notification progress was updated directly from a worker thread:
+
+mNotifyManager =
+        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+mBuilder = new NotificationCompat.Builder(this);
+mBuilder.setContentTitle("Picture Download")
+    .setContentText("Download in progress")
+    .setSmallIcon(R.drawable.ic_notification);
+// Start a lengthy operation in a background thread
+new Thread(
+    new Runnable() {
+        @Override
+        public void run() {
+            int incr;
+            // Do the "lengthy" operation 20 times
+            for (incr = 0; incr <= 100; incr+=5) {
+                    // Sets the progress indicator to a max value, the
+                    // current completion percentage, and "determinate"
+                    // state
+                    mBuilder.setProgress(100, incr, false);
+                    // Displays the progress bar for the first time.
+                    mNotifyManager.notify(0, mBuilder.build());
+                        // Sleeps the thread, simulating an operation
+                        // that takes time
+                        try {
+                            // Sleep for 5 seconds
+                            Thread.sleep(5*1000);
+                        } catch (InterruptedException e) {
+                            Log.d(TAG, "sleep failure");
+                        }
+            }
+            // When the loop is finished, updates the notification
+            mBuilder.setContentText("Download complete")
+            // Removes the progress bar
+                    .setProgress(0,0,false);
+            mNotifyManager.notify(ID, mBuilder.build());
+        }
+    }
+// Starts the thread by calling the run() method in its Runnable
+).start();
+
+
+That's why I'm wondering if it is actually necessary to run it on the main thread, or if the system takes care of it.
+
+Thanks for your help!
+    
+===============================================================================================
+79
+A:It is acceptable to update a Notification from a worker thread because the Notification does not live in your application's process and hence you are not updating its UI directly. The Notification is maintained in a system process, and the Notification's UI is updated through RemoteViews (doc), which allows the manipulation of a view hierarchy that is maintained by a process other than your own. If you look at the source for Notification.Builder here you can see that it is ultimately building a RemoteViews.
+
+And if you look at the source for RemoteViews here you'll see that when you manipulate a view it is really just creating an Action (source) object and adding it to a queue to be processed. An Action is a Parcelable that is ultimately sent via IPC to the process that owns the Notification's view, where it can unpack the values and update the view as indicated... on it's own UI thread.
+
+I hope that clarifies why it is OK to update a Notification from a worker thread in your application.
+    

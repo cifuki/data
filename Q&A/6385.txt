@@ -1,0 +1,52 @@
+40
+Q:I'm following this tutorial: How to use the Android Keystore to store passwords and other sensitive information. It (loosely) ties up with the Google Sample app: BasicAndroidKeyStore.
+
+I can encrypt my data using the public key, and I can decrypt on devices running Lollipop. However I have a Nexus 6 running marshmallow and this crashes giving the error:
+
+java.lang.RuntimeException: Unable to create application com.android.test: java.lang.ClassCastException: android.security.keystore.AndroidKeyStoreRSAPrivateKey cannot be cast to java.security.interfaces.RSAPrivateKey
+
+
+Here is the code it crashes on:
+
+KeyStore.Entry entry;
+
+//Get Android KeyStore
+ks = KeyStore.getInstance(KeystoreHelper.KEYSTORE_PROVIDER_ANDROID_KEYSTORE);
+
+// Weird artifact of Java API.  If you don't have an InputStream to load, you still need to call "load", or it'll crash.
+ks.load(null);
+
+// Load the key pair from the Android Key Store
+entry = ks.getEntry(mAlias, null);
+
+KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) entry;
+
+//ERROR OCCURS HERE::
+RSAPrivateKey rsaPrivateKey = (RSAPrivateKey) privateKeyEntry.getPrivateKey();
+
+Cipher output = Cipher.getInstance("RSA/ECB/PKCS1Padding", "AndroidOpenSSL");
+
+output.init(Cipher.DECRYPT_MODE, rsaPrivateKey);
+
+
+I'm reluctant to put this down to an Android M oddity as I see no reason why the java crypto libraries would have changed. If the M release comes around and our app immediately crashes on M I'll be in big trouble.
+
+I am doing something wrong? The error very specifically says you can't cast to RSAPrivateKey, so does anyone know a better way to get the RSAPrivateKey from the entry?
+
+Many many thanks.
+    
+===============================================================================================
+56
+A:I managed to get this working by removing the Provider from Cipher.getInstance and not casting to a RSAprivateKey.
+
+KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) entry;
+
+Cipher output = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+output.init(Cipher.DECRYPT_MODE, privateKeyEntry.getPrivateKey());
+
+
+I'm not 100% but I think the reason for this I believe is the change in marshmallow from OpenSSL to BoringSSL. 
+https://developer.android.com/preview/behavior-changes.html#behavior-apache-http-client
+
+Anyway, the above worked for M and below.
+    

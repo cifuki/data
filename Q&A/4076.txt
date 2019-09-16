@@ -1,0 +1,126 @@
+57
+Q:I have included the camera functionality in my application. I have also launched the app in the market. I got an error message from one of the users that he is getting an error while opening the camera.
+
+I have tested the app on the device on 2.1. The error I got from the user is using nexus one which will mostly run 2.2...Here's the logcat error that I've received...
+
+java.lang.RuntimeException: setParameters failed
+at android.hardware.Camera.native_setParameters(Native Method)
+at android.hardware.Camera.setParameters(Camera.java:647)
+at com.CameraApp.Preview.surfaceChanged(Preview.java:67)
+at android.view.SurfaceView.updateWindow(SurfaceView.java:538)
+at android.view.SurfaceView.dispatchDraw(SurfaceView.java:339)
+at android.view.ViewGroup.drawChild(ViewGroup.java:1638)
+at android.view.ViewGroup.dispatchDraw(ViewGroup.java:1367)
+at android.view.ViewGroup.drawChild(ViewGroup.java:1638)
+at android.view.ViewGroup.dispatchDraw(ViewGroup.java:1367)
+at android.view.ViewGroup.drawChild(ViewGroup.java:1638)
+at android.view.ViewGroup.dispatchDraw(ViewGroup.java:1367)
+at android.view.View.draw(View.java:6743)
+at android.widget.FrameLayout.draw(FrameLayout.java:352)
+at android.view.ViewGroup.drawChild(ViewGroup.java:1640)
+at android.view.ViewGroup.dispatchDraw(ViewGroup.java:1367)
+at android.view.View.draw(View.java:6743)
+at android.widget.FrameLayout.draw(FrameLayout.java:352)
+at com.android.internal.policy.impl.PhoneWindow$DecorView.draw(PhoneWindow.java:1842)
+at android.view.ViewRoot.draw(ViewRoot.java:1407)
+at android.view.ViewRoot.performTraversals(ViewRoot.java:1163)
+at android.view.ViewRoot.handleMessage(ViewRoot.java:1727)
+at android.os.Handler.dispatchMessage(Handler.java:99)
+at android.os.Looper.loop(Looper.java:123)
+at android.app.ActivityThread.main(ActivityThread.java:4627)
+at java.lang.reflect.Method.invokeNative(Native Method)
+at java.lang.reflect.Method.invoke(Method.java:521)
+at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:868)
+at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:626)
+at dalvik.system.NativeStart.main(Native Method)
+
+
+I ran the app on 2.2 emulator also to check it. But it worked fine. Can anyone please tell me why the error is occurring?
+
+Here is the class which I mentioned in the comments:
+
+class Preview extends SurfaceView implements SurfaceHolder.Callback 
+{
+    private static final String TAG = "Preview";
+
+    SurfaceHolder mHolder;
+    public Camera camera;
+
+    Preview(Context context) 
+    {
+        super(context);
+
+        // Install a SurfaceHolder.Callback so we get notified when the
+        // underlying surface is created and destroyed.
+        mHolder = getHolder();
+        mHolder.addCallback(this);
+        mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+    }
+
+    public void surfaceCreated(SurfaceHolder holder) 
+    {
+        // The Surface has been created, acquire the camera and tell it where
+        // to draw.
+         camera = Camera.open();
+        try {
+        camera.setPreviewDisplay(holder);
+        } catch (IOException exception) {
+        camera.release();
+        camera = null;
+            // TODO: add more exception handling logic here
+        }
+    }
+
+    public void surfaceDestroyed(SurfaceHolder holder) 
+    {
+        // Surface will be destroyed when we return, so stop the preview.
+        // Because the CameraDevice object is not a shared resource, it's very
+        // important to release it when the activity is paused.
+        camera.stopPreview();
+        camera.release();
+        camera = null;
+    }
+
+    public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) 
+    {
+        // Now that the size is known, set up the camera parameters and begin
+        // the preview.
+
+        Camera.Parameters parameters = camera.getParameters();
+        parameters.setPreviewSize(w, h);
+        camera.setParameters(parameters);
+        camera.startPreview();
+    }
+
+    @Override
+    public void draw(Canvas canvas) 
+    {
+        super.draw(canvas);
+        Paint p= new Paint(Color.RED);
+        Log.d(TAG,"draw");
+        canvas.drawText("PREVIEW", canvas.getWidth()/2, canvas.getHeight()/2, p );
+    }
+}
+
+    
+===============================================================================================
+121
+A:It is failing because not all devices support arbitrary preview sizes. Apparently some do but you can't rely on it. In your surfaceChanged method you need to do something like this:
+
+public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
+    Camera.Parameters parameters = camera.getParameters();
+    List<Camera.Size> previewSizes = parameters.getSupportedPreviewSizes();
+
+    // You need to choose the most appropriate previewSize for your app
+    Camera.Size previewSize = // .... select one of previewSizes here
+
+    parameters.setPreviewSize(previewSize.width, previewSize.height);
+    camera.setParameters(parameters);
+    camera.startPreview();
+}
+
+
+You'll have to figure out a way to scale this so that you don't lose the aspect ratio etc.
+
+For reference here is the Android SDK doc.
+    

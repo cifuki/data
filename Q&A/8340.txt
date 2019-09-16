@@ -1,0 +1,56 @@
+32
+Q:I tried to develop such an app, in the sense I want to lock all the applications in my device with a password whatever I want. But I didn't find any piece of code for the solution. So I developed one by myself and unfortunately it didn't succeed. I found many solutions for locking android devices but, didn't find one for locking an app. Will be glad if you suggest a solution.
+    
+===============================================================================================
+51
+A:I used a background service to check which application is in the foreground (which means that application is being used by the user). Then I check to see whether I need to lock the application or not.
+
+To find the list of all installed applications (excluding system applications):
+
+PackageManager packageManager = getPackageManager();
+Intent mainIntent = new Intent(Intent.ACTION_MAIN, null);
+mainIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+
+List<ResolveInfo> appList = packageManager.queryIntentActivities(mainIntent, 0);
+Collections.sort(appList, new ResolveInfo.DisplayNameComparator(packageManager));
+List<PackageInfo> packs = packageManager.getInstalledPackages(0);
+for (int i = 0; i < packs.size(); i++) {
+    PackageInfo p = packs.get(i);
+    ApplicationInfo a = p.applicationInfo;
+    // skip system apps if they shall not be included
+    if ((a.flags & ApplicationInfo.FLAG_SYSTEM) == 1) {
+        continue;
+    }
+    appList.add(p.packageName);
+}
+
+
+To find the current foreground application:
+
+ActivityManager mActivityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+List<ActivityManager.RunningTaskInfo> RunningTask = mActivityManager.getRunningTasks(1);
+ActivityManager.RunningTaskInfo ar = RunningTask.get(0);
+activityOnTop=ar.topActivity.getClassName();
+
+
+Here the class-name provides the package name of the application. I suggest that you use the package name to identify any application so we know that the package name is always unique.
+
+Now, the functionality to lock the application:
+
+To find which application is running in the foreground and want to lock it, we just have to start another activity which has an EditText for password and OK and Cancel button.
+
+Intent lockIntent = new Intent(mContext, LockScreen.class);
+lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+mContext.startActivity(lockIntent);
+
+
+On click of OK, if the password is correct then simply finish the LockScreen activity. If the password is incorrect then simply use the code below, which closes the application and shows the home screen of the device:
+
+Intent startHomescreen = new Intent(Intent.ACTION_MAIN);
+startHomescreen.addCategory(Intent.CATEGORY_HOME);
+startHomescreen.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
+startActivity(startHomescreen);
+
+
+The same code is also used on the cancel button.
+    

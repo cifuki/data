@@ -1,0 +1,78 @@
+34
+Q:I would like to create an Android project that is compatible to e.g. API level 4 but would still like to test it with UiAutomator that requires API level 18 on newer devices. So the app would also run on old devices but the automatic tests would be performed on new devices.
+
+Therefore I have created a new project with Android Studio and added the UiAutomator test libraries:
+
+dependencies {
+  compile fileTree(dir: 'libs', include: ['*.jar'])
+  testCompile 'junit:junit:4.12'
+  compile 'com.android.support:appcompat-v7:23.0.1'
+  androidTestCompile 'com.android.support:support-annotations:23.0.1'
+  androidTestCompile 'com.android.support.test:runner:0.3'
+  androidTestCompile 'com.android.support.test:rules:0.3'
+  androidTestCompile 'com.android.support.test.uiautomator:uiautomator-v18:2.1.1'
+}
+
+
+When compiling it I get the error
+
+Error:Execution failed for task ':app:processDebugAndroidTestManifest'.
+> java.lang.RuntimeException: Manifest merger failed : uses-sdk:minSdkVersion 4 cannot be smaller than version 8 declared in library [com.android.support.test:runner:0.3] /Users/dom/Entwicklung/MacBookPro/git/GradleTest/app/build/intermediates/exploded-aar/com.android.support.test/runner/0.3/AndroidManifest.xml
+    Suggestion: use tools:overrideLibrary="android.support.test" to force usage
+
+
+Adding
+
+<uses-sdk tools:overrideLibrary="android.support.test"/>
+
+
+to the AndroidManifest.xml causes another error to occur:
+
+Error:Execution failed for task ':app:processDebugManifest'.
+> Manifest merger failed : uses-sdk:minSdkVersion 4 cannot be smaller than version 7 declared in library [com.android.support:appcompat-v7:23.0.1] /Users/dom/Entwicklung/MacBookPro/git/GradleTest/app/build/intermediates/exploded-aar/com.android.support/appcompat-v7/23.0.1/AndroidManifest.xml
+    Suggestion: use tools:overrideLibrary="android.support.v7.appcompat" to force usage
+
+
+Changing it to
+
+<uses-sdk tools:overrideLibrary="android.support.test, android.support.v7.appcompat"/>
+
+
+causes the first error again:
+
+Error:Execution failed for task ':app:processDebugAndroidTestManifest'.
+> java.lang.RuntimeException: Manifest merger failed : uses-sdk:minSdkVersion 4 cannot be smaller than version 8 declared in library [com.android.support.test:runner:0.3] /Users/dom/Entwicklung/MacBookPro/git/GradleTest/app/build/intermediates/exploded-aar/com.android.support.test/runner/0.3/AndroidManifest.xml
+    Suggestion: use tools:overrideLibrary="android.support.test" to force usage
+
+
+I am using the latest Android Studio and build tools. The gradle command that Android Studio uses to build the app is
+
+Gradle tasks [clean, :app:generateDebugSources, :app:generateDebugAndroidTestSources, :app:compileDebugSources, :app:compileDebugAndroidTestSources]
+
+
+so the problem can be reproduced e.g. with
+
+gradle :app:generateDebugAndroidTestSources :app:compileDebugAndroidTestSources
+
+
+What is the correct syntax to specify multiple libraries in tools:overrideLibrary ? I have read that a comma and a space would be correct, but it doesn't seem to work. I have read a lot about it here on StackOverflow and elsewhere but unfortunately I couldn't find a solution so far (aside from commenting out the tests).
+    
+===============================================================================================
+75
+A:I have found out that the solution is to create a second AndroidManifest.xml, just for the tests. It has to be saved into the tests directory and needs to contain only the overrideLibrary statement:
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools"
+          package="${applicationId}">
+    <uses-sdk tools:overrideLibrary="android.app, android.support.test, android.support.test.rule, android.support.test.espresso, android.support.test.espresso.idling, android.support.test.uiautomator.v18"/>
+</manifest>
+
+
+If you are using a different directory for your tasks, you can specify it this way in your gradle file:
+
+androidTest.setRoot('src_test_uiautomator')
+
+
+The AndroidManifest.xml file has to be in the root of that directory, the test sources in the "java" subdirectory.
+    

@@ -1,0 +1,96 @@
+39
+Q:So I got my AccessibilityService working with the following code: 
+
+@Override
+public void onAccessibilityEvent(AccessibilityEvent event) {
+    if (event.getEventType() == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
+        List<CharSequence> notificationList = event.getText();
+        for (int i = 0; i < notificationList.size(); i++) {
+            Toast.makeText(this.getApplicationContext(), notificationList.get(i), 1).show();
+        }
+    }
+}
+
+
+It works fine for reading out the text displayed when the notifcation was created (1).
+
+
+
+The only problem is, I also need the value of (3) which is displayed when the user opens the notification bar. (2) is not important for me, but it would be nice to know how to read it out. As you probably know, all values can be different.
+
+
+
+So, how can I read out (3)? I doubt this is impossible, but my notificationList seems to have only one entry (at least only one toast is shown).
+
+Thanks a lot!
+
+/edit: I could extract the notification parcel with
+
+if (!(parcel instanceof Notification)) {
+            return;
+        }
+        final Notification notification = (Notification) parcel;
+
+
+However, I have no idea how to extract the notifcation's message either from notification or notification.contentView / notification.contentIntent.
+
+Any ideas?
+
+/edit: To clarify what is asked here: How can I read out (3)?
+    
+===============================================================================================
+58
+A:I've wasted a few hours of the last days figuring out a way to do what you (and, me too, by the way) want to do. After looking through the whole source of RemoteViews twice, I figured the only way to accomplish this task is good old, ugly and hacky Java Reflections.
+
+Here it is:
+
+    Notification notification = (Notification) event.getParcelableData();
+    RemoteViews views = notification.contentView;
+    Class secretClass = views.getClass();
+
+    try {
+        Map<Integer, String> text = new HashMap<Integer, String>();
+
+        Field outerFields[] = secretClass.getDeclaredFields();
+        for (int i = 0; i < outerFields.length; i++) {
+            if (!outerFields[i].getName().equals("mActions")) continue;
+
+            outerFields[i].setAccessible(true);
+
+            ArrayList<Object> actions = (ArrayList<Object>) outerFields[i]
+                    .get(views);
+            for (Object action : actions) {
+                Field innerFields[] = action.getClass().getDeclaredFields();
+
+                Object value = null;
+                Integer type = null;
+                Integer viewId = null;
+                for (Field field : innerFields) {
+                    field.setAccessible(true);
+                    if (field.getName().equals("value")) {
+                        value = field.get(action);
+                    } else if (field.getName().equals("type")) {
+                        type = field.getInt(action);
+                    } else if (field.getName().equals("viewId")) {
+                        viewId = field.getInt(action);
+                    }
+                }
+
+                if (type == 9 || type == 10) {
+                    text.put(viewId, value.toString());
+                }
+            }
+
+            System.out.println("title is: " + text.get(16908310));
+            System.out.println("info is: " + text.get(16909082));
+            System.out.println("text is: " + text.get(16908358));
+        }
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+
+
+This code worked fine on a Nexus S with Android 4.0.3. However, I didn't test if it works on other versions of Android. It's very likely that some values, especially the viewId changed. I think there should be ways to support all versions of Android without hard-coding all possible ids, but that's the answer to another question... ;)
+
+PS: The value you're looking for (referring to as "(3)" in your original question) is the "text"-value.
+    

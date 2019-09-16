@@ -1,0 +1,212 @@
+631
+Q:I am trying to create a mail sending application in Android. 
+
+If I use: 
+
+Intent emailIntent = new Intent(android.content.Intent.ACTION_SEND);
+
+
+This will launch the built-in Android application; I'm trying to send the mail on button click directly without using this application.
+    
+===============================================================================================
+743
+A:Send e-mail in Android using the JavaMail API using Gmail authentication.
+
+Steps to create a sample Project:
+
+MailSenderActivity.java:
+
+public class MailSenderActivity extends Activity {
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        final Button send = (Button) this.findViewById(R.id.send);
+        send.setOnClickListener(new View.OnClickListener() {
+
+            public void onClick(View v) {
+                try {   
+                    GMailSender sender = new GMailSender("username@gmail.com", "password");
+                    sender.sendMail("This is Subject",   
+                            "This is Body",   
+                            "user@gmail.com",   
+                            "user@yahoo.com");   
+                } catch (Exception e) {   
+                    Log.e("SendMail", e.getMessage(), e);   
+                } 
+
+            }
+        });
+
+    }
+}
+
+
+GMailSender.java:
+
+public class GMailSender extends javax.mail.Authenticator {   
+    private String mailhost = "smtp.gmail.com";   
+    private String user;   
+    private String password;   
+    private Session session;   
+
+    static {   
+        Security.addProvider(new com.provider.JSSEProvider());   
+    }  
+
+    public GMailSender(String user, String password) {   
+        this.user = user;   
+        this.password = password;   
+
+        Properties props = new Properties();   
+        props.setProperty("mail.transport.protocol", "smtp");   
+        props.setProperty("mail.host", mailhost);   
+        props.put("mail.smtp.auth", "true");   
+        props.put("mail.smtp.port", "465");   
+        props.put("mail.smtp.socketFactory.port", "465");   
+        props.put("mail.smtp.socketFactory.class",   
+                "javax.net.ssl.SSLSocketFactory");   
+        props.put("mail.smtp.socketFactory.fallback", "false");   
+        props.setProperty("mail.smtp.quitwait", "false");   
+
+        session = Session.getDefaultInstance(props, this);   
+    }   
+
+    protected PasswordAuthentication getPasswordAuthentication() {   
+        return new PasswordAuthentication(user, password);   
+    }   
+
+    public synchronized void sendMail(String subject, String body, String sender, String recipients) throws Exception {   
+        try{
+        MimeMessage message = new MimeMessage(session);   
+        DataHandler handler = new DataHandler(new ByteArrayDataSource(body.getBytes(), "text/plain"));   
+        message.setSender(new InternetAddress(sender));   
+        message.setSubject(subject);   
+        message.setDataHandler(handler);   
+        if (recipients.indexOf(',') > 0)   
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipients));   
+        else  
+            message.setRecipient(Message.RecipientType.TO, new InternetAddress(recipients));   
+        Transport.send(message);   
+        }catch(Exception e){
+
+        }
+    }   
+
+    public class ByteArrayDataSource implements DataSource {   
+        private byte[] data;   
+        private String type;   
+
+        public ByteArrayDataSource(byte[] data, String type) {   
+            super();   
+            this.data = data;   
+            this.type = type;   
+        }   
+
+        public ByteArrayDataSource(byte[] data) {   
+            super();   
+            this.data = data;   
+        }   
+
+        public void setType(String type) {   
+            this.type = type;   
+        }   
+
+        public String getContentType() {   
+            if (type == null)   
+                return "application/octet-stream";   
+            else  
+                return type;   
+        }   
+
+        public InputStream getInputStream() throws IOException {   
+            return new ByteArrayInputStream(data);   
+        }   
+
+        public String getName() {   
+            return "ByteArrayDataSource";   
+        }   
+
+        public OutputStream getOutputStream() throws IOException {   
+            throw new IOException("Not Supported");   
+        }   
+    }   
+}  
+
+
+JSSEProvider.java:
+
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one or more
+ *  contributor license agreements.  See the NOTICE file distributed with
+ *  this work for additional information regarding copyright ownership.
+ *  The ASF licenses this file to You under the Apache License, Version 2.0
+ *  (the "License"); you may not use this file except in compliance with
+ *  the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+/**
+ * @author Alexander Y. Kleymenov
+ * @version $Revision$
+ */
+
+
+import java.security.AccessController;
+import java.security.Provider;
+
+public final class JSSEProvider extends Provider {
+
+    public JSSEProvider() {
+        super("HarmonyJSSE", 1.0, "Harmony JSSE Provider");
+        AccessController.doPrivileged(new java.security.PrivilegedAction<Void>() {
+            public Void run() {
+                put("SSLContext.TLS",
+                        "org.apache.harmony.xnet.provider.jsse.SSLContextImpl");
+                put("Alg.Alias.SSLContext.TLSv1", "TLS");
+                put("KeyManagerFactory.X509",
+                        "org.apache.harmony.xnet.provider.jsse.KeyManagerFactoryImpl");
+                put("TrustManagerFactory.X509",
+                        "org.apache.harmony.xnet.provider.jsse.TrustManagerFactoryImpl");
+                return null;
+            }
+        });
+    }
+}
+
+
+ADD 3 jars found in the following link to your Android Project 
+
+
+mail.jar
+activation.jar
+additional.jar
+
+
+Click here - How to add External Jars
+
+And don't forget to add this line in your manifest:
+
+<uses-permission android:name="android.permission.INTERNET" />
+
+
+Just click below link to change account access for less secure apps
+https://www.google.com/settings/security/lesssecureapps
+
+Run the project and check your recipient mail account for the mail.
+Cheers!
+
+P.S. And don't forget that you cannot do network operation from any Activity in android.
+Hence it is recommended to use AsyncTask or IntentService to avoid network on main thread exception.
+
+Jar files: https://code.google.com/archive/p/javamail-android/
+    

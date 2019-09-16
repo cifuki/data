@@ -1,0 +1,179 @@
+29
+Q:I am using the Android Paging Library like described here:
+https://developer.android.com/topic/libraries/architecture/paging.html
+
+But i also have an EditText for searching Users by Name.
+
+How can i filter the results from the Paging library to display only matching Users? 
+    
+===============================================================================================
+31
+A:EDIT from 2019: hold on, I think you might be able to solve this with a MediatorLiveData.
+
+Specifically Transformations.switchMap and some additional magic.
+
+Currently I was using
+
+public void reloadTasks() {
+    if(liveResults != null) {
+        liveResults.removeObserver(this);
+    }
+    liveResults = getFilteredResults();
+    liveResults.observeForever(this);
+}
+
+
+But if you think about it, you should be able to solve this without use of observeForever, especially if we consider that switchMap is also doing something similar.
+
+So what we need is a LiveData<SelectedOption> that is switch-mapped to the LiveData<PagedList<T>> that we need.
+
+private MutableLiveData<String> filterText = new MutableLiveData<>();
+
+private final LiveData<List<T>> data;
+
+public MyViewModel() {
+    data = Transformations.switchMap(
+            filterText,
+            (input) -> { 
+                if(input == null || input.equals("")) { 
+                    return repository.getData(); 
+                } else { 
+                    return repository.getFilteredData(input); }
+                }
+            });
+  }
+
+  public LiveData<List<T>> getData() {
+      return data;
+  }
+
+
+This way the actual changes from one to another are handled by a MediatorLiveData. If we want to cache the LiveDatas, then we can do in the anonymous instance that we pass to the method.
+
+    data = Transformations.switchMap(
+            filterText, new Function<String, LiveData<List<T>>>() {
+                private Map<String, LiveData<List<T>>> cachedLiveData = new HashMap<>();
+
+                @Override
+                public LiveData<List<T>> apply(String input) {
+                    // ...
+                }
+            }
+
+
+
+
+
+
+
+
+ORIGINAL ANSWERS (they are outdated)
+
+EDIT: actually. While this makes sense for a regular LiveData<?>, with Paging, you can actually parameterize the Factory and then invalidate the Datasource and get a new datasource evaluated for free. Without recreating the query holder itself.
+
+So the method mentioned in the other answer is a better option when you're using Paging. 
+
+
+
+ORIGINAL ANSWER:
+
+You know how you have the adapter like this:
+
+public class TaskAdapter
+        extends PagedListAdapter<Task, TaskAdapter.ViewHolder> {
+    public TaskAdapter() {
+        super(Task.DIFF_ITEM_CALLBACK);
+    }
+
+
+In the ViewModel you set up a live paged list and expose it:
+
+private LiveData<PagedList<Task>> liveResults;
+
+public TaskViewModel() {
+    liveResults = new LivePagedListBuilder<>(taskDao.tasksSortedByDate(),
+        new PagedList.Config.Builder() //
+              .setPageSize(20) //
+              .setPrefetchDistance(20) //
+              .setEnablePlaceholders(true) //
+              .build())
+            .setInitialLoadKey(0)
+            .build();
+
+
+Then you observe the paged list in the ViewModel and set it to the adapter:
+
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    ...
+    viewModel.getTasks().observe(this, pagedList -> {
+        //noinspection Convert2MethodRef
+        taskAdapter.submitList(pagedList); //used to be `setList`
+    });
+
+
+Well, the tricky thing is that if you want to make it parametric, then you have to replace the following here, and make the view be able to observe it:
+
+    liveResults = new LivePagedListBuilder<>(userDao.usersByName(input) // <-- !!
+
+
+So you must replace the LiveData. o_o
+
+What you can do in that case is remove the observers from the existing LiveData, replace it with new LiveData, and start observing it.
+
+private void startListening() {
+    viewModel.getTasks().observe(this, pagedList -> {
+        //noinspection Convert2MethodRef
+        taskAdapter.submitList(pagedList); // used to be `setList`
+    });
+}
+
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    ...
+    startListening();
+}
+
+@OnTextChanged(R.id.edit_text)
+public void onTextChanged(Editable editable) {
+    String username = editable.toString();
+    replaceSubscription(userName);
+}
+
+private void replaceSubscription(String userName) {
+    viewModel.replaceSubscription(this, userName);
+    startListening();
+}
+
+
+and
+
+public class UserViewModel extends ViewModel {
+    private LiveData<PagedList<User>> liveResults;
+
+    private String userName;
+
+    private LiveData<PagedList<User>> createFilteredUsers(String userName) {
+       // TODO: handle if `null` and load all data instead
+       return new LivePagedListBuilder<>(userDao.usersByName(userName),
+            new PagedList.Config.Builder() //
+                  .setPageSize(20) //
+                  .setPrefetchDistance(20) //
+                  .setEnablePlaceholders(true) //
+                  .build())
+                .setInitialLoadKey(0)
+                .build();
+    }
+
+    public UserViewModel(UserDao userDao, @Nullable String userName) { // null or restored, from ViewModelProviders.of(Factory)
+        liveResults = createFilteredUsers(userName);
+    }
+
+    public void replaceSubscription(LifecycleOwner lifecycleOwner, String userName) {
+        this.userName = userName;
+        liveResults.removeObservers(lifecycleOwner);
+        liveResults = createFilteredUsers(userName);
+    }
+}
+
+    

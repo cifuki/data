@@ -1,0 +1,109 @@
+55
+Q:I've searched on Google, but couldn't find any relevant results.
+
+I also checked the official Android docs and this page (for all the available resources) was all I could find. The relevant links (to the res/values/ directory) I found on this page were:
+
+
+string resources
+style resources
+more resources
+
+
+These pages don't tell anything about the res/values/public.xml file.
+Here is an example I found for this  type of file.
+
+Small snippet
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <public type="attr" name="commentTextColor" id="0xAA010007" />
+    <public type="drawable" name="add_icon_bl" id="0xAA020000" />
+    <public type="layout" name="act_date_picker" id="0xAA030001" />
+    <public type="anim" name="activity_slide_from_bottom" id="0xAA040000" />
+    <public type="xml" name="pref_menu" id="0xAA050000" />
+    <public type="raw" name="alert_bell_animation_bl" id="0xAA060000" />
+    <public type="array" name="taskRepeat" id="0xAA070000" />
+    <public type="color" name="theme_main_color_bl" id="0xAA080000" />
+    <public type="string" name="no_internet" id="0xAA0a0001" />
+    <public type="id" name="page1" id="0xAA0d0015" />
+</resources>
+
+
+As you can see from the type attribute, it contains pretty much all the standard resource types that you normally put in separate directories under the res directory...
+
+
+
+Why would one want to misuse the directories that Android provides and use a single file to store all the values in? Can someone give more information about this?
+    
+===============================================================================================
+85
+A:The file res/values/public.xml is used to assign fixed resource IDs to Android resources.
+
+Consider these set of string resources in res/values/strings.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="string1">String 1</string>
+    <string name="string3">String 3</string>
+</resources>
+
+
+The Android Asset Packaging Tool (aapt) might assign the following resource IDs for these resources when the app is compiled:
+
+public final class R {
+    // ...
+    public static final class string {
+        public static final int string1=0x7f040000;
+        public static final int string3=0x7f040001;
+    }
+}
+
+
+Now, change the set of string resources to
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="string1">String 1</string>
+    <string name="string2">String 2</string>
+    <string name="string3">String 3</string>
+</resources>
+
+
+and you'll notice that the resource ID for @string/string3 has changed:
+
+public final class R {
+    // ...
+    public static final class string {
+        public static final int string1=0x7f040000;
+        public static final int string2=0x7f040001;
+        public static final int string3=0x7f040002; // New ID! Was 0x7f040001
+    }
+}
+
+
+To prevent this, you can use res/values/public.xml:
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <public type="string" name="string3" id="0x7f040001" />
+</resources>
+
+
+which will result in the resource IDs being assigned as follows:
+
+public final class R {
+    // ...
+    public static final class string {
+        public static final int string1=0x7f040000;
+        public static final int string2=0x7f040002;
+        public static final int string3=0x7f040001; // Resource ID from public.xml
+    }
+}
+
+
+Applications rarely have any use for res/values/public.xml since the resource IDs assigned to resources does not matter. When they change, the entire application is rebuilt anyway so any references in Java code to resources by resource ID will be updated.
+
+The most significant user of res/values/public.xml is the Android platform itself. Applications built against old versions of Android assumes that certain resource have a certain resource ID. For example, the Android resource @android:style/Theme must always have the resource ID 0x01030005 for the platform to be backwards compatible with apps built against old versions of the platform.
+
+If you are curious about more details on how resource IDs are assigned, please refer to this answer: How does the mapping between android resources and resources ID work?
+    

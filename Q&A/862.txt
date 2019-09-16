@@ -1,0 +1,83 @@
+170
+Q:There is an issue with the Android appcompat v7 library on Samsung devices running Android 4.2. I keep getting crashes with the following stack trace in my Developer Console:
+
+java.lang.NoClassDefFoundError: android.support.v7.internal.view.menu.MenuBuilder
+    at android.support.v7.widget.PopupMenu.<init>(PopupMenu.java:66)
+    at com.[my-package-name].CustomActivity$5.onClick(CustomActivity.java:215)
+    at android.view.View.performClick(View.java:4222)
+    at android.view.View$PerformClick.run(View.java:17620)
+    at android.os.Handler.handleCallback(Handler.java:800)
+    at android.os.Handler.dispatchMessage(Handler.java:100)
+    at android.os.Looper.loop(Looper.java:194)
+    at android.app.ActivityThread.main(ActivityThread.java:5391)
+    at java.lang.reflect.Method.invokeNative(Native Method)
+    at java.lang.reflect.Method.invoke(Method.java:525)
+    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:833)
+    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:600)
+    at dalvik.system.NativeStart.main(Native Method)
+
+
+This is line 215 of CustomActivity.java:
+
+PopupMenu popup = new PopupMenu(CustomActivity.this, mImageViewMenu);
+
+
+The crashes come from an array of devices, but always Samsung, and always Android 4.2.
+
+A quick web search leads me to believe that many people have the same issue, some of the steps I have tried to solve the issue are:
+
+
+Check the Android project properties, make sure the appcompat library is added properly.
+Check the Java Build Path Order and Export project properties, make sure Android Dependencies and Android Private Libraries is checked.
+Confirm the class is included in the library (android.support.v7.internal.view.menu.MenuBuilder).
+Confirm R.java is located in gen directory for android.support.v7.appcompat.
+Confirm the AppCompat theme is included in the Manifest.xml activity.
+Clean and rebuild project.
+
+
+Despite these steps, and despite it working on all other devices and Android versions the crash reports still come through.
+    
+===============================================================================================
+100
+A:EDIT:
+
+The solution that worked for me was (Using Proguard) to replace this:
+
+-keep class android.support.v4.** { *; } 
+-keep interface android.support.v4.** { *; }
+
+-keep class android.support.v7.** { *; }
+-keep interface android.support.v7.** { *; }
+
+
+with this:
+
+# Allow obfuscation of android.support.v7.internal.view.menu.**
+# to avoid problem on Samsung 4.2.2 devices with appcompat v21
+# see https://code.google.com/p/android/issues/detail?id=78377
+-keep class !android.support.v7.internal.view.menu.**,android.support.** {*;}
+
+
+Credit goes to the google group, #138.
+
+Old answer (Temporary Workaround):
+It happens in a project where I use an spinner in the ActionBar. My solution was to check for those conditions and change the app flow:
+
+public static boolean isSamsung_4_2_2() {
+    String deviceMan = Build.MANUFACTURER;
+    String deviceRel = Build.VERSION.RELEASE;
+    return "samsung".equalsIgnoreCase(deviceMan) && deviceRel.startsWith("4.2.2");
+}
+
+
+Then in the activity's onCreate method:
+
+if (isSamsung_4_2_2()) {
+    setContentView(R.layout.activity_main_no_toolbar);
+} else {
+    setContentView(R.layout.activity_main);
+}
+
+
+As pointed out this is not a definitive solution, it is just a way to allow users to have access to limited functionality while a more permanent solution is found. 
+    

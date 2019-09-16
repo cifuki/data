@@ -1,0 +1,357 @@
+32
+Q:I have a class that extends ListFragment, and it overrides the OnListItemClick method. I am also doing this in another ListFragment the same way (and the method gets called). I am wondering why the method does not get called when I click on the list item?
+
+Here is the code:
+
+package org.doraz.fdboard.activity;
+
+import java.sql.SQLException;
+import java.util.Collection;
+
+import org.doraz.fdboard.FantasyDraftBoardApplication;
+import org.doraz.fdboard.R;
+import org.doraz.fdboard.activity.DraftBoardActivity.PlayerDetailsActivity;
+import org.doraz.fdboard.domain.FantasyLeague;
+import org.doraz.fdboard.domain.FantasyTeam;
+import org.doraz.fdboard.domain.Player;
+import org.doraz.fdboard.domain.Position;
+import org.doraz.fdboard.repository.FantasyDraftBoardRepository;
+import org.doraz.fdboard.view.PlayerAdapter;
+import org.doraz.fdboard.view.PlayerCursorAdapter;
+
+import android.app.FragmentTransaction;
+import android.app.ListFragment;
+import android.app.ProgressDialog;
+import android.content.Intent;
+import android.database.Cursor;
+import android.os.AsyncTask;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.View;
+import android.widget.Adapter;
+import android.widget.AdapterView;
+import android.widget.AdapterView.OnItemClickListener;
+import android.widget.ListView;
+
+public class ListPlayersFragment extends ListFragment implements OnItemClickListener {
+
+    private final static String TAG = "ListPlayersFragment";
+
+    private boolean mDualPane;  
+    private int curSelectedPlayerPosition = 0;
+    private PlayerCursorAdapter playerAdapter;
+    private QueryPlayersTask currentTask;
+
+    private FantasyDraftBoardRepository repository;
+    private FantasyLeague fantasyLeague;
+    private FantasyTeam fantasyTeam;
+    private Position position;
+    private ProgressDialog progressDialog;
+
+
+    /* (non-Javadoc)
+     * @see android.app.ListFragment#onActivityCreated(android.os.Bundle)
+     */
+    @Override
+    public void onActivityCreated(Bundle savedInstanceState) {
+        super.onActivityCreated(savedInstanceState);
+
+        //Check  for the view players view along with the pane
+        View teamListFragment = getActivity().findViewById(R.id.team_list_fragment);
+        mDualPane = teamListFragment != null && teamListFragment.getVisibility() == View.VISIBLE;
+
+        if(mDualPane) {
+            Log.i(TAG, "Setting list select mode to single");
+            getListView().setChoiceMode(ListView.CHOICE_MODE_SINGLE);
+        }
+
+        getListView().setSmoothScrollbarEnabled(false);
+    }
+
+    /* (non-Javadoc)
+     * @see android.app.ListFragment#onListItemClick(android.widget.ListView, android.view.View, int, long)
+     */
+    @Override
+    public void onListItemClick(ListView l, View v, int position, long id) {
+        super.onListItemClick(l, v, position, id);
+        Log.i(TAG, "[onListItemClick] Selected Position "+ position);
+        selectPlayer(position);
+    }
+
+    /* (non-Javadoc)
+     * @see android.app.Fragment#onSaveInstanceState(android.os.Bundle)
+     */
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putInt("curSelectedPlayerPosition", curSelectedPlayerPosition);
+        outState.putInt("fantasyLeague", fantasyLeague.getLeaguePID());
+
+        if(!Position.ALL.equals(position)) {
+            outState.putInt("position", position.getPositionPID());
+        }
+
+        if(!(FantasyTeam.ALL_AVAILABLE_TEAM.equals(fantasyTeam) || FantasyTeam.ALL_TEAM.equals(fantasyTeam))) {
+            outState.putInt("fantasyTeam", fantasyTeam.getTeamPID());
+        }
+    }
+
+    /**
+     * Selects the player at this position in the current list
+     * @param listPosition
+     */
+    public void selectPlayer(int listPosition) {
+        curSelectedPlayerPosition = listPosition;
+
+        Player player = (Player) playerAdapter.getItem(listPosition);
+
+        Log.i(TAG, "Select Player ("+ listPosition +", "+ player.getName() +") called");
+
+        //Get the player url
+        String mPlayerUrl = player.getPlayerUrl();
+        Log.d(TAG, "Selected Player URL: "+mPlayerUrl);
+
+        if(mDualPane) {
+            if(getListView().getSelectedItemPosition() == listPosition) {
+                //Remove the selected item
+                return;
+            }
+
+            //Select the item
+            getListView().setItemChecked(listPosition, true);
+
+            Log.d(TAG, "Creating ViewPlayerFragment");
+            ViewPlayerFragment vpf = ViewPlayerFragment.newInstance(mPlayerUrl);
+            ListTeamsFragment ltf = (ListTeamsFragment) getFragmentManager().findFragmentById(R.id.team_list_fragment);
+
+            FragmentTransaction ft = getFragmentManager().beginTransaction();
+            ft.replace(R.id.player_web_view_fragment, vpf);
+
+            if(ltf != null && !ltf.isHidden()) {
+                //Hide the list of teams
+                ft.hide(ltf);
+                ft.addToBackStack(null);
+            }
+
+            ft.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN);
+            ft.commit();
+            Log.d(TAG, "Committed to ViewPlayerFragment");
+        }
+        else {
+            Log.d(TAG, "Launching new activity to view player");
+            Intent intent = new Intent();
+            intent.setClass(getActivity(), PlayerDetailsActivity.class);
+            intent.putExtra("playerURL", mPlayerUrl);
+            startActivityForResult(intent, 0);
+        }
+    }
+
+    public void clearSelectedPlayer() {
+        Log.i(TAG, "Clearing selected player");
+
+        curSelectedPlayerPosition = -1;
+
+        //Clear the list view
+        getListView().clearChoices();
+
+        ViewPlayerFragment vpf = (ViewPlayerFragment) getFragmentManager().findFragmentById(R.id.player_web_view_fragment);
+        if(vpf != null) {
+            Log.d(TAG, "Closing ViewPlayerFragment");
+
+            //Close the ViewPlayersFragment
+            FragmentTransaction ft = getFragmentManager().beginTransaction();
+            ft.remove(vpf);
+            ft.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_CLOSE);
+            ft.commit();
+            Log.d(TAG, "Closed ViewPlayerFragment");
+        }
+    }
+
+    /**
+     * Initializes the player adapter
+     */
+    private void initializePlayerAdapter(Cursor cursor) {
+        if(playerAdapter != null)
+            return;
+
+        playerAdapter = new PlayerCursorAdapter(getActivity(), cursor, (DraftBoardActivity)getActivity(), repository);
+        setListAdapter(playerAdapter);
+        setEmptyText(getText(R.string.no_players_msg));
+    }
+
+    /**
+     * Initializes the player adapter
+     */
+    public void setPlayersCursor(Cursor cursor) {
+        if(playerAdapter == null) {
+            initializePlayerAdapter(cursor);
+        }
+        else {
+            playerAdapter.changeCursor(cursor);
+        }
+    }
+
+    /**
+     * Drafts a player
+     * 
+     * @param mPlayer       the player to draft
+     * @param fantasyTeam   the fantasy team
+     * @param value         the draft value
+     */
+    public void draftPlayer(Player mPlayer, FantasyTeam fantasyTeam, Double value) {
+
+        mPlayer.setFantasyTeam(fantasyTeam);
+        mPlayer.setDraftValue(value);
+        mPlayer.setDrafted(true);
+        fantasyTeam.draftPlayer(mPlayer);
+
+        try {
+            repository.savePlayer(mPlayer);
+            repository.saveFantasyTeam(fantasyTeam);
+        } catch (SQLException e) {
+            Log.e(TAG, "Error drafting player", e);
+        }
+
+        //Refresh the query
+        refresh();
+    }
+
+    /**
+     * Refreshes the players list
+     */
+    public void refresh(){
+        if(fantasyLeague == null) {
+            fantasyLeague = ((FantasyDraftBoardApplication) (getActivity().getApplication())).getCurrentFantasyLeague();
+        }
+
+        if(fantasyTeam == null) {
+            fantasyTeam = FantasyTeam.ALL_AVAILABLE_TEAM;
+        }
+
+        if(position == null) {
+            position = Position.ALL;
+        }
+
+        if(currentTask != null) {
+            currentTask.cancel(true);
+        }
+
+        if(progressDialog != null) {
+            progressDialog.dismiss();
+            progressDialog = null;
+        }
+
+        progressDialog = ProgressDialog.show(getActivity(), null, "Loading...");
+        currentTask = new QueryPlayersTask(fantasyLeague, fantasyTeam, position, repository);
+        currentTask.execute();
+    }
+
+    /**
+     * Sets the fantasyLeague
+     * @param fantasyLeague the fantasyLeague to set
+     */
+    public void setFantasyLeague(FantasyLeague fantasyLeague) {
+        this.fantasyLeague = fantasyLeague;
+    }
+
+    /**
+     * Sets the fantasyTeam
+     * @param fantasyTeam the fantasyTeam to set
+     */
+    public void setFantasyTeam(FantasyTeam fantasyTeam) {
+        this.fantasyTeam = fantasyTeam;
+    }
+
+    /**
+     * Sets the position
+     * @param position the position to set
+     */
+    public void setPosition(Position position) {
+        this.position = position;
+    }
+
+    /**
+     * Sets the repository
+     * @param repository the repository to set
+     */
+    public void setRepository(FantasyDraftBoardRepository repository) {
+        this.repository = repository;
+    }
+
+    private class QueryPlayersTask extends AsyncTask<Integer, Integer, Cursor> {
+
+        private FantasyLeague fantasyLeague;
+        private FantasyTeam fantasyTeam;
+        private Position position;
+        private FantasyDraftBoardRepository repository;
+
+        public QueryPlayersTask(FantasyLeague fantasyLeague, FantasyTeam fantasyTeam, Position position, FantasyDraftBoardRepository repository) {
+            this.fantasyLeague = fantasyLeague;
+            this.fantasyTeam = fantasyTeam;
+            this.position = position;
+            this.repository = repository;
+        }
+
+        @Override
+        protected Cursor doInBackground(Integer... params) {
+            try {
+                return repository.queryForPlayersCursor(position, fantasyLeague, fantasyTeam);
+            } catch (SQLException e) {
+                Log.e("QueryPlayersTask", "Unable to query for players", e);
+            }
+
+            return null;
+        }
+
+        /* (non-Javadoc)
+         * @see android.os.AsyncTask#onPostExecute(java.lang.Object)
+         */
+        @Override
+        protected void onPostExecute(Cursor result) {
+            super.onPostExecute(result);
+
+            if(!isCancelled()) {
+                //Update the player cursor
+                updatePlayerCursor(result);
+            }
+        }
+    }
+
+    /**
+     * Updates the player cursor
+     * @param c the player cursor
+     */
+    private final void updatePlayerCursor(Cursor c){
+        Log.d(TAG, "Updating player cursor.");
+        if(playerAdapter == null)
+            initializePlayerAdapter(c);
+        else
+            playerAdapter.changeCursor(c);
+
+        if(progressDialog != null) {
+            progressDialog.dismiss();
+            progressDialog = null;
+        }
+
+        //Clear the current task
+        currentTask = null;
+    }
+
+    @Override
+    public void onItemClick(AdapterView<?> adapter, View arg1, int listPosition, long id) {
+        Log.d(TAG, "[onItemClick] Clicked item "+position);
+        selectPlayer(listPosition);
+    }
+
+
+}
+
+
+Any assistance would be much appreciated. I can get the desired effect by implementing a few other listeners and assigning it to each list item, but I think this is the correct way to do it and it SHOULD work. I just don't know why it doesn't
+
+Thanks in Advance.
+    
+===============================================================================================
+98
+A:If you have an item in your layout that can steal input from other components like a CheckBox, that component needs to be defined as not focusable.
+    

@@ -1,0 +1,77 @@
+63
+Q:I'm trying to create a screen with both text and images. I want the images to be laid out like a grid, as shown below, but I want them to have no scroll functionality other that the one provided by the surrounding ScrollView. 
+
+An image will best illustrate my question:
+
+
+
+<ScrollView>
+    <LinearLayout>
+        <ImageView />
+        <TextView />
+        <GridView />
+        <TextView />
+    </LinearLayout>
+</ScrollView>
+
+
+What is the best way to make show a grid of a varying number of images, where the grid does not have scroll functionality?
+
+Please note that disabling the scroll functionality for the GridView does not work, as this just disables the scrollbars but does not show all items.
+
+Update:
+The image below shows what it looks like with scrollbars disabled in the GridView.
+
+
+    
+===============================================================================================
+186
+A:Oh boy, yeah, you're gonna have trouble with this one.  It drives me nuts that ListViews and GridViews can't be expanded to wrap their children, because we all know that they have more beneficial features in addition to their scrolling and the recycling of their children.
+
+Nonetheless, you can hack around this or create your own layout to suit your needs without too much difficulty.  Off the top of my head, I can think of two possibilities:
+
+In my own app I have embedded a ListView within a ScrollView.  I have done this by explicitly telling the ListView to be exactly as high as its contents.  I do it by changing the layout parameters right inside the ListView.onMeasure() method like so:
+
+public class ExpandableListView extends ListView {
+
+    boolean expanded = false;
+
+    public ExpandableListView(Context context, AttributeSet attrs, int defaultStyle) {
+        super(context, attrs, defaultStyle);
+    }
+
+    public boolean isExpanded() {
+        return expanded;
+    }
+
+    public void setExpanded(boolean expanded) {
+        this.expanded = expanded;
+    }
+
+    @Override
+    public void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        // HACK!  TAKE THAT ANDROID!
+        if (isExpanded()) {         
+            // Calculate entire height by providing a very large height hint.
+            // View.MEASURED_SIZE_MASK represents the largest height possible.
+            int expandSpec = MeasureSpec.makeMeasureSpec(MEASURED_SIZE_MASK,
+                        MeasureSpec.AT_MOST);
+            super.onMeasure(widthMeasureSpec, expandSpec);
+
+            LayoutParams params = getLayoutParams();
+            params.height = getMeasuredHeight();
+        } else {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        }
+    }
+}
+
+
+This works because when you give the ListView a mode of AT_MOST, it creates and measures all of its children for you, right inside the onMeasure method (I discovered this by browsing through the source code).  Hopefully GridView behaves the same, but if it doesn't, you can still measure all the contents of the GridView yourself.  But it would be easier if you could trick the GridView into doing it for you.
+
+Now, you must keep in mind that this solution would completely disable the view recycling that makes GridView so efficient, and all those ImageViews will be in memory even if they're not visible.  Same goes with my next solution.
+
+The other possibility is to ditch the GridView and create your own layout.  You could extend either AbsoluteLayout or RelativeLayout.  For example, if you extend RelativeLayout, you could place each image LEFT_OF the previous one, keeping track of the width of each image until you run out of room on that row, and then start the next row by placing the first image of the new row BELOW the tallest image of the last row.  To get the images horizontally centered or in equally-spaced columns you'll have to go through even more pain.  Maybe AbsoluteLayout is better.  Either way, kind of a pain.
+
+Good luck.
+    

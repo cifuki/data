@@ -1,0 +1,136 @@
+50
+Q:I made a very simple test application with one activity and one layout. The onClick doesn't trigger the first time it is pressed, as it should.
+
+The activity:
+
+package com.example.mytest;
+
+import android.os.Bundle;
+import android.app.Activity;
+import android.view.Menu;
+import android.view.View;
+import android.widget.EditText;
+import android.widget.Toast;
+
+public class MainActivity extends Activity {
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        final EditText ed1 = (EditText) findViewById(R.id.editText1);
+
+        ed1.setOnClickListener(new View.OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                // TODO Auto-generated method stub
+
+                Toast.makeText(getApplicationContext(), "1", Toast.LENGTH_LONG)
+                        .show();
+
+            }
+
+        });
+    }
+
+}
+
+
+The layout:
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" >
+
+    <EditText
+        android:id="@+id/editText1"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentTop="true"
+        android:ems="10" >
+
+        <requestFocus />
+    </EditText>
+
+    <EditText
+        android:id="@+id/editText2"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_below="@+id/editText1"
+        android:ems="10" />
+
+</RelativeLayout>
+
+
+If you run this application, and click on the second editText and then back on the first one, it will not trigger the onClick. You can keep selecting back and forth and it will not trigger the onClick at all. I need this basic functionality, but haven't been able to think of a way to get it to work. Ideas?
+
+Notice
+
+I have tried all of the methods recommended on my API level 16 physical device and my API level 8 emulator, but I get the same problem.
+
+Clarification
+
+When editText1 is focused and is clicked on, then the onClick method fires. If editText2 is focussed, and then editText1 is clicked, it doesn't fire. Big problem.
+    
+===============================================================================================
+182
+A:Overview, when a user interacts with any UI component the various listeners are called in a top-down order. If one of the higher priority listeners "consumes the event" then the lower listeners will not be called. 
+
+In your case these three listeners are called in order: 
+
+
+OnTouchListener
+OnFocusChangeListener
+OnClickListener 
+
+
+The first time the user touches an EditText it receives focus so that the user can type. The action is consumed here.  Therefor the lower priority OnClickListener is not called. Each successive touch doesn't change the focus so these events trickle down to the OnClickListener.
+
+Buttons (and other such components) don't receive focus from a touch event, that's why the OnClickListener is called every time.
+
+Basically, you have three choices:
+
+
+Implement an OnTouchListener by itself:
+
+ed1.setOnTouchListener(new OnTouchListener() {
+    @Override
+    public boolean onTouch(View v, MotionEvent event) {
+        if(MotionEvent.ACTION_UP == event.getAction())
+            editTextClicked(); // Instead of your Toast
+        return false;
+    }
+});
+
+
+This will execute every time the EditText is touched. Notice that the listener returns false, this allows the event to trickle down to the built-in OnFocusChangeListener which changes the focus so the user can type in the EditText. 
+Implement an OnFocusChangeListener along with the OnClickListener:
+
+ed1.setOnFocusChangeListener(new OnFocusChangeListener() {
+    @Override
+    public void onFocusChange(View v, boolean hasFocus) {
+        if(hasFocus)
+            editTextClicked(); // Instead of your Toast
+    }
+});
+
+
+This listener catches the first touch event when the focus is changed while your OnClickListener catches every other event.
+(This isn't a valid answer here, but it is a good trick to know.) Set the focusable attribute to false in your XML:
+
+android:focusable="false"
+
+
+Now the OnClickListener will fire every time it is clicked. But this makes the EditText useless since the user can no longer enter any text...
+
+
+Note:
+
+getApplicationContext() can create memory leaks. A good habit is to avoid using it unless absolutely necessary. You can safely use v.getContext() instead.
+
+Hope that helps!
+    

@@ -1,0 +1,169 @@
+44
+Q:It's small Android 2.2 test application using the Compatibility Package. This is the (wrong, of course) way I try to replace a Fragment when receiving a click. I'm trying to replace it with a new (different) instance of the same Fragment class. As I will explain it doesn't work as expected and I need help:
+
+public class MainFragmentActivity extends FragmentActivity {
+  ...
+
+  public void myAction(View view) {
+    ...
+    RightFragment newRightFrag = RightFragment.newInstance(myNewOption);
+    FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
+    ft.setCustomAnimations(android.R.anim.fade_in, android.R.anim.fade_out);
+    ft.replace(R.id.landscape_right_fragment, newRightFrag);
+    ft.commit();
+  }
+}
+
+
+You will surely have seen what my mistake is. Anyway let's give a little more explaination about what the application should do :
+
+Landscape Orientation :
+
+---------                ----------
+| L | R |  -> click ->   | L | R2 |
+---------                ----------
+
+
+On landscape orientation, the activity has a view with 2 fragments: "leftLand" & "rightLand", and if you click a button of the fragment "leftLand" then it changes creates a new Fragment and substitutes the "rightLand" Fragment instance with another instance of the same FragamentActivity class. What makes different those two instances is a parameter passed to "newInstance(int)", it's based upon the clicked button.
+
+Portrait Orientation :
+
+-----                  -----
+|   |                  |   |
+| L |   -> click ->    | R |
+|   |                  |   |
+-----                  -----
+
+
+In portrait orientation it just shows the fragment "leftPort" (has the same layout as "leftLand") and if you click its button then it launches an Intent an starts the RightFragmentActivity, which shows the Fragment "rightLand"
+
+It works fine ... if I don't replace the right fragment. If I do it (clicking the button in landscape orientation) then on a subsequent orientation change (restart of the activity) the FragmentActivity isn't able to start because of a "IllegalStateException: Fragment RightFragment did not create a view" like this :
+
+D/AndroidRuntime( 1428): Shutting down VM
+W/dalvikvm( 1428): threadid=1: thread exiting with uncaught exception (group=0x4001d800)
+E/AndroidRuntime( 1428): FATAL EXCEPTION: main
+E/AndroidRuntime( 1428): java.lang.RuntimeException: Unable to start activity ComponentInfo{com.agm.test/com.agm.test.MainFragmentActivity}: android.view.InflateException: Binary XML file line #13: Error inflating class fragment
+E/AndroidRuntime( 1428):        at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2663)
+E/AndroidRuntime( 1428):        at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:2679)
+E/AndroidRuntime( 1428):        at android.app.ActivityThread.handleRelaunchActivity(ActivityThread.java:3815)
+E/AndroidRuntime( 1428):        at android.app.ActivityThread.access$2400(ActivityThread.java:125)
+E/AndroidRuntime( 1428):        at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2037)
+E/AndroidRuntime( 1428):        at android.os.Handler.dispatchMessage(Handler.java:99)
+E/AndroidRuntime( 1428):        at android.os.Looper.loop(Looper.java:123)
+E/AndroidRuntime( 1428):        at android.app.ActivityThread.main(ActivityThread.java:4627)
+E/AndroidRuntime( 1428):        at java.lang.reflect.Method.invokeNative(Native Method)
+E/AndroidRuntime( 1428):        at java.lang.reflect.Method.invoke(Method.java:521)
+E/AndroidRuntime( 1428):        at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:868)
+E/AndroidRuntime( 1428):        at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:626)
+E/AndroidRuntime( 1428):        at dalvik.system.NativeStart.main(Native Method)
+E/AndroidRuntime( 1428): Caused by: android.view.InflateException: Binary XML file line #13: Error inflating class fragment
+E/AndroidRuntime( 1428):        at android.view.LayoutInflater.createViewFromTag(LayoutInflater.java:582)
+E/AndroidRuntime( 1428):        at android.view.LayoutInflater.rInflate(LayoutInflater.java:618)
+E/AndroidRuntime( 1428):        at android.view.LayoutInflater.inflate(LayoutInflater.java:407)
+E/AndroidRuntime( 1428):        at android.view.LayoutInflater.inflate(LayoutInflater.java:320)
+E/AndroidRuntime( 1428):        at android.view.LayoutInflater.inflate(LayoutInflater.java:276)
+E/AndroidRuntime( 1428):        at com.android.internal.policy.impl.PhoneWindow.setContentView(PhoneWindow.java:198)
+E/AndroidRuntime( 1428):        at android.app.Activity.setContentView(Activity.java:1647)
+E/AndroidRuntime( 1428):        at com.agm.test.MainFragmentActivity.onCreate(MainFragmentActivity.java:25)
+E/AndroidRuntime( 1428):        at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1047)
+E/AndroidRuntime( 1428):        at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:2627)
+E/AndroidRuntime( 1428):        ... 12 more
+E/AndroidRuntime( 1428): Caused by: java.lang.IllegalStateException: Fragment com.agm.test.RightFragment did not create a view.
+E/AndroidRuntime( 1428):        at android.support.v4.app.FragmentActivity.onCreateView(FragmentActivity.java:287)
+E/AndroidRuntime( 1428):        at android.view.LayoutInflater.createViewFromTag(LayoutInflater.java:558)
+E/AndroidRuntime( 1428):        ... 21 more
+W/ActivityManager(   59):   Force finishing activity com.agm.test/.MainFragmentActivity
+
+
+I have realized that the old "RightFragment" is not destroyed after been replaced. This is probably a consequence of my wrong way to try to substitute it.
+
+Any help would be really appreciated.
+
+Thanks in advance!
+
+/ Angel Galindo Mu\xc3\xb1oz
+    
+===============================================================================================
+94
+A:I think you may have misunderstood my comment, so I'll offer a more detailed explanation here.  
+
+One problem that commonly arises with removing or replacing fragments is trying to remove a fragment that has been added to the layout through XML instead of programmatically in Java.  This is not the same as inflating the fragment's own layout in the onCreateView() function of the fragment's Java code (this is what you seem to be describing in your response to my comment).  To illustrate what I'm talking about, I'll show you two ways that people try to remove/replace fragments.
+
+This is the Wrong Way to do it:
+
+XML Layout:
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+android:id="@+id/fragment_container"
+android:orientation="horizontal"
+android:layout_width="match_parent"
+android:layout_height="match_parent">
+
+    <fragment android:name="com.example.ExampleFragment"
+    android:id="@+id/example_fragment"
+    android:layout_weight="1"
+    android:layout_width="0dp"
+    android:layout_height="match_parent" />
+
+</LinearLayout>
+
+
+Java:
+
+swapFragment()
+{
+    Fragment newFragment = new ExampleFragment();
+    FragmentTransaction transaction = getFragmentManager().beginTransaction();
+    transaction.replace(R.id.fragment_container, newFragment);
+    transaction.addToBackStack(null);
+    transaction.commit();
+}
+
+
+This code, will not execute in the way that you expect.  The initial fragment that is added in the XML layout will not be removed.  This is because XML layouts are intended to describe static layout elements.  You can change their contents at run time, or hide them, but you can't delete these things from the layout.  This is what Dianne Hackborn was saying in the discussion thread I linked to before.
+
+This is the right way to do it (At least in my experience):
+
+XML Layout:
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+android:id="@+id/fragment_container"
+android:orientation="horizontal"
+android:layout_width="match_parent"
+android:layout_height="match_parent">
+
+    <!-- Fragment will go here eventually, but it's not added in the layout -->
+
+</LinearLayout>
+
+
+Java:
+
+protected void onCreate(Bundle savedInstanceState)
+{
+     super.onCreate(savedInstanceState);
+     setContentView(R.layout.my_layout);
+
+     ExampleFragment newFragment = new ExampleFragment();
+     FragmentTransaction transaction = getFragmentManager().beginTransaction();
+     transaction.add(R.id.fragment_container, newFragment);
+     transaction.commit();
+}
+
+
+...
+
+swapFragment()
+{
+    Fragment newFragment = new ExampleFragment();
+    FragmentTransaction transaction = getFragmentManager().beginTransaction();
+    transaction.replace(R.id.fragment_container, newFragment);
+    transaction.addToBackStack(null);
+    transaction.commit();
+}
+
+
+This strategy does not add the fragment in the initial layout. Instead it adds it in the Java code when the Activity is created.  This allows it to be removed from the layout (either using remove() or replace())
+
+This might not solve your problem, but it is a common difficulty that Fragments create.  You can make sure that you are adding the Fragments in the proper way to allow them to be removed, and then if that doesn't solve the problem we can troubleshoot further.
+    

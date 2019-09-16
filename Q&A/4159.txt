@@ -1,0 +1,213 @@
+56
+Q:I'm trying to implement a SlidingDrawer that will occupy the full screen width, but whose height is determined dynamically by its contents: in other words, standard fill_parent layout behaviour for the width and wrap_content for the height. That's exactly how I've specified it in the layout XML (see below) but the sliding drawer always opens to the full screen height. The height of my content varies, but typically it's only about half the screen height, so I end up with a big gap underneath it. What I'd like is for the content to sit neatly on the bottom of the screen.
+
+I've tried everything I can think of to fix it but nothing's worked so far. If I set the SlidingDrawer's layout_height to a specific value (e.g. 160dip) it works, but that's not what I need: it has to be dynamic. Of course I've made sure all the child elements have their height set to wrap_content too.
+
+The documentation on SlidingDrawer is a bit vague on this and I haven't been able to find any examples that do what I'm after either. If anyone can see where I'm going wrong I'd really appreciate your help!
+
+<RelativeLayout
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent" >
+
+    <ViewFlipper
+        android:id="@+id/ImageFlipper"
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent" >
+
+        <ImageView
+            android:id="@+id/imageView0"
+            android:layout_width="fill_parent"
+            android:layout_height="fill_parent"
+            android:scaleType="centerCrop" />
+
+        <ImageView
+            android:id="@+id/imageView1"
+            android:layout_width="fill_parent"
+            android:layout_height="fill_parent"
+            android:scaleType="centerCrop" />
+
+        <ImageView
+            android:id="@+id/imageView2"
+            android:layout_width="fill_parent"
+            android:layout_height="fill_parent"
+            android:scaleType="centerCrop" />
+
+    </ViewFlipper>
+
+    <SlidingDrawer
+        android:id="@+id/infoDrawer"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:handle="@+id/infoDrawerHandle"
+        android:content="@+id/infoDrawerContent"
+        android:allowSingleTap="false"
+        android:layout_alignParentBottom="true"
+        android:orientation="vertical" >
+
+        <!-- Sliding drawer handle -->
+        <ImageView
+            android:id="@id/infoDrawerHandle"
+            android:src="@drawable/info_handle_closed"
+            android:layout_width="wrap_content" 
+            android:layout_height="wrap_content" />
+
+        <!-- Sliding drawer content: a scroller containing a group of text views
+        laid out in a LinearLayout -->
+        <ScrollView
+            android:id="@id/infoDrawerContent"
+            android:background="@drawable/info_background"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fillViewport="false" >
+
+            <LinearLayout
+                android:id="@id/infoDrawerContent"
+                android:orientation="vertical"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingRight="5dip" >
+
+                <TextView
+                    android:id="@+id/infoTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#ffffff"
+                    android:textSize="16dip"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/infoCreator"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#ffffff"
+                    android:textSize="14dip"
+                    android:textStyle="italic"
+                    android:paddingBottom="10dip" />
+
+                <TextView
+                    android:id="@+id/infoDescription"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#ffffff"
+                    android:textSize="14dip"
+                    android:paddingBottom="10dip" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#ffcc00"
+                    android:textSize="14dip"
+                    android:textStyle="bold"
+                    android:text="@string/heading_pro_tip" />
+
+                <TextView
+                    android:id="@+id/infoProTip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="#ffcc00"
+                    android:textSize="14dip" />
+
+            </LinearLayout>    
+
+        </ScrollView>
+
+    </SlidingDrawer>
+
+</RelativeLayout>
+
+    
+===============================================================================================
+126
+A:The onMeasure() method of the SlidingDrawer class basically overrides the layout modes to fill_parent, this is why layout_height="wrap_content" is not working.
+
+To get around this, you can extend SlidingDrawer with a re-implemented onMeasure() method that honors the layout_width and layout_height attributes. You can then use this custom class in your XML layout by replacing <SlidingDrawer ...> with <fully.qualified.package.ClassName ...>.
+
+Note that since the drawer will no longer be filling the parent layout, you will have to enclose it in a LinearLayout with the gravity attribute set to the edge where the drawer should be.
+
+Below are a class I have created for this purpose and an example layout.
+
+WrappingSlidingDrawer class :
+
+import android.content.Context;
+import android.util.AttributeSet;
+import android.view.View;
+import android.widget.SlidingDrawer;
+
+
+public class WrappingSlidingDrawer extends SlidingDrawer {
+
+    public WrappingSlidingDrawer(Context context, AttributeSet attrs, int defStyle) {
+        super(context, attrs, defStyle);
+
+        int orientation = attrs.getAttributeIntValue("android", "orientation", ORIENTATION_VERTICAL);
+        mTopOffset = attrs.getAttributeIntValue("android", "topOffset", 0);
+        mVertical = (orientation == SlidingDrawer.ORIENTATION_VERTICAL);
+    }
+
+    public WrappingSlidingDrawer(Context context, AttributeSet attrs) {
+        super(context, attrs);
+
+        int orientation = attrs.getAttributeIntValue("android", "orientation", ORIENTATION_VERTICAL);
+        mTopOffset = attrs.getAttributeIntValue("android", "topOffset", 0);
+        mVertical = (orientation == SlidingDrawer.ORIENTATION_VERTICAL);
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+
+        int widthSpecMode = MeasureSpec.getMode(widthMeasureSpec);
+        int widthSpecSize =  MeasureSpec.getSize(widthMeasureSpec);
+
+        int heightSpecMode = MeasureSpec.getMode(heightMeasureSpec);
+        int heightSpecSize =  MeasureSpec.getSize(heightMeasureSpec);
+
+        if (widthSpecMode == MeasureSpec.UNSPECIFIED || heightSpecMode == MeasureSpec.UNSPECIFIED) {
+            throw new RuntimeException("SlidingDrawer cannot have UNSPECIFIED dimensions");
+        }
+
+        final View handle = getHandle();
+        final View content = getContent();
+        measureChild(handle, widthMeasureSpec, heightMeasureSpec);
+
+        if (mVertical) {
+            int height = heightSpecSize - handle.getMeasuredHeight() - mTopOffset;
+            content.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(height, heightSpecMode));
+            heightSpecSize = handle.getMeasuredHeight() + mTopOffset + content.getMeasuredHeight();
+            widthSpecSize = content.getMeasuredWidth();
+            if (handle.getMeasuredWidth() > widthSpecSize) widthSpecSize = handle.getMeasuredWidth();
+        }
+        else {
+            int width = widthSpecSize - handle.getMeasuredWidth() - mTopOffset;
+            getContent().measure(MeasureSpec.makeMeasureSpec(width, widthSpecMode), heightMeasureSpec);
+            widthSpecSize = handle.getMeasuredWidth() + mTopOffset + content.getMeasuredWidth();
+            heightSpecSize = content.getMeasuredHeight();
+            if (handle.getMeasuredHeight() > heightSpecSize) heightSpecSize = handle.getMeasuredHeight();
+        }
+
+        setMeasuredDimension(widthSpecSize, heightSpecSize);
+    }
+
+    private boolean mVertical;
+    private int mTopOffset;
+}
+
+
+Example layout (assuming WrappingSlidingDrawer is in package com.package) :
+
+<FrameLayout android:layout_width="fill_parent"
+             android:layout_height="fill_parent">
+    ... stuff you want to cover at full-size ...
+    <LinearLayout android:layout_width="fill_parent"
+              android:layout_height="fill_parent"
+              android:gravity="bottom"
+              android:orientation="vertical">
+        <com.package.WrappingSlidingDrawer android:layout_width="fill_parent"
+                           android:layout_height="wrap_content"
+                           android:content="@+id/content"
+                           android:handle="@+id/handle">
+            ... handle and content views ...
+        </com.package.WrappingSlidingDrawer>
+    </LinearLayout>
+</FrameLayout>
+
+    

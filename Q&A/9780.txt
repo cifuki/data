@@ -1,0 +1,124 @@
+28
+Q:I have a RecyclerView presenting several images using Picasso. After scrolling some time up and down the application runs out of memory with messages like this:
+
+E/dalvikvm-heap\xef\xb9\x95 Out of memory on a 3053072-byte allocation.
+I/dalvikvm\xef\xb9\x95 "Picasso-/wp-content/uploads/2013/12/DSC_0972Small.jpg" prio=5 tid=19 RUNNABLE
+I/dalvikvm\xef\xb9\x95 | group="main" sCount=0 dsCount=0 obj=0x42822a50 self=0x59898998
+I/dalvikvm\xef\xb9\x95 | sysTid=25347 nice=10 sched=0/0 cgrp=apps/bg_non_interactive handle=1500612752
+I/dalvikvm\xef\xb9\x95 | state=R schedstat=( 10373925093 843291977 45448 ) utm=880 stm=157 core=3
+I/dalvikvm\xef\xb9\x95 at android.graphics.BitmapFactory.nativeDecodeStream(Native Method)
+I/dalvikvm\xef\xb9\x95 at android.graphics.BitmapFactory.decodeStream(BitmapFactory.java:623)
+I/dalvikvm\xef\xb9\x95 at com.squareup.picasso.BitmapHunter.decodeStream(BitmapHunter.java:142)
+I/dalvikvm\xef\xb9\x95 at com.squareup.picasso.BitmapHunter.hunt(BitmapHunter.java:217)
+I/dalvikvm\xef\xb9\x95 at com.squareup.picasso.BitmapHunter.run(BitmapHunter.java:159)
+I/dalvikvm\xef\xb9\x95 at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:390)
+I/dalvikvm\xef\xb9\x95 at java.util.concurrent.FutureTask.run(FutureTask.java:234)
+I/dalvikvm\xef\xb9\x95 at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1080)
+I/dalvikvm\xef\xb9\x95 at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:573)
+I/dalvikvm\xef\xb9\x95 at java.lang.Thread.run(Thread.java:841)
+I/dalvikvm\xef\xb9\x95 at com.squareup.picasso.Utils$PicassoThread.run(Utils.java:411)
+I/dalvikvm\xef\xb9\x95 [ 08-10 18:48:35.519 25218:25347 D/skia     ]
+    --- decoder->decode returned false
+
+
+The things I note while debugging:
+
+
+When installing the app on a phone or a virtual device, the images are loaded over the network, which is how it is meant to be. This is seen by the red triangle in the upper left corner of the image.
+When scrolling so that the images are reloaded, they are fetched from the disk. This is seen by the blue triangle in the upper left corner of the image.
+When scrolling some more, some of the images are loaded from memory, as seen by a green triangle in the upper left corner.
+After scrolling some more, the out of memory exception occurs and the loading stops. Only the placeholder image is shown on the images that are not currently kept in memory, while those in memory are shown properly with a green triangle.
+
+
+Here is a sample image. It is quite large, but I use fit() to reduce the memory footprint in the app.
+
+So my questions are:
+
+
+Shouldn't the images be reloaded from disk when the memory cache
+is full?
+Are the images just too large? How much memory can I
+expect an, let's say 0.5 MB image, to consume when decoded?
+Is there anything wrong/unusual in my code below?
+
+
+Setting up the static Picasso instance when creating the Activity:
+
+private void setupPicasso()
+{
+    Cache diskCache = new Cache(getDir("foo", Context.MODE_PRIVATE), 100000000);
+    OkHttpClient okHttpClient = new OkHttpClient();
+    okHttpClient.setCache(diskCache);
+
+    Picasso picasso = new Picasso.Builder(this)
+            .memoryCache(new LruCache(100000000)) // Maybe something fishy here?
+            .downloader(new OkHttpDownloader(okHttpClient))
+            .build();
+
+    picasso.setIndicatorsEnabled(true); // For debugging
+
+    Picasso.setSingletonInstance(picasso);
+}
+
+
+Using the static Picasso instance in my RecyclerView.Adapter:
+
+@Override
+public void onBindViewHolder(RecipeViewHolder recipeViewHolder, int position)
+{
+    Picasso.with(mMiasMatActivity)
+            .load(mRecipes.getImage(position))
+            .placeholder(R.drawable.picasso_placeholder)
+            .fit()
+            .centerCrop()
+            .into(recipeViewHolder.recipeImage); // recipeImage is an ImageView
+
+    // More...
+}
+
+
+The ImageView in the XML file:
+
+<ImageView
+    android:id="@+id/mm_recipe_item_recipe_image"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:adjustViewBounds="true"
+    android:paddingBottom="2dp"
+    android:layout_alignParentTop="true"
+    android:layout_centerHorizontal="true"
+    android:clickable="true"
+/>
+
+
+Update
+
+It seems that scrolling the RecyclerView continuously makes the memory allocation increase indefinitely. I made a test RecyclerView stripped down to match the official documentation, using a single image for 200 CardViews with an ImageView, but the problem persists. Most of the images are loaded from memory (green) and scrolling is smooth, but about every tenth ImageView loads the image from disk (blue). When the image is loaded from disk, a memory allocation is performed, thereby increasing the allocation on the heap and thus the heap itself.
+
+I tried removing my own setup of the global Picasso instance and using the default instead, but the problems are the same.
+
+I did a check with the Android Device Monitor, see the image below. This is for a Galaxy S3. Each of the allocations done when an image is loaded from disk can be seen to the right under "Allocation count per size". The size is slightly different for each allocation of the image, which is also weird. Pressing "Cause GB" makes the rightmost allocation of 4.7 MB go away.
+
+
+
+The behavior is the same for virtual devices. The image below shows it for a Nexus 5 AVD. Also here, the largest allocation (the 10.6 MB one) goes away when pressing "Cause GB".
+
+
+
+Additionally, here are images of the memory allocation locations and the threads from the Android Device Monitor. The reoccurring allocations are done in the Picasso threads while the one removed with Cause GB is done on the main thread.
+
+
+
+    
+===============================================================================================
+38
+A:I'm not sure fit() works with android:adjustViewBounds="true". According to some of the past issues it seems to be problematic.
+
+A few recommendations:
+
+
+Set a fixed size for the ImageView
+User a GlobalLayoutListener to get the ImageView's size once it is calculated and after this call Picasso adding the resize() method
+Give Glide a try - its default configuration results in a lower footprint than Picasso (it stores the resized imaged rather than the original and uses RGB565)
+
+    

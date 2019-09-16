@@ -1,0 +1,138 @@
+52
+Q:My app contains a view which consists of a ViewPager consisting of a handful of fragments. When you click on an item in one of these fragments, the expected behavior is for the shared element (in this case an image) to transition to the fragment which displays more information about the clicked content.
+
+Here is a very simple video of what it should look like:
+
+https://dl.dropboxusercontent.com/u/97787025/device-2015-06-03-114842.mp4
+
+This is just using a Fragment->Fragment transition.
+
+The problem arises when you place the starting fragment inside a ViewPager. I suspect this is because the ViewPager uses its parent fragment's child fragment manager, which is different than the fragment manager of the activity, which is handling the fragment transaction. Here is a video of what happens:
+
+https://dl.dropboxusercontent.com/u/97787025/device-2015-06-03-120029.mp4
+
+I'm pretty certain the issue here as I explained above is the child fragment manager vs the activity's fragment manager. Here is how I am making the transition:
+
+SimpleFragment fragment = new SimpleFragment();
+
+FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
+transaction.replace(R.id.am_list_pane, fragment, fragment.getClass().getSimpleName());
+
+if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+    TransitionSet enterTransition = new TransitionSet();
+    enterTransition.addTransition(new ChangeBounds());
+    enterTransition.addTransition(new ChangeClipBounds());
+    enterTransition.addTransition(new ChangeImageTransform());
+    enterTransition.addTransition(new ChangeTransform());
+
+    TransitionSet returnTransition = new TransitionSet();
+    returnTransition.addTransition(new ChangeBounds());
+    returnTransition.addTransition(new ChangeClipBounds());
+    returnTransition.addTransition(new ChangeImageTransform());
+    returnTransition.addTransition(new ChangeTransform());
+
+    fragment.setSharedElementEnterTransition(enterTransition);
+    fragment.setSharedElementReturnTransition(returnTransition);
+
+    transaction.addSharedElement(iv, iv.getTransitionName());
+}
+
+transaction.addToBackStack(fragment.getClass().getName());
+
+transaction.commit();
+
+
+This works fine when both fragments are managed by the activity's fragment manager, but when I load up a ViewPager like this:
+
+ViewPager pager = (ViewPager) view.findViewById(R.id.pager);
+pager.setAdapter(new Adapter(getChildFragmentManager()));
+
+
+The children of the ViewPager are not being managed by the activity, and it doesn't work anymore.
+
+Is this an oversight by the Android team? Is there any way to pull this off? Thanks.
+    
+===============================================================================================
+36
+A:Probably you've already found an answer to this but in case you haven't, here's what I did to fix it after a few hours of scratching my head.
+
+The problem I think is a combination of two factors:
+
+
+The Fragments in ViewPager load with a delay, meaning that the activity returns a lot faster than its fragments which are contained inside the ViewPager
+If you are like me, your ViewPager's child fragments are most likely the same type. This means, they all share the same transition name (if you've set them in your xml layout), unless you set them in code and only set it once, on the visible fragment.
+
+
+To fix both of these problems, this is what I did:
+
+1. Fixing the delayed loading problem:
+
+Inside your activity (the one that contains the ViewPager), add this line after super.onCreate() and before setContentView():
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    ActivityCompat.postponeEnterTransition(this); // This is the line you need to add
+
+    setContentView(R.layout.feeds_content_list_activity);
+    ...
+}
+
+
+2. Fixing the problem with multiple fragments with the same transition name:
+
+Now there are quite a few ways of going about doing this but this is what I ended up with inside my "detail" activity, i.e. the activity that contains the ViewPager (in the onCreate() but you can do it anywhere really):
+
+_viewPager.setAdapter(_sectionsPagerAdapter);
+_viewPager.setCurrentItem(position);
+...
+...
+_pagerAdapter.getItem(position).setTransitionName(getResources().getString(R.string.transition_contenet_topic));
+
+
+You need to be careful since the Activity may not yet be attached to your ViewPager fragment so it's easier to just pass in the transition name from the activity to the fragment if you're loading it from a resource
+
+The actual implementation is as simple as you expect:
+
+public void setTransitionName(String transitionName) {
+    _transitionName = transitionName;
+}
+
+
+Then inside your fragment's onViewCreated(), add this line:
+
+public void onViewCreated(View view, Bundle savedInstanceState) {
+    super.onViewCreated(view, savedInstanceState);
+    ...
+    if (_transitionName != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+        setTransitionNameLollipop();
+    }
+    ...
+}
+
+@TargetApi(Build.VERSION_CODES.LOLLIPOP)
+private void setTransitionNamesLollipop() {
+    _imgTopic.setTransitionName(_transitionName);
+}
+
+
+The last piece of the puzzle is to find out when your fragment is fully loaded and then call ActivityCompat.startPostponedEnterTransition(getActivity());.
+
+In my case, my fragments were not fully loaded until later since I'm loading most things off the UI thread which means I had to figure out a way to call this when everything was loaded but if that's not your case, you can call this right after you call setTransitionNameLollipop().
+
+The problem with this approach is that the exit transition may not work unless you're very careful and reset the transition name on the "visible" fragment right before you exit the activity to navigate back. That can easily be done like so:
+
+
+Listen to page change on your ViewPager
+Remove the transition name(s) as soon as your fragment is out of view
+Set the transition name(s) on the visible fragment.
+Instead of calling finish(), call ActivityCompat.finishAfterTransition(activity);
+
+
+This can get very complex very soon if you back transition needs to transition to a RecyclerView which was my case. For that, there's a much better answer provided by @Alex Lockwood here: ViewPager Fragments \xe2\x80\x93 Shared Element Transitions which has a very well written example code (albeit a lot more complicated than what I just wrote) here: https://github.com/alexjlockwood/activity-transitions/tree/master/app/src/main/java/com/alexjlockwood/activity/transitions
+
+In my case, I didn't have to go so far as to implement his solution and the above solution that I posted worked for my case. 
+
+In case you have multiple shared elements, I'm sure you can figure out how to extend the methods in order to cater to them.
+    

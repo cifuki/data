@@ -1,0 +1,63 @@
+36
+Q:I'm going crazy, I created a file object, so it can be read with ObjectInputStream, and I placed the assets folder.
+The method works with a file smaller than 1M, and give error with larger files.
+I read that is a limit of Android platform, but I also know that can be "easily" avoided.
+Those who have downloaded the game Reging Thunder, for example, can easily see that in their assets folder is a file 18.9M large.
+This is my code for read 1 object from a ObjecInputStream
+
+File f = File.createTempFile("mytempfile", "dat");
+FileOutputStream fos = new FileOutputStream(f);
+
+InputStream is = mc.getAssets().open(path,3);
+
+ObjectInputStream ois=new ObjectInputStream(is);
+byte[] data = (byte[]) ois.readObject();
+fos.write(data);
+
+fos.flush();
+fos.close();
+ois.close();
+is.close();
+
+
+now I have an uncompressed file and I can use it without worrying about the error "This file can not be opened as a file descriptor; it is probably compressed"
+
+This function works well with files smaller than 1M, with bigger files return an 
+java.io.IOException on line "ObjectInputStream ois=new ObjectInputStream(is);"
+
+why??
+    
+===============================================================================================
+48
+A:Faced the same issue. I've cut up my 4MB file into 1 MB chunks, and on the first run I join the chunks into a data folder on the phone. As an added bonus, the APK is properly compressed. The chunk files are called 1.db, 2.db, etc. The code goes like this:
+
+File Path = Ctxt.getDir("Data", 0);
+File DBFile = new File(Path, "database.db");
+
+if(!DBFile.exists() || DatabaseNeedsUpgrade)  //Need to copy...
+    CopyDatabase(Ctxt, DBFile);
+
+
+static private void CopyDatabase(Context Ctxt, File DBFile) throws IOException
+{
+    AssetManager assets = Ctxt.getAssets();
+    OutputStream outstream = new FileOutputStream(DBFile);
+    DBFile.createNewFile();
+    byte []b = new byte[1024];
+    int i, r;
+    String []assetfiles = assets.list("");
+    Arrays.sort(assetfiles);
+    for(i=1;i<10;i++) //I have definitely less than 10 files; you might have more
+    {
+        String partname = String.format("%d.db", i);
+        if(Arrays.binarySearch(assetfiles, partname) < 0) //No such file in assets - time to quit the loop
+            break;
+        InputStream instream = assets.open(partname);
+        while((r = instream.read(b)) != -1)
+            outstream.write(b, 0, r);
+        instream.close();
+    }
+    outstream.close();
+}
+
+    

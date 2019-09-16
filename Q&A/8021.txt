@@ -1,0 +1,182 @@
+33
+Q:I have to lay out a plan to develop a RESTful API (Python/Flask) that could be used by our future web app (Angularjs) and mobile apps (iOS/Android).
+
+I have been researching for three days and have come across several scenarios:
+Using HTTPS is one way on top of the methods below to keep it safer. But https is slower, which could mean we need faster and more expensive servers. 
+
+
+Using Basic-Http-Auth and sending username/password in plain (yet https) over the wire for every request to the API.  
+Using Digest-Auth, which is a hash of the password and the tracking would be automatic  This would work for the web app, however I wasn't able to confirm if iPhones and Android would support this natively. If they do, that could be an easy solution!
+Using a custom http header, where I would send a custom Auth string in http header upon a successful authentication. But then I have to make sure I am sending this auth code for every request that the user makes.  This makes it exactly like 1) with the difference that plain passwords aren't used and the auth code can expire without any risk. Also problematic is the tracking of the auth code, which is no longer automated as in 2)
+Using OAuth is an option. But its quite difficult to set up. If there is no better way, maybe thats the only way?
+Securing the API like Amazon S3 as described in this great article. In short, he says that both server and client would know of a private key, which they would use to hash the communication. It will be like gangster handshake, that you only would trust the delivery boy, if he knows the gangsta handshake.  Further down the comments someone asks:
+
+
+
+  How to keep the private key \xe2\x80\x9csecure\xe2\x80\x9d in a pure HTML5 app ? 
+  
+  You are exactly right; in a pure HTML5 (JS/CSS/HTML) app,
+  there is no protecting the key. You would do all communication over
+  HTTPS in which case you wouldn\xe2\x80\x99t need a key since you could safely
+  identify a client using a standard API_KEY or some other friendly
+  identifier without the need or complexity of an HMAC.
+
+
+So in other words there is even no point of using the method for an web app in first place. And honestly I don't understand how this should work on the mobile device either. A user downloads our app and how do I send the private key from the iphone to the server?  The moment I transferred it, it will be compromised.
+
+The more I am researching the more indecisive I am getting.  
+
+I was hoping to ask some pros who have done this previously and could share their experience.  Many Thanks
+    
+===============================================================================================
+67
+A:You seem to be confusing/merging two different concepts together. We start of talking about encrypting traffic (HTTPS) and then we start talking about different ways to manage authenticated sessions. In a secure application these are not mutually exclusive tasks. There also seem to potentially be a misunderstanding how session management can impact authentication. Based on that I will provide a primer on web application/web api session management, authentication, and encryption.
+
+Introduction
+
+Session Management
+
+HTTP transactions are stateless by default. HTTP does not specify any method to let your application know that a HTTP request has been sent from a specific user (authenticated or not). 
+
+For robust web applications, this is not acceptable. We need a way to associate requests and data made across multiple requests. To do this, on initial request to the server a user needs to be assigned a "session". Generally sessions have some kind of unique id that is sent to the client. The client sends that session id with every request and the server uses the session id sent in every request to properly prepare a response for the user.
+
+It is important to remember that a 'session id' can be called many other things. Some examples of those are: session token, token, etc. For consistency I will use 'session id' for the rest of this response.
+
+Each HTTP request from the client needs to include the session id; this can be done in many ways. Popular examples are:
+
+
+It can be stored in a cookie - cookies for the current domain are automatically sent on every request.
+It can be sent on the URL - each request could send the session id on the URL, not suggested since session ids will stay in the clients history
+It can be sent via as a HTTP header - each request would need to specify the header
+
+
+Most web application frameworks use cookies. However application that rely on JavaScript and single page designs may opt to use a HTTP header/store it in some other location that is observable by the server.
+
+It is very important to remember that the HTTP response that notifies the client of their session id and the client's requests that contain the session id are completely plain text and 100% unsafe. To battle that, all HTTP traffic needs to be encrypted; that is where HTTPS comes in.
+
+It is also important to point out we have not talked about linking a session to a specific user in our system. Session management is just associating data to a specific client accessing our system. The client can be in both authenticated and unauthenticated states, but in both states they generally have a session.
+
+Authentication
+
+Authentication is where we link a session to a specific user in our system. This is generally handled by a login process where a user supplies credentials, those credentials are verified, and then we link a session to a specific user record in our system. 
+
+The user is in turn associated with privileges for fine grained access control via access control lists and access control entries (ACL and ACE). This is generally referred to as "Authorization". Most system always have both Authentication and Authorization. In some simple systems all authenticated users are equals in which case you won't have authorization past simple authentication. Further information on this is out of scope for this question, but consider reading about ACE/ACL.
+
+A specific session can be flagged as representing an authenticated user in different ways.
+
+
+Their session data stored server side could store their user id / some other flag that denotes that the use is authenticated as a specific user
+Another user token could be send to the client just like a session id (which over unencrypted HTTP is just as unsafe as sending a session id unencrypted)
+
+
+Either option is fine. It generally comes down to the technology you are working in and what they offer by default.
+
+A client generally initiates the authentication process. This can be done by sending credentials to a specific url (e.g. yoursite.com/api/login). However if we want to be 'RESTful' we generally would referencing a resource by some noun and doing the action of 'create'. This could be done by requiring a POST of the credentials to yoursite.com/api/authenticatedSession/. Where the idea would be to create an authenticated session. Most sites just POST the credentials to /api/login or the like. This is a departure from "true" or "pure" RESTful ideals, but most people find this a simpler concept rather than thinking of it as "creating an authenticated session".
+
+Encryption
+
+HTTPS is used to encrypt HTTP traffic between a client and server. On a system that relies on authenticated and unauthenticated users, all traffic that relies on a user being authenticated needs to be encrypted via HTTPS; there is no way around this. 
+
+The reason for this is that if you authenticate a user, share a secret with them (their session id, etc) and then begin to parade that secret in plain HTTP their session can be hijacked by man-in-the-middle attacks. A hacker will wait for for the traffic to go through an observed network and steal the secret (since its plain text over HTTP) and then initiate a connection to your server pretending to be the original client. 
+
+One way people combat this is by associating the requests remote IP address to an authenticated session. This is ineffective alone as any hacker will be able to spoof their requests remote IP address in their fake requests and then observe the responses your sever is sending back. Most would argue that this is not even worth implementing unless you are tracking historical data and using it to identify a specific user's login patterns (like Google does).
+
+If you need to split up your site between HTTP and HTTPS sections, it is imperative that the HTTP traffic does not send or receive the session id or any token used to manage the authentication status of a user. It is also important that you do not send sensitive application data within non-HTTPs requests/responses.
+
+The only way to secure data within web applications/APIs is to encrypt your traffic.
+
+Your Topics One By One
+
+Basic-Http-Auth
+
+
+Authentication: YES
+Session Management: NO
+Encryption: NO
+
+
+This is a method for authenticating by web resource only. Basic authentication authenticates uses by resource identified by URL. This was most popularly implemented by Apache HTTP Web Server with the use of .htaccess based directory/location authentication. Credentials have to be sent with each request; clients generally handled this transparently for users.
+
+Basic authentication can be used by other systems as a mode of authentication. However, the systems that utilize Basic-Http-Auth are providing authentication and session management, not the Basic-Http-Auth itself.
+
+
+This is not session management.
+This is not encryption; content and credentials are nearly 100% plain text
+This does not secure the contents of the application's HTTP request/responses.
+
+
+Digest-Auth
+
+
+Authentication: YES
+Session Management: NO
+Encryption: NO
+
+
+This is exactly the same as Basic-Http-Auth with the addition of some simple MD5 digesting. This digesting should not be relied upon instead of using encryption.
+
+
+This is not session management.
+This is not encryption; the digest is easily broken
+This does not secure the contents of the application's HTTP request/responses.
+
+
+OAuth
+
+
+Authentication: YES
+Session Management: NO
+Encryption: NO
+
+
+OAuth just lets you have an external service validate credentials. After that it is up to you to manage/work with the result of authentication request to your OAuth provider.
+
+
+This is not session management.
+This is not encryption; your sites traffic is still plain text. The authentication process will be secure due to HTTPS restrictions, but your application is still vulnerable.
+This does not secure the contents of the application's HTTP request/responses.
+
+
+Gangster Handshake / Custom HTTP header
+
+
+Authentication: YES, potentially
+Session Management: YES, potentially
+Encryption: NO
+
+
+"Custom HTTP header" is a type of "Gangster Handshakes"; as such I will use the same section to discuss them. The only difference is that a "Custom HTTP header" is specifying where the hanshake (session id, token, user authentication toke, etc) will be stored (i.e. in a HTTP header).
+
+It is important to note that these do not specify how authentication will be handled, nor do they specify how session management will be handled. They essentially describe how and where session ids/authentication tokens will be stored.
+
+Authentication would need to be handled by your application or via a third party (e.g. OAuth). Session management will still need to be implemented as well. The interesting thing is you can choose the merge the two if you wish.
+
+
+This is not encryption; your sites traffic is still plain text. The authentication process will be secure due to HTTPS restrictions if you use OAuth, but your application is still vulnerable.
+This does not secure the contents of the application's HTTP request/responses.
+
+
+What You Need To Do
+
+...I highly suggest you make sure that you understand that a robust web application that is secure needs the following:
+
+
+Encryption (HTTPS is pretty much your only choice)
+Session Management
+Authentication / Authorization
+
+
+Authorization relies upon Authentication. Authentication relies upon Session Management and Encryption makes sure the session isn't hijacked and that the credentials are not intercepted.
+
+Flask-Login
+
+I think you should look into flask-login as a way to avoid re-implementing the wheel. I have personally never used it (I use pyramid for web applications in python). However, I have seen it mentioned before in web application/python boards. It handles both authentication and session management. Throw your web api/application through HTTPS and you have all three (Encryption, Session Management, and User Authentication).
+
+If you do not / can not use flask-login, be prepared to write your own, but do research first on how to create secure authentication mechanisms. 
+
+If at all possible, if you do not understand how to write an authentication procedure please do not attempt it without first learning how hackers use pattern based attacks, timing attacks, etc.
+
+Please Encrypt Your Traffic
+
+...move past the idea that you can avoid using HTTPS with some "clever" token use. Move past the idea that you should avoid using HTTPS/encryption because "its slow", process intensive, etc. It is process intensive because it is an encryption algorithm. The need to ensure the safety of your user's data and your applications data should always be your highest priority. You do not want to go through the horror of notifying your users that their data was compromised.
+    

@@ -1,0 +1,46 @@
+126
+Q:When I need something to run asynchronously, such as a long running task or a logic that uses the network, or for whatever reason,
+Starting a new Thread and running it works fine.
+Creating a Handler and running it works as well.
+What's the difference? When should I use each one?
+What are the advantages / reasons to use a Handler and not a Thread?
+
+PS.
+- For this question's sake, let's ignore AsyncTask.
+- Handler().postDelayed use case is clear to me, for this question's sake let's assume I need the task to start immediately.
+    
+===============================================================================================
+163
+A:If whatever you are doing is "heavy" you should be doing it in a Thread. If you do not explicitly start it in its own thread, then it will run on the main (UI) thread which may be noticeable as jittery or slow to respond interface by your users. 
+
+Interestingly when you are using a thread it is often useful to also use a Handler as a means of communication between the work thread that you are starting and the main thread. 
+
+A typical Thread/Handler interaction might look something like this:
+
+Handler h = new Handler(){
+    @Override
+    public void handleMessage(Message msg){
+        if(msg.what == 0){
+            updateUI();
+        }else{
+            showErrorDialog();
+        }
+    }
+};
+
+Thread t = new Thread() {
+    @Override
+    public void run(){
+        doSomeWork();
+        if(succeed){
+            //we can't update the UI from here so we'll signal our handler and it will do it for us.
+            h.sendEmptyMessage(0);
+        }else{
+            h.sendEmptyMessage(1);
+        }
+    }   
+};
+
+
+In general though, the take home is that you should use a Thread any time you are doing some work that could be long running or very intensive (i.e. anything network, file IO, heavy arithmatic, etc).
+    

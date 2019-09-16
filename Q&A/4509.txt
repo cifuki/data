@@ -1,0 +1,86 @@
+53
+Q:The problem
+
+I would like to be able to override my apps resources such as R.colour.brand_colour or R.drawable.ic_action_start at runtime.  My application connects to a CMS system that will provide branding colours and images.  Once the app has downloaded the CMS data it needs to be able to re-skin itself.
+
+I know what you are about to say - overriding resources at runtime is not possible.
+
+Except that it kinda is.  In particular I have found this Bachelor Thesis from 2012 which explains the basic concept - The Activity class in android extends ContextWrapper, which contains the attachBaseContext method.  You can override attachBaseContext to wrap the Context with your own custom class which overrides methods such as getColor and getDrawable.  Your own implementation of getColor could look the colour up however it wanted.  The Calligraphy library uses a similar approach to inject a custom LayoutInflator which can deal with loading custom fonts.
+
+The code
+
+I have created a simple Activity which uses this approach to override the loading of a colour.
+
+public class MainActivity extends Activity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+    }
+
+    @Override
+    protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(new CmsThemeContextWrapper(newBase));
+    }
+
+    private class CmsThemeContextWrapper extends ContextWrapper{
+
+        private Resources resources;
+
+        public CmsThemeContextWrapper(Context base) {
+            super(base);
+            resources = new Resources(base.getAssets(), base.getResources().getDisplayMetrics(), base.getResources().getConfiguration()){
+                @Override
+                public void getValue(int id, TypedValue outValue, boolean resolveRefs) throws NotFoundException {
+                    Log.i("ThemeTest", "Getting value for resource " + getResourceName(id));
+                    super.getValue(id, outValue, resolveRefs);
+                    if(id == R.color.theme_colour){
+                        outValue.data = Color.GREEN;
+                    }
+                }
+
+                @Override
+                public int getColor(int id) throws NotFoundException {
+                    Log.i("ThemeTest", "Getting colour for resource " + getResourceName(id));
+                    if(id == R.color.theme_colour){
+                        return Color.GREEN;
+                    }
+                    else{
+                        return super.getColor(id);
+                    }
+                }
+            };
+        }
+
+        @Override
+        public Resources getResources() {
+            return resources;
+        }
+    }
+}
+
+
+The problem is, it doesn't work!  The logging shows calls to load resources such as layout/activity_main and mipmap/ic_launcher however color/theme_colour is never loaded.  It seems that the context is being used to create the window and action bar, but not the activity's content view. 
+
+My questions is - Where does the layout inflator load resources from, if not the activities context?  I would also like to know - Is there a workable way to override the loading of colours and drawables at runtime?
+
+A word about alternative approaches
+
+I know its possible to theme an app from CMS data other ways - for example we could create a method getCMSColour(String key) then inside our onCreate() we have a bunch of code along the lines of:
+
+myTextView.setTextColour(getCMSColour("heading_text_colour"))
+
+
+A similar approach could be taken for drawables, strings, etc.  However this would result in a large amount of boilerplate code - all of which needs maintaining.  When modifying the UI it would be easy to forget to set the colour on a particular view.
+
+Wrapping the Context to return our own custom values is 'cleaner' and less prone to breakage.  I would like to understand why it doesn't work, before exploring alternative approaches.
+    
+===============================================================================================
+9
+A:While "dynamically overriding resources" might seem the straightforward solution to your problem, I believe a cleaner approach would be to use the official data binding implementation https://developer.android.com/tools/data-binding/guide.html since it doesn't imply hacking the android way.
+
+You could pass your branding settings using a POJO. Instead of using static styles like @color/button_color you could write @{brandingConfig.buttonColor} and bind your views with the desired values. With a proper activity hierarchy, it shouldn't add too much boilerplate.
+
+This also gives you the ability to change more complex elements on your layout, i.e.: including different layouts on other layout depending on the branding settings, making your UI highly configurable without too much effort.
+    

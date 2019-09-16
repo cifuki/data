@@ -1,0 +1,82 @@
+33
+Q:When I set the onScrollListener for my ListView, it calls onScroll. This causes a crash because certain things haven't been initialized.
+
+Is this normal? Note: this is happening without me even touching the phone.
+
+public class MainActivity1 extends Activity implements OnClickListener, OnScrollListener {
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.layout1);
+
+    ListView lv = (ListView)findViewById(R.id.listview1);
+    lv.setOnScrollListener(this);
+    ...
+}
+...
+public void onScroll(AbsListView view, int firstVisibleItem,
+        int visibleItemCount, int totalItemCount){
+    if( firstVisibleItem+visibleItemCount == totalItemCount ){
+        pullContactList();
+    }
+}
+
+    
+===============================================================================================
+23
+A:It's normal because the source code for setOnScrollListener in AbsListView (the superclass of ListView) does this:
+
+ public void setOnScrollListener(OnScrollListener l) {
+        mOnScrollListener = l;
+        invokeOnItemScrollListener();
+    }
+
+
+and invokeOnItemScrollListener does this:
+
+/**
+     * Notify our scroll listener (if there is one) of a change in scroll state
+*/
+    void invokeOnItemScrollListener() {
+        if (mFastScroller != null) {
+            mFastScroller.onScroll(this, mFirstPosition, getChildCount(), mItemCount);
+        }
+        if (mOnScrollListener != null) {
+            mOnScrollListener.onScroll(this, mFirstPosition, getChildCount(), mItemCount);
+        }
+        onScrollChanged(0, 0, 0, 0); // dummy values, View's implementation does not use these.
+    }
+
+
+depending on what it is you're trying to do, there are a number of ways to avoid this problem.
+
+EDIT: 
+
+Since you only want to do this if the user actually scrolled, I suppose you could do something like:
+
+    lv.setOnTouchListener(new OnTouchListener() {
+                @Override
+                public boolean onTouch(View view, MotionEvent motionEvent) {
+                    if(view == lv && motionEvent.getAction() == MotionEvent.ACTION_SCROLL) {
+                      userScrolled = true;
+    }
+return false;
+                }
+            });
+
+
+Then..
+
+lv.setOnScrollListener(new AbsListView.OnScrollListener() {
+    @Override
+    public void onScroll(AbsListView view, int firstVisibleItem,
+            int visibleItemCount, int totalItemCount){
+        if(userScrolled && firstVisibleItem+visibleItemCount == totalItemCount ){
+            pullContactList();
+        }
+    }
+
+});
+
+    

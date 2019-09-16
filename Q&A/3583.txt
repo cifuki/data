@@ -1,0 +1,83 @@
+63
+Q:I hava a Bitmap variable named bmp in Activity1 , and I want to send the bitmap to Activity2 
+
+Following is the code I use to pass it with the intent.
+
+Intent in1 = new Intent(this, Activity2.class);
+in1.putExtra("image",bmp);
+startActivity(in1);
+
+
+And in Activity2 I try to access the bitmap using the following code
+
+Bundle ex = getIntent().getExtras();
+Bitmap bmp2 = ex.getParceable("image");
+ImageView result = (ImageView)findViewById(R.Id.imageView1);
+result.setImageBitmap(bmp);
+
+
+The application runs without an exception but it does not give the expected result
+    
+===============================================================================================
+178
+A:Convert it to a Byte array before you add it to the intent, send it out, and decode.
+
+//Convert to byte array
+ByteArrayOutputStream stream = new ByteArrayOutputStream();
+bmp.compress(Bitmap.CompressFormat.PNG, 100, stream);
+byte[] byteArray = stream.toByteArray();
+
+Intent in1 = new Intent(this, Activity2.class);
+in1.putExtra("image",byteArray);
+
+
+Then in Activity 2:
+
+byte[] byteArray = getIntent().getByteArrayExtra("image");
+Bitmap bmp = BitmapFactory.decodeByteArray(byteArray, 0, byteArray.length);
+
+
+
+
+edit
+
+Thought I should update this with best practice:
+
+In your first activity, you should save the Bitmap to disk then load it up in the next activity. Make sure to recycle your bitmap in the first activity to prime it for garbage collection:
+
+Activity 1:
+
+try {
+    //Write file
+    String filename = "bitmap.png";
+    FileOutputStream stream = this.openFileOutput(filename, Context.MODE_PRIVATE);
+    bmp.compress(Bitmap.CompressFormat.PNG, 100, stream);
+
+    //Cleanup
+    stream.close();
+    bmp.recycle();
+
+    //Pop intent
+    Intent in1 = new Intent(this, Activity2.class);
+    in1.putExtra("image", filename);
+    startActivity(in1);
+} catch (Exception e) {
+    e.printStackTrace();
+}
+
+
+In Activity 2, load up the bitmap:
+
+Bitmap bmp = null;
+String filename = getIntent().getStringExtra("image");
+try {
+    FileInputStream is = this.openFileInput(filename);
+    bmp = BitmapFactory.decodeStream(is);
+    is.close();
+} catch (Exception e) {
+    e.printStackTrace();
+}
+
+
+Cheers!
+    

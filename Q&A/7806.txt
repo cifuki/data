@@ -1,0 +1,73 @@
+34
+Q:for (Tweet tweet : tweets) {                
+    for(long forId : idFromArray){
+        long tweetId = tweet.getId();
+        if(forId != tweetId){
+            String twitterString = tweet.getText();
+            db.insertTwitter(twitterString, tweetId);
+        }
+    }
+}
+
+
+My code won't run pass the first for{} loop, that's why idFromArray is empty since I don't add anything there until a tweet is has been added to the database.
+
+And even if there is something in the array it loops the whole thing twice (DUH! Since I have two loops) which makes the database very bloated with the same tweets.
+
+It is not a simple compare of the two tweets id and simply ignore the ones with the same id.
+
+I'm pretty certain there is a really simple solution to this problem, but I still can't wrap my head around it. Anybody?
+
+UPDATE:
+
+What I want is the code to ignore the the tweetId that already is in the database.
+And just insert the tweets that is not in the database.
+
+I don't think I should have two for-loops, I think the second loop should be replaced with something? (or maybe I'm wrong?)
+    
+===============================================================================================
+47
+A:If I understand correctly, what you want to do, in pseudo-code is the following:
+
+for (Tweet tweet : tweets) {
+    if (!db.containsTweet(tweet.getId())) {
+        db.insertTweet(tweet.getText(), tweet.getId());
+    }
+}
+
+
+I assume your db class actually uses an sqlite database as a backend? What you could do is implement containsTweet directly and just query the database each time, but that seems less than perfect. The easiest solution if we go by your base code is to just keep a Set around that indexes the tweets. Since I can't be sure what the equals() method of Tweet looks like, I'll just store the identifiers in there. Then you get:
+
+Set<Integer> tweetIds = new HashSet<Integer>(); // or long, whatever
+for (Tweet tweet : tweets) {
+    if (!tweetIds.contains(tweet.getId())) {
+        db.insertTweet(tweet.getText(), tweet.getId());
+        tweetIds.add(tweet.getId());
+    }
+}
+
+
+It would probably be better to save a tiny bit of this work, by sorting the list of tweets to begin with and then just filtering out duplicate tweets. You could use:
+
+// if tweets is a List
+Collections.sort(tweets, new Comparator() {
+    public int compare (Object t1, Object t2) {
+        // might be the wrong way around
+        return ((Tweet)t1).getId() - ((Tweet)t2).getId();
+    }
+}
+
+
+Then process it
+
+Integer oldId;
+for (Tweet tweet : tweets) {
+    if (oldId == null || oldId != tweet.getId()) {
+        db.insertTweet(tweet.getText(), tweet.getId());
+    }
+    oldId = tweet.getId();
+}
+
+
+Yes, you could do this using a second for-loop, but you'll run into performance problems much more quickly than with this approach (although what we're doing here is trading time for memory performance, of course).
+    

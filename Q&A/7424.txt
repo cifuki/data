@@ -1,0 +1,67 @@
+35
+Q:We have developed an Android Application which involves a service in the background. To implement this background service we have used IntentService. We want the application to poll the server every 60 seconds. So in the IntentService, the server is polled in a while loop. At the end of the while loop we have used Thread.sleep(60000) so that the next iteration starts only after 60 seconds. But in the Logcat, I see that sometimes it takes the application more than 5 minutes to wake up (come out of that sleep and start the next iteration). It is never 1 minute as we want it to be.
+
+What is the reason for this? Should background Services be implemented in a different way?
+
+Problem2
+
+Android kills this background process (intent service) after sometime. Can't exactly say when. But sometimes its hours and sometimes days before the background service gets killed. I would appreciate it if you would tell me the reason for this. Because Services are not meant to be killed. They are meant to run in background as long as we want it to.
+
+Code :
+
+@Override
+ protected void onHandleIntent(Intent intent) {
+  boolean temp=true;
+  while(temp==true) {
+    try {
+      //connect to the server 
+      //get the data and store it in the sqlite data base
+    }
+    catch(Exception e) {
+      Log.v("Exception", "in while loop : "+e.toString());
+    }
+    //Sleep for 60 seconds
+    Log.v("Sleeping", "Sleeping");
+    Thread.sleep(60000);
+    Log.v("Woke up", "Woke up");
+
+    //After this a value is extracted from a table
+    final Cursor cur=db.query("run_in_bg", null, null, null, null, null, null);
+    cur.moveToLast();
+    String present_value=cur.getString(0);
+    if(present_value==null) {
+       //Do nothing, let the while loop continue  
+    }
+    else if( present_value.equals("false") || present_value.equals("False") ) {
+       //break out of the while loop
+       db.close();
+       temp=false;
+       Log.v("run_in_bg", "false");
+       Log.v("run_in_bg", "exiting while loop");
+       break;
+    }
+  }
+
+}
+
+
+But whenever the service is killed, it happens when the the process is asleep. The last log reads - Sleeping : Sleeping. Why does the service gets killed?
+    
+===============================================================================================
+78
+A:The main problem is that we cannot say 
+
+
+  Services are not meant to be killed. They are meant to run in background as long as we want it to. 
+
+
+Basically, that is not true. System still can terminate the service in low memory and possibly other situations.
+There are 2 ways to overcome this:
+
+
+If you are implementing the service, override onStartCommand() and return  START_STICKY as the result. It will tell the system that even if it will want to kill your service due to low memory, it should re-create it as soon as memory will be back to normal.
+If you are not sure 1st approach will work - you'll have to use AlarmManager http://developer.android.com/reference/android/app/AlarmManager.html . That is a system service, which will execute actions when you'll tell, for example periodically. That will ensure that if your service will be terminated, or even the whole process will die(for example with force close) - it will be 100% restarted by AlarmManager.
+
+
+Good luck
+    

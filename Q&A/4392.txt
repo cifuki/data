@@ -1,0 +1,43 @@
+54
+Q:I know this has been discussed yet I wanted to ask about the current state of the matter. Do i have to create a ContentProvider to use CursorLoader in connection with a sqlite database? 
+
+I found
+
+CursorLoader usage without ContentProvider
+
+Looks exactly what I was hoping for yet as Emmby commented
+
+
+Users should be aware of one limitation, which is that it has no mechanism to refresh on data changes (as Loaders are supposed to do)
+
+
+So another solution is mentioned 
+
+https://github.com/commonsguy/cwac-loaderex
+
+yet again some drawback is pointed out
+
+
+However, to make use of the automatic re-querying, you need to use the same loader for the UI as well as for the updates, limiting its usability for background services.
+
+
+Of course when using LoaderManager we want to get all the benefits for which it was introduced. So my question is if there is a way to use LoaderManager in connection with a sqlite database without having to implement a content provider yet have all the benefits of it.
+
+Thanks
+    
+===============================================================================================
+66
+A:The two implementations you mention in your post both offer all of the benefits of the CursorLoader except the ability to receive notifications when the underlying content changes. 
+
+I've been looking into this a lot recently and I can confidently tell you that the Android API currently does not provide a means of doing this with only a raw SQLiteDatabase (it only provides the ContentResolver#notifyChange() and Cursor#setNotificationUri() methods, which are used to notify all Cursors registered under a certain notification Uri).
+
+That said, your options right now are to:
+
+
+Implement an observer yourself that is capable of receiving notifications from the SQLiteDatabase when the content changes, and is somehow able to relay these notifications to all existing Loaders in your application. I wrote a pretty extensive blog post on how to implement Loaders that might come in handy if you wish to take on this challenge. Or...
+Use Mark Murphy's LoaderEx library and only make database modifications using the AsyncTask operations his library provides. Note that the reason why his tasks refresh the Loader is because they call onContentChanged on the Loader immediately after the insertion/update/delete is performed, effectively telling the Loader that the content has changed and that it should refresh its data.
+Just use a ContentProvider with a CursorLoader and you can use the ContentResolver#notifyChange() method to notify the CursorLoader that a content change has occurred.
+
+
+I'm trying to figure out a better solution, and I'll report back in the future if I ever find/implement one, but for now these will have to do.
+    

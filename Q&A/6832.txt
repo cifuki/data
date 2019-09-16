@@ -1,0 +1,48 @@
+38
+Q:For my app, Transdroid, I am connecting to remote servers via HTTP and optionally securely via HTTPS. For these HTTPS connections with the HttpClient I am using a custom SSL socket factory implementation to make sure self-signed certificates are working. Basically, I accept everything and ignore every checking of any certificate.
+
+This has been working fine for some time now, but it no longer work for Android 2.2 FroYo. When trying to connect, it will return an exception:
+
+java.io.IOException: SSL handshake failure: I/O error during system call, Broken pipe
+
+
+Here is how I initialize the HttpClient:
+
+    SchemeRegistry registry = new SchemeRegistry();
+    registry.register(new Scheme("http", new PlainSocketFactory(), 80));
+    registry.register(new Scheme("https", (trustAll ? new FakeSocketFactory() : SSLSocketFactory.getSocketFactory()), 443));
+    client = new DefaultHttpClient(new ThreadSafeClientConnManager(httpParams, registry), httpParams);
+
+
+I make use of a FakeSocketFactory and FakeTrustManager, of which the source can be found here.
+
+Again, I don't understand why it suddenly stopped work, or even what the error 'Broken pipe' means. I have seen messages on Twitter that Seesmic and Twidroid fail with SSL enabled on FroYo as well, but am unsure if it's related.
+
+Thanks for any directions/help!
+    
+===============================================================================================
+42
+A:Here is the answer, with many, many thanks to a helpful Seesmic developer willing to share the fix:
+
+In the custom socket factory, the socket creation (with createSocket) has apparently been changed specifically for the SSLSocketFactory implementation. So the old:
+
+    @Override
+    public Socket createSocket(Socket socket, String host, int port, boolean autoClose)
+                    throws IOException, UnknownHostException {
+            return getSSLContext().getSocketFactory().createSocket();
+    }
+
+
+Needs to be changed to:
+
+    @Override
+    public Socket createSocket(Socket socket, String host, int port, boolean autoClose)
+                    throws IOException, UnknownHostException {
+            return getSSLContext().getSocketFactory().createSocket(socket, host, port, autoClose);
+    }
+
+
+And then it worked again for me!
+
+UPDATE: As this is still a popular answer, let me update my link to working code. This SSl-enabled socket factory that support modern protocols (TLS 1.1+), SNI and optionally allows to accept all certificates (insecure, ignores all SSL certificates) or a self-signed certificates (by SHA-1 hash).
+    

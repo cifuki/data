@@ -1,0 +1,173 @@
+28
+Q:I have an Application which is connected to firebase.The problem is when install the app in device(working on several devices).I read a lot of forums and no one works.I read here and this and so on.Thanks!!
+
+The error is here.
+
+E/AndroidRuntime: FATAL EXCEPTION: main
+              Process: com.dev.ptruck, PID: 8833
+              java.lang.RuntimeException: Unable to get provider com.google.firebase.provider.FirebaseInitProvider: java.lang.ClassNotFoundException: Didn't find class "com.google.firebase.provider.FirebaseInitProvider" on path: DexPathList[[zip file "/data/app/com.dev.ptruck-17.apk"],nativeLibraryDirectories=[/data/app-lib/com.dev.ptruck-17, /vendor/lib, /system/lib]]
+                  at android.app.ActivityThread.installProvider(ActivityThread.java:5196)
+                  at android.app.ActivityThread.installContentProviders(ActivityThread.java:4788)
+                  at android.app.ActivityThread.handleBindApplication(ActivityThread.java:4728)
+                  at android.app.ActivityThread.access$1500(ActivityThread.java:166)
+                  at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1343)
+                  at android.os.Handler.dispatchMessage(Handler.java:102)
+                  at android.os.Looper.loop(Looper.java:136)
+                  at android.app.ActivityThread.main(ActivityThread.java:5584)
+                  at java.lang.reflect.Method.invokeNative(Native Method)
+                  at java.lang.reflect.Method.invoke(Method.java:515)
+                  at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1268)
+                  at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1084)
+                  at dalvik.system.NativeStart.main(Native Method)
+               Caused by: java.lang.ClassNotFoundException: Didn't find class "com.google.firebase.provider.FirebaseInitProvider" on path: DexPathList[[zip file "/data/app/com.dev.ptruck-17.apk"],nativeLibraryDirectories=[/data/app-lib/com.dev.ptruck-17, /vendor/lib, /system/lib]]
+                  at dalvik.system.BaseDexClassLoader.findClass(BaseDexClassLoader.java:56)
+                  at java.lang.ClassLoader.loadClass(ClassLoader.java:497)
+                  at java.lang.ClassLoader.loadClass(ClassLoader.java:457)
+                  at android.app.ActivityThread.installProvider(ActivityThread.java:5181)
+                  at android.app.ActivityThread.installContentProviders(ActivityThread.java:4788)\xc2\xa0
+                  at android.app.ActivityThread.handleBindApplication(ActivityThread.java:4728)\xc2\xa0
+                  at android.app.ActivityThread.access$1500(ActivityThread.java:166)\xc2\xa0
+                  at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1343)\xc2\xa0
+                  at android.os.Handler.dispatchMessage(Handler.java:102)\xc2\xa0
+                  at android.os.Looper.loop(Looper.java:136)\xc2\xa0
+                  at android.app.ActivityThread.main(ActivityThread.java:5584)\xc2\xa0
+                  at java.lang.reflect.Method.invokeNative(Native Method)\xc2\xa0
+                  at java.lang.reflect.Method.invoke(Method.java:515)\xc2\xa0
+                  at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:1268)\xc2\xa0
+                  at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1084)\xc2\xa0
+                  at dalvik.system.NativeStart.main(Native Method)\xc2\xa0
+
+
+Here is the start Class
+
+public class StartActivity extends Activity {
+private static final String FIREBASE_URL = "https://database.firebaseio.com/";
+private Firebase myFirebaseRef = null;
+View rootView;
+String uid;
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_start);
+
+    Firebase.setAndroidContext(this);
+    final ProgressBar p = (ProgressBar) findViewById(R.id.start_progress_bar);
+
+}
+private void checkUserLogin() {
+                    myFirebaseRef.addAuthStateListener(new Firebase.AuthStateListener() {
+                        @Override
+                        public void onAuthStateChanged(AuthData authData) {
+                            if (authData != null) {
+
+                                System.out.println(myFirebaseRef.getKey());
+                                Intent toMainActivity = new Intent(getApplicationContext(), MenuActivity.class);
+                                uid = myFirebaseRef.getAuth().getUid();
+                                toMainActivity.putExtra("user_id", uid);
+                                finish();
+                                startActivity(toMainActivity);
+
+                            } else if (authData == null) {
+
+                                Intent toMainActivity = new Intent(getApplicationContext(), LoginActivity.class);
+                                startActivity(toMainActivity);
+                                // user is not logged in
+                            }
+                        }
+                    });
+}
+private Runnable task = new Runnable() {
+    public void run() {
+
+        checkUserLogin();
+    }
+};
+@Override
+protected void onStart() {
+    super.onStart();
+    if(myFirebaseRef == null) {
+        myFirebaseRef = new Firebase(FIREBASE_URL);
+    }
+    Handler handler = new Handler();
+    handler.postDelayed(task, 3000);
+
+}
+@Override
+protected void onDestroy() {
+    super.onDestroy();
+
+    unbindDrawables(rootView);
+    rootView = null;
+    System.gc();
+
+}
+protected void unbindDrawables(View view) {
+    if (view != null) {
+        if (view.getBackground() != null) {
+            view.getBackground().setCallback(null);
+        }
+        if (view instanceof ViewGroup && !(view instanceof AdapterView)) {
+            for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) {
+                unbindDrawables(((ViewGroup) view).getChildAt(i));
+            }
+            ((ViewGroup) view).removeAllViews();
+        }
+
+    }
+
+}
+
+
+}
+    
+===============================================================================================
+72
+A:I have also faced same problem with Firebase when run application below API 19(< 4.4.2) devices due to error of Multidex. Then below solution work for me:  
+
+In app module build.gradle
+
+android {
+   ...
+   defaultConfig {
+       multiDexEnabled true
+       ...
+   }
+}
+
+dependencies {
+  // add dependency 
+  compile 'com.android.support:multidex:1.0.1'
+}
+
+// ADD THIS AT THE BOTTOM
+apply plugin: 'com.google.gms.google-services'
+
+
+update name in AndroidManifest.xml
+
+<application
+    android:allowBackup="true"
+    android:icon="@mipmap/ic_launcher"
+    android:label="@string/app_name"
+    android:supportsRtl="true"
+    android:name=".MyApplication"
+    android:theme="@style/AppTheme">
+
+     // ...
+</application>
+
+
+Crate a MyApplication.java file
+
+public class MyApplication extends Application {
+
+    @Override
+    protected void attachBaseContext(Context base) {
+       super.attachBaseContext(base);
+       MultiDex.install(this);
+    }
+
+}
+
+    

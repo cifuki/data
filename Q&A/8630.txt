@@ -1,0 +1,154 @@
+31
+Q:I'm developing a video streaming application and I'm getting stuck when calling set setDataSource with a FileDescriptor.
+I want my application to play the video as it is being downloaded, so once I get a minimum number of bytes, I move those bytes to another file so it can be played in another file while it's being downloaded in the original file.
+
+So, I check if I can start the media palyer every packet like this:
+
+if (mediaPlayer == null) {
+                    // Only create the MediaPlayer once we have the minimum
+                    // buffered data
+                    if (totalKbRead >= INTIAL_KB_BUFFER) {
+                        try {
+                            startMediaPlayer();
+                        } catch (Exception e) {
+                            Log.e(getClass().getName(),
+                                    "Error copying buffered conent.", e);
+                        }
+                    }
+                } else if (mediaPlayer.getDuration()
+                        - mediaPlayer.getCurrentPosition() <= 1000) {
+                    transferBufferToMediaPlayer();
+                }
+}
+
+
+This is the startMediaPlayer method code:
+
+private void startMediaPlayer() {
+        try {
+            File bufferedFile = new File(context.getCacheDir(), "playingMedia"
+                    + (counter++) + ".dat");
+
+            // bufferedFile is the one that'll be played
+            moveFile(downloadingMediaFile, bufferedFile);
+
+            mediaPlayer = createMediaPlayer(bufferedFile);
+
+            mediaPlayer.start();
+
+            playButton.setEnabled(true);
+        } catch (IOException e) {
+            Log.e(getClass().getName(), "Error initializing the MediaPlayer.",
+                    e);
+            return;
+}
+
+
+I move the file with the following code:
+
+public void moveFile(File oldLocation, File newLocation) throws IOException {
+
+        if (oldLocation.exists()) {
+            BufferedInputStream reader = new BufferedInputStream(
+                    new FileInputStream(oldLocation));
+            BufferedOutputStream writer = new BufferedOutputStream(
+                    new FileOutputStream(newLocation, false));
+            try {
+                byte[] buff = new byte[8192];
+                int numChars;
+                while ((numChars = reader.read(buff, 0, buff.length)) != -1) {
+                    writer.write(buff, 0, numChars);
+                }
+            } catch (IOException ex) {
+                throw new IOException("IOException when transferring "
+                        + oldLocation.getPath() + " to "
+                        + newLocation.getPath());
+            } finally {
+                try {
+                    if (reader != null) {
+                        writer.flush();
+                        writer.close();
+                        reader.close();
+                    }
+                } catch (IOException ex) {
+                    Log.e(getClass().getName(),
+                            "Error closing files when transferring "
+                                    + oldLocation.getPath() + " to "
+                                    + newLocation.getPath());
+                }
+            }
+        } else {
+            throw new IOException(
+                    "Old location does not exist when transferring "
+                            + oldLocation.getPath() + " to "
+                            + newLocation.getPath());
+        }
+    }
+}
+
+
+And I finally create the MediaPlayer object here:
+
+private MediaPlayer createMediaPlayer(File mediaFile) throws IOException {
+
+        if(mediaPlayer != null){
+            mediaPlayer.release();
+        }
+
+        MediaPlayer mPlayer = new MediaPlayer();
+        mPlayer.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+            public boolean onError(MediaPlayer mp, int what, int extra) {
+                Log.e(getClass().getName(), "Error in MediaPlayer: (" + what
+                        + ") with extra (" + extra + ")");
+                return false;
+            }
+        });
+
+        // It appears that for security/permission reasons, it is better to pass
+        // a FileDescriptor rather than a direct path to the File.
+        // Also I have seen errors such as "PVMFErrNotSupported" and
+        // "Prepare failed.: status=0x1" if a file path String is passed to
+        // setDataSource().
+        FileInputStream fis = new FileInputStream(mediaFile);
+
+        mPlayer.reset();
+        FileDescriptor fd = fis.getFD();
+        mPlayer.setDataSource(fd);       // IM GETTING THE EXCEPTION HERE
+        mPlayer.setDisplay(mHolder);
+        mPlayer.prepare();
+        return mPlayer;
+    }
+
+
+This is the excepction I get:
+
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229): Error initializing the MediaPlayer.
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229): java.io.IOException: setDataSourceFD failed.: status=0x80000000
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at android.media.MediaPlayer.setDataSource(Native Method)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at android.media.MediaPlayer.setDataSource(MediaPlayer.java:854)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at org.pfc.utils.StreamingMediaPlayer.createMediaPlayer(StreamingMediaPlayer.java:266)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at org.pfc.utils.StreamingMediaPlayer.startMediaPlayer(StreamingMediaPlayer.java:226)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at org.pfc.utils.StreamingMediaPlayer.access$4(StreamingMediaPlayer.java:203)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at org.pfc.utils.StreamingMediaPlayer$2.run(StreamingMediaPlayer.java:183)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at android.os.Handler.handleCallback(Handler.java:587)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at android.os.Handler.dispatchMessage(Handler.java:92)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at android.os.Looper.loop(Looper.java:144)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at android.app.ActivityThread.main(ActivityThread.java:4937)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at java.lang.reflect.Method.invokeNative(Native Method)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at java.lang.reflect.Method.invoke(Method.java:521)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:868)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:626)
+01-25 16:03:15.663: ERROR/org.pfc.utils.StreamingMediaPlayer(2229):     at dalvik.system.NativeStart.main(Native Method)
+
+
+I've been the whole morning stuck here and I really find no information on that error. Some people have told me to use the file path, but I get the other exception I talk about in the comments (right over the FileInputStream creation).
+
+I'm really lost here, any help would be very appreciated
+    
+===============================================================================================
+38
+A:Don't forgot permission
+
+<uses-permission android:name="android.permission.INTERNET" /> 
+
+    

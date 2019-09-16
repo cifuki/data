@@ -1,0 +1,48 @@
+50
+Q:I implemented the new SwipeRefreshLayout component in my application and it works well with any vertical views, like ListView, GridView and ScrollView.
+
+It behaves very bad with horizontal views, like HorizontalScrollView.
+When scrolling to the right or left, the SwipeRefreshLayout view caches the touch, prevents the HorizontalScrollView from receiving it and starts scrolling vertically to perform the refresh.
+
+I tried solving this issue as I previously solved issues with vertical ScrollView with ViewPager inside, using requestDisallowInterceptTouchEvent but it didn't work. I also noticed that this method is overridden in the original SwipeRefreshLayout class without returning the super. Google's developer left a comment instead "//Nope." :)
+
+Because SwipeRefreshLayout component is relatively new, I couldn't find a solution that fixes the horizontal scroll issue while still allowing the swipe to refresh view to track and handle vertical scrolling so I thought I'll share my solution with hopes it will spare someone an hour or two.
+    
+===============================================================================================
+145
+A:I solved it by extending SwipeRefreshLayout and overriding its onInterceptTouchEvent. Inside, I calculate if the X distance the user has wandered is bigger than the touch slop. If it does, it means the user is swiping horizontally, therefor I return false which lets the child view (the HorizontalScrollView in this case) to get the touch event.
+
+
+public class CustomSwipeToRefresh extends SwipeRefreshLayout {
+
+    private int mTouchSlop;
+    private float mPrevX;
+
+    public CustomSwipeToRefresh(Context context, AttributeSet attrs) {
+        super(context, attrs);
+
+        mTouchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent event) {
+
+        switch (event.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                mPrevX = MotionEvent.obtain(event).getX();
+                break;
+
+            case MotionEvent.ACTION_MOVE:
+                final float eventX = event.getX();
+                float xDiff = Math.abs(eventX - mPrevX);
+
+                if (xDiff > mTouchSlop) {
+                    return false;
+                }
+        }
+
+        return super.onInterceptTouchEvent(event);
+    }
+}
+
+    

@@ -1,0 +1,42 @@
+53
+Q:I want to use IntelliJ IDEA 15 instead of Android Studio, but I have a problem with building. I get the following error:
+
+Gradle sync failed: The newly created daemon process has a different context than expected.
+It won't be possible to reconnect to this daemon. Context mismatch: 
+Java home is different.
+Wanted: DefaultDaemonContext[uid=null,javaHome=C:\\Program Files (x86)\\JetBrains\\IntelliJ IDEA 15.0\\jre,daemonRegistryDir=C:\\Users\\Tim\\.gradle\\daemon,pid=1224,idleTimeout=null,daemonOpts=-XX:MaxPermSize=256m,-XX:+HeapDumpOnOutOfMemoryError,-Xmx1024m,-Dfile.encoding=windows-1252,-Duser.country=DE,-Duser.language=de,-Duser.variant]
+Actual: DefaultDaemonContext[uid=6fd89265-5686-4337-a75f-538209464d3a,javaHome=C:\\Program Files\\Java\\jdk1.8.0_74,daemonRegistryDir=C:\\Users\\Tim\\.gradle\\daemon,pid=14128,idleTimeout=10800000,daemonOpts=-XX:MaxPermSize=256m,-XX:+HeapDumpOnOutOfMemoryError,-Xmx1024m,-Dfile.encoding=windows-1252,-Duser.country=DE,-Duser.language=de,-Duser.variant]
+
+
+What is my mistake? As you can see on the following pictures everything is configured correctly.
+
+I have configured a JDK and the Android Tools as follows:
+
+
+
+
+    
+===============================================================================================
+78
+A:I found this question while investigating a similar problem, and I solved mine, so maybe my experience will help.
+
+Observations
+
+My problem was similar to yours in that the Wanted context had the javaHome as the path to the JRE embedded in the IDEA install folder, and the Actual context had it as the first version of Java on my path.  I found several similar error reports online but none had the IDEA embedded JRE as the Wanted version.
+
+The Wanted Java version happened to be a system-wide install of the JRE, and not the JDK I had configured for the project, nor the value set for JAVA_HOME, which made me very suspicious (and confused).  Re-ordering my path caused it to use yet another "unwanted" version of Java, so it was clearly using the path to choose what to run, but it wasn't clear why.  I couldn't make IntelliJ's embedded JRE be first on my path, because I needed that to be the JDK for various reasons, so I needed another solution.
+
+I also noticed (using Process Explorer, since I'm on Windows) that, in the failing case, IntelliJ launched a number of java.exe Gradle daemon processes, and that there were definitely no daemon processes running before I tried to start my build.
+
+Solution
+
+The cause turned out to be that I had defined a new configuration in the "Run/Debug Configurations" dialog and put the full path to the build.gradle file in the Gradle project: field, as follows.  (I did this by clicking the ellipsis (...) button to the right of the field, but I could also have entered it directly.)
+
+
+
+However, what I should have done was follow the pattern in existing configurations, where the Gradle project: was specified as a "registered project", by clicking the "folder" icon to the right of the field, highlighted in green in the following image.  In this case, the content of the field is just the project name, and is shown with subtly different background/foreground colours.  (I accidentally discovered that right-clicking on this name will replace it with the path to the folder containing build.gradle, but if you cancel and start editing the configuration again, it will still appear as just the project name.)
+
+
+
+After making this change, the configuration built as expected, and I observed that only one java.exe was launched, using the same JDK path as when I ran tasks from the "Gradle" panel in the UI.
+    

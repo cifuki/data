@@ -1,0 +1,117 @@
+33
+Q:I am working on an application for an Android device that will have a built in line printer. I have to interact with this printer and use it to print the details on receipt and then with cutter cut that receipt automatically. I have seen some ESC commands in it, but I don't know how to execute these ESC commands. 
+
+I have three main issues regarding the Casio Device Printer :
+
+1.I have used the printing code for Build in printer, but after printing the cutter is not activated
+
+BuildinEx840 ex840 = new BuildinEx840();
+int response = ex840.open();
+System.out.println("ex840 open:" + response);
+
+byte[] set = {
+    'N', 'A', 'R', 'E', 'S', 'H', 'S', 'H', 'A', 'R', 'M', 'A', (byte) 0x0d, (byte) 0x0a
+};
+
+try {        
+
+    ex840.write(set);   
+
+} catch (IOException e) {
+    // TODO Auto-generated catch block
+    e.printStackTrace();
+}
+
+try {
+
+    response = ex840.getEndStatus();
+    System.out.println("getEndStatus:" + response);
+    response = ex840.initCutter();
+    ex840.close();    
+    System.out.println("initCutter:" + response);
+
+} catch (Exception e) {         
+    e.printStackTrace();         
+}
+
+
+2. I don't know how to send ESC commands to the Printer in android
+
+There are number of commands like below  
+
+ESC FF DataPrint,
+[code]  <1B>H<OC>H,
+[Function] Print all the data in the print area collectively.
+
+
+How can we execute these ESC commands in android by programming ??
+
+3.I don't know how to print the receipt in the required format
+
+There are some ESC commands are available for providing margins from left and right and some other commands. So how can I print the data in some formate and can change the size of the text as well as some other settings of the text to be printed. 
+
+Any help is appreciated. 
+    
+===============================================================================================
+26
+A:After working for last 7 days i got the right way to get the print and then cut that receipt by the cutter. 
+ESC commands are very important to get the print and other tasks related to the printer. We have to pass those ESC CMD in form of the byte array to the Line Printer.
+
+There are number of commands like below
+
+ESC FF DataPrint,
+[code]  <1B>H<OC>H,
+[Function] Print all the data in the print area collectively.
+
+
+So just simple create a byte array of this command and pass it to the printer. 
+
+e.g. byte[] print = {0x1b,0x0c};
+
+
+now pass it to the printer. There must be some method like getCmd(), or writeCmd() etc. depending upon the printer. 
+
+How can we execute these ESC commands in android by programming ??
+Below is the code to do that 
+
+    BuildinEx840 lpd=new BuildinEx840();
+            lpd.setMulticharMode(LinePrinterDeviceBase.CHARACTERSET_USA);
+//initialise Cutter
+            lpd.initCutter();
+            LinePrinter lp=new LinePrinter();
+            lp.open(lpd);
+            lpd.open();
+            try{
+                lpd.init();
+            }catch(IOException e){
+                e.printStackTrace();
+            }
+            for(int i=0; i<5;i++){
+                lp.printNormal("Testing the Line Printer");
+            }
+            int totalLinefeed=listofItemList.size();
+//ESC CMD for line feeds
+            byte[] lfs=new byte[]{0x1B,'d', 5};
+            sendtoExprinter(lpd,lfs);
+//ESC CMD for paper cut
+            lfs=new byte[]{0x1B,'i'};
+            sendtoExprinter(lpd, lfs);
+
+private void sendtoExprinter(BuildinEx840 dev, byte[] instr) {
+        try{
+            dev.write(instr);
+        }catch(IOException e){
+            e.printStackTrace();
+        }
+
+    }
+
+
+UPDATE: Printing an image through Thermal Printer
+
+In some of the printer you can define the image in non-volatile memory of the printer and then print the image from there through ESC cmd 1C 70 01 30. In some of the other printers you can give a direct path of the image while printing an image through thermal printer.
+
+In any line printer we have to pass the ESC CMD by this printerObj.write(command); way. I want to Thanks to SO community and special thanks to TheBlastOne who guided me to the right way. 
+
+If someone having any problem in integrating thermal printers feel free to ask. 
+    

@@ -1,0 +1,79 @@
+29
+Q:I have recorded an array[1024] of data from my mic on my Android phone, passed it through a  1D forward DFT of the real data (setting a further 1024 bits to 0). I saved the array to a text file, and repeated this 8 times.
+
+I got back 16384 results. I opened the text file in Excel and made a graph to see what it looked like(x=index of array, y=size of number returned). There are some massive spikes (both positive and negative) in magnitude around 110, 232, and small spikes continuing in that fashion until around 1817 and 1941 where the spikes get big again, then drop again.
+
+My problem is that wherever I look for help on the topic it mentions gettng the real and imaginary numbers, I only have a 1D array, that I got back from the method I used from Piotr Wendykier's class:
+
+DoubleFFT_1D.realForwardFull(audioDataArray); // from the library JTransforms.
+
+
+My question is: What do I need to do to this data to return a frequency?
+The sound recorded was me playing an 'A' on the bottom string (5th fret) of my guitar (at roughly 440Hz) .
+    
+===============================================================================================
+47
+A:The complex data is interleaved, with real components at even indices and imaginary components at odd indices, i.e. the real components are at index 2*i, the imaginary components are at index 2*i+1.
+
+To get the magnitude of the spectrum at index i, you want:
+
+re = fft[2*i];
+im = fft[2*i+1];
+magnitude[i] = sqrt(re*re+im*im);
+
+
+Then you can plot magnitude[i] for i = 0 to N / 2 to get the power spectrum. Depending on the nature of your audio input you should see one or more peaks in the spectrum.
+
+To get the approximate frequency of any given peak you can convert the index of the peak as follows:
+
+freq = i * Fs / N;
+
+
+where:
+
+freq = frequency in Hz
+i = index of peak
+Fs = sample rate (e.g. 44100 Hz or whatever you are using)
+N = size of FFT (e.g. 1024 in your case)
+
+
+Note: if you have not previously applied a suitable window function to the time-domain input data then you will get a certain amount of spectral leakage and the power spectrum will look rather "smeared".
+
+
+
+To expand on this further, here is pseudo-code for a complete example where we take audio data and identify the frequency of the largest peak:
+
+N = 1024          // size of FFT and sample window
+Fs = 44100        // sample rate = 44.1 kHz
+data[N]           // input PCM data buffer
+fft[N * 2]        // FFT complex buffer (interleaved real/imag)
+magnitude[N / 2]  // power spectrum
+
+capture audio in data[] buffer
+apply window function to data[]
+
+// copy real input data to complex FFT buffer
+for i = 0 to N - 1
+  fft[2*i] = data[i]
+  fft[2*i+1] = 0
+
+perform in-place complex-to-complex FFT on fft[] buffer
+
+// calculate power spectrum (magnitude) values from fft[]
+for i = 0 to N / 2 - 1
+  re = fft[2*i]
+  im = fft[2*i+1]
+  magnitude[i] = sqrt(re*re+im*im)
+
+// find largest peak in power spectrum
+max_magnitude = -INF
+max_index = -1
+for i = 0 to N / 2 - 1
+  if magnitude[i] > max_magnitude
+    max_magnitude = magnitude[i]
+    max_index = i
+
+// convert index of largest peak to frequency
+freq = max_index * Fs / N
+
+    

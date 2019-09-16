@@ -1,0 +1,88 @@
+66
+Q:Is there any way to make an Android application to download and use a Java library at runtime? 
+
+Here is an example:
+
+Imagine that the application needs to make some calculations depending on the input values. The application asks for these input values and then checks if the required Classes or Methods are available. 
+
+If not, it connects to a server, downloads the needed library, and loads it at runtime to calls the required methods using reflection techniques. The implementation could change depending on various criteria such as the user who is downloading the library.
+    
+===============================================================================================
+88
+A:Sorry, I'm late and the question has already an accepted answer, but yes, you can download and execute external libraries. Here is the way I did:
+
+I was wondering whether this was feasible so I wrote the following class:
+
+package org.shlublu.android.sandbox;
+
+import android.util.Log;
+
+public class MyClass {
+    public MyClass() {
+        Log.d(MyClass.class.getName(), "MyClass: constructor called.");
+    }
+
+    public void doSomething() {
+        Log.d(MyClass.class.getName(), "MyClass: doSomething() called.");
+    }
+}
+
+
+And I packaged it in a DEX file that I saved on my device's SD card as /sdcard/shlublu.jar.
+
+Then I wrote the "stupid program" below, after having removed MyClass from my Eclipse project and cleaned it:
+
+public class Main extends Activity {
+
+    @SuppressWarnings("unchecked")
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        try {
+            final String libPath = Environment.getExternalStorageDirectory() + "/shlublu.jar";
+            final File tmpDir = getDir("dex", 0);
+
+            final DexClassLoader classloader = new DexClassLoader(libPath, tmpDir.getAbsolutePath(), null, this.getClass().getClassLoader());
+            final Class<Object> classToLoad = (Class<Object>) classloader.loadClass("org.shlublu.android.sandbox.MyClass");
+
+            final Object myInstance  = classToLoad.newInstance();
+            final Method doSomething = classToLoad.getMethod("doSomething");
+
+            doSomething.invoke(myInstance);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+
+It basically loads the class MyClass that way:
+
+
+create a DexClassLoader
+use it to extract the class MyClass from "/sdcard/shlublu.jar"
+and store this class to the application's "dex" private directory (internal storage of the phone).
+
+
+Then, it creates an instance of MyClass and invokes doSomething() on the created instance.
+
+And it works... I see the traces defined in MyClass in my LogCat:
+
+
+
+I've tried on both an emulator 2.1 and on my physical HTC cellphone (which is running Android 2.2 and which is NOT rooted).
+
+This means you can create external DEX files for the application to download and execute them. Here it was made the hard way (ugly Object casts, Method.invoke() ugly calls...), but it must be possible to play with Interfaces to make something cleaner.
+
+Wow. I'm the first surprised. I was expecting a SecurityException.
+
+Some facts to help investigating more:
+
+
+My DEX shlublu.jar was signed, but not my app
+My app was executed from Eclipse / USB connection. So this is an unsigned APK compiled in DEBUG mode
+
+    

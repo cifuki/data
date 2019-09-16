@@ -1,0 +1,50 @@
+100
+Q:Is there a good example of how to encrypt and decrypt image and other files with AES on Android?
+    
+===============================================================================================
+128
+A:Warning: This answer contains code you should not use as it is insecure (using SHA1PRNG for key derivation and using AES in ECB mode)
+
+Instead, use PBKDF2WithHmacSHA1 for key derivation and AES in CBC or GCM mode (GCM provides both privacy and integrity)
+
+You could use functions like these:
+
+private static byte[] encrypt(byte[] raw, byte[] clear) throws Exception {
+    SecretKeySpec skeySpec = new SecretKeySpec(raw, "AES");
+    Cipher cipher = Cipher.getInstance("AES");
+    cipher.init(Cipher.ENCRYPT_MODE, skeySpec);
+    byte[] encrypted = cipher.doFinal(clear);
+    return encrypted;
+}
+
+private static byte[] decrypt(byte[] raw, byte[] encrypted) throws Exception {
+    SecretKeySpec skeySpec = new SecretKeySpec(raw, "AES");
+    Cipher cipher = Cipher.getInstance("AES");
+    cipher.init(Cipher.DECRYPT_MODE, skeySpec);
+    byte[] decrypted = cipher.doFinal(encrypted);
+    return decrypted;
+}
+
+
+And invoke them like this:
+
+ByteArrayOutputStream baos = new ByteArrayOutputStream();  
+bm.compress(Bitmap.CompressFormat.PNG, 100, baos); // bm is the bitmap object   
+byte[] b = baos.toByteArray();  
+
+byte[] keyStart = "this is a key".getBytes();
+KeyGenerator kgen = KeyGenerator.getInstance("AES");
+SecureRandom sr = SecureRandom.getInstance("SHA1PRNG");
+sr.setSeed(keyStart);
+kgen.init(128, sr); // 192 and 256 bits may not be available
+SecretKey skey = kgen.generateKey();
+byte[] key = skey.getEncoded();    
+
+// encrypt
+byte[] encryptedData = encrypt(key,b);
+// decrypt
+byte[] decryptedData = decrypt(key,encryptedData);
+
+
+This should work, I use similar code in a project right now.
+    

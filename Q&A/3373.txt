@@ -1,0 +1,143 @@
+67
+Q:I'm developing an application for my final thesis on computer science, and I need to collect and log accelerometer data. I need to acquire it for a whole day long, so there are serious battery constraints (for instance, I cannot leave the screen on). Also, this isn't a market targeted application, so it is pretty acceptable to do some serious hacking, even low level C/C++ coding, if required.
+
+It is well known that on many devices the listeners for accelerometer events stop generating events when screen goes off (some links regarding this problem: http://code.google.com/p/android/issues/detail?id=3708 , Accelerometer stops delivering samples when the screen is off on Droid/Nexus One even with a WakeLock). I have thoroughly searched for some alternatives, some of them include workarounds that do not work for my device (LG P990, stock ROM).
+
+So what happens is this: 
+When you register an event listener for android accelerometer sensor in a Service, it works fine until the screen is turned off. I have already tried to register the eventListener on a Service, on an IntentService, tried to acquire WakeLocks. Regarding wakelocks, I can verify that the service is still running watching the LOGcat output, but it seems the accelerometer is put into sleep mode. One of the workarounds presented in some of the links is to unregister and re-register the event listener periodically using the thread of an IntentService like in this code snippet bellow
+
+synchronized private static PowerManager.WakeLock getLock(Context context) {
+    if (lockStatic==null) {
+        PowerManager mgr=(PowerManager)context.getSystemService(Context.POWER_SERVICE);
+
+        lockStatic = mgr.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,NAME);
+        lockStatic.setReferenceCounted(true);
+    }
+
+    return(lockStatic);
+}
+
+@Override
+protected void onHandleIntent(Intent intent) {
+
+     sensorManager=(SensorManager) getSystemService(SENSOR_SERVICE);
+     sensorManager.unregisterListener(this);
+     sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL);
+
+
+    synchronized (this) {
+        boolean run = true;
+        while (run){
+            try {
+                wait(1000);
+                getLock(AccelerometerService.this).acquire();
+                sensorManager=(SensorManager) getSystemService(SENSOR_SERVICE);
+                sensorManager.unregisterListener(this);
+                sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL);
+                Log.d("Accelerometer service", "tick!");
+
+            } catch (Exception e) {
+                run = false;
+                Log.d("Accelerometer service", "interrupted; cause: " + e.getMessage());
+
+
+            }
+        }
+    }       
+}
+
+
+@Override
+public void onSensorChanged(SensorEvent event) {
+    Log.d("accelerometer event received", "xyz: "+ event.values[0] + "," + event.values[1] + "," +  event.values[2]);
+}
+
+
+which indeed makes the onSensorChange be called every time we unregister/register the listener. The problem is that the event received contains always the same values, regardless of me shaking the device.
+
+So, basically my questions are: ( bear with me, I'm almost finishing :P )
+
+
+is it possible to have low level access (C/C++ approach) to the accelerometer hardware WITHOUT registering to an event listener?
+is there any other workaround or hack?
+could anyone with a more up-to-date phone kindly test if the problem persists in firmware 3.0 and above?
+
+
+[UPDATE]
+
+Unfortunately, it seems to be a bug with some cellphones. More details in my answer.
+    
+===============================================================================================
+66
+A:Basically, it is a problem with my phone. Other users have reported this also happens with their phones, from different brands but same Android version. Other persons have no problem at all - strongly indicating that this is not a problem with the stock version of android but from the implementations of each company for their hardware drivers.
+
+I need constant accelerometer data delivered and cannot have a dongle measure this data for me - I have an Arduino with Bluetooth and accelerometer, so I could have implemented this solution. So I decided that the temporary solution for my cellphone was to let the screen on (dimmed) and ignore battery consumption. Later on I will perform the tests for battery usage using another android phone which works with the screen turned off.
+
+More information about the bug
+
+I've researched some more and found reports from other Android users and I think maybe I understand what is happening. The library libsensors.so which has the drivers for the phone sensors is not developed by Google but by each cellphone vendor - of course, because each cellphone has its own specific hardware. Google only provides a C header file so that the developers know what they have to implement. On some implementations for these drivers, the developers simply turn the accelerometer off when the screen goes off, thus preventing the sensor event listener to receive new events.
+
+I also tested this with CyanogenMod RC7.2 but it did not work either, because accelerometer drivers are original from LG.
+
+E-mails exchanged with HR department of LG
+
+I sent an e-mail to the developers of the LG P990 and finally got some concrete answers! This may be of great help to some people like me that are experiencing these issues with Android. I wrote the following question
+
+
+  Hello! I am developing my thesis in computer science and currently I
+  am fetching data from accelerometer hardware. As of now, I found out
+  that the accelerometers do not send events when the screen is off, so
+  even when I grab a wakelock from within one of my programs, I can
+  verify that my program is still running (through LOGcat output) but no
+  accelerometer event comes out. I have to dim my screen on (which I
+  cannot afford, the battery drains too fast) to start receiving
+  accelerometer events again. I also tried accessing it through native C
+  code, registering on the accelerometer events but the result was the
+  same, the accelerometer did not throw any values, even though I was
+  rotating my device. So I was wondering if I could have direct access
+  to the hardware, with native code, without having to register to a
+  listener. Is this possible? If so, could you kindly give some further
+  advice? I would appreciate very much any help! Martin
+
+
+For what I received this response:
+
+
+  Dear Martin, We received the answer from Dev. Team. They said that you
+  can\xe2\x80\x99t get accelerometer event while your phone screen is off. Because
+  HAL layer didn\xe2\x80\x99t implement sysFS path to get H/W event such as
+  accelerometer and there is no public API to get event. Thank you. Best
+  Regards. (Sean Kim)
+
+
+I then sent an e-mail back, saying among other things, that I considered this a bug, since one should have access to all the hardware when acquiring a wake lock:
+
+
+  [...] I asked this question because I have some friends that also have
+  Android phones with the same gingerbread version but from other
+  cellphone brands, and some of them reported they receive events from
+  the accelerometers when the screen is turned off. I read on some
+  forums that this bug - I consider it a bug, since when I acquire a
+  Wakelock I would expect to have some processing going on - depends on
+  the sensor drivers that the vendors implement for their cellphones. Is
+  there any possibility that these drivers can be updated or will this
+  bug be corrected at some point? This would help me enormously with my
+  ongoing work [...]
+
+
+And then I received this answer:
+
+
+  In my knowledge from Dev. Team, That isn\xe2\x80\x99t bug. That is a limitless of
+  this phone because of H/W architecture. We need to redesign the HAL
+  architecture and device driver to support your request. But, as you
+  know that is too difficult due to lack of resource. We are trying to
+  help you with our all efforts but we cannot support your request as I
+  mentioned. (Sean Kim)
+
+
+So they apparently know about this but are not trying to correct this because either they don't think it is a bug - which I still strongly believe is a logical flaw - or they don't have the time/resources to correct it.
+
+Bottom line
+If you have a cellphone that does not send accelerometer events with the screen off, try updating your firmware. If this does not solve and you really want to do some serious hacking, re implement your hardware layer - hint: it's probably something to do with libsensors.so.
+    

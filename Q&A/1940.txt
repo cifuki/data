@@ -1,0 +1,163 @@
+100
+Q:I have an Android Activity that needs to catch two different broadcasts. My current approach is to have a single BroadcastReceiver within the Activity and catch both the broadcasts with it:
+
+public class MyActivity extends Activity {
+    private MyActivity.BroadcastListener mBroadcastListener;
+    private boolean mIsActivityPaused = false;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.mylayout);
+
+        // Create the broadcast listener and register the filters
+        mIsActivityPaused = false;
+        mBroadcastListener = new BroadcastListener();
+
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Params.INTENT_REFRESH);
+        filter.addAction(Params.INTENT_UPDATE);
+        registerReceiver(mBroadcastListener, filter);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mIsActivityPaused = false;
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        mIsActivityPaused = true;
+    }
+
+    @Override
+    protected void onDestroy() {
+        unregisterReceiver(mBroadcastListener);
+        super.onDestroy();
+    }
+
+    private void refresh() {
+        // refresh
+    }
+
+    private void update() {
+        // update
+    }
+
+    private class BroadcastListener extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent.getAction().equals(Params.INTENT_REFRESH && !mIsActivityPaused)) {
+                refresh();
+            } else if (intent.getAction().equals(Params.INTENT_UPDATE)) {
+                update();
+            }
+        }
+    }
+}
+
+
+I want to execute refresh() only if my Activity is visible on the screen, but I want to catch INTENT_UPDATE and execute update() during the entire lifetime of the Activity, regardless of whether the Activity is visible or not.
+
+I didn't find any way to unregister only one of the two filters that I register in onCreate, so I use a flag to enable or disable the action to be executed when the INTENT_REFRESH broadcast is caught, depending on the state of the Activity.
+
+The question is: is this the correct approach?
+
+Or, would it be better to have two separate BroadcastReceivers as follows:
+
+public class MyActivity extends Activity {
+    private MyActivity.BroadcastListenerRefresh mBroadcastListenerRefresh;
+    private MyActivity.BroadcastListenerUpdate mBroadcastListenerUpdate;
+    private boolean mIsBroadcastListenerRefreshRegistered = false;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+
+        // Create the broadcast listeners
+        mBroadcastListenerRefresh = new BroadcastListenerRefresh();
+        mBroadcastListenerUpdate = new BroadcastListenerUpdate();
+
+        registerReceiver(mBroadcastListenerRefresh, new IntentFilter(Params.INTENT_REFRESH));
+        registerReceiver(mBroadcastListenerUpdate, new IntentFilter(Params.INTENT_UPDATE));
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (mBroadcastListenerRefresh != null && !mIsBroadcastListenerRefreshRegistered) {
+            registerReceiver(mBroadcastListenerRefresh, new IntentFilter(Params.INTENT_REFRESH));
+            mIsBroadcastListenerRefreshRegistered = true;
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (mBroadcastListenerRefresh != null && mIsBroadcastListenerRefreshRegistered) {
+            unregisterReceiver(mBroadcastListenerRefresh);
+            mIsBroadcastListenerRefreshRegistered = false;
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        unregisterReceiver(mBroadcastListenerRefresh);
+        unregisterReceiver(mBroadcastListenerUpdate);
+        super.onDestroy();
+    }
+
+    private void refresh() {
+        // refresh
+    }
+
+    private void update() {
+        // update
+    }
+
+    private class BroadcastListenerRefresh extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent.getAction().equals(Params.INTENT_REFRESH)) {
+                refresh();
+            }
+        }
+    }
+
+    private class BroadcastListenerUpdate extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent.getAction().equals(Params.INTENT_UPDATE)) {
+                update();
+            }
+        }
+    }
+}
+
+
+And which one has better performance?
+    
+===============================================================================================
+183
+A:instead, you may provide two different intent filters:
+
+filter for refresh only
+
+IntentFilter filterRefresh = new IntentFilter(Params.INTENT_REFRESH);
+
+
+filter for refresh and update
+
+IntentFilter filterRefreshUpdate = new IntentFilter();
+filterRefreshUpdate.addAction(Params.INTENT_REFRESH);
+filterRefreshUpdate.addAction(Params.INTENT_UPDATE);
+
+
+now you may switch between intent filters by registering and un-registering the desired one but your receiver's implementation would be same
+    

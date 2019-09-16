@@ -1,0 +1,273 @@
+170
+Q:I have an application that manage collections of books (like playlists).
+
+I want to display a list of collection with a vertical RecyclerView and inside each row, a list of book in an horizontal RecyclerView.
+
+When i set the layout_height of the inner horizontal RecyclerView to 300dp, it is displayed correctly but when i set it to wrap_content, it doesn't display anything.
+I need to use wrap_content because I want to be able to change the layout manager programmatically to switch between vertical and horizontal display. 
+
+
+
+Do you know what i'm doing wrong ?
+
+My Fragment layout : 
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@color/white">
+
+    <com.twibit.ui.view.CustomSwipeToRefreshLayout
+        android:id="@+id/swipe_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <android.support.v7.widget.RecyclerView
+                android:id="@+id/shelf_collection_listview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:paddingTop="10dp"/>
+
+        </LinearLayout>
+
+    </com.twibit.ui.view.CustomSwipeToRefreshLayout>
+</LinearLayout>
+
+
+Collection element layout : 
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:orientation="vertical">
+
+    <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="#FFF">
+
+        <!-- Simple Header -->
+
+    </RelativeLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="@string/empty_collection"
+            android:id="@+id/empty_collection_tv"
+            android:visibility="gone"
+            android:gravity="center"/>
+
+        <android.support.v7.widget.RecyclerView
+            android:id="@+id/collection_book_listview"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/> <!-- android:layout_height="300dp" -->
+
+    </FrameLayout>
+
+</LinearLayout>
+
+
+Book list item :
+
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="180dp"
+              android:layout_height="220dp"
+              android:layout_gravity="center">
+
+        <ImageView
+            android:id="@+id/shelf_item_cover"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:maxWidth="150dp"
+            android:maxHeight="200dp"
+            android:src="@drawable/placeholder"
+            android:contentDescription="@string/cover"
+            android:adjustViewBounds="true"
+            android:background="@android:drawable/dialog_holo_light_frame"/>
+
+</FrameLayout>
+
+
+Here is my Collection Adapter : 
+
+private class CollectionsListAdapter extends RecyclerView.Adapter<CollectionsListAdapter.ViewHolder> {
+    private final String TAG = CollectionsListAdapter.class.getSimpleName();
+    private Context mContext;
+
+    // Create the ViewHolder class to keep references to your views
+    class ViewHolder extends RecyclerView.ViewHolder {
+
+        private final TextView mHeaderTitleTextView;
+        private final TextView mHeaderCountTextView;
+
+        private final RecyclerView mHorizontalListView;
+        private final TextView mEmptyTextView;
+
+        public ViewHolder(View view) {
+            super(view);
+
+            mHeaderTitleTextView = (TextView) view.findViewById(R.id.collection_header_tv);
+            mHeaderCountTextView = (TextView) view.findViewById(R.id.collection_header_count_tv);
+
+            mHorizontalListView = (RecyclerView) view.findViewById(R.id.collection_book_listview);
+            mEmptyTextView = (TextView) view.findViewById(R.id.empty_collection_tv);
+        }
+    }
+
+
+    public CollectionsListAdapter(Context context) {
+        mContext = context;
+    }
+
+
+    @Override
+    public ViewHolder onCreateViewHolder(ViewGroup parent, int i) {
+        Log.d(TAG, "CollectionsListAdapter.onCreateViewHolder(" + parent.getId() + ", " + i + ")");
+        // Create a new view by inflating the row item xml.
+        View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.shelf_collection, parent, false);
+
+        // Set the view to the ViewHolder
+        ViewHolder holder = new ViewHolder(v);
+
+        holder.mHorizontalListView.setHasFixedSize(false);
+        holder.mHorizontalListView.setHorizontalScrollBarEnabled(true);
+
+        // use a linear layout manager
+        LinearLayoutManager mLayoutManager = new LinearLayoutManager(mContext);
+        mLayoutManager.setOrientation(LinearLayoutManager.HORIZONTAL);
+        holder.mHorizontalListView.setLayoutManager(mLayoutManager);
+
+        return holder;
+    }
+
+    @Override
+    public void onBindViewHolder(ViewHolder holder, int i) {
+        Log.d(TAG, "CollectionsListAdapter.onBindViewHolder(" + holder.getPosition() + ", " + i + ")");
+
+        Collection collection = mCollectionList.get(i);
+        Log.d(TAG, "Collection : " + collection.getLabel());
+
+        holder.mHeaderTitleTextView.setText(collection.getLabel());
+        holder.mHeaderCountTextView.setText("" + collection.getBooks().size());
+
+        // Create an adapter if none exists
+        if (!mBookListAdapterMap.containsKey(collection.getCollectionId())) {
+            mBookListAdapterMap.put(collection.getCollectionId(), new BookListAdapter(getActivity(), collection));
+        }
+
+        holder.mHorizontalListView.setAdapter(mBookListAdapterMap.get(collection.getCollectionId()));
+
+    }
+
+    @Override
+    public int getItemCount() {
+        return mCollectionList.size();
+    }
+}
+
+
+And finally, the Book adapter :
+
+private class BookListAdapter extends RecyclerView.Adapter<BookListAdapter.ViewHolder> implements View.OnClickListener {
+    private final String TAG = BookListAdapter.class.getSimpleName();
+
+    // Create the ViewHolder class to keep references to your views
+    class ViewHolder extends RecyclerView.ViewHolder {
+        public ImageView mCoverImageView;
+
+        public ViewHolder(View view) {
+            super(view);
+            mCoverImageView = (ImageView) view.findViewById(R.id.shelf_item_cover);
+        }
+    }
+
+    @Override
+    public void onClick(View v) {
+        BookListAdapter.ViewHolder holder = (BookListAdapter.ViewHolder) v.getTag();
+        int position = holder.getPosition();
+        final Book book = mCollection.getBooks().get(position);
+
+        // Click on cover image
+        if (v.getId() == holder.mCoverImageView.getId()) {
+            downloadOrOpenBook(book);
+            return;
+        }
+    }
+
+    private void downloadOrOpenBook(final Book book) {
+        // do stuff
+    }
+
+    private Context mContext;
+    private Collection mCollection;
+
+    public BookListAdapter(Context context, Collection collection) {
+        Log.d(TAG, "BookListAdapter(" + context + ", " + collection + ")");
+        mCollection = collection;
+        mContext = context;
+    }
+
+    @Override
+    public ViewHolder onCreateViewHolder(ViewGroup parent, int i) {
+        Log.d(TAG, "onCreateViewHolder(" + parent.getId() + ", " + i + ")");
+        // Create a new view by inflating the row item xml.
+        View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.shelf_grid_item, parent, false);
+
+        // Set the view to the ViewHolder
+        ViewHolder holder = new ViewHolder(v);
+        holder.mCoverImageView.setOnClickListener(BookListAdapter.this); // Download or Open
+
+        holder.mCoverImageView.setTag(holder);
+
+        return holder;
+    }
+
+    @Override
+    public void onBindViewHolder(ViewHolder holder, int i) {
+        Log.d(TAG, "onBindViewHolder(" + holder.getPosition() + ", " + i + ")");
+
+        Book book = mCollection.getBooks().get(i);
+
+        ImageView imageView = holder.mCoverImageView;
+        ImageLoader.getInstance().displayImage(book.getCoverUrl(), imageView);
+    }
+
+    @Override
+    public int getItemCount() {
+        return mCollection.getBooks().size();
+    }
+}
+
+    
+===============================================================================================
+44
+A:Update
+
+Many issues relating to this feature in version 23.2.0 have been fixed in 23.2.1, update to that instead.
+
+With the release of Support Library version 23.2, RecyclerView now supports that!
+
+Update build.gradle to:
+
+compile 'com.android.support:recyclerview-v7:23.2.1'
+
+
+or any version beyond that.
+
+
+  This release brings an exciting new feature to the LayoutManager API: auto-measurement! This allows a RecyclerView to size itself based on the size of its contents. This means that previously unavailable scenarios, such as using WRAP_CONTENT for a dimension of the RecyclerView, are now possible. You\xe2\x80\x99ll find all built in LayoutManagers now support auto-measurement.
+
+
+This can be disabled via setAutoMeasurementEnabled() if need be. Check in detail here.
+    

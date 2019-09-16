@@ -1,0 +1,53 @@
+26
+Q:I'm using espresso for testing but sometimes I try to get an image form external storage and with marshmallow I need a Runtime permission otherwise there will be an Exception crash and the test will fail. 
+
+androidTestCompile 'com.android.support.test:runner:0.4'
+androidTestCompile 'com.android.support.test:rules:0.4'
+androidTestCompile 'com.android.support.test.espresso:espresso-core:2.2.1'
+androidTestCompile 'com.android.support.test.espresso:espresso-intents:2.2.1'
+androidTestCompile('com.android.support.test.espresso:espresso-contrib:2.2.1') {
+    // this library uses the newest app compat v22 but the espresso contrib still v21.
+    // you have to specifically exclude the older versions of the contrib library or
+    // there will be some conflicts
+    exclude group: 'com.android.support', module: 'appcompat'
+    exclude group: 'com.android.support', module: 'support-v4'
+    exclude module: 'recyclerview-v7'
+}
+androidTestCompile 'junit:junit:4.12'
+androidTestCompile 'com.squareup.retrofit:retrofit-mock:1.9.0'
+androidTestCompile 'com.squareup.assertj:assertj-android:1.1.0'
+androidTestCompile 'com.squareup.spoon:spoon-client:1.2.0'
+
+
+how can I manage that right? 
+
+should I write test for Runtime permissions or there's a way to disable it for testing? 
+
+should I give permissions before the tests run like she says here? https://www.youtube.com/watch?list=PLWz5rJ2EKKc-lJo_RGGXL2Psr8vVCTWjM&v=C8lUdPVSzDk
+    
+===============================================================================================
+10
+A:You can create an Android gradle task to grant permission:
+
+android.applicationVariants.all { variant ->
+    def applicationId = variant.applicationId
+    def adb = android.getAdbExe().toString()
+    def variantName = variant.name.capitalize()
+    def grantPermissionTask = tasks.create("grant${variantName}Permissions") << {
+        "${adb} devices".execute().text.eachLine {
+            if (it.endsWith("device")){
+                def device = it.split()[0]
+                println "Granting permissions on devices ${device}"
+                "${adb} -s ${device} shell pm grant ${applicationId} android.permission.CAMERA".execute()
+                "${adb} -s ${device} shell pm grant ${applicationId} android.permission.ACCESS_FINE_LOCATION".execute()
+            }
+        }
+    }
+}
+
+
+And this is the command to run the task:
+
+gradle grantDebugPermissions
+
+    

@@ -1,0 +1,204 @@
+50
+Q:Morning all,
+
+I'll admit straight off that I'm new to development and trying my hand at Android. I've been trying to search the 'net to find advice on how to implement some "Hold Button to Repeat Action" - I've created a custom numpad from buttons and want a backspace-like behaviour. Having got so far, I called upon a friend who hasnt coded Android before, but done lots of C# / Java and seems to know what he's doing.
+
+The code below works just fine, but I feel it could be done more neatly.  I apologise if I've missed bits out, but hopefully this explains my approach.  I think the onTouchListener is ok, but the way Threads are handled doesnt feel right.
+
+Is there a better or more simple way to do this?
+
+Thanks,
+
+M
+
+public class MyApp extends Activity {
+
+private boolean deleteThreadRunning = false;
+private boolean cancelDeleteThread = false;
+private Handler handler = new Handler();
+
+public void onCreate(Bundle icicle) {
+    super.onCreate(icicle);
+
+    //May have missed some declarations here...
+
+    Button_Del.setOnTouchListener(new OnTouchListener() {
+        public boolean onTouch(View v, MotionEvent event) {
+
+           switch (event.getAction())
+           {
+               case MotionEvent.ACTION_DOWN:
+               {
+                   handleDeleteDown();
+                   return true;
+               }
+
+               case MotionEvent.ACTION_UP:
+               {
+                   handleDeleteUp();
+                   return true;
+               }
+
+               default:
+                   return false;
+           }
+        }
+
+        private void handleDeleteDown() {
+
+            if (!deleteThreadRunning)
+                startDeleteThread();
+        }
+
+        private void startDeleteThread() {
+
+            Thread r = new Thread() {
+
+                @Override
+                public void run() {
+                    try {
+
+                        deleteThreadRunning = true;
+                        while (!cancelDeleteThread) {
+
+                            handler.post(new Runnable() {   
+                                @Override
+                                public void run() {
+                                    deleteOneChar();
+                                }
+                            });
+
+                            try {
+                                Thread.sleep(100);
+                            } catch (InterruptedException e) {
+                                throw new RuntimeException(
+                                    "Could not wait between char delete.", e);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        deleteThreadRunning = false;
+                        cancelDeleteThread = false;
+                    }
+                }
+            };
+
+            // actually start the delete char thread
+            r.start();
+        }
+    });
+}
+
+private void handleDeleteUp() {
+    cancelDeleteThread = true;
+}
+
+private void deleteOneChar()
+{
+    String result = getNumberInput().getText().toString();
+    int Length = result.length();
+
+    if (Length > 0)
+        getNumberInput().setText(result.substring(0, Length-1));
+        //I've not pasted getNumberInput(), but it gets the string I wish to delete chars from
+}
+
+    
+===============================================================================================
+81
+A:This is more independent implementation, usable with any View, that supports touch event:
+
+import android.os.Handler;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.view.View.OnTouchListener;
+
+/**
+ * A class, that can be used as a TouchListener on any view (e.g. a Button).
+ * It cyclically runs a clickListener, emulating keyboard-like behaviour. First
+ * click is fired immediately, next one after the initialInterval, and subsequent
+ * ones after the normalInterval.
+ *
+ * <p>Interval is scheduled after the onClick completes, so it has to run fast.
+ * If it runs slow, it does not generate skipped onClicks. Can be rewritten to
+ * achieve this.
+ */
+public class RepeatListener implements OnTouchListener {
+
+    private Handler handler = new Handler();
+
+    private int initialInterval;
+    private final int normalInterval;
+    private final OnClickListener clickListener;
+    private View touchedView;
+
+    private Runnable handlerRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if(touchedView.isEnabled()) {
+                handler.postDelayed(this, normalInterval);
+                clickListener.onClick(touchedView);
+            } else {
+                // if the view was disabled by the clickListener, remove the callback
+                handler.removeCallbacks(handlerRunnable);
+                touchedView.setPressed(false);
+                touchedView = null;
+            }
+        }
+    };
+
+    /**
+     * @param initialInterval The interval after first click event
+     * @param normalInterval The interval after second and subsequent click 
+     *       events
+     * @param clickListener The OnClickListener, that will be called
+     *       periodically
+     */
+    public RepeatListener(int initialInterval, int normalInterval, 
+            OnClickListener clickListener) {
+        if (clickListener == null)
+            throw new IllegalArgumentException("null runnable");
+        if (initialInterval < 0 || normalInterval < 0)
+            throw new IllegalArgumentException("negative interval");
+
+        this.initialInterval = initialInterval;
+        this.normalInterval = normalInterval;
+        this.clickListener = clickListener;
+    }
+
+    public boolean onTouch(View view, MotionEvent motionEvent) {
+        switch (motionEvent.getAction()) {
+        case MotionEvent.ACTION_DOWN:
+            handler.removeCallbacks(handlerRunnable);
+            handler.postDelayed(handlerRunnable, initialInterval);
+            touchedView = view;
+            touchedView.setPressed(true);
+            clickListener.onClick(view);
+            return true;
+        case MotionEvent.ACTION_UP:
+        case MotionEvent.ACTION_CANCEL:
+            handler.removeCallbacks(handlerRunnable);
+            touchedView.setPressed(false);
+            touchedView = null;
+            return true;
+        }
+
+        return false;
+    }
+
+}
+
+
+Usage:
+
+Button button = new Button(context);
+button.setOnTouchListener(new RepeatListener(400, 100, new OnClickListener() {
+  @Override
+  public void onClick(View view) {
+    // the code to execute repeatedly
+  }
+}));
+
+    

@@ -1,0 +1,85 @@
+31
+Q:I would like to set background color or null on my view using DataBinding library but I get an exception trying to run it.
+
+java.lang.NullPointerException: Attempt to invoke virtual method 'int java.lang.Integer.intValue()' on a null object reference
+
+
+This is how I do it:
+
+android:background="@{article.sponsored ? @color/sponsored_article_background : null}"
+
+
+I also tried setting conversion but it didn't work.
+
+@BindingConversion
+public static ColorDrawable convertColorToDrawable(int color) {
+   return new ColorDrawable(color);
+}
+
+
+Eventually, I resolved it with workaround using @BindingAdapter but I would like to know how to do it properly.
+    
+===============================================================================================
+61
+A:Reason:
+
+First thing to know is that DataBinding library already provides a convertColorToDrawable binding converter located in android.databinding.adapters.Converters.convertColorToDrawable(int).
+
+Using android:background should "theoretically" work, because it has a corresponding setBackground(Drawable) method. The problem is that it sees that you try to pass a color as a first argument so it tried to launch this converter before applying it to setBackground(Drawable) method. If databinding decides to use a converter it will use it on both arguments, so also on null, right before applying a final result to a setter.
+Because null cannot be castes to int (and you cannot invoke intValue() on it) it throws NullPointerException.
+
+There is a mention about the fact that mixed argument types are not supported in official Data Binding Guide.
+
+Here are two solutions for this problem. Although you can use any of these two solutions, the first one is much easier.
+
+Solutions:
+
+1. As drawable
+
+If you define your color not as a color but as a drawable in your resources (it can be in our colors.xml file:
+
+<drawable name="sponsored_article_background">#your_color</drawable>
+
+
+or
+
+<drawable name="sponsored_article_background">@color/sponsored_article_background</drawable>
+
+
+then you should be able to use android:background like you originally wanted to but providing drawable instead of color:
+
+android:background="@{article.sponsored ? @drawable/sponsored_article_background : null}"
+
+
+Here arguments has compatible types: first is Drawable and second is null so it can also be cast to a Drawable.
+
+2. As resource id
+
+app:backgroundResource="@{article.sponsored ? R.color.sponsored_article_background : 0}"
+
+
+but it will also require to add your R class import in data section:
+
+<data>
+    <import type="com.example.package.R" />
+    <variable ... />
+</data>
+
+
+Passing 0 as a "null resource id" is safe because setBackgroundResource method of View checks whether resid is different than 0 and sets null as a background drawable otherwise. No unnecessary transparent drawable objects are created there.
+
+public void setBackgroundResource(int resid) {
+    if (resid != 0 && resid == mBackgroundResource) {
+        return;
+    }
+
+    Drawable d= null;
+    if (resid != 0) {
+        d = mResources.getDrawable(resid);
+    }
+    setBackgroundDrawable(d);
+
+    mBackgroundResource = resid;
+}
+
+    

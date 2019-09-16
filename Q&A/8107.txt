@@ -1,0 +1,487 @@
+33
+Q:Problem at Hand:
+I have to create a Service which runs continuously. This service monitors 5 apps say 5 android games installed on your phone. This service needs to get the information of:
+ 1. How many times is the game opened and run? 
+ 2. For how much time each game has run. 
+
+for example: Say If I have this service installed in my app. And I let it run for a month. I need information of this kind on the screen of the app:
+
+Game     Number of times the game is run     Duration of Game play
+
+Game 1                     20 times played for                         15 hours in total
+
+Game 2                     16 times played for                       25 hours in total
+
+..
+
+..
+
+Game 5                   10 times played for                       12 hours in total
+
+Possible Approach:
+When an application loads it comes in the memory. Noting the system clocks time while the application starts. And when the application ends or is put in the background noting the time again.
+
+So say if an application is brought to memory at 9:00 pm and exits to background at 9:30 pm that gives us a gameplay time of 30 mins. Next time the application is played the duration will be added to 30 from the previous play stored in some sort of variable and so on. 
+Each time an application is brought into the memory the counter of it being played should increase by one. Hence giving us the number of times an application is played.
+
+Coding:
+I have no idea about Service in Android as I have never really worked on them. Any tutorials related to my problem at hand will be very helpful.
+Secondly, if there is another way in which this could be done. I would like to know that as well. I could really use some code snippet for me to start this project.
+    
+===============================================================================================
+29
+A:As you wrote that the task is about monitoring 3-rd party applications, there is no solution other than periodically read a list of processes and detecting foreground process. You need a service for this. Unfortunately, Android does not provide means such as broadcast events for foreground process change.
+
+The task requires a lot of code in fact, at least much more than an ordinary answer could comprise. I'm posting a part of it here, but you should address many nuances left behind the scenes, such as synchronization and persisting information between launches. This is just a skeleton. 
+
+First, lets code an application object, which is a good place to register all instance related stuff.
+
+MonitorApp
+
+public class MonitorApp extends Application
+{
+  // actual store of statistics
+  private final ArrayList<HashMap<String,Object>> processList = new ArrayList<HashMap<String,Object>>();
+
+  // fast-access index by package name (used for lookup)
+  private ArrayList<String> packages = new ArrayList<String>();
+
+  public ArrayList<HashMap<String,Object>> getProcessList()
+  {
+    return processList;
+  }
+
+  public ArrayList<String> getPackages()
+  {
+    return packages;
+  }
+
+  // TODO: you need to save and load the instance data
+  // TODO: you need to address synchronization issues
+}
+
+
+Then lets draft an activity.
+
+MonitorActivity
+
+import static ProcessList.COLUMN_PROCESS_NAME;
+import static ProcessList.COLUMN_PROCESS_PROP;
+import static ProcessList.COLUMN_PROCESS_COUNT;
+import static ProcessList.COLUMN_PROCESS_TIME;
+
+public class MonitorActivity extends Activity implements MonitorService.ServiceCallback
+{
+  private ArrayList<HashMap<String,Object>> processList;
+  private MonitorService backgroundService;
+  private MyCustomAdapter adapter = null;
+  private ListView listView = null;
+
+  @Override
+  public void onCreate(Bundle savedInstanceState)
+  {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.main); // TODO: provide your layout
+    listView = (ListView)findViewById(R.id.id_process_listview);
+    createAdapter();
+
+    this.bindService(
+      new Intent(this, MonitorService.class),
+      serviceConnection,
+      Context.BIND_AUTO_CREATE);
+  }
+
+  private void createAdapter()
+  {
+    processList = ((MonitorApp)getApplication()).getProcessList();
+    adapter = new MyCustomAdapter(this, processList, R.layout.complex_list_item,
+    new String[]
+    {
+      COLUMN_PROCESS_NAME,
+      COLUMN_PROCESS_PROP, // TODO: you may calculate and pre-fill this field
+                           // from COLUMN_PROCESS_COUNT and COLUMN_PROCESS_TIME
+                           // so eliminating the need to use the custom adapter
+    },
+    new int[]
+    {
+      android.R.id.text1,
+      android.R.id.text2
+    });
+
+    listView.setAdapter(adapter);
+  }
+
+  // callback method invoked by the service when foreground process changed
+  @Override
+  public void sendResults(int resultCode, Bundle b)
+  {
+    adapter.notifyDataSetChanged();
+  }
+
+  private class MyCustomAdapter extends SimpleAdapter
+  {
+    MyCustomAdapter(Context context, List<? extends Map<String, ?>> data, int resource, String[] from, int[] to)
+    {
+      super(context, data, resource, from, to);
+    }
+
+    @Override
+    public View getView (int position, View convertView, ViewGroup parent)
+    {
+      View result = super.getView(position, convertView, parent);
+
+      // TODO: customize process statistics display
+      int count = (Integer)(processList.get(position).get(COLUMN_PROCESS_COUNT));
+      int seconds = (Integer)(processList.get(position).get(COLUMN_PROCESS_TIME));
+
+      return result;
+    }
+  }
+
+  private ServiceConnection serviceConnection = new ServiceConnection()
+  {
+    @Override
+    public void onServiceConnected(ComponentName className, IBinder service)
+    {
+      LocalBinder binder = (LocalBinder)service;
+      backgroundService = binder.getService();
+      backgroundService.setCallback(MonitorActivity.this);
+      backgroundService.start();
+    }
+
+    @Override
+    public void onServiceDisconnected(ComponentName className)
+    {
+      backgroundService = null;
+    }
+  };
+
+  @Override
+  public void onResume()
+  {
+    super.onResume();
+    if(backgroundService != null)
+    {
+      backgroundService.setCallback(this);
+    }
+  }
+
+  @Override
+  public void onPause()
+  {
+    super.onPause();
+    if(backgroundService != null)
+    {
+      backgroundService.setCallback(null);
+    }
+  }
+
+}
+
+
+The activity launches a background worker service, which does actually monitor processes. You could possibly move the service registration from the activity into the application instance. The service itself is something like this:
+
+MonitorService
+
+public class MonitorService extends Service
+{
+  private boolean initialized = false;
+  private final IBinder mBinder = new LocalBinder();
+  private ServiceCallback callback = null;
+  private Timer timer = null;
+  private final Handler mHandler = new Handler();
+  private String foreground = null;
+  private ArrayList<HashMap<String,Object>> processList;
+  private ArrayList<String> packages;
+  private Date split = null;
+
+  public static int SERVICE_PERIOD = 5000; // TODO: customize (this is for scan every 5 seconds)
+
+  private final ProcessList pl = new ProcessList(this)
+  {
+    @Override
+    protected boolean isFilteredByName(String pack)
+    {
+      // TODO: filter processes by names, return true to skip the process
+      // always return false (by default) to monitor all processes
+      return false;
+    }
+
+  };
+
+  public interface ServiceCallback
+  {
+    void sendResults(int resultCode, Bundle b);
+  }
+
+  public class LocalBinder extends Binder
+  {
+    MonitorService getService()
+    {
+      // Return this instance of the service so clients can call public methods
+      return MonitorService.this;
+    }
+  }
+
+  @Override
+  public void onCreate()
+  {
+    super.onCreate();
+    initialized = true;
+    processList = ((MonitorApp)getApplication()).getProcessList();
+    packages = ((MonitorApp)getApplication()).getPackages();
+  }
+
+  @Override
+  public IBinder onBind(Intent intent)
+  {
+    if(initialized)
+    {
+      return mBinder;
+    }
+    return null;
+  }
+
+  public void setCallback(ServiceCallback callback)
+  {
+    this.callback = callback;
+  }
+
+  private boolean addToStatistics(String target)
+  {
+    boolean changed = false;
+    Date now = new Date();
+    if(!TextUtils.isEmpty(target))
+    {
+      if(!target.equals(foreground))
+      {
+        int i;
+        if(foreground != null && split != null)
+        {
+          // TODO: calculate time difference from current moment
+          // to the moment when previous foreground process was activated
+          i = packages.indexOf(foreground);
+          long delta = (now.getTime() - split.getTime()) / 1000;
+          Long time = (Long)processList.get(i).get(COLUMN_PROCESS_TIME);
+          if(time != null)
+          { 
+            // TODO: add the delta to statistics of 'foreground' 
+            time += delta;
+          }
+          else
+          {
+            time = new Long(delta);
+          }
+          processList.get(i).put(COLUMN_PROCESS_TIME, time);
+        }
+
+        // update count of process activation for new 'target'
+        i = packages.indexOf(target);
+        Integer count = (Integer)processList.get(i).get(COLUMN_PROCESS_COUNT);
+        if(count != null) count++;
+        else
+        {
+          count = new Integer(1);
+        }
+        processList.get(i).put(COLUMN_PROCESS_COUNT, count);
+
+        foreground = target;
+        split = now;
+        changed = true;
+      }
+    }
+    return changed; 
+  }
+
+
+  public void start()
+  {
+    if(timer == null)
+    {
+      timer = new Timer();
+      timer.schedule(new MonitoringTimerTask(), 500, SERVICE_PERIOD);
+    }
+
+    // TODO: startForeground(srvcid, createNotification(null));
+  }
+
+  public void stop()
+  {
+    timer.cancel();
+    timer.purge();
+    timer = null;
+  }
+
+  private class MonitoringTimerTask extends TimerTask
+  {
+    @Override
+    public void run()
+    {
+      fillProcessList();
+
+      ActivityManager activityManager = (ActivityManager)MonitorService.this.getSystemService(ACTIVITY_SERVICE);
+      List<RunningTaskInfo> taskInfo = activityManager.getRunningTasks(1);
+      String current = taskInfo.get(0).topActivity.getPackageName();
+
+      // check if current process changed
+      if(addToStatistics(current) && callback != null)
+      {
+        final Bundle b = new Bundle();
+        // TODO: pass necessary info to UI via bundle
+        mHandler.post(new Runnable()
+        {
+          public void run()
+          {
+            callback.sendResults(1, b);
+          }
+        });
+      }
+    }
+  }
+
+  private void fillProcessList()
+  {
+    pl.fillProcessList(processList, packages);
+  }
+
+}
+
+
+The service utilizes a helper class for building process lists.
+
+ProcessList
+
+public abstract class ProcessList
+{
+  // process package name
+  public static final String COLUMN_PROCESS_NAME = "process";
+
+  // TODO: arbitrary property (can be user-fiendly name)
+  public static final String COLUMN_PROCESS_PROP = "property";
+
+  // number of times a process has been activated
+  public static final String COLUMN_PROCESS_COUNT = "count";
+
+  // number of seconds a process was in foreground
+  public static final String COLUMN_PROCESS_TIME = "time";
+
+  private ContextWrapper context;
+
+  ProcessList(ContextWrapper context)
+  {
+    this.context = context;
+  }
+
+  protected abstract boolean isFilteredByName(String pack);
+
+  public void fillProcessList(ArrayList<HashMap<String,Object>> processList, ArrayList<String> packages)
+  {
+    ActivityManager activityManager = (ActivityManager)context.getSystemService(Context.ACTIVITY_SERVICE);
+    List<RunningAppProcessInfo> procInfo = activityManager.getRunningAppProcesses();
+
+    HashMap<String, Object> hm;
+    final PackageManager pm = context.getApplicationContext().getPackageManager();
+
+    for(int i = 0; i < procInfo.size(); i++)
+    {
+      String process = procInfo.get(i).processName;
+      String packageList = Arrays.toString(procInfo.get(i).pkgList);
+      if(!packageList.contains(process))
+      {
+        process = procInfo.get(i).pkgList[0];
+      }
+
+      if(!packages.contains(process) && !isFilteredByName(process))
+      {
+        ApplicationInfo ai;
+        String applicationName = "";
+
+        for(int k = 0; k < procInfo.get(i).pkgList.length; k++)
+        {
+          String thisPackage = procInfo.get(i).pkgList[k];
+          try
+          {
+            ai = pm.getApplicationInfo(thisPackage, 0);
+          }
+          catch(final NameNotFoundException e)
+          {
+            ai = null;
+          }
+          if(k > 0) applicationName += " / ";
+          applicationName += (String)(ai != null ? pm.getApplicationLabel(ai) : "(unknown)");
+        }
+
+        packages.add(process);
+        hm = new HashMap<String, Object>();
+        hm.put(COLUMN_PROCESS_NAME, process);
+        hm.put(COLUMN_PROCESS_PROP, applicationName);
+        processList.add(hm);
+      }
+    }
+
+    // optional sorting
+    Comparator<HashMap<String, Object>> comparator = new Comparator<HashMap<String, Object>>()
+    {
+      public int compare(HashMap<String, Object> object1, HashMap<String, Object> object2) 
+      {       
+        return ((String)object1.get(COLUMN_PROCESS_NAME)).compareToIgnoreCase((String)object2.get(COLUMN_PROCESS_NAME));
+      }
+    };
+    Collections.sort(processList, comparator);
+
+    packages.clear();
+    for(HashMap<String, Object> e : processList)
+    {
+      packages.add((String)e.get(COLUMN_PROCESS_NAME));
+    }
+  }
+
+}
+
+
+Finally, the manifest.
+
+AndroidManifest.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.yourpackage"
+    android:versionCode="1"
+    android:versionName="1.0" >
+
+    <uses-sdk android:minSdkVersion="8" android:targetSdkVersion="18" />
+
+    <uses-permission android:name="android.permission.GET_TASKS" />
+
+    <application
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name" >
+        <activity
+            android:name=".MonitorActivity"
+            android:label="@string/app_name"
+            android:configChanges="orientation|keyboardHidden" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <service android:name=".MonitorService" />
+    </application>
+
+</manifest>
+
+
+As you may see, it's already a lot of code. It's partially extracted from a working application, but I made fast changes for your needs, so there may be typos, all imports are skipped, etc. Nevertheless, I hope this helps a bit.
+
+ADDENDUM: Lollipop+
+
+Beware: the latest Android versions broke the abovementioned approach. Here is what the official documentation says about getRunningTasks method and others:
+
+
+  As of LOLLIPOP, this method is no longer available to third party applications: the introduction of document-centric recents means it can leak person information to the caller. For backwards compatibility, it will still retu rn a small subset of its data: at least the caller's own tasks, and possibly some other tasks such as home that are known to not be sensitive.
+
+
+I think this is an overkill and could be done in much more selective and convenient way. Not to mention that this seems too theatrical considering many built-in features from Google with privacy concerns. Anyway, we can do nothing with this.
+
+The only workaround is to implement Android accessibility service (more info here and here) and intercept all actions with applications gaining and losing focus from there. The user should enable the service manually! Your application should somehow direct the user to do so.
+    

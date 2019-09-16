@@ -1,0 +1,199 @@
+38
+Q:I recently followed a way of programming for Android using Scala and Eclipse, which reduces the code and the compile time without using Proguard or Treeshake.
+
+Following this article, I should be able use the last Eclipse build (3.7), almost the last version of Scala (2.8.1) updated on an emulator version 10, the version 2.8.3 within Eclipse with the provided plug-in.
+
+The presented way is to provide a specific ramdisk image version, where we can upload scala libraries, which drastically shrinks the size of the code to upload to the emulator.
+
+I followed the steps, created a hello world, added scala nature, added a dummy scala class, moved the Scala builder before the Android Package Installer, everything builds perfectly, but when I launch the apk on a emulator from Eclipse, the application crashes and I get the following error, which looks like the 
+same as presented here (at the end of the document) :
+
+    03-29 10:29:38.505: E/AndroidRuntime(839): java.lang.NoClassDefFoundError: upg.TestSinceInstallation.ComputeSum
+
+
+If I remove the scala reference in the activity file, it runs well.
+
+Here is the TestSinceInstallation.java file:
+
+    package upg.TestSinceInstallation;
+
+    import android.app.Activity;
+    import android.os.Bundle;
+    import upg.TestSinceInstallation.ComputeSum;
+
+    public class TestSinceInstallationActivity extends Activity {
+        /** Called when the activity is first created. */
+        @Override
+        public void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            int a = 1;
+            int b = 5;
+            ComputeSum cs = new ComputeSum(a, b);
+            if(cs.getResut() == 6) {
+              setContentView(R.layout.main);
+            }
+        }
+    }
+
+
+and here is the ComputeSum.scala file
+
+    package upg.TestSinceInstallation
+
+    class ComputeSum(a: Int, b: Int) {
+      def getResut() : Int = a + b
+    }
+
+
+What do you think I should do to make this work ? I feel so close to the goal.
+    
+===============================================================================================
+56
+A:Here is the solution, to use Android with Eclipse 3.7 and with Scala 3.0.0 without any problems.
+
+
+Install Eclipse 3.7 (for me 3.7.2) and the Android SDK - plus the Java SDK 7v22 if not already in your system. Caution: The special Android ADT Bundle does not allow to install scala (as of June 2013, linux station).
+Install Android ADT plug-in version 22 for Eclipse by pointing Eclipse to this website :
+
+
+
+  https://dl-ssl.google.com/android/eclipse/
+
+
+
+Install Scala IDE version 3.0.0 by pointing Eclipse to this website :
+
+
+
+  http://download.scala-ide.org/sdk/e37/scala210/stable/site
+
+
+
+Install the AndroidProguardScala plug-in v47 by pointing Eclipse to this website :
+
+
+
+  https://androidproguardscala.s3.amazonaws.com/UpdateSiteForAndroidProguardScala
+
+
+Now, to create a scala project,
+
+
+Create an Android project as usual
+Right-click on the project, Configure, Add Scala nature
+Right-click on the project, Add AndroidProguardScala nature
+
+
+You're done.
+
+
+
+Scalafying android code
+
+Now good things happen.
+First, you can scalafy any activity, and you will get access to scala unique features, such as:
+
+
+Lazy evaluations to define views inside the class body
+Implicit conversion functions to customize the interaction of view with your code
+No semicolons and all the syntactic sugar of scala.
+Use of actors for activities to distinguish the UI thread from the processing thread.
+
+
+Here is an example of some of them.
+
+package com.example.testing;
+import android.app.Activity
+import android.os.Bundle
+import scala.collection.mutable.Map
+import android.view.View
+import android.widget.SeekBar
+import android.widget.ImageButton
+import android.graphics.drawable.Drawable
+import android.widget.TextView
+
+trait ActivityUtil extends Activity {
+  implicit def func2OnClickListener(func: (View) => Unit):View.OnClickListener = {
+    new View.OnClickListener() { override def onClick(v: View) = func(v) }
+  }
+  implicit def func2OnClickListener(code: () => Unit):View.OnClickListener = {
+    new View.OnClickListener() { override def onClick(v: View) = code() }
+  }
+  private var customOnPause: () => Unit = null
+  override def onPause() = {
+    super.onPause()
+    if(customOnPause != null) customOnPause()
+  }
+  def onPause(f: =>Unit) = {
+    customOnPause = {() => f}
+  }
+  private var customOnCreate: Bundle => Unit = null
+  override def onCreate(savedInstanceState: Bundle) {
+    super.onCreate(savedInstanceState)
+    if(customOnCreate != null) customOnCreate(savedInstanceState)
+  }
+  def onCreate(f: Bundle => Unit) = {
+    customOnCreate = f
+  }
+  // Keep references alive when fetched for the first time.
+  private implicit val vMap = Map[Int, View]()
+  private implicit val ibMap = Map[Int, ImageButton]()
+  private implicit val sbMap = Map[Int, SeekBar]()
+  private implicit val tvMap = Map[Int, TextView]()
+  private implicit val dMap = Map[Int, Drawable]()
+
+  def findView[A <: View](id: Int)(implicit v: Map[Int, A]): A = v.getOrElseUpdate(id, findViewById(id).asInstanceOf[A])
+  def findDrawable[A <: Drawable](id: Int)(implicit v: Map[Int, A]): A = v.getOrElseUpdate(id, getResources().getDrawable(id).asInstanceOf[A])
+
+  implicit class RichView(b: View) { // Scala 2.10 !
+    def onClicked(f: =>Unit) = b.setOnClickListener{ () => f }
+  }
+  // Implicit functions to operate directly on integers generated by android.
+  implicit def findViewImageButton(id: Int): ImageButton = findView[ImageButton](id)
+  implicit def findViewSeekBar(id: Int): SeekBar = findView[SeekBar](id)
+  implicit def findViewTextView(id: Int): TextView = findView[TextView](id)
+  implicit def findDrawable(id: Int): Drawable = findDrawable[Drawable](id)
+  implicit def findRichView(id: Int): RichView = toRichView(findView[View](id))
+}
+
+
+Now after all the previous boilerplate, it is very useful to write concise activities. Note how we can directly operate on ids as if they were views. Disambiguation is needed as (view: TextView).requestFocus() if the methods can be inferred from various structures.
+
+// Now after all the boilerplate, it is very useful to write consise activities
+class MyActivity extends Activity with ActivityUtil {
+  import R.id._ // Contains R.id.button, R.id.button2, R.id.button3, R.id.mytextview
+  lazy val my_button: ImageButton = button   //In reality, R.id.button
+  lazy val his_button: ImageButton = button2
+
+  onCreate { savedInstanceState =>       // The type is automatically inferred.
+    setContentView(R.layout.main)
+    my_button.setOnClickListener(myCustomReactClick _)
+    his_button.setOnClickListener { () =>
+       //.... Scala code called after clicking his_button
+    }
+    button3.onClicked {
+      // Awesome way of setting a method. Thanks Scala.
+    }
+    mytextview.setText("My text")  // Whoaaa ! setText on an integer.
+    (mytextview: TextView).requestFocus() // Disambiguation because the method is ambiguous
+    // Note that because of the use of maps, the textview is not recomputed.
+  }
+
+  def myCustomReactClick(v: View) = {
+    // .... Scala code called after clicking my_button
+  }
+  onPause{
+    // ... Custom code for onPause
+  }
+}
+
+
+Make sure that the name of the scala file matches the main activity contained in it, in this case it should be MyActivity.scala.
+
+Second, to set up a scala project as a library project, to use is as a base for applications having different resources, follow the regular way of setting up a library project. Right-click on the scala project that you want as a base library project, Properties, Android, and check isLibrary.
+To create derivated project using this library and for which you can generate an APK, create a new android project, and without adding any scala or androidproguardscala nature, just right-click, Properties, Android, and add the previous scala project as a library.
+
+UPDATE With the new version of the Android Plug-in, you should go to Project Properties > Build P\xc3\xa4th > Order and Export and check Android Private Libraries. This will allow to export the scala library, both in the library project and the main project, even if the main project is not assigned Scala.
+
+TESTING Using the plug-in Robolectric makes it easy to test your android scala project. Just follow the steps for creating a test project, add Scala nature to it. You can even use the new scala debugger, and by adding the scalatest library, you can use should matchers and many other features Scala has.
+    

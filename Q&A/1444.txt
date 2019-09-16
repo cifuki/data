@@ -1,0 +1,152 @@
+122
+Q:I'm trying to work with the new RecyclerView, but I could not find an example of a RecyclerView with different types of rows/cardviews getting inflated.
+
+With ListView I override the getViewTypeCount and getItemViewType, for handling different types of rows.
+
+Am I supposed to do it like the "old" way or should I do something with LayoutManager? I was wondering if someone could point me to the right direction. Because I can only find examples with one type.
+
+I want to have a list of slightly different cards. Or should I just use a scrollView with cardViews inside of it...make it without the adapter and recyclerView?
+    
+===============================================================================================
+195
+A:Handling the rows / sections logic similar to iOS's UITableView is not as simple in Android as it is in iOS, however, when you use RecyclerView - the flexibility of what you can do is far greater.
+
+In the end, it's all about how you figure out what type of view you're displaying in the Adapter. Once you got that figured out, it should be easy sailing (not really, but at least you'll have that sorted).
+
+The Adapter exposes two methods which you should override:
+
+getItemViewType(int position)
+
+
+This method's default implementation will always return 0, indicating that there is only 1 type of view. In your case, it is not so, and so you will need find a way to assert which row corresponds to which view type. Unlike iOS, which manages this for you with rows and sections, here you will have only one index to rely on, and you'll need to use your developer skills to know when a position correlates to a section header, and when it correlates to a normal row.
+
+createViewHolder(ViewGroup parent, int viewType)
+
+
+You need to override this method anyway, but usually people just ignore the viewType parameter. According to the view type, you'll need to inflate the correct layout resource and create your view holder accordingly. The RecyclerView will handle recycling different view types in a way which avoids clashing of different view types.
+
+If you're planning on using a default LayoutManager, such as LinearLayoutManager, you should be good to go. If you're planning on making your own LayoutManager implementation, you'll need to work a bit harder. The only API you really have to work with is findViewByPosition(int position) which gives a given view at a certain position. Since you'll probably want to lay it out differently depending on what type this view is, you have a few options:
+
+
+Usually when using the ViewHolder pattern, you set the view's tag with the view holder. You could use this during runtime in the layout manager to find out what type the view is by adding a field in the view holder which expresses this.
+Since you'll need a function which determines which position correlates to which view type, you might as well make this method globally accessible somehow (maybe a singleton class which manages the data?), and then you can simply query the same method according to the position.
+
+
+Here's a code sample:
+
+// in this sample, I use an object array to simulate the data of the list. 
+// I assume that if the object is a String, it means I should display a header with a basic title.
+// If not, I assume it's a custom model object I created which I will use to bind my normal rows.
+private Object[] myData;
+
+public static final int ITEM_TYPE_NORMAL = 0;
+public static final int ITEM_TYPE_HEADER = 1;
+
+public class MyAdapter extends Adapter<ViewHolder> {
+
+    @Override
+    public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+
+        if (viewType == ITEM_TYPE_NORMAL) {
+            View normalView = LayoutInflater.from(getContext()).inflate(R.layout.my_normal_row, null);
+            return new MyNormalViewHolder(normalView); // view holder for normal items
+        } else if (viewType == ITEM_TYPE_HEADER) {
+            View headerRow = LayoutInflater.from(getContext()).inflate(R.layout.my_header_row, null);
+            return new MyHeaderViewHolder(headerRow); // view holder for header items
+        }
+    }
+
+
+    @Override
+    public void onBindViewHolder(ViewHolder holder, int position) {
+
+        final int itemType = getItemViewType(position);
+
+        if (itemType == ITEM_TYPE_NORMAL) {
+            ((MyNormalViewHolder)holder).bindData((MyModel)myData[position]);
+        } else if (itemType == ITEM_TYPE_HEADER) {
+            ((MyHeaderViewHolder)holder).setHeaderText((String)myData[position]);
+        }
+    }
+
+    @Override
+    public int getItemViewType(int position) {
+        if (myData[position] instanceof String) {
+            return ITEM_TYPE_HEADER;
+        } else {
+            return ITEM_TYPE_NORMAL;
+        }
+    }
+
+    @Override
+    public int getItemCount() {
+        return myData.length;
+    }
+}
+
+
+Here's a sample of how these view holders should look like:
+
+public MyHeaderViewHolder extends ViewHolder {
+
+    private TextView headerLabel;    
+
+    public MyHeaderViewHolder(View view) {
+        super(view);
+
+        headerLabel = (TextView)view.findViewById(R.id.headerLabel);
+    }
+
+    public void setHeaderText(String text) {
+        headerLabel.setText(text);
+    }    
+}
+
+
+public MyNormalViewHolder extends ViewHolder {
+
+    private TextView titleLabel;
+    private TextView descriptionLabel;    
+
+    public MyNormalViewHolder(View view) {
+        super(view);
+
+        titleLabel = (TextView)view.findViewById(R.id.titleLabel);
+        descriptionLabel = (TextView)view.findViewById(R.id.descriptionLabel);
+    }
+
+    public void bindData(MyModel model) {
+        titleLabel.setText(model.getTitle());
+        descriptionLabel.setText(model.getDescription());
+    }    
+}
+
+
+Of course, this sample assumes you've constructed your data source (myData) in a way that makes it easy to implement an adapter in this way. As an example, I'll show you how I'd construct a data source which shows a list of names, and a header for every time the 1st letter of the name changes (assume the list is alphabetized) - similar to how a contacts list would look like:
+
+// Assume names & descriptions are non-null and have the same length.
+// Assume names are alphabetized
+private void processDataSource(String[] names, String[] descriptions) {
+    String nextFirstLetter = "";
+    String currentFirstLetter;
+
+    List<Object> data = new ArrayList<Object>();
+
+    for (int i = 0; i < names.length; i++) {
+        currentFirstLetter = names[i].substring(0, 1); // get the 1st letter of the name
+
+        // if the first letter of this name is different from the last one, add a header row
+        if (!currentFirstLetter.equals(nextFirstLetter)) {
+            nextFirstLetter = currentFirstLetter;
+            data.add(nextFirstLetter);
+        }
+
+        data.add(new MyModel(names[i], descriptions[i]));
+    }
+
+    myData = data.toArray();
+}
+
+
+This example comes to solve a fairly specific issue, but I hope this gives you a good overview on how to handle different row types in a recycler, and allows you make the necessary adaptations in your own code to fit your needs.
+    

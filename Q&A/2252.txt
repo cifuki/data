@@ -1,0 +1,199 @@
+90
+Q:On Android 1.0 there was a com.google.googlenav namespace for driving directions:
+Route - Improved Google Driving Directions
+But in newer SDK it was removed by some reason...
+Android: DrivingDirections removed since API 1.0 - how to do it in 1.5/1.6?
+On BlackBerry there is also lack of APIs for such stuff:
+how to find the route between two places in Blackberry?
+
+csie-tw gives a workaround (query gmaps for kml file and parse it):
+Android - Driving Direction (Route Path)
+Also Andrea made a DrivingDirections helper classes for Android.
+I wrote a little helper for this functionality, in j2me, so I would like to share my samples on Android and BlackBerry.  
+
+UPDATE
+As it was stated in comments, it's not officially allowed Google Maps APIs Terms of Service :
+
+
+  Google Maps/Google Earth APIs Terms of Service
+  Last updated: May 27, 2009
+  ...
+  10. License Restrictions. Except as expressly permitted under the Terms, or unless you have received prior written authorization from Google (or, as applicable, from the provider of particular Content), Google's licenses above are subject to your adherence to all of the restrictions below. Except as explicitly permitted in Section 7 or the Maps APIs Documentation, you must not (nor may you permit anyone else to):
+  ...
+  10.9 use the Service or Content with any products, systems, or applications for or in connection with:
+  (a) real time navigation or route guidance, including but not limited to turn-by-turn route guidance that is synchronized to the position of a user's sensor-enabled device;
+
+
+and may be disabled for certain apps (somehow, at least on Android)... From Geocode scraping in .NET conversation:  
+
+
+  This is not allowed by the API terms of use.  You should not scrape
+  Google Maps to generate geocodes.  We will block services that do
+  automated queries of our servers.
+  
+  Bret Taylor
+  Product Manager, Google Maps 
+
+
+Would be grateful for any alternatives and/or suggestions!
+Thanks!
+    
+===============================================================================================
+116
+A:J2ME Map Route Provider
+
+maps.google.com has a navigation service which can provide you route information in KML format.  
+
+To get kml file we need to form url with start and destination locations:  
+
+public static String getUrl(double fromLat, double fromLon,
+                            double toLat, double toLon) {// connect to map web service
+    StringBuffer urlString = new StringBuffer();
+    urlString.append("http://maps.google.com/maps?f=d&hl=en");
+    urlString.append("&saddr=");// from
+    urlString.append(Double.toString(fromLat));
+    urlString.append(",");
+    urlString.append(Double.toString(fromLon));
+    urlString.append("&daddr=");// to
+    urlString.append(Double.toString(toLat));
+    urlString.append(",");
+    urlString.append(Double.toString(toLon));
+    urlString.append("&ie=UTF8&0&om=0&output=kml");
+    return urlString.toString();
+}
+
+
+Next you will need to parse xml (implemented with SAXParser) and fill data structures:  
+
+public class Point {
+    String mName;
+    String mDescription;
+    String mIconUrl;
+    double mLatitude;
+    double mLongitude;
+}
+
+public class Road {
+    public String mName;
+    public String mDescription;
+    public int mColor;
+    public int mWidth;
+    public double[][] mRoute = new double[][] {};
+    public Point[] mPoints = new Point[] {};
+}
+
+
+Network connection is implemented in different ways on Android and Blackberry, so you will have to first form url:
+
+ public static String getUrl(double fromLat, double fromLon,
+     double toLat, double toLon)
+
+
+then create connection with this url and get InputStream.
+Then pass this InputStream and get parsed data structure:
+
+ public static Road getRoute(InputStream is) 
+
+
+Full source code RoadProvider.java  
+
+BlackBerry
+
+class MapPathScreen extends MainScreen {
+    MapControl map;
+    Road mRoad = new Road();
+    public MapPathScreen() {
+        double fromLat = 49.85, fromLon = 24.016667;
+        double toLat = 50.45, toLon = 30.523333;
+        String url = RoadProvider.getUrl(fromLat, fromLon, toLat, toLon);
+        InputStream is = getConnection(url);
+        mRoad = RoadProvider.getRoute(is);
+        map = new MapControl();
+        add(new LabelField(mRoad.mName));
+        add(new LabelField(mRoad.mDescription));
+        add(map);
+    }
+    protected void onUiEngineAttached(boolean attached) {
+        super.onUiEngineAttached(attached);
+        if (attached) {
+            map.drawPath(mRoad);
+        }
+    }
+    private InputStream getConnection(String url) {
+        HttpConnection urlConnection = null;
+        InputStream is = null;
+        try {
+            urlConnection = (HttpConnection) Connector.open(url);
+            urlConnection.setRequestMethod("GET");
+            is = urlConnection.openInputStream();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return is;
+    }
+}
+
+
+See full code on J2MEMapRouteBlackBerryEx on Google Code
+
+Android
+
+
+
+public class MapRouteActivity extends MapActivity {
+    LinearLayout linearLayout;
+    MapView mapView;
+    private Road mRoad;
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        mapView = (MapView) findViewById(R.id.mapview);
+        mapView.setBuiltInZoomControls(true);
+        new Thread() {
+            @Override
+            public void run() {
+                double fromLat = 49.85, fromLon = 24.016667;
+                double toLat = 50.45, toLon = 30.523333;
+                String url = RoadProvider
+                        .getUrl(fromLat, fromLon, toLat, toLon);
+                InputStream is = getConnection(url);
+                mRoad = RoadProvider.getRoute(is);
+                mHandler.sendEmptyMessage(0);
+            }
+        }.start();
+    }
+
+    Handler mHandler = new Handler() {
+        public void handleMessage(android.os.Message msg) {
+            TextView textView = (TextView) findViewById(R.id.description);
+            textView.setText(mRoad.mName + " " + mRoad.mDescription);
+            MapOverlay mapOverlay = new MapOverlay(mRoad, mapView);
+            List<Overlay> listOfOverlays = mapView.getOverlays();
+            listOfOverlays.clear();
+            listOfOverlays.add(mapOverlay);
+            mapView.invalidate();
+        };
+    };
+
+    private InputStream getConnection(String url) {
+        InputStream is = null;
+        try {
+            URLConnection conn = new URL(url).openConnection();
+            is = conn.getInputStream();
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return is;
+    }
+    @Override
+    protected boolean isRouteDisplayed() {
+        return false;
+    }
+}
+
+
+See full code on J2MEMapRouteAndroidEx on Google Code
+    

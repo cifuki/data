@@ -1,0 +1,107 @@
+29
+Q:I have setup In-App Billing for the first time using the new v3 API. It is working correctly on my devices but I have received a lot of error reports from other users.
+
+One of them is: 
+
+java.lang.IllegalStateException: IAB helper is not set up. Can't perform operation: queryInventory
+    at my.package.util.iab.IabHelper.checkSetupDone(IabHelper.java:673)
+    at my.package.util.iab.IabHelper.queryInventory(IabHelper.java:462)
+    at my.package.util.iab.IabHelper$2.run(IabHelper.java:521)
+    at java.lang.Thread.run(Thread.java:1019)
+
+
+And another one is:
+
+java.lang.NullPointerException
+    at my.package.activities.MainActivity$4.onIabSetupFinished(MainActivity.java:159)
+    at my.package.util.iab.IabHelper$1.onServiceConnected(IabHelper.java:242)
+
+
+My activity implementation follows Google's example code (all referenced classes are untouched from the example):
+
+IabHelper mHelper;
+
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    //...
+
+    mHelper = new IabHelper(this, IAB_PUBLIC_KEY);
+    mHelper.enableDebugLogging(true);
+
+    mHelper.startSetup(new IabHelper.OnIabSetupFinishedListener() {
+        public void onIabSetupFinished(IabResult result) {
+            if (!result.isSuccess()) {
+                // Oh noes, there was a problem.
+                return;
+            }
+
+            // Hooray, IAB is fully set up. Now, let's get an inventory of
+            // stuff we own.
+            mHelper.queryInventoryAsync(mGotInventoryListener); //***(1)***
+        }
+    });
+}
+
+// Listener that's called when we finish querying the items we own
+IabHelper.QueryInventoryFinishedListener mGotInventoryListener = new IabHelper.QueryInventoryFinishedListener() {
+    public void onQueryInventoryFinished(IabResult result,
+            Inventory inventory) {
+        if (!result.isFailure()) {
+            if (inventory.hasPurchase(SoundsGlobals.IAB_SKU_PREMIUM)){
+                //we are premium, do things
+            }
+        }
+        else{
+            //oops
+        }
+    }
+};
+
+@Override
+protected void onDestroy() {
+    if (mHelper != null) {
+        mHelper.dispose();
+        mHelper = null;
+    }
+    super.onDestroy();
+}
+
+
+I assume that both errors originate from the line marked as ***(1)***
+
+What is the cause of these errors? If I'm calling queryInventoryAsync only within onIabSetupFinished, how is it possible that mHelper is null, or that mHelper is not set up?
+
+Does anyone know a solution to this?
+    
+===============================================================================================
+19
+A:As @Martin explained, there was a bug in the Google In-App Billing example which caused this. 
+
+However, after fixing it, I was still receiving some errors in internal calls (queryInventory inside the thread created in queryInventoryAsync in some rare cases reports that the helper is not setup). I have solved this by adding an additional catch in that case:
+
+try {
+    inv = queryInventory(querySkuDetails, moreSkus);
+}
+catch (IabException ex) {
+    result = ex.getResult();
+}
+catch(IllegalStateException ex){ //ADDED THIS CATCH
+    result = new IabResult(BILLING_RESPONSE_RESULT_ERROR, "Helper is not setup.");
+}
+
+
+I also got a crash on mHelper.dispose() which I fixed in a similar way:
+
+try{
+    if (mContext != null) mContext.unbindService(mServiceConn);
+}
+catch(IllegalArgumentException ex){ //ADDED THIS CATCH
+    //IGNORE IT - somehow, the service was already unregistered
+}
+
+
+Of course, instead of ignoring these errors you can silently log them to ACRA, for example :)
+
+Thanks for all your comments.
+    

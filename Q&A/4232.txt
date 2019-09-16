@@ -1,0 +1,78 @@
+55
+Q:I am having a very weird problem with storage accessing on some devices. The app works on my testing devices (Nexus 4 & 7, Samsung GS5). All my devices running Android 4.4.2. But I received many emails from users saying that the app can not write to the storage (neither the internal storage nor the sd card). From the log file received from user feedback, I can see the problem is the following code:
+
+try {
+    if (fStream == null) {
+    fStream = new FileOutputStream(filename, true);
+}
+    fStream.write(data, 0, bytes);
+    return;
+} catch (IOException ex) {
+    ex.printStackTrace();
+}
+
+
+It throws exception at the line fStream = new FileOutputStream(filename, true); when creating FileOutputStream.
+
+The stack log is:
+
+W/System.err( 8147): Caused by: java.io.FileNotFoundException: /storage/emulated/0/my_folder/test_file_name.png: open failed: EACCES (Permission denied)
+w/System.err( 8147):    at libcore.io.IoBridge.open(IoBridge.java:409)
+W/System.err( 8147):    at java.io.FileOutputStream.<init>(FileOutputStream.java:88)
+W/System.err( 8147):    at java.io.FileOutputStream.<init>(FileOutputStream.java:128)
+W/System.err( 8147):    at myapp.save(SourceFile:515)
+W/System.err( 8147):    ... 8 more
+W/System.err( 8147): Caused by: libcore.io.ErrnoException: open failed: EACCES (Permission denied)
+W/System.err( 8147):    at libcore.io.Posix.open(Native Method)
+W/System.err( 8147):    at libcore.io.BlockGuardOs.open(BlockGuardOs.java:110)
+W/System.err( 8147):    at libcore.io.IoBridge.open(IoBridge.java:393)
+W/System.err( 8147):    ... 11 more
+
+
+In the AndroidManifest.xml I have the following permissions declared:
+
+ <uses-sdk android:minSdkVersion="14" android:targetSdkVersion="19"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+<uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/> 
+
+
+I've confirmed that the users are using the correct app's private on the SD card. And what's more weird is that it fails to write to internal storage as well. How can this happen if I have both read & write permissions? The users say they are not connecting their devices to the PC at that time.
+
+Update
+
+It turns out I am calling open and close FileOutputStream too frequently, which throws the FileNotFoundException at some point. Sounds more like a threading issue.
+    
+===============================================================================================
+32
+A:I ran into a similar issue a while back.
+
+Your problem could be in two different areas. It's either how you're creating the file to write to, or your method of writing could be flawed in that it is phone dependent. 
+
+If you're writing the file to a specific location on the SD card, try using Environment variables.  They should always point to a valid location.  Here's an example to write to the downloads folder:
+
+java.io.File xmlFile = new java.io.File(Environment
+    .getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+     + "/Filename.xml");
+
+
+If you're writing the file to the application's internal storage.  Try this example:
+
+java.io.File xmlFile = new java.io.File((getActivity()
+   .getApplicationContext().getFileStreamPath("FileName.xml")
+   .getPath()));
+
+
+Personally I rely on external libraries to handle the streaming to file. This one hasn't failed me yet.
+
+org.apache.commons.io.FileUtils.copyInputStreamToFile(is, file);
+
+
+I've lost data one too many times on a failed write command, so I rely on well-known and tested libraries for my IO heavy lifting.
+
+If the files are large, you may also want to look into running the IO in the background, or use callbacks.  
+
+If you're already using environment variables, it could be a permissions issue. Check out Justin Fiedler's answer below.
+    

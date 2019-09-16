@@ -1,0 +1,140 @@
+48
+Q:I'm trying to add a MapFragment to my current Fragment. The use of nested fragments is restricted to FragmentTransactions, you can't use the xml tag in your layout.
+Also, I want it to be added to the main Fragment when the user presses a button. So, I'm creating the MapFragment programmatically with getInstance() when the user presses that button and adding it to the proper place. It is shown correctly, so far so good.
+
+The problem is that after attaching the MapFragment I need to get a reference to GoogleMap to place a Marker, but the getMap() method returns null (as the fragment's onCreateView() hasn't been called yet).
+
+I looked at the demo example code and I found the solution they use is initializing the MapFragment in onCreate() and getting the reference to GoogleMap in onResume(), after onCreateView() has been called.
+
+I need to get the reference to GoogleMap right after the MapFragment initialization, because I want the users to be able to show or hide the map with a button. I know a possible solution would be to create the Map at the start as said above and just set it's visibility gone, but I want the map to be off by default so it doesn't take the user's bandwidth if they don't explicitly asked for it.
+
+I tried with the MapsInitializer, but doesn't work either. I'm kind of stuck. Any ideas?
+Here is my testing code so far:
+
+public class ParadaInfoFragment extends BaseDBFragment {
+// BaseDBFragment is just a SherlockFragment with custom utility methods.
+
+private static final String MAP_FRAGMENT_TAG = "map";
+private GoogleMap mMap;
+private SupportMapFragment mMapFragment;
+private TextView mToggleMapa;
+private boolean isMapVisible = false;
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+    View v = inflater.inflate(R.layout.fragment_parada_info, container, false);
+    mToggleMapa = (TextView) v.findViewById(R.id.parada_info_map_button);
+    return v;
+}
+
+@Override
+public void onStart() {
+    super.onStart();
+    mToggleMapa.setOnClickListener(new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            if (!isMapVisible) {
+                openMap();
+            } else {
+                closeMap();
+            }
+            isMapVisible = !isMapVisible;
+        }
+    });
+}
+
+private void openMap() {
+    // Creates initial configuration for the map
+    GoogleMapOptions options = new GoogleMapOptions().camera(CameraPosition.fromLatLngZoom(new LatLng(37.4005502611301, -5.98233461380005), 16))
+            .compassEnabled(false).mapType(GoogleMap.MAP_TYPE_NORMAL).rotateGesturesEnabled(false).scrollGesturesEnabled(false).tiltGesturesEnabled(false)
+            .zoomControlsEnabled(false).zoomGesturesEnabled(false);
+
+    // Modified from the sample code:
+    // It isn't possible to set a fragment's id programmatically so we set a
+    // tag instead and search for it using that.
+    mMapFragment = (SupportMapFragment) getChildFragmentManager().findFragmentByTag(MAP_FRAGMENT_TAG);
+
+    // We only create a fragment if it doesn't already exist.
+    if (mMapFragment == null) {
+        // To programmatically add the map, we first create a
+        // SupportMapFragment.
+        mMapFragment = SupportMapFragment.newInstance(options);
+        // Then we add it using a FragmentTransaction.
+        FragmentTransaction fragmentTransaction = getChildFragmentManager().beginTransaction();
+        fragmentTransaction.add(R.id.parada_info_map_container, mMapFragment, MAP_FRAGMENT_TAG);
+        fragmentTransaction.commit();
+    }
+    // We can't be guaranteed that the map is available because Google Play
+    // services might not be available.
+    setUpMapIfNeeded(); //XXX Here, getMap() returns null so  the Marker can't be added
+    // The map is shown with the previous options.
+}
+
+private void closeMap() {
+    FragmentTransaction fragmentTransaction = getChildFragmentManager().beginTransaction();
+    fragmentTransaction.remove(mMapFragment);
+    fragmentTransaction.commit();
+}
+
+private void setUpMapIfNeeded() {
+    // Do a null check to confirm that we have not already instantiated the
+    // map.
+    if (mMap == null) {
+        // Try to obtain the map from the SupportMapFragment.
+        mMap = mMapFragment.getMap();
+        // Check if we were successful in obtaining the map.
+        if (mMap != null) {
+            mMap.addMarker(new MarkerOptions().position(new LatLng(37.4005502611301, -5.98233461380005)).title("Marker"));
+        }
+    }
+}
+}
+
+
+Thanks
+    
+===============================================================================================
+53
+A:The good AnderWebs gave me an answer in Google+ but he is too laz.... emm busy to write it here again, so here is the short version:
+Extend the MapFragment class and override the onCreateView() method. After this method is done we can get a non-null reference to que GoogleMap object.
+
+This is my particular solution:
+
+public class MiniMapFragment extends SupportMapFragment {
+    private LatLng mPosFija;
+
+    public MiniMapFragment() {
+        super();
+    }
+
+    public static MiniMapFragment newInstance(LatLng posicion){
+        MiniMapFragment frag = new MiniMapFragment();
+        frag.mPosFija = posicion;
+        return frag;
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater arg0, ViewGroup arg1, Bundle arg2) {
+        View v = super.onCreateView(arg0, arg1, arg2);
+        initMap();
+        return v;
+    }
+
+    private void initMap(){
+        UiSettings settings = getMap().getUiSettings();
+        settings.setAllGesturesEnabled(false);
+        settings.setMyLocationButtonEnabled(false);
+
+        getMap().moveCamera(CameraUpdateFactory.newLatLngZoom(mPosFija,16));
+        getMap().addMarker(new MarkerOptions().position(mPosFija).icon(BitmapDescriptorFactory.fromResource(R.drawable.marker)));
+    }
+}
+
+
+Now in the previous Fragment class I do
+
+mMapFragment = MiniMapFragment.newInstance(new LatLng(37.4005502611301, -5.98233461380005));
+
+
+Maybe it's not perfect yet, because the screen blinks when showing the map. But not sure if the problem is because of this or something else.
+    

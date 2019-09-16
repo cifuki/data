@@ -1,0 +1,241 @@
+27
+Q:How should I implement multi selection on AdapterView with ActionBarSherlock, because it does not provide MultiChoiceModeListener?
+
+This is what it looks like
+
+
+
+How can you do this?
+    
+===============================================================================================
+40
+A:So here's what I did.
+
+Edit:
+Over a year passed since I found out the previous answer had alot of useless code (woops) and the CAB thing can be achieved with much less effort and a cleaner code, so I took some time and updated it
+
+The LibraryFragment ListView should be defined with choice mode "none"
+
+<ListView
+    android:id="@android:id/list"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:choiceMode="none"/>
+
+
+The list item should have an ?attr/activatedBackgroundIndicator foreground in order to automatically draw highlighted semitransparent overlay on list.setItemChecked(pos, true)
+
+list_item_library.xml
+
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:foreground="?attr/activatedBackgroundIndicator"
+    android:paddingBottom="5dp"
+    android:paddingTop="5dp" >
+
+....
+
+
+The ListFragment
+
+import android.support.v4.app.DialogFragment;
+import com.actionbarsherlock.app.SherlockListFragment;
+import com.actionbarsherlock.view.ActionMode;
+import com.actionbarsherlock.view.Menu;
+
+public final class LibraryFragment
+        extends SherlockListFragment
+{
+
+    private MyListAdapter adapter;
+    private ListView list;
+
+    // if ActoinMode is null - assume we are in normal mode
+    private ActionMode actionMode;
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState)
+    {
+        View v = inflater.inflate(R.layout.fragment_library, null);
+        this.list = (ListView) v.findViewById(android.R.id.list);
+        this.initListView();
+        return v;
+    }
+
+    @Override
+    public void onPause()
+    {
+        super.onPause();
+        if (this.actionMode != null) {
+            this.actionMode.finish();
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        updateData();
+    }
+
+    // update ListView
+    protected void updateData()
+    {
+        if (adapter == null) {
+            return;
+        }
+        adapter.clear();
+        // my kinda stuff :)
+        File[] items = scan();
+        if (items != null) {
+            adapter.updateData(items);
+            if (actionMode != null) {
+                actionMode.invalidate();
+            }
+        }
+        // if empty - finish action mode.
+        if (actionMode != null && (files == null || files.length == 0)) {
+            actionMode.finish();
+        }
+    }
+
+    private void initListView()
+    {
+        this.adapter = new MyAdapter(getActivity());
+        this.list.setAdapter(adapter);
+        this.list.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener()
+        {
+
+            @Override
+            public boolean onItemLongClick(AdapterView<?> arg0,
+                    View arg1, int arg2, long arg3)
+            {
+                if (actionMode != null) {
+                    // if already in action mode - do nothing
+                    return false;
+                }
+                // set checked selected item and enter multi selection mode
+                list.setChoiceMode(AbsListView.CHOICE_MODE_MULTIPLE);
+                list.setItemChecked(arg2, true);
+
+                getSherlockActivity().startActionMode(
+                        new ActionModeCallback());
+                return true;
+            }
+        });
+        this.list.setOnItemClickListener(new AdapterView.OnItemClickListener()
+        {
+            @Override
+            public void onItemClick(AdapterView<?> arg0, View arg1, int arg2,
+                    long arg3)
+            {
+                if (actionMode != null) {
+                    // the items are auomatically "checked" becaise we've set AbsListView.CHOICE_MODE_MULTIPLE before
+                    // starting action mode, so the only thing we have to care about is invalidating the actionmode
+                    actionMode.invalidate(); //invalidate title and menus.
+                } else {
+                    // do whatever you should on item click
+                }
+            }
+        });
+    }
+
+
+    // all our ActionMode stuff here :)
+    private final class ActionModeCallback
+            implements ActionMode.Callback
+    {
+
+        // " selected" string resource to update ActionBar text
+        private String selected = getActivity().getString(
+                R.string.library_selected);
+
+        @Override
+        public boolean onCreateActionMode(ActionMode mode, Menu menu)
+        {
+            actionMode = mode;
+            return true;
+        }
+
+        @Override
+        public boolean onPrepareActionMode(ActionMode mode, Menu menu)
+        {
+            // remove previous items
+            menu.clear();
+            final int checked = list.getCheckedItemCount();
+            // update title with number of checked items
+            mode.setTitle(checked + this.selected);
+            switch (checked) {
+            case 0:
+                // if nothing checked - exit action mode
+                mode.finish();
+                return true;
+            case 1:
+                // all items - rename + delete
+                getSherlockActivity().getSupportMenuInflater().inflate(
+                        R.menu.library_context, menu);
+                return true;
+            default:
+                getSherlockActivity().getSupportMenuInflater().inflate(
+                        R.menu.library_context, menu);
+                // remove rename option - because we have more than one selected
+                menu.removeItem(R.id.library_context_rename);
+                return true;
+            }
+        }
+
+        @Override
+        public boolean onActionItemClicked(ActionMode mode,
+                com.actionbarsherlock.view.MenuItem item)
+        {
+            SparseBooleanArray checked;
+            switch (item.getItemId()) {
+            case R.id.library_context_rename:
+                // the rename action is present only when only one item is selected. 
+                // so when the first checked item found, show the dialog and break
+                checked = list.getCheckedItemPositions();
+                for (int i = 0; i < checked.size(); i++) {
+                    final int index = checked.keyAt(i);
+                    if (checked.get(index)) {
+                        final DialogFragment d = RenameDialog.instantiate(adapter.getItem(index).getFile(), LibraryFragment.this);
+                        d.show(getActivity().getSupportFragmentManager(), "dialog");
+                        break;
+                    }
+                }
+                return true;
+
+            case R.id.library_context_delete:
+                // delete every checked item
+                checked = list.getCheckedItemPositions();
+                for (int i = 0; i < checked.size(); i++) {
+                    final int index = checked.keyAt(i);
+                    if (checked.get(index)) {
+                        adapter.getItem(index).getFile().delete();
+                    }
+                }
+                updateData();
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        @Override
+        public void onDestroyActionMode(ActionMode mode)
+        {
+            list.clearChoices();
+
+            //workaround for some items not being unchecked.
+            //see http://stackoverflow.com/a/10542628/1366471
+            for (int i = 0; i < list.getChildCount(); i++) {
+                (list.getChildAt(i).getBackground()).setState(new int[] { 0 });
+            }
+
+            list.setChoiceMode(AbsListView.CHOICE_MODE_NONE);
+            actionMode = null;
+        }
+
+    }
+
+    

@@ -1,0 +1,173 @@
+27
+Q:I'm starting to use Dagger 2 in an application I'm developing but I have some questions about how Dagger 2 works.
+
+I get the all the logic behind the @Provides methods and the @Inject annotation for initialising your dependencies, but the @Inject annotation to class constructors kind of bugs my mind.
+
+For example:
+
+Im my app, I have one module defined, the ContextModule, to retrieve the context of my application:
+
+ContextModule.java
+
+@Module
+public class ContextModule {
+
+    private final Context context;
+
+    public ContextModule(Context context) {
+        this.context = context;
+    }
+
+    @Provides
+    public Context context() {
+        return this.context;
+    }
+}
+
+
+This module is used by my BaseActivityComponent:
+
+BaseActivityComponent.java
+
+@BaseActivityScope
+@Component(modules = ContextModule.class)
+public interface BaseActivityComponent {
+    void injectBaseActivity(BaseActivity baseActivity);
+}
+
+
+So far so good.. then I have an AuthController class, that depends on the context and I want to inject it in my BaseActivity. So in my AuthControllers.class I have something like:
+
+public class AuthController {
+
+    private Context context;
+
+    @Inject
+    public AuthController(Context context) {
+        this.context = context;
+    }
+
+    public void auth() {
+        // DO STUFF WITH CONTEXT
+    }
+}
+
+
+And I inject it in my BaseActivity like:
+
+public class BaseActivity extends AppCompatActivity {
+
+    @Inject
+    AuthController authController;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        BaseActivityComponent component = DaggerBaseActivityComponent.builder()
+            .contextModule(new ContextModule(this))
+            .build();
+
+        component.injectBaseActivity(this);
+
+        authController.auth();
+
+    }
+}
+
+
+Now my question is, how does dagger knows that my AuthControllers is a dependency for BaseActivity? Just by declaring
+
+@Inject
+AuthController authController;
+
+
+it's like the same thing as if I created a ControllerModule like:
+
+@Module(includes = ContextModule.class)
+public class ControllerModule {
+
+    @Provides
+    AuthController authController(Context context) {
+        return new AuthController(context);
+    }
+
+}
+
+
+And then in my BaseActivityComponent I would add my AuthController getter and change my dependency module to ControllersModule:
+
+@BaseActivityScope
+@Component(modules = ControllersModule.class)
+public interface BaseActivityComponent {
+
+    void injectBaseActivity(BaseActivity baseActivity);
+
+    AuthController getAuthController();
+}
+
+
+When I call injectBaseActivity(this) it "tells" dagger that all @Inject annotations are dependencies of my class, and then it searchers my project for @Inject annotated constructors that matches that type?
+
+I thought a good thing about Dagger 2 is that the Module files could be used as a "documentation" of my dependencies three. But if just add @Inject in all the constructors I have control of, couldn't it get a little confusing in the future, since you don't know what actually depends on what? (I mean, you know what depends on what, you just have to browse a lot of files to really find out)
+
+Is there any best practices for when using @Inject annotations in constructors or when to add the @Provides method in Modules files?
+I get that using @Inject in constructor I don't need to change the constructor definition in my Module file, but is there any downside?
+
+Thanks.
+    
+===============================================================================================
+35
+A:When I call injectBaseActivity(this) it "tells" dagger that all @Inject annotations are dependencies of my class, and then it searches my project for @Inject annotated constructors that matches that type?
+
+
+Exactly. But it's not done when you call injectBaseActivity, but it all happens during compile time. This is one way of annotation processing (another makes use of reflection at runtime).
+
+When you build your project the dagger-annotation-processor you include (as a dependency)in your build.gradle file gets called with a list of all your fields, classes, etc annotated by the @Inject annotation and builds a dependency graph with it. It then resolves the graph, generating source code that provides all the dependencies for the items on the graph.
+
+injectBaseActivity just executes the code which was generated before, and assigns all the dependencies to your object. It is proper source code, which you can read, and debug.
+
+The reason this is a compile step—simply put—is performance and validation. (e.g. If you have some dependency cycle, you get a compile error)
+
+
+
+
+  how does dagger knows that my AuthControllers is a dependency for BaseActivity?
+
+
+@Inject
+AuthController authController;
+
+
+By annotating the field @Inject dagger knows you want an AuthController. So far so good. Now dagger will look for some means to provide the controller, looking for it within the component, the components dependencies, and the components modules. It will also look whether the class can be supplied on its own, because it knows about its constructor.
+
+How does dagger know about the objects constructor if you don't include it in any module?
+
+@Inject
+public AuthController(Context context) { /**/ }
+
+
+By annotating the constructor with inject you also told dagger that there is a class called AuthController and you need a context for it to be instantiated. It is basically the same as adding it to your module.
+
+A module @Provides method should be used if you don't have the source code to just add the @Inject annotation to the constructor, or if the object needs further initialization. Or in your case...
+
+
+  [...]the Module files could be used as a "documentation" of my dependencies tree [...]
+
+
+Yes, of course you could do that. But as your project grows you will have to maintain a lot of unnecessary code, since the same could have been done with a simple annotation on the constructor.
+
+
+  Is there any best practices for when using @Inject annotations in constructors or when to add the @Provides method in Modules files?
+
+
+If you want to provide different versions for a different context (e.g. implementing an interface in 2 different ways) there is also the @Binds annotation that tells dagger which class you wish to provide as implementation.
+
+Other than that I believe you should always use constructor injection when possible. If something changes you don't have to touch any other parts of your code, and it is just less code that you write, and hence less places where you could include a bug.
+
+Also Dagger can and does optimize a lot by knowing more, and if you implement unnecessary code it will have to work with the overhead you introduced
+
+
+
+Of course in the end it is all up to what you think is best. After all it is you that has to work with your code ;)
+    

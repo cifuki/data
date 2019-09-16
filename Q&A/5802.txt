@@ -1,0 +1,91 @@
+43
+Q:I'm currently developing an app using the newly Android Architecture Components. Specifically I'm implementing a Room Database that returns a LiveDataobject on one of it's queries. Insertion and querying works as expected, however I have an issue testing the query method using unit test.
+
+Here is the DAO I'm trying to test:
+
+NotificationDao.kt
+
+@Dao
+interface NotificationDao {
+
+@Insert
+fun insertNotifications(vararg notifications: Notification): List<Long>
+
+@Query("SELECT * FROM notifications")
+fun getNotifications(): LiveData<List<Notification>>
+
+
+}
+
+As you can tell, the query function returns a LiveData object, if I change this to be just a List, Cursor or basically whatever then I get the expected result, which is the data inserted in the Database. 
+
+The issue is that the following test will always fail because the value of the LiveData object is always null:
+
+NotificationDaoTest.kt
+
+lateinit var db: SosafeDatabase
+lateinit var notificationDao: NotificationDao
+
+@Before
+fun setUp() {
+    val context = InstrumentationRegistry.getTargetContext()
+    db = Room.inMemoryDatabaseBuilder(context, SosafeDatabase::class.java).build()
+    notificationDao = db.notificationDao()
+}
+
+@After
+@Throws(IOException::class)
+fun tearDown() {
+    db.close()
+}
+
+@Test
+fun getNotifications_IfNotificationsInserted_ReturnsAListOfNotifications() {
+    val NUMBER_OF_NOTIFICATIONS = 5
+    val notifications = Array(NUMBER_OF_NOTIFICATIONS, { i -> createTestNotification(i) })
+    notificationDao.insertNotifications(*notifications)
+
+    val liveData = notificationDao.getNotifications()
+    val queriedNotifications = liveData.value
+    if (queriedNotifications != null) {
+        assertEquals(queriedNotifications.size, NUMBER_OF_NOTIFICATIONS)
+    } else {
+        fail()
+    }
+}
+
+private fun createTestNotification(id: Int): Notification {
+    //method omitted for brevity 
+}
+
+
+So the question is: Does anyone knows of a better way to perform unit tests that involve LiveData objects?
+    
+===============================================================================================
+47
+A:Room calculates the LiveData's value lazily when there is an observer.
+
+You can check the sample app.
+
+It uses a getValue utility method which adds an observer to get the value:
+
+public static <T> T getValue(final LiveData<T> liveData) throws InterruptedException {
+    final Object[] data = new Object[1];
+    final CountDownLatch latch = new CountDownLatch(1);
+    Observer<T> observer = new Observer<T>() {
+        @Override
+        public void onChanged(@Nullable T o) {
+            data[0] = o;
+            latch.countDown();
+            liveData.removeObserver(this);
+        }
+    };
+    liveData.observeForever(observer);
+    latch.await(2, TimeUnit.SECONDS);
+    //noinspection unchecked
+    return (T) data[0];
+}
+
+
+Better w/ kotlin, you can make it an extensions function :).
+    

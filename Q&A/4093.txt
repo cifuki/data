@@ -1,0 +1,224 @@
+57
+Q:I've spent the last six hours pouring over documents from Google and I still don't know how to get started with this. All I want to do is make it so my existing Android app can read files from Google Drive, upload new files to Google Drive, and edit existing files on Google Drive.
+
+I've read that Drive SDK v2 was focused solely on making it easy for Android (and mobile in general) developers to use it, and yet there seems to be virtually nothing in their documentation about it.
+
+Ideally, I'd like someone to point at some decent documentation, example, or tutorial covering how to do this (keep in mind I'm using Android. They have plenty of stuff on how to use Drive with the Google App Engine; I have already looked at it and I have no idea how to go from that to an Android app.)
+
+I need to know which libraries I need to download and add to my project, what I need to add to my manifest, and how I can ultimately get a list of files from Google Drive, download one, and then upload a modified version.
+
+Ideally, I'd like it to handle accounts automatically, the way that the officially Google Drive app does.
+    
+===============================================================================================
+78
+A:Edit: Claudio Cherubino says that Google Play Services is now available and will make this process a lot easier. However, there's no sample code available (yet, he says it's coming soon... they said Google Play Services was "coming soon" 4 months ago, so there's a good chance this answer will continue to be the only completely working example of accessing Google Drive from your Android application into 2013.)
+
+Edit 2X: Looks like I was off by about a month when I said Google wouldn't have a working example until next year. The official guide from Google is over here:
+
+https://developers.google.com/drive/quickstart-android
+
+I haven't tested their methods yet, so it's possible that my solutions from September 2012 (below) are still the best:
+
+Google Play Services is NOT REQUIRED for this. It's a pain in the butt, and I spent well over 50 hours (edit: 100+ hours) figuring it all out, but here's a lot of things that it'll help to know:
+
+THE LIBRARIES
+
+For Google's online services in general you'll need these libraries in your project: (Instructions and Download Link)
+
+
+google-api-client-1.11.0-beta.jar
+google-api-client-android-1.11.0-beta.jar
+google-http-client-1.11.0-beta.jar
+google-http-client-android-1.11.0-beta.jar
+google-http-client-jackson-1.11.0-beta.jar
+google-oauth-client-1.11.0-beta.jar
+guava-11.0.1.jar
+jackson-core-asl-1.9.9.jar
+jsr305-1.3.9.jar
+
+
+For Google Drive in particular you'll also need this:
+
+
+google-api-services-drive-v2-rev9-1.8.0-beta.jar (Download Link)
+
+
+SETTING UP THE CONSOLE
+
+Next, go to Google Console. Make a new project. Under Services, you'll need to turn on two things: DRIVE API and DRIVE SDK! They are separate, one does not automatically turn the other on, and YOU MUST TURN BOTH ON! (Figuring this out wasted at least 20 hours of my time alone.)
+
+Still on the console, go to API Access. Create a client, make it an Android app. Give it your bundle ID. I don't think the fingerprints thing is actually important, as I'm pretty sure I used the wrong one, but try to get that right anyways (Google provides instructions for it.)
+
+It'll generate a Client ID. You're going to need that. Hold onto it.
+
+Edit: I've been told that I'm mistaken and that you only need to turn on Drive API, Drive SDK doesn't need to be turned on at all, and that you just need to use the Simple API Key, not set up something for Android. I'm looking into that right now and will probably edit this answer in a few minutes if i figure it out...
+
+THE ANDROID CODE - Set Up and Uploading
+
+First, get an auth token:
+
+AccountManager am = AccountManager.get(activity);
+am.getAuthToken(am.getAccounts())[0],
+    "oauth2:" + DriveScopes.DRIVE,
+    new Bundle(),
+    true,
+    new OnTokenAcquired(),
+    null);
+
+
+Next, OnTokenAcquired() needs to be set up something like this:
+
+private class OnTokenAcquired implements AccountManagerCallback<Bundle> {
+    @Override
+    public void run(AccountManagerFuture<Bundle> result) {
+        try {
+            final String token = result.getResult().getString(AccountManager.KEY_AUTHTOKEN);
+            HttpTransport httpTransport = new NetHttpTransport();
+            JacksonFactory jsonFactory = new JacksonFactory();
+            Drive.Builder b = new Drive.Builder(httpTransport, jsonFactory, null);
+            b.setJsonHttpRequestInitializer(new JsonHttpRequestInitializer() {
+                @Override
+                public void initialize(JSonHttpRequest request) throws IOException {
+                    DriveRequest driveRequest = (DriveRequest) request;
+                    driveRequest.setPrettyPrint(true);
+                    driveRequest.setKey(CLIENT ID YOU GOT WHEN SETTING UP THE CONSOLE BEFORE YOU STARTED CODING)
+                    driveRequest.setOauthToken(token);
+                }
+            });
+
+            final Drive drive = b.build();
+
+            final com.google.api.services.drive.model.File body = new com.google.api.services.drive.model.File();
+            body.setTitle("My Test File");
+    body.setDescription("A Test File");
+    body.setMimeType("text/plain");
+
+            final FileContent mediaContent = new FileContent("text/plain", an ordinary java.io.File you'd like to upload. Make it using a FileWriter or something, that's really outside the scope of this answer.)
+            new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        com.google.api.services.drive.model.File file = drive.files().insert(body, mediaContent).execute();
+                        alreadyTriedAgain = false; // Global boolean to make sure you don't repeatedly try too many times when the server is down or your code is faulty... they'll block requests until the next day if you make 10 bad requests, I found.
+                    } catch (IOException e) {
+                        if (!alreadyTriedAgain) {
+                            alreadyTriedAgain = true;
+                            AccountManager am = AccountManager.get(activity);
+                            am.invalidateAuthToken(am.getAccounts()[0].type, null); // Requires the permissions MANAGE_ACCOUNTS & USE_CREDENTIALS in the Manifest
+                            am.getAuthToken (same as before...)
+                        } else {
+                            // Give up. Crash or log an error or whatever you want.
+                        }
+                    }
+                }
+            }).start();
+            Intent launch = (Intent)result.getResult().get(AccountManager.KEY_INTENT);
+            if (launch != null) {
+                startActivityForResult(launch, 3025);
+                return; // Not sure why... I wrote it here for some reason. Might not actually be necessary.
+            }
+        } catch (OperationCanceledException e) {
+            // Handle it...
+        } catch (AuthenticatorException e) {
+            // Handle it...
+        } catch (IOException e) {
+            // Handle it...
+        }
+    }
+}
+
+
+THE ANDROID CODE - Downloading
+
+private java.io.File downloadGFileToJFolder(Drive drive, String token, File gFile, java.io.File jFolder) throws IOException {
+    if (gFile.getDownloadUrl() != null && gFile.getDownloadUrl().length() > 0 ) {
+        if (jFolder == null) {
+            jFolder = Environment.getExternalStorageDirectory();
+            jFolder.mkdirs();
+        }
+        try {
+
+            HttpClient client = new DefaultHttpClient();
+            HttpGet get = new HttpGet(gFile.getDownloadUrl());
+            get.setHeader("Authorization", "Bearer " + token);
+            HttpResponse response = client.execute(get);
+
+            InputStream inputStream = response.getEntity().getContent();
+            jFolder.mkdirs();
+            java.io.File jFile = new java.io.File(jFolder.getAbsolutePath() + "/" + getGFileName(gFile)); // getGFileName() is my own method... it just grabs originalFilename if it exists or title if it doesn't.
+            FileOutputStream fileStream = new FileOutputStream(jFile);
+            byte buffer[] = new byte[1024];
+            int length;
+            while ((length=inputStream.read(buffer))>0) {
+                fileStream.write(buffer, 0, length);
+            }
+            fileStream.close();
+            inputStream.close();
+            return jFile;
+        } catch (IOException e) {        
+            // Handle IOExceptions here...
+            return null;
+        }
+    } else {
+        // Handle the case where the file on Google Drive has no length here.
+        return null;
+    }
+}
+
+
+One last thing... if that intent gets sent off, you'll need to handle when it returns with a result.
+
+@Override
+protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    if (requestCode == 3025) {
+        switch (resultCode) {
+            case RESULT_OK:
+                AccountManager am = AccountManager.get(activity);
+                am.getAuthToken(Same as the other two times... it should work this time though, because now the user is actually logged in.)
+                break;
+            case RESULT_CANCELED:
+                // This probably means the user refused to log in. Explain to them why they need to log in.
+                break;
+            default:
+                // This isn't expected... maybe just log whatever code was returned.
+                break;
+        }
+    } else {
+        // Your application has other intents that it fires off besides the one for Drive's log in if it ever reaches this spot. Handle it here however you'd like.
+    }
+}
+
+
+THE ANDROID CODE - Updating
+
+Two quick notes on updating the last modified date of a file on Google Drive:
+
+
+You must provide a fully initialized DateTime. If you do not, you'll get a response of "Bad Request" from Google Drive.
+You must use both setModifiedDate() on the File from Google Drive and setSetModifiedDate(true) on the update request itself. (Fun name, huh? "setSet[...]", there's no way people could mistype that one...)
+
+
+Here's some brief sample code showing how to do an update, including updating the file time:
+
+public void updateGFileFromJFile(Drive drive, File gFile, java.io.File jFile) throws IOException {
+    FileContent gContent = new FileContent("text/csv", jFile);
+    gFile.setModifiedDate(new DateTime(false, jFile.lastModified(), 0));
+    gFile = drive.files().update(gFile.getId(), gFile, gContent).setSetModifiedDate(true).execute();
+}
+
+
+THE MANIFEST
+
+You'll need the following permissions: GET_ACCOUNTS, USE_CREDENTIALS, MANAGE_ACCOUNTS, INTERNET, and there's a good chance you'll need WRITE_EXTERNAL_STORAGE as well, depending on where you'd like to store the local copies of your files.
+
+YOUR BUILD TARGET
+
+Right click your project, go into it's properties, and under Android change the build target to Google APIs if you must. If they aren't there, download them from the android download manager.
+
+If you're testing on an emulator, make sure its target is Google APIs, not generic Android.
+
+You'll need a Google Account set up on your test device. The code as written will automatically use the first Google Account it finds (that's what the [0] is.) IDK if you need to have downloaded the Google Drive app for this to have worked. I was using API Level 15, I don't know how far back this code will work.
+
+THE REST
+
+The above should get you started and hopefully you can figure your way out from there... honestly, this is just about as far as I've gotten so far. I hope this helps A LOT of people and saves them A LOT of time. I'm fairly certain I've just written the most comprehensive set up guide to setting up an Android app to use Google Drive. Shame on Google for spreading the necessary material across at least 6 different pages that don't link to each other at all.
+    

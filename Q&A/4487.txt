@@ -1,0 +1,334 @@
+53
+Q:I want to draw a Free Hand Polygon on the Map in Google Map V2.
+
+This task was possible with Overlay Map V1 but Google Map has removed that class from V2. (Per this Google Map V2 has Remove Overlay Class).
+
+Good Example for Google Map V1 to draw free style polygon.  
+
+
+  In Map V2, we can draw a polygon programmatically with the help of Google Official  Doc but what should a user do? I have found Unclear answer for Map V2
+
+
+I started with simple Google Map & draw polygon to do this programmatically & it is working properly but now I am looking for how a user can draw? I don't want to draw based on the marker on the polygon.
+
+// Instantiates a new Polygon object and adds points to define a rectangle
+PolygonOptions rectOptions = new PolygonOptions()
+              .add(new LatLng(37.35, -122.0),
+                   new LatLng(37.45, -122.0),
+                   new LatLng(37.45, -122.2),
+                   new LatLng(37.35, -122.2),
+                   new LatLng(37.35, -122.0));
+
+// Get back the mutable Polygon
+Polygon polygon = myMap.addPolygon(rectOptions);
+
+
+I have done lots of Research and Development on this topic but didn't get a perfect way to implement such a thing in Map V2.
+
+Some Questions   
+
+
+How to draw freestyle polygon in Map V2 (as we can do with Map V1)?
+Is there any trick or alternative to achieve this? If yes how?
+Can we get a touch event on the map & draw polygon?
+Is it feasible in Map V2?  
+Is it possible with a touch event which returns array of lat-long?
+How can I get Lat-long based on screen coordinates on setOnDragListener?
+
+
+Each new version has something extra compared to the older one so I am expecting that I can achieve the same thing in Map v2 also.
+
+I am not asking to give me some sample code or post your code, just some proper direction & documentation. 
+
+I have provided all documents and evidence I found during the Research and Development.
+    
+===============================================================================================
+73
+A:After spending a whole day in Rnd and testing some alternatives I have found a solution. Actually I have found two alternatives for the same issue but I would like to suggest the using of Alternative 2 because that is really very easy compared to Alternative 1.
+
+Actually I have found Alternative 1 with the help of TheLittleNaruto , AndroidHacker and some other developers & Alternative 2 with the help of Khan so thanks to all.
+
+Alternative 1
+
+
+  How to Draw Free style polygon in Map V2 (as we can do with Map V1) ? Is it feasible in Map V2 ? 
+
+
+Yes, that is feasible but you can't get directly OnTouch() & OnDraw() on the map. So we must have to think some other way to achieve this.
+
+
+  Is there any trick or alternative way to achieve this thing , if yes how ?
+
+
+Yes, Google Map V2 doesn't support OnTouch() or OnDraw() on a Map using class="com.google.android.gms.maps.SupportMapFragment" so we have to plan for a custom Fragment. 
+
+
+  Is it possible to return array of lat-long with touch event ?
+
+
+Yes, if we create any custom map fragment and use it we can get that Touch or Drag event over the map.
+
+
+  How can I get Lat-long base on screen coordinates on setOnDragListener ?
+
+
+setOnDragListener will return screen coordinates (x,y). Now for that, there are some techniques to convert (x,y) to LatLng and they include Projection along with Point & LatLng.
+
+customMapFragment.setOnDragListener(new MapWrapperLayout.OnDragListener() {@Override
+    public void onDrag(MotionEvent motionEvent) {
+        Log.i("ON_DRAG", "X:" + String.valueOf(motionEvent.getX()));
+        Log.i("ON_DRAG", "Y:" + String.valueOf(motionEvent.getY()));
+
+        float x = motionEvent.getX(); // get screen x position or coordinate 
+        float y = motionEvent.getY();  // get screen y position or coordinate 
+
+        int x_co = Integer.parseInt(String.valueOf(Math.round(x))); // casting float to int 
+        int y_co = Integer.parseInt(String.valueOf(Math.round(y))); // casting float to int 
+
+        projection = mMap.getProjection(); // Will convert your x,y to LatLng
+        Point x_y_points = new Point(x_co, y_co);// accept int x,y value
+        LatLng latLng = mMap.getProjection().fromScreenLocation(x_y_points); // convert x,y to LatLng
+        latitude = latLng.latitude; // your latitude 
+        longitude = latLng.longitude; // your longitude 
+
+        Log.i("ON_DRAG", "lat:" + latitude);
+        Log.i("ON_DRAG", "long:" + longitude);
+
+        // Handle motion event:
+    }
+});
+
+
+
+  How does it work ?
+
+
+As I have already mentioned before, we have to create a custom root view and using that we can get Touch or Drag Events over the map.
+
+Step 1: We Create MySupportMapFragment extends SupportMapFragment and we will use that as our .xml file 
+
+ <fragment
+        android:id="@+id/map"
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent"
+        class="pkg_name.MySupportMapFragment" /> 
+
+
+Step 2: Create a MapWrapperLayout extends FrameLayout so that we can set a Touch or Drag listener inside and embed its view with map view. So, we need one Interface which we will use in Root_Map.java
+
+MySupportMapFragment.Java
+
+public class MySupportMapFragment extends SupportMapFragment {
+    public View mOriginalContentView;
+    public MapWrapperLayout mMapWrapperLayout;
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup parent, Bundle savedInstanceState) {
+
+        mOriginalContentView = super.onCreateView(inflater, parent, savedInstanceState);
+        mMapWrapperLayout = new MapWrapperLayout(getActivity());
+        mMapWrapperLayout.addView(mOriginalContentView);
+        return mMapWrapperLayout;
+    }
+
+    @Override
+    public View getView() {
+        return mOriginalContentView;
+    }
+
+    public void setOnDragListener(MapWrapperLayout.OnDragListener onDragListener) {
+        mMapWrapperLayout.setOnDragListener(onDragListener);
+    }
+}
+
+
+MapWrapperLayout.java
+
+    public class MapWrapperLayout extends FrameLayout {
+     private OnDragListener mOnDragListener;
+
+     public MapWrapperLayout(Context context) {
+         super(context);
+     }
+
+     public interface OnDragListener {
+         public void onDrag(MotionEvent motionEvent);
+     }
+
+     @Override
+     public boolean dispatchTouchEvent(MotionEvent ev) {
+         if (mOnDragListener != null) {
+             mOnDragListener.onDrag(ev);
+         }
+         return super.dispatchTouchEvent(ev);
+     }
+
+     public void setOnDragListener(OnDragListener mOnDragListener) {
+         this.mOnDragListener = mOnDragListener;
+     }
+
+ }
+
+
+Root_Map.Java
+
+public class Root_Map extends FragmentActivity {
+
+    private GoogleMap mMap;
+    public static boolean mMapIsTouched = false;
+    MySupportMapFragment customMapFragment;
+    Projection projection;
+    public double latitude;
+    public double longitude;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.root_map);
+        MySupportMapFragment customMapFragment = ((MySupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map));
+        mMap = customMapFragment.getMap();
+
+        customMapFragment.setOnDragListener(new MapWrapperLayout.OnDragListener() {               @Override
+            public void onDrag(MotionEvent motionEvent) {
+                Log.i("ON_DRAG", "X:" + String.valueOf(motionEvent.getX()));
+                Log.i("ON_DRAG", "Y:" + String.valueOf(motionEvent.getY()));
+
+                float x = motionEvent.getX();
+                float y = motionEvent.getY();
+
+                int x_co = Integer.parseInt(String.valueOf(Math.round(x)));
+                int y_co = Integer.parseInt(String.valueOf(Math.round(y)));
+
+                projection = mMap.getProjection();
+                Point x_y_points = new Point(x_co, y_co);
+                LatLng latLng = mMap.getProjection().fromScreenLocation(x_y_points);
+                latitude = latLng.latitude;
+                longitude = latLng.longitude;
+
+                Log.i("ON_DRAG", "lat:" + latitude);
+                Log.i("ON_DRAG", "long:" + longitude);
+
+                // Handle motion event:
+            }
+        });
+    }}
+
+
+Reference Link1 , Link2
+
+Up to here I am able to get LatLong based on X,Y screen coordinates. Now I just have to store it in Array. That array will be used for drawing on the map and finally it will look like a free shape polygon.
+
+
+    
+
+
+I hope this will definitely help you. 
+
+Update:
+
+Alternative 2
+
+As we know, Frame layout is a transparent layout so I have achieved this using Frame Layout.
+In this case, there is no need to create a custom fragment. I have just used Frame Layout as root layout. So basically I will get Touch Events in the root layout and that will return screen coordinates, as we got in custom fragment previously.
+
+Now, I have created a Button inside the "Free Draw". So when you click on that you can move your fingers on the map and draw a free hand polygon and that will disable your map being movable on screen. When you re-click the same button, the  screen goes in ideal mode.
+
+root_map.xml 
+
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent" >
+
+    <fragment
+        android:id="@+id/map"
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent"
+        class="com.google.android.gms.maps.SupportMapFragment" />
+
+    <FrameLayout
+        android:id="@+id/fram_map"
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent" >
+
+        <Button
+            android:id="@+id/btn_draw_State"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Free Draw" />
+    </FrameLayout>
+
+</FrameLayout>
+
+
+Root_Map.java
+
+FrameLayout fram_map = (FrameLayout) findViewById(R.id.fram_map);
+Button btn_draw_State = (Button) findViewById(R.id.btn_draw_State);
+Boolean Is_MAP_Moveable = false; // to detect map is movable 
+
+
+// Button will change Map movable state 
+
+btn_draw_State.setOnClickListener(new View.OnClickListener() {
+    @Override
+    public void onClick(View v) {
+        Is_MAP_Moveable = !Is_MAP_Moveable;
+    }
+});
+
+
+Touch Click of Frame Layout and with the help of the do some task 
+
+fram_map.setOnTouchListener(new View.OnTouchListener() {     @Override
+    public boolean onTouch(View v, MotionEvent event) {
+        float x = event.getX();
+        float y = event.getY();
+
+        int x_co = Math.round(x);
+        int y_co = Math.round(y);
+
+        projection = mMap.getProjection();
+        Point x_y_points = new Point(x_co, y_co);
+
+        LatLng latLng = mMap.getProjection().fromScreenLocation(x_y_points);
+        latitude = latLng.latitude;
+
+        longitude = latLng.longitude;
+
+        int eventaction = event.getAction();
+        switch (eventaction) {
+            case MotionEvent.ACTION_DOWN:
+                // finger touches the screen
+                val.add(new LatLng(latitude, longitude));
+
+            case MotionEvent.ACTION_MOVE:
+                // finger moves on the screen
+                val.add(new LatLng(latitude, longitude));
+
+            case MotionEvent.ACTION_UP:
+                // finger leaves the screen
+                Draw_Map();
+                break;
+        }
+
+        return Is_MAP_Moveable;
+
+    }
+});
+
+
+// Draw your map 
+
+public void Draw_Map() {
+    rectOptions = new PolygonOptions();
+    rectOptions.addAll(val);
+    rectOptions.strokeColor(Color.BLUE);
+    rectOptions.strokeWidth(7);
+    rectOptions.fillColor(Color.CYAN);
+    polygon = mMap.addPolygon(rectOptions);
+}
+
+
+Yet, now you have to maintain your list while you draw, so you have to clear your previous list data.
+    

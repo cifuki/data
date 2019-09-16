@@ -1,0 +1,139 @@
+121
+Q:I am looking to authenticate a user from a client application while using the ASP.NET Web API. I have watched all the videos on the site and also read this forum post.
+
+Putting the [Authorize] attribute correctly returns a 401 Unauthorized status. However, I need to know how to allow a user to log in to the API.
+
+I want to provide user credentials from an Android application to the API, get the user logged in, and then have all subsequent API calls pre-authenticated.
+    
+===============================================================================================
+137
+A:allow a user to log in to the API
+
+
+You need to send a valid Forms Authentication cookie along with the request. This cookie is usually sent by the server when authenticating (LogOn action) by calling the [FormsAuthentication.SetAuthCookie method (see MSDN).
+
+So the client needs to perform 2 steps:
+
+
+Send an HTTP request to a LogOn action by sending the username and password. In turns this action will call the FormsAuthentication.SetAuthCookie method (in case the credentials are valid) which in turn will set the forms authentication cookie in the response.
+Send an HTTP request to an [Authorize] protected action by sending along the forms authentication cookie it retrieved in the first request.
+
+
+Let's take an example. Suppose that you have 2 API controllers defined in your web application: 
+
+The first one responsible for handling authentication:
+
+public class AccountController : ApiController
+{
+    public bool Post(LogOnModel model)
+    {
+        if (model.Username == "john" && model.Password == "secret")
+        {
+            FormsAuthentication.SetAuthCookie(model.Username, false);
+            return true;
+        }
+
+        return false;
+    }
+}
+
+
+and the second one containing protected actions that only authorized users can see:
+
+[Authorize]
+public class UsersController : ApiController
+{
+    public string Get()
+    {
+        return "This is a top secret material that only authorized users can see";
+    }
+}
+
+
+Now we could write a client application consuming this API. Here's a trivial console application example (make sure you have installed the Microsoft.AspNet.WebApi.Client and Microsoft.Net.Http NuGet packages):
+
+using System;
+using System.Net.Http;
+using System.Threading;
+
+class Program
+{
+    static void Main()
+    {
+        using (var httpClient = new HttpClient())
+        {
+            var response = httpClient.PostAsJsonAsync(
+                "http://localhost:26845/api/account", 
+                new { username = "john", password = "secret" }, 
+                CancellationToken.None
+            ).Result;
+            response.EnsureSuccessStatusCode();
+
+            bool success = response.Content.ReadAsAsync<bool>().Result;
+            if (success)
+            {
+                var secret = httpClient.GetStringAsync("http://localhost:26845/api/users");
+                Console.WriteLine(secret.Result);
+            }
+            else
+            {
+                Console.WriteLine("Sorry you provided wrong credentials");
+            }
+        }
+    }
+}
+
+
+And here's how the 2 HTTP requests look on the wire:
+
+Authentication request:
+
+POST /api/account HTTP/1.1
+Content-Type: application/json; charset=utf-8
+Host: localhost:26845
+Content-Length: 39
+Connection: Keep-Alive
+
+{"username":"john","password":"secret"}
+
+
+Authentication response:
+
+HTTP/1.1 200 OK
+Server: ASP.NET Development Server/10.0.0.0
+Date: Wed, 13 Jun 2012 13:24:41 GMT
+X-AspNet-Version: 4.0.30319
+Set-Cookie: .ASPXAUTH=REMOVED FOR BREVITY; path=/; HttpOnly
+Cache-Control: no-cache
+Pragma: no-cache
+Expires: -1
+Content-Type: application/json; charset=utf-8
+Content-Length: 4
+Connection: Close
+
+true
+
+
+Request for protected data:
+
+GET /api/users HTTP/1.1
+Host: localhost:26845
+Cookie: .ASPXAUTH=REMOVED FOR BREVITY
+
+
+Response for protected data:
+
+HTTP/1.1 200 OK
+Server: ASP.NET Development Server/10.0.0.0
+Date: Wed, 13 Jun 2012 13:24:41 GMT
+X-AspNet-Version: 4.0.30319
+Cache-Control: no-cache
+Pragma: no-cache
+Expires: -1
+Content-Type: application/json; charset=utf-8
+Content-Length: 66
+Connection: Close
+
+"This is a top secret material that only authorized users can see"
+
+    

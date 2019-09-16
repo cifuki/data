@@ -1,0 +1,197 @@
+76
+Q:I'm new to Android programming and I'm having problems while passing an ArrayList of a Parcelable to a fragment.
+This is the Activity that is launched(working well!) where feedlist is an ArrayList of a parcelable Music.
+
+Intent in = new Intent(context, ListMusicsActivity.class);
+
+in.putExtra("arrayMusic", feedList);
+activity.startActivity(in);
+
+
+The fragment Activity onCreate() method:
+
+@Override
+protected void onCreate(Bundle savedInstanceState)
+{
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activitymusiclist);
+
+    if(savedInstanceState != null)
+    {
+        ListMusicFragment frag = new ListMusicFragment();
+        frag.setArguments(getIntent().getExtras());
+    }
+}
+
+
+The Fragment code:
+
+public class ListMusicFragment extends SherlockFragment{
+
+private ArrayList<Music> listMusics = new ArrayList<Music>();
+private ListView listMusic;
+
+
+@Override
+public View onCreateView(LayoutInflater inflater, ViewGroup container, 
+    Bundle savedInstanceState)
+{
+    listMusics = (ArrayList<Music>) getArguments().getSerializable("arrayMusic");
+    View view = inflater.inflate(R.layout.musiclistview, container, false);
+    listMusic = (ListView) view.findViewById(R.id.musicListView);
+    listMusic.setAdapter(new MusicBaseAdapter(getActivity(), listMusics));
+
+    return view;
+}
+}
+
+
+I think the problem is in the line 
+
+listMusics = (ArrayList<Music>) getArguments().getSerializable("arrayMusic");
+
+
+Finally this is my Music class:
+
+public class Music implements Parcelable{
+
+private String url;
+private String artist;
+private String title;
+private String duration;
+private String info_url;
+private String lyrics;
+
+
+public Music(String url, String artist, String title, 
+    String duration, String lyrics, String info_url)
+{
+    this.url = url;
+    this.artist = artist;
+    this.title = title;
+    this.duration = duration;
+    this.lyrics = lyrics;
+    this.info_url = info_url;
+}
+
+public Music(Parcel in)
+{
+    url = ParcelUtils.readString(in);
+    artist = ParcelUtils.readString(in);
+    title = ParcelUtils.readString(in);
+    duration = ParcelUtils.readString(in);
+    info_url = ParcelUtils.readString(in);
+    lyrics = ParcelUtils.readString(in);
+}
+
+public String getUrl()
+{
+    return url;
+}
+
+public String getArtist()
+{
+    return artist;
+}
+
+public String getTitle()
+{
+    return title;
+}
+
+public String getDuration()
+{
+    return duration;
+}
+
+public String getLyrics()
+{
+    return lyrics;
+}
+
+public String getInfo()
+{
+    return info_url;
+}
+
+@Override
+public int describeContents() {
+    return 0;
+}
+
+
+@Override
+public void writeToParcel(Parcel dest, int flags)
+{
+    ParcelUtils.writeString(dest, url);
+    ParcelUtils.writeString(dest, artist);
+    ParcelUtils.writeString(dest, title);
+    ParcelUtils.writeString(dest, duration);
+    ParcelUtils.writeString(dest, lyrics);
+    ParcelUtils.writeString(dest, info_url);
+}
+
+public static final Parcelable.Creator<Music> CREATOR = 
+    new Parcelable.Creator<Music>() {
+
+    public Music createFromParcel(Parcel in)
+    {
+        return new Music(in);
+    }
+
+    public Music[] newArray(int size)
+    {
+        return new Music[size];
+    }
+};
+}
+
+
+When I run this code the problem I get is a java.lang.NullPointerException in the Fragment onCreateView() method.
+I would appreciate a lot if someone pointed me in the right direction to see where I am failing.
+
+EDIT: Problem solved: I just needed to add this line to the fragment Activity onCreate() method(othwewise the getArguments() would return null):
+
+getSupportFragmentManager().beginTransaction()
+    .add(android.R.id.content, frag).commit();
+
+
+And add this to the fragment code:
+
+@Override
+    public void onActivityCreated(Bundle savedInstanceState)
+{
+    super.onActivityCreated(savedInstanceState);
+
+    Bundle bundle = getArguments();
+    if(bundle != null)
+    {
+        listMusics = bundle.getParcelableArrayList("arrayMusic");
+        listMusic.setAdapter(new MusicBaseAdapter(getActivity(), listMusics));
+    }
+}
+
+
+where, listMusics is an ArrayList of Parcelable Music.
+    
+===============================================================================================
+180
+A:Two things. First I don't think you are adding the data that you want to pass to the fragment correctly. What you need to pass to the fragment is a bundle, not an intent. For example if I wanted send an int value to a fragment I would create a bundle, put the int into that bundle, and then set that bundle as an argument to be used when the fragment was created. 
+
+Bundle bundle = new Bundle();
+bundle.putInt(key, value);
+fragment.setArguments(bundle);
+
+
+Second to retrieve that information you need to get the arguments sent to the fragment. You then extract the value based on the key you identified it with. For example in your fragment:
+
+Bundle bundle = this.getArguments();
+if (bundle != null) {
+    int i = bundle.getInt(key, defaulValue);
+}
+
+
+What you are getting changes depending on what you put. Also the default value is usually null but does not need to be. It depends on if you set a default value for that argument. 
+
+Lastly I do not think you can do this in onCreateView. I think you must retrieve this data within your fragment's onActivityCreated method. My reasoning is as follows. onActivityCreated runs after the underlying activity has finished its own onCreate method. If you are placing the information you wish to retrieve within the bundle durring your activity's onCreate method, it will not exist during your fragment's onCreateView. Try using this in onActivityCreated and just update your ListView contents later. 
+    

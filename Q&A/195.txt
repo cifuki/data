@@ -1,0 +1,98 @@
+407
+Q:How do you get the Android's primary e-mail address (or a list of e-mail addresses)?
+
+It's my understanding that on OS 2.0+ there's support for multiple e-mail addresses, but below 2.0 you can only have one e-mail address per device.
+    
+===============================================================================================
+743
+A:There are several ways to do this, shown below.
+
+As a friendly warning, be careful and up-front to the user when dealing with account, profile, and contact data. If you misuse a user's email address or other personal information, bad things can happen.
+
+Method A: Use AccountManager (API level 5+)
+
+You can use AccountManager.getAccounts or AccountManager.getAccountsByType to get a list of all account names on the device. Fortunately, for certain account types (including com.google), the account names are email addresses. Example snippet below.
+
+Pattern emailPattern = Patterns.EMAIL_ADDRESS; // API level 8+
+Account[] accounts = AccountManager.get(context).getAccounts();
+for (Account account : accounts) {
+    if (emailPattern.matcher(account.name).matches()) {
+        String possibleEmail = account.name;
+        ...
+    }
+}
+
+
+Note that this requires the GET_ACCOUNTS permission:
+
+<uses-permission android:name="android.permission.GET_ACCOUNTS" />
+
+
+More on using AccountManager can be found at the Contact Manager sample code in the SDK.
+
+Method B: Use ContactsContract.Profile (API level 14+)
+
+As of Android 4.0 (Ice Cream Sandwich), you can get the user's email addresses by accessing their profile. Accessing the user profile is a bit heavyweight as it requires two permissions (more on that below), but email addresses are fairly sensitive pieces of data, so this is the price of admission.
+
+Below is a full example that uses a CursorLoader to retrieve profile data rows containing email addresses.
+
+public class ExampleActivity extends Activity implements LoaderManager.LoaderCallbacks<Cursor> {
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        getLoaderManager().initLoader(0, null, this);
+    }
+
+    @Override
+    public Loader<Cursor> onCreateLoader(int id, Bundle arguments) {
+        return new CursorLoader(this,
+                // Retrieve data rows for the device user's 'profile' contact.
+                Uri.withAppendedPath(
+                        ContactsContract.Profile.CONTENT_URI,
+                        ContactsContract.Contacts.Data.CONTENT_DIRECTORY),
+                ProfileQuery.PROJECTION,
+
+                // Select only email addresses.
+                ContactsContract.Contacts.Data.MIMETYPE + " = ?",
+                new String[]{ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE},
+
+                // Show primary email addresses first. Note that there won't be
+                // a primary email address if the user hasn't specified one.
+                ContactsContract.Contacts.Data.IS_PRIMARY + " DESC");
+    }
+
+    @Override
+    public void onLoadFinished(Loader<Cursor> cursorLoader, Cursor cursor) {
+        List<String> emails = new ArrayList<String>();
+        cursor.moveToFirst();
+        while (!cursor.isAfterLast()) {
+            emails.add(cursor.getString(ProfileQuery.ADDRESS));
+            // Potentially filter on ProfileQuery.IS_PRIMARY
+            cursor.moveToNext();
+        }
+
+        ...
+    }
+
+    @Override
+    public void onLoaderReset(Loader<Cursor> cursorLoader) {
+    }
+
+    private interface ProfileQuery {
+        String[] PROJECTION = {
+                ContactsContract.CommonDataKinds.Email.ADDRESS,
+                ContactsContract.CommonDataKinds.Email.IS_PRIMARY,
+        };
+
+        int ADDRESS = 0;
+        int IS_PRIMARY = 1;
+    }
+}
+
+
+This requires both the READ_PROFILE and READ_CONTACTS permissions:
+
+<uses-permission android:name="android.permission.READ_PROFILE" />
+<uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    

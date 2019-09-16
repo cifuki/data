@@ -1,0 +1,66 @@
+35
+Q:I'm trying to implement MVP without Dagger (for learning purposes). But I got to the problem - I use Repository patter to get raw data either from cache (Shared Preferences) or network:
+
+Shared Prefs| 
+            |<->Repository<->Model<->Presenter<->View
+     Network|
+
+
+But to put my hands on Shared Preferences I have to put somewhere line like
+
+presenter = new Presenter(getApplicationContext());
+
+
+I use onRetainCustomNonConfigurationInstance/getLastCustomNonConfigurationInstance pair to keep Presenter "retained".
+
+public class MyActivity extends AppCompatActivity implements MvpView {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        //...
+        presenter = (MvpPresenter) getLastCustomNonConfigurationInstance();
+
+        if(null == presenter){
+            presenter = new Presenter(getApplicationContext());
+        }
+
+        presenter.attachView(this);
+    }
+
+    @Override
+    public Object onRetainCustomNonConfigurationInstance() {
+        return presenter;
+    }
+
+    //...
+}
+
+
+So how to use Shared Preferences in MVP without Dagger and not causing Presenter to be Context dependent?
+    
+===============================================================================================
+69
+A:Your Presenter should not be Context dependent in the first place. If your presenter needs SharedPreferences you should pass them in the constructor.
+If your presenter needs a Repository, again, put that in the constructor. I highly suggest watching Google clean code talks since they do a really good job explaining why you should use a proper API.
+
+This is proper dependency management, which will help you write clean, maintainable, and testable code.
+And whether you use dagger, some other DI tool, or supply the objects yourself is irrelevant.
+
+public class MyActivity extends AppCompatActivity implements MvpView {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        SharedPreferences preferences = // get your preferences
+        ApiClient apiClient = // get your network handling object
+        Repository repository = new Repository(apiClient, preferences);
+        presenter = new Presenter(repository);
+    }
+}
+
+
+This object creation can be simplified by using a factory pattern, or some DI framework like dagger, but as you can see above neither Repository nor your presenter depends on a Context. If you want to supply your actual SharedPreferences only their creation of them will depend on the context.
+
+Your repository depends on some API client and SharedPreferences, your presenter depends on the Repository. Both classes can easily be tested by just supplying mocked objects to them.
+
+Without any static code. Without any side effects.
+    

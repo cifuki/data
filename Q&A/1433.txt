@@ -1,0 +1,91 @@
+123
+Q:Firstly, my status bar background is set to dark brown, and my navigation bar background is default black. I'm using the Material light theme.
+
+I'm starting a new activity using ActivityOptions.makeSceneTransitionAnimation with default transitions, and I notice that both the status and navigation bars briefly fade to white and then back to the correct colors.
+
+According to the documentation:
+
+
+  To get the full effect of a transition, you must enable window content transitions on      both the calling and called activities. Otherwise, the calling activity will start the exit transition, but then you'll see a window transition (like scale or fade)
+
+
+I am using getWindow().requestFeature(Window.FEATURE_CONTENT_TRANSITIONS); on both the calling and called activities.
+
+Similarly, if I change the enter transition to a slide, both the status and navigation bars briefly have a slide transition with a white background.
+
+How do I prevent the status bar and navigation bar from animating during an activity scene animation transition?
+    
+===============================================================================================
+210
+A:There are two approaches you can use that I know of to prevent the navigation/status bar from animating during the transition:
+
+Approach #1: Exclude the status bar and navigation bar from the window's default exit/enter fade transition
+
+The reason why the navigation/status bar are fading in and out during the transition is because by default all non-shared views (including the navigation/status bar backgrounds) will fade out/in in your calling/called Activitys respectively once the transition begins. You can, however, easily get around this by excluding the navigation/status bar backgrounds from the window's default exit/enter Fade transition. Simply add the following code to your Activitys' onCreate() methods:
+
+Transition fade = new Fade();
+fade.excludeTarget(android.R.id.statusBarBackground, true);
+fade.excludeTarget(android.R.id.navigationBarBackground, true);
+getWindow().setExitTransition(fade);
+getWindow().setEnterTransition(fade);
+
+
+This transition could also be declared in the activity's theme using XML (i.e. in your own res/transition/window_fade.xml file):
+
+<?xml version="1.0" encoding="utf-8"?>
+<fade xmlns:android="http://schemas.android.com/apk/res/android">
+    <targets>
+        <target android:excludeId="@android:id/statusBarBackground"/>
+        <target android:excludeId="@android:id/navigationBarBackground"/>
+    </targets>
+</fade>
+
+
+Approach #2: Add the status bar and navigation bar as shared elements
+
+This approach builds off of klmprt's answer, which almost worked for me... although I still needed to make a couple of modifications.
+
+In my calling Activity, I used the following code to start the Activity:
+
+View statusBar = findViewById(android.R.id.statusBarBackground);
+View navigationBar = findViewById(android.R.id.navigationBarBackground);
+
+List<Pair<View, String>> pairs = new ArrayList<>();
+if (statusBar != null) {
+  pairs.add(Pair.create(statusBar, Window.STATUS_BAR_BACKGROUND_TRANSITION_NAME));
+}
+if (navigationBar != null) {
+  pairs.add(Pair.create(navigationBar, Window.NAVIGATION_BAR_BACKGROUND_TRANSITION_NAME));
+}
+pairs.add(Pair.create(mSharedElement, mSharedElement.getTransitionName()));
+
+Bundle options = ActivityOptions.makeSceneTransitionAnimation(activity, 
+        pairs.toArray(new Pair[pairs.size()])).toBundle();
+startActivity(new Intent(context, NextActivity.class), options);
+
+
+So far this is essentially the same thing that klmprt suggested in his answer. However, I also needed to add the following code in my called Activity's onCreate() method in order to prevent the status bar and navigation bar from "blinking" during the transition:
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_next);
+
+    // Postpone the transition until the window's decor view has
+    // finished its layout.
+    postponeEnterTransition();
+
+    final View decor = getWindow().getDecorView();
+    decor.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+        @Override
+        public boolean onPreDraw() {
+            decor.getViewTreeObserver().removeOnPreDrawListener(this);
+            startPostponedEnterTransition();
+            return true;
+        }
+    });
+}
+
+
+Adding the status bar and navigation bar backgrounds as shared elements will force them to be drawn on top of the window's default exit/enter fade transition, meaning that they will not fade during the transition. More discussion about this approach can be found in this Google+ post.
+    

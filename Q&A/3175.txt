@@ -1,0 +1,84 @@
+70
+Q:I want to make a synchronous call to some Java code in my Android app.
+
+I am using this solution:
+https://stackoverflow.com/a/3338656
+
+My Java code:
+
+final class MyWebChromeClient extends WebChromeClient {
+        public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
+            Log.d("LogTag", message);
+            result.confirm();
+            return true;
+        }
+    }
+
+
+My JavaScript code:
+
+<html>
+<script>
+function java_request(){
+    alert('test');
+}
+</script>
+<body>
+<h2>Welcome</h2>
+<div id="area"></div>
+<form>
+<input type="button" value="java_call" onclick="java_request()">
+</form>
+</body>
+</html>
+
+
+When I tap on the java_call button, the button goes to the pressed state. I can see 'test' in the console log. Everything is normal until here.
+
+The problem is, the button never gets back to its normal state. It stays in the pressed state. Maybe the JavaScript execution is broken or something?
+
+Why does the button never return to its normal state?
+    
+===============================================================================================
+98
+A:I don't think this is the best solution to get the javascript to execute java code. See here:
+
+If you want to expose native code to the HTML to be callable via javascript, do the following around your web view declaration:
+
+JavaScriptInterface jsInterface = new JavaScriptInterface(this);
+webView.getSettings().setJavaScriptEnabled(true);
+webView.addJavascriptInterface(jsInterface, "JSInterface");
+
+
+Declare the class JavaScriptInterface:
+
+public class JavaScriptInterface {
+    private Activity activity;
+
+    public JavaScriptInterface(Activity activity) {
+        this.activity = activity;
+    }
+
+    @JavascriptInterface
+    public void startVideo(String videoAddress){
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(Uri.parse(videoAddress), "video/3gpp"); 
+        activity.startActivity(intent);
+    }
+}
+
+
+I am declaring a single function for playing a video, but you can do whatever you want.
+
+Finally you call this in the WebView contents via simple javascript call:
+
+<video width="320" height="240" controls="controls" poster='poster.gif'
+       onclick="window.JSInterface.startVideo('file:///sdcard/test.3gp');" >
+   Your browser does not support the video tag.
+</video>
+
+
+The example is taken from another answer of mine, about playing videos, but should be explaining enough.
+
+EDIT As per @CedricSoubrie's comment: if the target version of the application is set to 17 or higher you need to add annotation @JavascriptInterface above each method you want to export to the web view.
+    

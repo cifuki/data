@@ -1,0 +1,371 @@
+66
+Q:Here i have one view pager activity which has one imageview and 2 overlay bars. there overlay bars i made using android xml file layout itself.
+
+Here my requirement is like that 
+
+1) single tap on view pager's imageview first time  = show top and bottom rectangle overlaybar.
+2) single tap on view pager's imageview second time = hide these overlays.
+
+These both are functions like android gallary view type.
+
+But here when these top and bottom layout bar displays at that time i want to use only buttons click only which buttons are declare within this layout.
+
+But I am not getting success to achieve this thing.
+
+Problems 
+
+1) when top or bottom bar is there if i can click on next or previous button than its takes event for behind imageview single tap touch event, And my bar is getting invisible.
+2) Only wants declare buttons event only
+3) Avoid imageview getting clicked when i touch to overlay bar.
+
+In short when my top and bottom image bar appears at that time no touh event takes place for imageview from top and bottom image bar. I can click on imageview but not making clickable when i click on actually next or previous or share button.
+
+So these are the problems which i am facing, Please help me .
+
+Source code :
+
+activity_pager_image.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" >
+
+    <android.support.v4.view.ViewPager
+        android:id="@+id/pager"
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent" />
+
+    <RelativeLayout
+        android:id="@+id/rl_top_overlay"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/slideshow_bar"
+        android:visibility="gone" >
+
+        <TextView
+            android:id="@+id/tv_top_overlay"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerHorizontal="true"
+            android:layout_centerVertical="true"
+            android:textIsSelectable="false" />
+    </RelativeLayout>
+
+    <RelativeLayout
+        android:id="@+id/rl_bottom_overlay"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/slideshow_bar"
+        android:visibility="visible" >
+
+        <Button
+            android:id="@+id/btn_left_arrow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentLeft="true"
+            android:layout_centerVertical="true"
+            android:layout_marginLeft="35dp"
+            android:background="@drawable/ic_left_arrow" />
+
+        <Button
+            android:id="@+id/btn_below_share"
+            style="@style/normalText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentRight="true"
+            android:layout_centerVertical="true"
+            android:layout_marginRight="35dp"
+            android:background="@drawable/ic_share"
+            android:visibility="visible" />
+
+        <Button
+            android:id="@+id/btn_right_arrow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerHorizontal="true"
+            android:layout_centerVertical="true"
+            android:layout_marginLeft="50dp"
+            android:layout_toRightOf="@id/btn_left_arrow"
+            android:background="@drawable/ic_right_arrow" />
+    </RelativeLayout>
+
+</FrameLayout>
+
+
+item_pager_image.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" >
+
+    <demo.android.library.imagezoom.ImageViewTouch
+        android:id="@+id/image"
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent"
+        android:adjustViewBounds="true"
+        android:contentDescription="@string/descr_image"
+        android:scaleType="fitXY" />
+
+</FrameLayout>
+
+
+JAVA code
+
+public class ImagePagerActivity extends BaseActivity {
+
+    private static final String STATE_POSITION = "STATE_POSITION";
+    private DisplayImageOptions options;
+    private String[] imageUrls;
+    private ViewPager pager;
+
+    private static int sCounter = 0;
+
+    private RelativeLayout mRlTopOverlayBar = null;
+    private RelativeLayout mRlBottomOverlayBar = null;
+    private TextView mPageNumberText = null;
+    private Button mLeftArrow = null;
+    private Button mRightArrow = null;
+
+    int mPageCounter = 0;
+    int mTotalImages = 0;
+
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_image_pager);
+
+        mRlTopOverlayBar = (RelativeLayout) findViewById(R.id.rl_top_overlay);
+        mRlBottomOverlayBar = (RelativeLayout) findViewById(R.id.rl_bottom_overlay);
+
+        mPageNumberText = (TextView) findViewById(R.id.tv_top_overlay);
+        mLeftArrow = (Button) findViewById(R.id.btn_left_arrow);
+        mRightArrow = (Button) findViewById(R.id.btn_right_arrow);
+
+        Bundle bundle = getIntent().getExtras();
+        String[] imageUrls = bundle
+                .getStringArray(Constants.GALLARY_IMAGES_IMAGE_BUNDLE_KEY);
+
+        mTotalImages = imageUrls.length;
+
+        mPageCounter = bundle.getInt(
+                Constants.GALLARY_IMAGE_POSITION_BUNDLE_KEY, 0);
+
+        Log.d("TAG", "Pre Poistion " + mPageCounter);
+
+        if (savedInstanceState != null) {
+            mPageCounter = savedInstanceState.getInt(STATE_POSITION);
+        }
+
+        options = new DisplayImageOptions.Builder()
+                .showImageForEmptyUri(R.drawable.photo_default)
+                .showImageOnFail(R.drawable.ic_error).resetViewBeforeLoading()
+                .cacheOnDisc().imageScaleType(ImageScaleType.EXACTLY)
+                .bitmapConfig(Bitmap.Config.RGB_565)
+                .displayer(new FadeInBitmapDisplayer(300)).build();
+
+        pager = (ViewPager) findViewById(R.id.pager);
+        pager.setAdapter(new ImagePagerAdapter(imageUrls));
+        pager.setCurrentItem(mPageCounter);
+
+        mLeftArrow.setOnClickListener(new OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                // int setCounter = mPageCounter - 1;
+                // if (setCounter >= 0) {
+
+                // }
+                pager.setCurrentItem(pager.getCurrentItem() - 1);
+
+            }
+        });
+
+        mRightArrow.setOnClickListener(new OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                pager.setCurrentItem(pager.getCurrentItem() + 1);
+                /*
+                 * int setCounter = mPageCounter + 1; if (setCounter <
+                 * mTotalImages) { pager.setCurrentItem(mPageCounter + 1); }
+                 */
+            }
+        });
+    }
+
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        outState.putInt(STATE_POSITION, pager.getCurrentItem());
+    }
+
+    private class ImagePagerAdapter extends PagerAdapter {
+
+        private String[] images;
+        private LayoutInflater inflater;
+
+        ImagePagerAdapter(String[] images) {
+            this.images = images;
+            inflater = getLayoutInflater();
+        }
+
+        @Override
+        public void destroyItem(ViewGroup container, int position, Object object) {
+            ((ViewPager) container).removeView((View) object);
+        }
+
+        @Override
+        public void finishUpdate(View container) {
+        }
+
+        @Override
+        public int getCount() {
+            return images.length;
+        }
+
+        @Override
+        public Object instantiateItem(ViewGroup view, int position) {
+            View imageLayout = inflater.inflate(R.layout.item_pager_image,
+                    view, false);
+
+            Log.d("TAG", "Poistion " + position);
+            final ImageViewTouch imageView = (ImageViewTouch) imageLayout
+                    .findViewById(R.id.image);
+
+            final DeactivableViewPager viewPager = new DeactivableViewPager(
+                    ImagePagerActivity.this);
+            imageView.setOnScaleListener(new OnPageScaleListener() {
+
+                @Override
+                public void onScaleBegin() {
+                    viewPager.deactivate();
+                }
+
+                @Override
+                public void onScaleEnd(float scale) {
+                    if (scale > 1.0) {
+                        viewPager.deactivate();
+                    } else {
+                        viewPager.activate();
+                    }
+                }
+            });
+
+            imageView
+                    .setSingleTapListener(new OnImageViewTouchSingleTapListener() {
+
+                        @Override
+                        public void onSingleTapConfirmed() {
+                            Log.d("TAG", "setSingleTapListener");
+
+                            sCounter++;
+                            if (sCounter % 2 == 0) {
+                                mRlTopOverlayBar.setVisibility(View.GONE);
+                                mRlBottomOverlayBar.setVisibility(View.GONE);
+                            } else {
+                                mRlTopOverlayBar.setVisibility(View.VISIBLE);
+                                mRlBottomOverlayBar.setVisibility(View.VISIBLE);
+                                mRlBottomOverlayBar.setClickable(false);
+                                mRlTopOverlayBar.setClickable(false);
+                            }
+                        }
+                    });
+
+            imageLoader.displayImage(images[position], imageView, options,
+                    new SimpleImageLoadingListener() {
+                        @Override
+                        public void onLoadingStarted(String imageUri, View view) {
+                            // spinner.setVisibility(View.VISIBLE);
+                        }
+
+                        @Override
+                        public void onLoadingFailed(String imageUri, View view,
+                                FailReason failReason) {
+                            String message = null;
+                            switch (failReason.getType()) {
+                            case IO_ERROR:
+                                message = "Input/Output error";
+                                break;
+                            case DECODING_ERROR:
+                                message = "Image can't be decoded";
+                                break;
+                            case NETWORK_DENIED:
+                                message = "Downloads are denied";
+                                break;
+                            case OUT_OF_MEMORY:
+                                message = "Out Of Memory error";
+                                break;
+                            case UNKNOWN:
+                                message = "Unknown error";
+                                break;
+                            }
+                            Toast.makeText(ImagePagerActivity.this, message,
+                                    Toast.LENGTH_SHORT).show();
+
+                            // spinner.setVisibility(View.GONE);
+                        }
+
+                        @Override
+                        public void onLoadingComplete(String imageUri,
+                                View view, Bitmap loadedImage) {
+                            // spinner.setVisibility(View.GONE);
+                        }
+                    });
+
+            ((ViewPager) view).addView(imageLayout, 0);
+            return imageLayout;
+        }
+
+        @Override
+        public boolean isViewFromObject(View view, Object object) {
+            return view.equals(object);
+        }
+
+        @Override
+        public void restoreState(Parcelable state, ClassLoader loader) {
+        }
+
+        @Override
+        public Parcelable saveState() {
+            return null;
+        }
+
+        @Override
+        public void startUpdate(View container) {
+        }
+
+    }
+}
+
+
+image :
+
+
+
+thanks
+    
+===============================================================================================
+2
+A:imageView.setSingleTapListener(new OnImageViewTouchSingleTapListener() {
+                    @Override
+                    public void onSingleTapConfirmed() {
+                        Log.d("TAG", "setSingleTapListener");
+
+                        sCounter++;
+                        if (sCounter % 2 == 0) {
+                            mRlTopOverlayBar.setVisibility(View.GONE);
+                            mRlBottomOverlayBar.setVisibility(View.GONE);
+                            pager.requestFocus();
+                        } else {
+                            mRlTopOverlayBar.setVisibility(View.VISIBLE);
+                            mRlBottomOverlayBar.setVisibility(View.VISIBLE);
+                            mRlTopOverlayBar.requestFocus();
+                            mRlBottomOverlayBar.requestFocus();
+                            mRlBottomOverlayBar.setClickable(true);
+                            mRlTopOverlayBar.setClickable(true);
+                        }
+                    }
+                });
+
+    

@@ -1,0 +1,87 @@
+35
+Q:According to the Material Design specs the Nav Drawer's width on mobile devices must be 
+
+
+  side nav width = screen width - app bar height
+
+
+How do we implement this on android?
+
+I have two partial solutions. First is the hacky way: in the containing activity I put this code:
+
+
+if (Build.VERSION.SDK_INT > Build.VERSION_CODES.HONEYCOMB_MR1) {
+    final Display display = getWindowManager().getDefaultDisplay();
+    final Point size = new Point();
+    display.getSize(size);
+
+    final ViewGroup.LayoutParams params = mDrawerFragment.getView().getLayoutParams();
+    params.width = size.x - getResources().getDimensionPixelSize(
+        R.dimen.abc_action_bar_default_height_material
+    );
+    mFragmentUserList.getView().setLayoutParams(params);
+}
+
+This, however, causes a second layout cycle and doesn't work in gingerbread: it is not optimal. 
+
+The second solution involves adding a Space between the fragment and the drawerLayout. It however, displaces the shadow and the spot where the user can press to return to the main app. It also crashes when the "hamburguer" icon is pressed. Not optimal either.
+
+Is there a better solution, preferably one that involves styles and xml?
+    
+===============================================================================================
+28
+A:With the Android Design Support Library it is now really simple to implement navigation drawer including correct sizing. Use the NavigationView and either use its ability to make drawer out of menu resource (example here) or you can just wrap it around the view which you currenty use for showing your drawer list (e.g. ListView, RecyclerView). NavigationView will then take care of the drawer sizing for you.
+
+Here's an example how I use the NavigationView wrapped around ListView:
+
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.v4.widget.DrawerLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:id="@+id/navdrawer_layout"
+    android:fitsSystemWindows="true">
+
+    <!-- Layout where content is shown -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <include android:id="@+id/toolbar"
+            layout="@layout/toolbar" />
+
+        <FrameLayout
+            android:id="@+id/content_frame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_below="@id/toolbar" />
+
+        <!-- Toolbar shadow for pre-lollipop -->
+        <View style="@style/ToolbarDropshadow"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_below="@id/toolbar" />
+
+    </RelativeLayout>
+
+    <android.support.design.widget.NavigationView
+        android:id="@+id/navigation_view"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="start">
+
+        <ListView
+            android:id="@+id/navdrawer_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:choiceMode="singleChoice"
+            android:dividerHeight="0dp"
+            android:divider="@null"/>
+
+    </android.support.design.widget.NavigationView>
+
+</android.support.v4.widget.DrawerLayout>
+
+
+This way you can use NavigationViews sizing and still use your own drawer list. Though it is much easier to make the drawer list out of menu resource (example here) you can't use custom views for the list items. 
+    

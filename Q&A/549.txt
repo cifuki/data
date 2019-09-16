@@ -1,0 +1,85 @@
+233
+Q:I'm trying to make UI test for my android app in Kotlin. Since the new system using ActivityTestRule, I can't make it work: it compiles correctly, and at runtime, I get:
+
+java.lang.Exception: The @Rule 'mActivityRule' must be public.
+    at org.junit.internal.runners.rules.RuleFieldValidator.addError(RuleFieldValidator.java:90)
+    at org.junit.internal.runners.rules.RuleFieldValidator.validatePublic(RuleFieldValidator.java:67)
+    at org.junit.internal.runners.rules.RuleFieldValidator.validateField(RuleFieldValidator.java:55)
+    at org.junit.internal.runners.rules.RuleFieldValidator.validate(RuleFieldValidator.java:50)
+    at org.junit.runners.BlockJUnit4ClassRunner.validateFields(BlockJUnit4ClassRunner.java:170)
+    at org.junit.runners.BlockJUnit4ClassRunner.collectInitializationErrors(BlockJUnit4ClassRunner.java:103)
+    at org.junit.runners.ParentRunner.validate(ParentRunner.java:344)
+    at org.junit.runners.ParentRunner.<init>(ParentRunner.java:74)
+    at org.junit.runners.BlockJUnit4ClassRunner.<init>(BlockJUnit4ClassRunner.java:55)
+    at android.support.test.internal.runner.junit4.AndroidJUnit4ClassRunner.<init>(AndroidJUnit4ClassRunner.java:38)
+    at android.support.test.runner.AndroidJUnit4.<init>(AndroidJUnit4.java:36)
+    at java.lang.reflect.Constructor.constructNative(Native Method)
+    at java.lang.reflect.Constructor.newInstance(Constructor.java:417)
+    at android.support.test.internal.runner.junit4.AndroidAnnotatedBuilder.buildAndroidRunner(AndroidAnnotatedBuilder.java:57)
+    at android.support.test.internal.runner.junit4.AndroidAnnotatedBuilder.runnerForClass(AndroidAnnotatedBuilder.java:45)
+    at org.junit.runners.model.RunnerBuilder.safeRunnerForClass(RunnerBuilder.java:57)
+    at org.junit.internal.builders.AllDefaultPossibilitiesBuilder.runnerForClass(AllDefaultPossibilitiesBuilder.java:29)
+    at org.junit.runner.Computer.getRunner(Computer.java:38)
+    at org.junit.runner.Computer$1.runnerForClass(Computer.java:29)
+    at org.junit.runners.model.RunnerBuilder.safeRunnerForClass(RunnerBuilder.java:57)
+    at org.junit.runners.model.RunnerBuilder.runners(RunnerBuilder.java:98)
+    at org.junit.runners.model.RunnerBuilder.runners(RunnerBuilder.java:84)
+    at org.junit.runners.Suite.<init>(Suite.java:79)
+    at org.junit.runner.Computer.getSuite(Computer.java:26)
+    at android.support.test.internal.runner.TestRequestBuilder.classes(TestRequestBuilder.java:691)
+    at android.support.test.internal.runner.TestRequestBuilder.build(TestRequestBuilder.java:654)
+    at android.support.test.runner.AndroidJUnitRunner.buildRequest(AndroidJUnitRunner.java:329)
+    at android.support.test.runner.AndroidJUnitRunner.onStart(AndroidJUnitRunner.java:226)
+    at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:1584)
+
+
+Here is how I declared mActivityRule:
+
+RunWith(javaClass<AndroidJUnit4>())
+LargeTest
+public class RadisTest {
+
+    Rule
+    public val mActivityRule: ActivityTestRule<MainActivity> = ActivityTestRule(javaClass<MainActivity>())
+
+   ...
+}
+
+
+It is already public :/
+    
+===============================================================================================
+288
+A:JUnit allows providing rules through a test class field or a getter method.
+
+What you annotated is in Kotlin a property though, which JUnit won't recognize.
+
+Here are the possible ways to specify a JUnit rule in Kotlin:
+
+Through an annotated getter method
+
+From M13, the annotation processor supports annotation targets.
+When you write
+
+@Rule
+public val mActivityRule: ActivityTestRule<MainActivity> = ActivityTestRule(javaClass<MainActivity>())
+
+
+though, the annotation will use the property target by default (not visible to Java).
+
+You can annotate the property getter however, which is also public and thus satisfies JUnit requirements for a rule getter:
+
+@get:Rule
+public val mActivityRule: ActivityTestRule<MainActivity> = ActivityTestRule(javaClass<MainActivity>())
+
+
+Alternatively, you can define the rule with a function instead of a property (achieving manually the same result as with @get:Rule).
+
+Through an annotated public field
+
+Kotlin also allows since the beta candidate to deterministically compile properties to fields on the JVM, in which case the annotations and modifiers apply to the generated field. This is done using Kotlin's @JvmField property annotation as answered by @jkschneider.
+
+
+
+Side note: be sure to prefix the Rule annotation with an @ character as it is now the only supported syntax for annotations, and avoid @publicField as it will soon be dropped.
+    

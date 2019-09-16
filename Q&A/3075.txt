@@ -1,0 +1,159 @@
+72
+Q:An answer at the end of this question has been filled out, combining remarks and solutions.
+
+Question
+
+I searched around but haven't found anything that really explains why Android Lint as well as some Eclipse hints suggest replacing some layout_height and layout_width values with 0dp.
+
+For example, I have a ListView that was suggested to be changed
+
+Before
+
+<ListView
+    android:id="@android:id/list"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_weight="1">
+</ListView>
+
+
+After
+
+<ListView
+    android:id="@android:id/list"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1">
+</ListView>
+
+
+Similarly, it suggested changes to a ListView item. These all look the same before and after the changes, but I'm interested in understanding why these are performance boosters.
+
+Anyone have an explanation of why? If it helps, here is general layout with the ListView.
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent">
+
+    <ImageView
+        android:id="@+id/logo_splash"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+    </ImageView>
+
+    <LinearLayout
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent"
+        android:orientation="vertical"
+        android:background="@color/background"
+        android:layout_below="@id/logo_splash">
+
+        <ListView
+            android:id="@android:id/list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+        </ListView>
+
+        <TextView
+            android:id="@android:id/empty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/no_upcoming" />
+
+    </LinearLayout>        
+</RelativeLayout>
+
+
+Answer
+
+I'm putting in an answer here because it's really a combination of answers and referenced links below. If I'm wrong on something, do let me know.
+
+From What is the trick with 0dip layout_height or layouth_width?
+
+There are 3 general layout attributes that work with width and height
+
+
+android:layout_height
+android:layout_width
+android:layout_weight
+
+
+When a LinearLayout is vertical, then the layout_weight will effect the height of the child Views (ListView). Setting the layout_height to 0dp will cause this attribute to be ignored.
+
+Example
+
+<LinearLayout
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:orientation="vertical">
+    <ListView
+        android:id="@android:id/list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+    </ListView>
+</LinearLayout>
+
+
+When a LinearLayout is horizontal, then the layout_weight will effect the width of the child Views (ListView). Setting the layout_width to 0dp will cause this attribute to be ignored.
+
+Example
+
+<LinearLayout
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:orientation="horizontal">
+    <ListView
+        android:id="@android:id/list"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
+    </ListView>
+</LinearLayout>
+
+
+The reason to want to ignore the attribute is that if you didn't ignore it, it would be used to calculate the layout which uses more CPU time. 
+
+Additionally this prevents any confusion over what the layout should look like when using a combination of the three attributes. This is highlighted by @android developer in an answer below.
+
+Also, Android Lint and Eclipse both say to use 0dip. From that answer below, you can use 0dip, 0dp, 0px, etc since a zero size is the same in any of the units.
+
+Avoid wrap_content on ListView
+
+From Layout_width of a ListView
+
+If you've ever wondered why getView(...) is called so many times like I have, it turns out to be related to wrap_content.
+
+Using wrap_content like I was using above will cause all child Views to be measured which will cause further CPU time. This measurement will cause your getView(...) to be called. I've now tested this and the number of times getView(...) is called is reduced dramatically.
+
+When I was using wrap_content on two ListViews, getView(...) was called 3 times for each row on one ListView and 4 times for each row on the other.
+
+Changing this to the recommended 0dp, getView(...) was called only once for each row. This is quite an improvement, but has more to do with avoiding wrap_content on a ListView than it does the 0dp.
+
+However the suggestion of 0dp does substantially improve performance because of this.
+    
+===============================================================================================
+22
+A:First of all you have this,
+
+<ListView
+    android:id="@android:id/list"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_weight="1">
+</ListView>
+
+
+Never take the ListView's height as wrap_content, that will lead into troubles. Here is the reason for that and this answer.
+
+Further more,
+
+
+  I searched around but haven't found anything that really explains why
+  Android Lint as well as some Eclipse hints suggests replacing some
+  layout_height and layout_width values with 0dp.
+
+
+Its because you are using layout_weight = "1" that means your ListView with take the height as much as is available to it. So, in that case there is no need of using layout_height = "wrap_content" just change it to android:layout_height="0dp" and ListView's height will be managed by layout_weight = "1".
+    

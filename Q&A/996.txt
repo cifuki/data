@@ -1,0 +1,94 @@
+156
+Q:I am asking this question because I am new to Java and Android and I searched for hours trying to figure this out. The answer came from a combination of related answers, so I figured I would document what I learned for anyone else who may be struggling. See answer.
+
+I am using Android Studio 2.1.2. My Java setup is the following:
+
+>java -version
+> openjdk version "1.8.0_91"
+> OpenJDK Runtime Environment (build 1.8.0_91-8u91-b14-3ubuntu1~15.10.1-b14)
+> OpenJDK 64-Bit Server VM (build 25.91-b14, mixed mode)
+
+    
+===============================================================================================
+144
+A:First Discovery: Why You Have To Use ThreeTenABP Instead of java.time, ThreeTen-Backport, or even Joda-Time
+
+This is a really short version of the VERY LONG PROCESS of defining a new standard. All of these packages are pretty much the same thing: libraries that provide good, modern time handling functionality for Java. The differences are subtle but important.
+
+The most obvious solution would be to use the built-in java.time package, since this is the new standard way to deal with time and dates in Java. It is an implementation of JSR 310, which was a new standard proposal for time handling based on the Joda-Time library.
+
+However, java.time was introduced in Java 8. Android up to Marshmallow runs on Java 7 ("Android N" is the first version to introduce Java 8 language features). Thus, unless you're only targeting Android N Nougat and above, you can't rely on Java 8 language features (I'm not actually sure this is 100% true, but this is how I understand it). So java.time is out.
+
+The next option might be Joda-Time, since JSR 310 was based on Joda-Time. However, as the ThreeTenABP readme indicates, for a number of reasons, Joda-Time is not the best option.
+
+Next is ThreeTen-Backport, which back-ports much (but not all) of the Java 8 java.time functionality to Java 7. This is fine for most use cases, but, as indicated in the ThreeTenABP readme, it has performance issues with Android.
+
+So the last and seemingly correct option is ThreeTenABP. 
+
+Second Discovery: Build Tools and Dependency Management
+
+Since compiling a program -- especially one using a bunch of external libraries -- is complex, Java almost invariably uses a "build tool" to manage the process. Make, Apache Ant, Apache Maven, and Gradle are all build tools that are used with Java programs (see this post for comparisons). As noted further down, Gradle is the chosen build tool for Android projects.
+
+These build tools include dependency management. Apache Maven appears to be the first to include a centralized package repository. Maven introduced the Maven Central Repository, which allows functionality equivalent to php's composer with Packagist and Ruby's gem with rubygems.org. In other words, the Maven Central Repository is to Maven (and Gradle) what Packagist is to composer -- a definitive and secure source for versioned packages.
+
+Third Discovery: Gradle Handles Dependencies in Android Projects
+
+High on my to-do list is to read the Gradle docs here, including their free eBooks. Had I read these weeks ago when I started learning Android, I would surely have known that Gradle can use the Maven Central Repository to manage dependencies in Android Projects. Furthermore, as detailed in this StackOverflow answer, as of Android Studio 0.8.9, Gradle uses Maven Central Repository implicitly through Bintray's JCenter, which means you don't have to do any extra config to set up the repo -- you just list the dependencies.
+
+Fourth Discovery: Project Dependencies Are Listed in [project dir]/app/build.gradle
+
+Again, obvious to those who have any experience using Gradle in Java, but it took me a while to figure this out. If you see people saying "Oh, just add compile 'this-or-that.jar'" or something similar, know that compile is a directive in that build.gradle file that indicates compile-time dependencies. Here's the official Gradle page on dependency management.
+
+Fifth Discovery: ThreeTenABP Is Managed by Jake Wharton, not by ThreeTen
+
+Yet another issue I spent too much time figuring out. If you look for ThreeTen in Maven Central, you'll only see packages for threetenbp, not threetenabp. If you go to the github repo for ThreeTenABP, you'll see that infamous compile 'this-or-that' line under the Download section of the Readme.
+
+When I first hit this github repo, I didn't know what that compile line meant, and I tried to run it in my terminal (with an obvious and predictable failure). Frustrated, I didn't return to it until long after I figured the rest out, and finally realized that it's a Maven Repo line pointing to the com.jakewharton.threetenabp repo, as opposed to the org.threeten repo. That's why I thought the ThreeTenABP package wasn't in the Maven repo.
+
+Summary: Making it work
+
+Now it all seems pretty easy. You can get modern time handling functions in an Android project by making sure your [project folder]/app/build.gradle file has the compile 'com.jakewharton.threetenabp:threetenabp:1.0.3' line in its dependencies section:
+
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 23
+    buildToolsVersion "23.0.3"
+
+    defaultConfig {
+        applicationId "me.ahuman.myapp"
+        minSdkVersion 11
+        targetSdkVersion 23
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    testImplementation 'junit:junit:4.12'
+    implementation 'com.android.support:appcompat-v7:23.4.0'
+    implementation 'com.android.support:design:23.4.0'
+    implementation 'com.jakewharton.threetenabp:threetenabp:1.2.1'
+}
+
+
+Also add this to Application class:
+
+public class App extends Application {    
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        AndroidThreeTen.init(this);
+        //...
+    }
+}
+
+    

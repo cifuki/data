@@ -1,0 +1,153 @@
+30
+Q:I have checked in Stack Overflow question API for configuring static IP addresses in an Android application.
+
+It works until Android 2.3. However, there is no luck on a higher API level. For example, 
+I put the setting
+
+android.provider.Settings.System.putString(getContentResolver(), android.provider.Settings.System.WIFI_USE_STATIC_IP, "1");        
+android.provider.Settings.System.putString(getContentResolver(), android.provider.Settings.System.WIFI_STATIC_IP, "192.168.0.100");
+android.provider.Settings.System.putString(getContentResolver(), android.provider.Settings.System.WIFI_STATIC_NETMASK, "255.255.255.0");
+android.provider.Settings.System.putString(getContentResolver(), android.provider.Settings.System.WIFI_STATIC_DNS1, "192.168.0.254");
+android.provider.Settings.System.putString(getContentResolver(), android.provider.Settings.System.WIFI_STATIC_GATEWAY, "192.168.0.254");
+
+
+But I go back to check by:
+
+Setting --> Wi-Fi --> Long Press Access Point SSID --> Modify Network --> check Show advanced options
+
+
+The IP Settings field is still stated DHCP but not Static. 
+
+It is true that I can use android.provider.Settings.System.getString() to get back what I set. It prove that the setting is saved somewhere but the system just ignore it. 
+
+The system uses the setting other than android.provider.Settings.System on Android 3.x and 4.x as the setting is set per Access Point SSID. Can I modify the setting on one SSID just like how it works on Android 2.3?
+    
+===============================================================================================
+59
+A:I realise that there is no API on 3.x or 4.x for those setting per SSID. Therefore, I checked out the source code and found out that the configuration of each SSID is stored in android.net.wifi.WifiConfiguration which is gotten from android.net.wifi.WifiManager.
+
+In the below code, IpAssignment is an Enum, either STAIC, DHCP or NONE.
+And linkProperties is the object store IP address, gateway, DNS, etc...
+
+linkAddress is IP address and its netmask as prefixLength (how many bit 1 in netmask).
+
+mRoutes is ArrayList of RouteInfo that can indicate gateway.
+
+mDnses  is ArrayList of InetAddress for DNS.
+
+Firstly, get the current configuration using WifiConfiguration SSID
+
+WifiConfiguration wifiConf = null;
+WifiManager wifiManager = (WifiManager)getSystemService(Context.WIFI_SERVICE);
+WifiInfo connectionInfo = wifiManager.getConnectionInfo();
+List<WifiConfiguration> configuredNetworks = wifiManager.getConfiguredNetworks();        
+for (WifiConfiguration conf : configuredNetworks){
+    if (conf.networkId == connectionInfo.getNetworkId()){
+        wifiConf = conf;
+        break;              
+    }
+}
+
+
+As the IpAssignment and linkProperties are hidden, the object can be gotten from reflection.
+
+The following method can set the declared IP address setting on SSID WifiConfiguration:
+
+    public static void setIpAssignment(String assign , WifiConfiguration wifiConf)
+    throws SecurityException, IllegalArgumentException, NoSuchFieldException, IllegalAccessException{
+        setEnumField(wifiConf, assign, "ipAssignment");     
+    }
+
+    public static void setIpAddress(InetAddress addr, int prefixLength, WifiConfiguration wifiConf)
+    throws SecurityException, IllegalArgumentException, NoSuchFieldException, IllegalAccessException,
+    NoSuchMethodException, ClassNotFoundException, InstantiationException, InvocationTargetException{
+        Object linkProperties = getField(wifiConf, "linkProperties");
+        if(linkProperties == null)return;
+        Class laClass = Class.forName("android.net.LinkAddress");
+        Constructor laConstructor = laClass.getConstructor(new Class[]{InetAddress.class, int.class});
+        Object linkAddress = laConstructor.newInstance(addr, prefixLength);
+
+        ArrayList mLinkAddresses = (ArrayList)getDeclaredField(linkProperties, "mLinkAddresses");
+        mLinkAddresses.clear();
+        mLinkAddresses.add(linkAddress);        
+    }
+
+    public static void setGateway(InetAddress gateway, WifiConfiguration wifiConf)
+    throws SecurityException, IllegalArgumentException, NoSuchFieldException, IllegalAccessException, 
+    ClassNotFoundException, NoSuchMethodException, InstantiationException, InvocationTargetException{
+        Object linkProperties = getField(wifiConf, "linkProperties");
+        if(linkProperties == null)return;
+        Class routeInfoClass = Class.forName("android.net.RouteInfo");
+        Constructor routeInfoConstructor = routeInfoClass.getConstructor(new Class[]{InetAddress.class});
+        Object routeInfo = routeInfoConstructor.newInstance(gateway);
+
+        ArrayList mRoutes = (ArrayList)getDeclaredField(linkProperties, "mRoutes");
+        mRoutes.clear();
+        mRoutes.add(routeInfo);
+    }
+
+    public static void setDNS(InetAddress dns, WifiConfiguration wifiConf)
+    throws SecurityException, IllegalArgumentException, NoSuchFieldException, IllegalAccessException{
+        Object linkProperties = getField(wifiConf, "linkProperties");
+        if(linkProperties == null)return;
+
+        ArrayList<InetAddress> mDnses = (ArrayList<InetAddress>)getDeclaredField(linkProperties, "mDnses");
+        mDnses.clear(); //or add a new dns address , here I just want to replace DNS1
+        mDnses.add(dns); 
+    }
+
+    public static Object getField(Object obj, String name)
+    throws SecurityException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException{
+        Field f = obj.getClass().getField(name);
+        Object out = f.get(obj);
+        return out;
+    }
+
+    public static Object getDeclaredField(Object obj, String name)
+    throws SecurityException, NoSuchFieldException,
+    IllegalArgumentException, IllegalAccessException {
+        Field f = obj.getClass().getDeclaredField(name);
+        f.setAccessible(true);
+        Object out = f.get(obj);
+        return out;
+    }  
+
+    private static void setEnumField(Object obj, String value, String name)
+    throws SecurityException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException{
+        Field f = obj.getClass().getField(name);
+        f.set(obj, Enum.valueOf((Class<Enum>) f.getType(), value));
+    }
+
+
+After that, I can set setting and update WifiConfiguration for this SSID. 
+
+    try{
+        setIpAssignment("STATIC", wifiConf); //or "DHCP" for dynamic setting
+        setIpAddress(InetAddress.getByName("192.168.0.100"), 24, wifiConf);
+        setGateway(InetAddress.getByName("4.4.4.4"), wifiConf);
+        setDNS(InetAddress.getByName("4.4.4.4"), wifiConf);
+        wifiManager.updateNetwork(wifiConf); //apply the setting
+            wifiManager.saveConfiguration(); //Save it
+    }catch(Exception e){
+        e.printStackTrace();
+    }
+
+
+Edit:
+Sorry for I don't check for Android 3.x device that have silmilar UI with Android 4.x.
+In Android 3.x, the gateway is storted in mGateways of linkProperties.
+mGateways is Arraylist of type InetAddress. Therefore, following should work in Android 3.x.
+
+public static void setGateway(InetAddress gateway, WifiConfiguration wifiConf)
+        throws SecurityException, IllegalArgumentException, NoSuchFieldException, IllegalAccessException, 
+        ClassNotFoundException, NoSuchMethodException, InstantiationException, InvocationTargetException{
+            Object linkProperties = getField(wifiConf, "linkProperties");
+            if(linkProperties == null)return;
+            ArrayList mGateways = (ArrayList)getDeclaredField(linkProperties, "mGateways");
+            mGateways.clear();
+            mGateways.add(gateway);
+        }
+
+
+Edit2: The methods setIpAddress, setGateway, setDNS should be inputted as InetAddress type.
+    

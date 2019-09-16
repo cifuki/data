@@ -1,0 +1,78 @@
+129
+Q:I am rarely getting this error while making an API call.
+
+java.lang.IllegalStateException: Fragment  not attached to Activity
+
+
+I tried putting the code inside isAdded() method to check whether  fragment is currently added to its activity but still i rarely gets this error. I fail to understand why I am still getting this error. How can i prevent it?
+
+Its showing error on the line-
+
+cameraInfo.setId(getResources().getString(R.string.camera_id));
+
+
+Below is the sample api call that i am making.     
+
+SAPI.getInfo(getActivity(),
+                new APIResponseListener() {
+                    @Override
+                    public void onResponse(Object response) {
+
+
+                        cameraInfo = new SInfo();
+                        if(isAdded()) {
+                            cameraInfo.setId(getResources().getString(R.string.camera_id));
+                            cameraInfo.setName(getResources().getString(R.string.camera_name));
+                            cameraInfo.setColor(getResources().getString(R.string.camera_color));
+                            cameraInfo.setEnabled(true);
+                        }
+
+
+                    }
+
+                    @Override
+                    public void onError(VolleyError error) {
+                        mProgressDialog.setVisibility(View.GONE);
+                        if (error instanceof NoConnectionError) {
+                            String errormsg = getResources().getString(R.string.no_internet_error_msg);
+                            Toast.makeText(getActivity(), errormsg, Toast.LENGTH_LONG).show();
+                        }
+                    }
+                });
+
+    
+===============================================================================================
+186
+A:This error happens due to the combined effect of two factors:
+
+
+The HTTP request, when complete, invokes either onResponse() or onError() (which work on the main thread) without knowing whether the Activity is still in the foreground or not. If the Activity is gone (the user navigated elsewhere), getActivity() returns null.
+The Volley Response is expressed as an anonymous inner class, which implicitly holds a strong reference to the outer Activity class. This results in a classic memory leak.
+
+
+To solve this problem, you should always do:
+
+Activity activity = getActivity();
+if(activity != null){
+
+    // etc ...
+
+}
+
+
+and also, use isAdded() in the onError() method as well:
+
+@Override
+public void onError(VolleyError error) {
+
+    Activity activity = getActivity(); 
+    if(activity != null && isAdded())
+        mProgressDialog.setVisibility(View.GONE);
+        if (error instanceof NoConnectionError) {
+           String errormsg = getResources().getString(R.string.no_internet_error_msg);
+           Toast.makeText(activity, errormsg, Toast.LENGTH_LONG).show();
+        }
+    }
+}
+
+    

@@ -1,0 +1,147 @@
+107
+Q:I'm building an Android app with gradle. Until now I used the Manifest file to increase the versionCode, but I would like to read the versionCode from an external file and depending if it is the release flavor or the debug flavor increase the versionCode. I tried the extra properties, but you can't save them, which means that next time I build it I'm getting the same versionCode.
+Any help would be very much appreciated!
+
+project.ext{
+    devVersionCode = 13
+    releaseVersionCode = 1
+}
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.6.+'
+    }
+}
+
+apply plugin: 'android'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile project(':Cropper')
+    compile "com.android.support:appcompat-v7:18.0.+"
+    compile "com.android.support:support-v4:18.0.+"
+    compile fileTree(dir: 'libs', include: '*.jar')
+}
+
+def getReleaseVersionCode() {
+    def version = project.releaseVersionCode + 1
+    project.releaseVersionCode = version
+    println sprintf("Returning version %d", version)
+    return version
+}
+
+def getDevVersionCode() {
+    def version = project.devVersionCode + 1
+    project.devVersionCode = version
+    println sprintf("Returning version %d", version)
+    return version
+}
+
+
+def getLastVersioName(versionCode) {
+    return "0.0." + versionCode
+}
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "19.0.0"
+
+    defaultConfig {
+        minSdkVersion 9
+        targetSdkVersion 19
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['src']
+            resources.srcDirs = ['src']
+            aidl.srcDirs = ['src']
+            renderscript.srcDirs = ['src']
+            res.srcDirs = ['res']
+            assets.srcDirs = ['assets']
+        }
+    }
+
+    buildTypes {
+        release {
+            runProguard true
+            proguardFile getDefaultProguardFile('proguard-android-optimize.txt')
+            proguardFile 'proguard.cfg'
+            debuggable false
+            signingConfig null
+            zipAlign false
+        }
+        debug {
+            versionNameSuffix "-DEBUG"
+        }
+    }
+    productFlavors {
+        dev {
+            packageName = 'com.swisscom.docsafe.debug'
+            versionCode getDevVersionCode()
+            versionName getLastVersioName(project.devVersionCode)
+        }
+        prod {
+            packageName = 'com.swisscom.docsafe'
+            versionCode getReleaseVersionCode()
+            versionName getLastVersioName(project.releaseVersionCode)
+        }
+    }
+}
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '1.8'
+}
+
+    
+===============================================================================================
+187
+A:I would like to read the versionCode from an external file
+
+
+I am sure that there are any number of possible solutions; here is one:
+
+android {
+    compileSdkVersion 18
+    buildToolsVersion "18.1.0"
+
+    def versionPropsFile = file('version.properties')
+
+    if (versionPropsFile.canRead()) {
+        def Properties versionProps = new Properties()
+
+        versionProps.load(new FileInputStream(versionPropsFile))
+
+        def code = versionProps['VERSION_CODE'].toInteger() + 1
+
+        versionProps['VERSION_CODE']=code.toString()
+        versionProps.store(versionPropsFile.newWriter(), null)
+
+        defaultConfig {
+            versionCode code
+            versionName "1.1"
+            minSdkVersion 14
+            targetSdkVersion 18
+        }
+    }
+    else {
+        throw new GradleException("Could not read version.properties!")
+    }
+
+    // rest of android block goes here
+}
+
+
+This code expects an existing version.properties file, which you would create by hand before the first build to have VERSION_CODE=8.
+
+This code simply bumps the version code on each build -- you would need to extend the technique to handle your per-flavor version code.
+
+You can see the Versioning sample project that demonstrates this code.
+    

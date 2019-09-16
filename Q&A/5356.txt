@@ -1,0 +1,59 @@
+46
+Q:What is the exact difference between using rawquery and execSQL ??
+While writing a query in android activity, when to use rawquery and when to use execSQL ?
+    
+===============================================================================================
+84
+A:From API documentation:
+
+
+
+void execSQL (String sql)
+
+
+  Execute a single SQL statement that is NOT a SELECT or any other SQL statement that returns data.
+
+
+void execSQL (String sql, Object[] bindArgs)
+
+
+  Execute a single SQL statement that is NOT a SELECT/INSERT/UPDATE/DELETE. 
+
+
+The documentation is inconsistent but they behave both the same. Documentation of the latter is more in depth.
+
+
+
+Cursor rawQuery (String sql, String[] selectionArgs)
+
+
+  Runs the provided SQL and returns a Cursor over the result set.
+
+
+
+
+Uses for rawQuery are:
+
+
+You want to query the database with a SELECT statement.
+=> rawQuery("SELECT ... returns a set of rows and columns in a Cursor. 
+
+
+It's more efficient to use DatabaseUtils.longForQuery(SQLiteDatabase, String, String[]) or DatabaseUtils.stringForQuery(...) in cases there is only a 1x1 query result, like from SELECT count(*) FROM table (which also has it's own dedicated method: DatabaseUtils.queryNumEntries(...)) - this skips creation of a Cursor object & simplifies code since there is also nothing to close, moveToNext, etc.
+
+Special cases like PRAGMA table_info that returns data in rows (see this question)  
+Note: Do not use rawQuery for INSERT, UPDATE or DELETE or anything else that modifies the database. You'll run into "Why does a delete rawQuery need a moveToFirst in order to actually delete the rows?". Reason being that queries can defer reading the result until needed (= access to the cursor) which means for SQLite delaying execution of the statement.
+
+
+Uses for execSQL are:
+
+
+You have "instructions" for the database. Like CREATE TABLE (or any other CREATE statement, e.g. CREATE INDEX), DROP, PRAGMAs that set properties rather than returning them, ...
+INSERT, UPDATE or DELETE  when you're not interested in the amount of rows modified or the row id of the last insert.
+
+
+When you need those, either use the update(), insert(), delete() methods or use a second statement to read those: DatabaseUtils.longForQuery with either SELECT last_insert_rowid() or SELECT changes(). Both return only 1 integer value. (see "Get updated rows count from SQLite in Android using a raw query?" and \xe2\x80\x9cSELECT last_insert_rowid()\xe2\x80\x9d returns always \xe2\x80\x9c0\xe2\x80\x9d)
+
+Anything else that relies on executing a statement.
+
+    

@@ -1,0 +1,141 @@
+59
+Q:While developing a camera app I've encountered an exception that only happened when I switch to other app (onPause() for my app).
+
+01-15 17:22:15.017: E/AndroidRuntime(14336): FATAL EXCEPTION: main
+01-15 17:22:15.017: E/AndroidRuntime(14336): java.lang.RuntimeException: Method called after release()
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.hardware.Camera.setPreviewDisplay(Native Method)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.hardware.Camera.setPreviewDisplay(Camera.java:357)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at com.sora.cbir.yuki.image.leaf.CameraPreview.surfaceCreated(CameraPreview.java:32)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.view.SurfaceView.updateWindow(SurfaceView.java:551)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.view.SurfaceView.onWindowVisibilityChanged(SurfaceView.java:213)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.view.View.dispatchWindowVisibilityChanged(View.java:4075)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.view.ViewGroup.dispatchWindowVisibilityChanged(ViewGroup.java:742)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.view.ViewGroup.dispatchWindowVisibilityChanged(ViewGroup.java:742)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.view.ViewGroup.dispatchWindowVisibilityChanged(ViewGroup.java:742)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.view.ViewGroup.dispatchWindowVisibilityChanged(ViewGroup.java:742)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.view.ViewRoot.performTraversals(ViewRoot.java:858)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.view.ViewRoot.handleMessage(ViewRoot.java:1995)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.os.Handler.dispatchMessage(Handler.java:99)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.os.Looper.loop(Looper.java:150)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at android.app.ActivityThread.main(ActivityThread.java:4389)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at java.lang.reflect.Method.invokeNative(Native Method)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at java.lang.reflect.Method.invoke(Method.java:507)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:849)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:607)
+01-15 17:22:15.017: E/AndroidRuntime(14336):    at dalvik.system.NativeStart.main(Native Method)
+
+
+I did some research and found out that I need to add
+
+mCamera.setPreviewCallback(null);
+
+
+as a workaround for Android's camera stack
+
+my onPause() now looks like this:
+
+@Override
+protected void onPause() {
+    super.onPause();
+    try
+    {    
+        // release the camera immediately on pause event   
+        //releaseCamera();
+         mCamera.stopPreview(); 
+         mCamera.setPreviewCallback(null);
+         mCamera.release();
+         mCamera = null;
+
+    }
+    catch(Exception e)
+    {
+        e.printStackTrace();
+    }
+}
+
+
+and my onResume():
+
+@Override
+protected void onResume()
+{
+    super.onResume();
+    try
+    {
+        mCamera.setPreviewCallback(null);
+        mCamera = getCameraInstance();
+        //mCamera.setPreviewCallback(null);
+        mPreview = new CameraPreview(Imageupload.this, mCamera);//set preview
+        preview.addView(mPreview);
+    } catch (Exception e){
+        Log.d(TAG, "Error starting camera preview: " + e.getMessage());
+    }
+}   
+}
+
+
+and finally my getCameraInstance() method:
+
+public Camera getCameraInstance(){
+    Camera camera = null;
+    try {
+        camera = Camera.open(); // attempt to get a Camera instance
+    }
+    catch (Exception e){
+        // Camera is not available (in use or does not exist)
+    }
+    Camera.Parameters parameters = camera.getParameters();
+    //mPreviewSize = getBestPreviewSize(parameters, wt, ht);
+    //mPictureSize = getBestPictureSize(parameters, wt, ht);
+    //Shift W & H => if camera rotates 90 deg
+
+    mPreviewSize = getOptimalPreviewSize(parameters, wt, ht); //original => wt,ht
+    mPictureSize = getOptimalPictureSize(parameters, wt, ht); //original => wt,ht
+
+    Log.d("CAMERA", "SCREEN RESOLUTION H: "+ht);
+    Log.d("CAMERA", "SCREEN RESOLUTION W: "+wt);
+
+    Log.d("CAMERA", "PREVIEW RESOLUTION H: "+mPreviewSize.height);
+    Log.d("CAMERA", "PREVIEW RESOLUTION W: "+mPreviewSize.width);
+
+    Log.d("CAMERA", "PICTURE RESOLUTION H: "+mPictureSize.height);
+    Log.d("CAMERA", "PICTURE RESOLUTION W: "+mPictureSize.width);
+    //set preview size based on device screen
+    parameters.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
+    //set picture size based on device screen
+    parameters.setPictureSize(mPictureSize.width, mPictureSize.height);
+    //set output camera mode
+    parameters.setPictureFormat(PixelFormat.JPEG);
+    //set focous mode
+    parameters.setFocusMode(FOCUS_MODE_AUTO);
+    //set flash mode
+    parameters.setFlashMode("auto");
+    List<int[]> fps = parameters.getSupportedPreviewFpsRange();
+    //System.out.println("FPS size: " +fps.size());
+    //System.out.println("MAX FPS:"+(fps.get(fps.size()-1)[1])/1000);
+    //log min and max camera supported fps
+    Log.d("CAMERA", "CAMERA MAX FPS: "+(fps.get(fps.size()-1)[1])/1000);
+    Log.d("CAMERA", "CAMERA MIN FPS: "+(fps.get(fps.size()-1)[0])/1000);
+    if(camera_fps)
+    {
+        parameters.setPreviewFpsRange(fps.get(fps.size()-1)[1], fps.get(fps.size()-1)[1]);
+    }
+    //set camera parameters
+    camera.setParameters(parameters);
+
+    Toast.makeText(getApplicationContext(), "Your device are capable of previewing @" + fps.get(fps.size()-1)[1]/1000+"fps!",Toast.LENGTH_SHORT).show();
+    return camera; // returns null if camera is unavailable
+}
+
+
+any ideas on how to fix this?
+    
+===============================================================================================
+144
+A:I've got the same problem. mCamera.setPreviewCallback(null); didn't help. In my activity I've added this to releaseCamera:
+
+mPreview.getHolder().removeCallback(mPreview);
+
+
+and it works now.
+    

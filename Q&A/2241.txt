@@ -1,0 +1,76 @@
+90
+Q:Samsung Galaxy S3 has an extrenal SD card slot, which is mounted to /mnt/extSdCard.
+
+My question is: how to get this path by something like Environment.getExternalStorageDirectory()? This will return mnt/sdcard, and I can't find API for external SD card. (Or removable USB storage on some tablets)
+
+Thank you!
+    
+===============================================================================================
+55
+A:I have a variation on a solution I found here
+
+public static HashSet<String> getExternalMounts() {
+    final HashSet<String> out = new HashSet<String>();
+    String reg = "(?i).*vold.*(vfat|ntfs|exfat|fat32|ext3|ext4).*rw.*";
+    String s = "";
+    try {
+        final Process process = new ProcessBuilder().command("mount")
+                .redirectErrorStream(true).start();
+        process.waitFor();
+        final InputStream is = process.getInputStream();
+        final byte[] buffer = new byte[1024];
+        while (is.read(buffer) != -1) {
+            s = s + new String(buffer);
+        }
+        is.close();
+    } catch (final Exception e) {
+        e.printStackTrace();
+    }
+
+    // parse output
+    final String[] lines = s.split("\
+");
+    for (String line : lines) {
+        if (!line.toLowerCase(Locale.US).contains("asec")) {
+            if (line.matches(reg)) {
+                String[] parts = line.split(" ");
+                for (String part : parts) {
+                    if (part.startsWith("/"))
+                        if (!part.toLowerCase(Locale.US).contains("vold"))
+                            out.add(part);
+                }
+            }
+        }
+    }
+    return out;
+}
+
+
+The original method was tested and worked with
+
+
+Huawei X3 (stock)
+Galaxy S2 (stock)
+Galaxy S3 (stock)
+
+
+I'm not certain which android version these were on when they were tested.
+
+I've tested my modified version with
+
+
+Moto Xoom 4.1.2 (stock)
+Galaxy Nexus (cyanogenmod 10) using an otg cable
+HTC Incredible (cyanogenmod 7.2) this returned both the internal and external. This device is kinda an oddball in that its internal largely goes unused as getExternalStorage() returns a path to the sdcard instead.
+
+
+and some single storage devices that use an sdcard as their main storage
+
+
+HTC G1 (cyanogenmod 6.1)
+HTC G1 (stock)
+HTC Vision/G2 (stock)
+
+
+Excepting the Incredible all these devices only returned their removable storage. There are probably some extra checks I should be doing, but this is at least a bit better than any solution I've found thus far.
+    

@@ -1,0 +1,273 @@
+49
+Q:According to Android documentation, Material Design style is supported for Spinner widget.
+
+So I decided to use it in my app placing it on top of the Toolbar.
+
+layout/activity_base.xml
+
+<android.support.v7.widget.Toolbar
+    android:id="@+id/my_awesome_toolbar"
+    android:layout_height="wrap_content"
+    android:layout_width="match_parent"
+    android:minHeight="?attr/actionBarSize"
+    android:background="?attr/colorPrimary"
+    android:elevation="5dp"
+    app:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+    app:popupTheme="@style/ThemeOverlay.AppCompat.Light">
+    <Spinner
+        android:id="@+id/spinner"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"/>
+ </android.support.v7.widget.Toolbar>
+
+
+Activity theme
+
+<style name="BaseAppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+    <item name="colorPrimary">@color/omni_primary_color</item>
+    <item name="colorPrimaryDark">@color/omni_primary_color_dark</item>
+    <item name="colorAccent">@color/omni_accent_color</item>
+</style>
+
+
+BaseActivity.java
+
+public class BaseActivity extends ActionBarActivity {
+
+    @InjectView(R.id.my_awesome_toolbar)
+    Toolbar mToolbar;
+
+    @InjectView(R.id.spinner)
+    Spinner spinner;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_base);
+        ButterKnife.inject(this);
+        //setup toolbar
+        setSupportActionBar(mToolbar);
+        getSupportActionBar().setDisplayShowTitleEnabled(false);
+        mToolbar.setNavigationIcon(R.drawable.ic_action_navigation_menu);
+
+        ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(mToolbar.getContext(),
+                R.array.planets_array, R.layout.support_simple_spinner_dropdown_item);
+        adapter.setDropDownViewResource(R.layout.support_simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+    }
+}
+
+
+On Lollipop spinner and dropdown looks fine, although dropdown background color is black comparing to menu dropdown which is white. I guess that app:popupTheme="@style/ThemeOverlay.AppCompat.Light" is not propagated to the spinner.
+
+Android 5.0
+
+
+
+
+Now the big problem is with Android 4.x where dropdown background color is white(popupTheme propagated?) and icon next to the spinner is black.
+
+Android 4.4
+
+
+
+How can I set it properly in the XML or implement in the code to make it work on both Android 5 and 4? Ideally, I would like to have both looks like on Android 5 but with white spinner dropdown(like Setting menu dropdown).
+
+Update
+
+I have noticed that setting property colorControlNormal affects spinner's filter icon. If someone finds out how to make use of that for Spinner(without changing other content controls), then I would have my solution combining that finding with @Sven answer.
+
+Update
+
+The following change fixes the problem for spinner text and popup color. So the only problem to the final solution is the filter icon.
+
+ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(getSupportActionBar().getThemedContext(),
+                R.array.planets_array, R.layout.support_simple_spinner_dropdown_item);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+
+
+Update
+
+I found that filter icon is actually a part of android:background specified for the spinner and it's transparent. Providing own background would fix it e.g. 
+
+<item name="android:background">?android:selectableItemBackground</item>
+
+
+Mystery solved!
+
+The last piece of the puzzle is the popup on Android 5 that has black background and white text but I guess it can be solved with custom layout. If no one provides full answer I will do it myself and mark as accepted. 
+    
+===============================================================================================
+66
+A:I know this is late but I came accross this question when I encountered this problem myself and I found a solution in the BrowseSessionsActivity of the Google I/O 2014 app and adapted it.
+
+Layouts
+
+toolbar_spinner.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <Spinner
+        android:id="@+id/toolbar_spinner"
+        style="@style/Widget.MyApp.HeaderBar.Spinner"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"/>
+
+</LinearLayout>
+
+
+toolbar_spinner_item_actionbar.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="200dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@android:id/text1"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:drawablePadding="8dp"
+        android:drawableRight="@drawable/spinner_triangle"
+        android:fontFamily="sans-serif"
+        android:paddingLeft="16dp"
+        android:paddingRight="4dp"
+        android:textColor="#ffffffff"
+        android:textSize="18dp"
+        android:textStyle="bold"/>
+
+</LinearLayout>
+
+
+The spinner_triangle drawable can be found here.
+
+toolbar_spinner_item_dropdown.xml
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="200dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@android:id/text1"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:drawablePadding="8dp"
+        android:gravity="center_vertical|start"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:textColor="#ff333333"
+        android:textSize="16sp"/>
+
+</LinearLayout>
+
+
+Styles
+
+toolbar_spinner.xml uses the following style.
+
+<style name="Widget.MyApp.HeaderBar.Spinner" parent="Widget.AppCompat.Light.Spinner.DropDown.ActionBar">
+        <item name="android:background">?android:selectableItemBackground</item>
+        <item name="android:dropDownSelector">?android:selectableItemBackground</item>
+        <item name="android:divider">@null</item>
+        <item name="android:overlapAnchor">true</item>
+</style>
+
+
+Adapter
+
+This adapter will need to be changed to match your own needs. getTitle() returns the text for each item shown in the spinner.
+
+private class YourObjectSpinnerAdapter extends BaseAdapter {
+    private List<YourObject> mItems = new ArrayList<>();
+
+    public void clear() {
+        mItems.clear();
+    }
+
+    public void addItem(YourObject yourObject) {
+        mItems.add(yourObject);
+    }
+
+    public void addItems(List<YourObject> yourObjectList) {
+        mItems.addAll(yourObjectList);
+    }
+
+    @Override
+    public int getCount() {
+        return mItems.size();
+    }
+
+    @Override
+    public Object getItem(int position) {
+        return mItems.get(position);
+    }
+
+    @Override
+    public long getItemId(int position) {
+        return position;
+    }
+
+    @Override
+    public View getDropDownView(int position, View view, ViewGroup parent) {
+        if (view == null || !view.getTag().toString().equals("DROPDOWN")) {
+            view = getLayoutInflater().inflate(R.layout.toolbar_spinner_item_dropdown, parent, false);
+            view.setTag("DROPDOWN");
+        }
+
+        TextView textView = (TextView) view.findViewById(android.R.id.text1);
+        textView.setText(getTitle(position));
+
+        return view;
+    }
+
+    @Override
+    public View getView(int position, View view, ViewGroup parent) {
+        if (view == null || !view.getTag().toString().equals("NON_DROPDOWN")) {
+            view = getLayoutInflater().inflate(R.layout.
+                    toolbar_spinner_item_actionbar, parent, false);
+            view.setTag("NON_DROPDOWN");
+        }
+        TextView textView = (TextView) view.findViewById(android.R.id.text1);
+        textView.setText(getTitle(position));
+        return view;
+    }
+
+    private String getTitle(int position) {
+        return position >= 0 && position < mItems.size() ? mItems.get(position).title : "";
+    }
+}
+
+
+Adding the Spinner to Your Toolbar
+
+Toolbar toolbar = getActionBarToolbar();
+
+View spinnerContainer = LayoutInflater.from(this).inflate(R.layout.toolbar_spinner,
+        toolbar, false);
+ActionBar.LayoutParams lp = new ActionBar.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+toolbar.addView(spinnerContainer, lp);
+
+YourObjectSpinnerAdapter spinnerAdapter = new YourObjectSpinnerAdapter();
+spinnerAdapter.addItems(getMyObjectSpinnerData());
+
+Spinner spinner = (Spinner) spinnerContainer.findViewById(R.id.toolbar_spinner);
+spinner.setAdapter(spinnerAdapter);
+
+
+Result
+
+
+
+
+    

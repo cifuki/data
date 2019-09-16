@@ -1,0 +1,37 @@
+55
+Q:I have a ScheduledExecutorService that times a few different task periodically with scheduleAtFixedRate(Runnable, INIT_DELAY, ACTION_DELAY, TimeUnit.SECONDS);
+
+I also have a different Runnable that I'm using with this scheduler.
+the problem starts when I want to remove one of the tasks from the scheduler.
+
+Is there a way to do this?
+
+Am I doing the right thing using one scheduler for different tasks?
+What is the best way to implement this?
+    
+===============================================================================================
+85
+A:Simply cancel the future returned by scheduledAtFixedRate():
+
+// Create the scheduler
+ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
+// Create the task to execute
+Runnable r = new Runnable() {
+    @Override
+    public void run() {
+        System.out.println("Hello");
+    }
+};
+// Schedule the task such that it will be executed every second
+ScheduledFuture<?> scheduledFuture =
+    scheduledExecutorService.scheduleAtFixedRate(r, 1L, 1L, TimeUnit.SECONDS);
+// Wait 5 seconds
+Thread.sleep(5000L);
+// Cancel the task
+scheduledFuture.cancel(false);
+
+
+Another thing to note is that cancel does not remove the task from scheduler. All it ensures is that isDone method always return true. This may lead to memory leaks if you keep adding such tasks. For e.g.: if you start a task based on some client activity or UI button click, repeat it n-times and exit. If that button is clicked too many times, you might end up with big pool of threads that cannot be garbage collected as scheduler still has a reference.
+
+You may want to use setRemoveOnCancelPolicy(true) in ScheduledThreadPoolExecutor class available in Java 7 onwards. For backward compatibility, default is set to false.
+    

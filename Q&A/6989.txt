@@ -1,0 +1,102 @@
+37
+Q:Is there a way to render a view on top of the action bar? I want to create a small tip box that will point the user to an item in the action bar. I know that a Toast with a set view will be rendered above the action bar. Does anyone know how to do this with a view?
+
+I have attempted using FrameLayout with layout_gravity="top" and inflating a view and then adding it to the running activity's layout. 
+
+I appreciate you in advance. 
+
+Edit:
+Here is an image of what I was thinking:
+
+
+Edit:
+Perhaps some more detail is needed. I am looking for a way, or to find out if it is even possible to add a view to the view hierarchy of the activity so that it is rendered last. 
+
+Similar to CSS, I want a higher z-index order for this particular view ( the blue floating box in the image), such that it would be rendered on top of the Action Bar region in the activity. The view is in no way associated with Action Bar, it is simply drawn on top of it.
+    
+===============================================================================================
+22
+A:After struggling with it myself quite some time, here's the solution (tested it - working good):
+
+The general steps are:
+
+
+Create a wrapper view
+Detach the screen view children, place the wrapper, and attach the children
+Inflate the content to the children
+Controling the wrapper will help you control exactly the action bar and the content below it all together.
+Now, using the wrapper, you can add "brothers" to the actionbar/main area. That brother is exactly what you described in your image.
+
+
+Let's see some code.
+
+First, create a method to help create a wrapper view. the wrapper will be placed between the entire screen and the content of your app. being a ViewGroup you can later on fully control it's content.
+
+private ViewGroup setContentViewWithWrapper(int resContent) {
+        ViewGroup decorView = (ViewGroup) this.getWindow().getDecorView();
+        ViewGroup decorChild = (ViewGroup) decorView.getChildAt(0);
+
+        // Removing decorChild, we'll add it back soon
+        decorView.removeAllViews();
+
+        ViewGroup wrapperView = new FrameLayout(this);
+
+        // You should set some ID, if you'll want to reference this wrapper in that manner later
+        //
+        // The ID, such as "R.id.ACTIVITY_LAYOUT_WRAPPER" can be set at a resource file, such as:
+        //  <resources xmlns:android="http://schemas.android.com/apk/res/android">
+        //      <item type="id" name="ACTIVITY_LAYOUT_WRAPPER"/>
+        //  </resources>
+        //
+        wrapperView.setId(R.id.ACTIVITY_LAYOUT_WRAPPER);
+
+        // Now we are rebuilding the DecorView, but this time we 
+        // have our wrapper view to stand between the real content and the decor
+        decorView.addView(wrapperView, LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+        wrapperView.addView(decorChild, decorChild.getLayoutParams());
+        LayoutInflater.from(this).inflate(getActivityLayout(), 
+                    (ViewGroup)((LinearLayout)wrapperView.getChildAt(0)).getChildAt(1), true);
+
+        return wrapperView;
+    }
+
+
+Now, interfere with the regular Activity creation, and instead of using setContentView, use the method we've created.
+
+    @Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    // DON'T CALL `setContentView`, 
+    // we are replacing that line with this code:
+    ViewGroup wrapperView = setContentViewWithWrapper(R.layout.activity_layout);
+
+    // Now, because the wrapper view contains the entire screen (including the notification bar
+    // which is above the ActionBar) I think you'll find it useful to know the exact Y where the 
+    // action bar is located.
+    // You can use something like that:
+    ViewGroup actionBar = (ViewGroup)((LinearLayout)wrapperView.getChildAt(0)).getChildAt(0);
+    int topOffset = actionBar.getTop();
+
+    // Now, if you'll want to add a view:
+    //  1. Create new view
+    //  2. Set padding top - use "topOffset"
+    //  3. Add the view to "wrapperView"
+    //  4. The view should be set at front. if not - try calling to "bringToFront()"
+}
+
+
+That's about it.
+
+Notes
+
+
+I've used Android's hierarchy-viewer to understand what's the right hierarchy. (didn't guess those 0 and 1 indexes)
+If you are using some kind of a menu drawer in your activity, you might have to configure it a little bit different since drawers are already creating that wrapper for you
+I've learned a lot by looking at this great library
+
+
+EDIT: Refer to @CristopherOyarz\xc3\xbanAltamirano Answer for further support on newer Android versions
+
+Good luck!
+    

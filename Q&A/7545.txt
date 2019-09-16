@@ -1,0 +1,125 @@
+35
+Q:I get this exception if I leave my app and open it after some time. My main activity consist of a ViewPager with three different fragments. I also do some stuff in Application class which I don't think relates to the problem.
+
+This is the exception:
+
+
+  RuntimeException (@Parcel:readValue:2065) {Unable to start activity
+  ComponentInfo{com.emu/com.emu.ActivityMain}:
+  java.lang.RuntimeException: Parcel android.os.Parcel@419526d0:
+  Unmarshalling unknown type code 2131361816 at offset 332}
+
+
+I see lots of this exception happening on users phones in google analytics. All of them are the same except number after readValue and hex number after @ which are 2065 and 419526d0 in above exception.
+
+The exception doesn't point any line of code. I searched about this and it seems it relates to wrong writing to parcel. Although I don't have any parcel in my MainActivity. I don't know what may cause this.
+
+--- EDIT ------------------------------------------------------------------------
+
+I reproduced the exception. It happens when App is leaved with home button, and got cleared from memory after opening some other memory consuming app. When starting it again exception happens. Till now I was thinking that closing app from recent task or from DDMS have the same effect but apparently it doesn't.
+
+@EricWoodruf helped me to find that parcel is somewhere in imported library. I find the parcel in PagerSlidingTabStrip which I had downloaded from web. This is the parcel related code, but I don't really know what is wrong here:
+
+public class PagerSlidingTabStrip extends HorizontalScrollView
+{
+    @Override
+    public void onRestoreInstanceState(Parcelable state)
+    {
+        SavedState savedState = (SavedState) state;
+        super.onRestoreInstanceState(savedState.getSuperState());
+        currentPosition = savedState.currentPosition;
+        requestLayout();
+    }
+
+    @Override
+    public Parcelable onSaveInstanceState()
+    {
+        Parcelable superState = super.onSaveInstanceState();
+        SavedState savedState = new SavedState(superState);
+        savedState.currentPosition = currentPosition;
+        return savedState;
+    }
+
+    static class SavedState extends BaseSavedState
+    {
+        int currentPosition;
+
+        public SavedState(Parcelable superState)
+        {
+            super(superState);
+        }
+
+        private SavedState(Parcel in)
+        {
+            super(in);
+            currentPosition = in.readInt();
+        }
+
+        @Override
+        public void writeToParcel(Parcel parcel, int flags)
+        {
+            super.writeToParcel(parcel, flags);
+            parcel.writeInt(currentPosition);
+        }
+
+        public static final Parcelable.Creator<SavedState> CREATOR = new Parcelable.Creator<SavedState>()
+        {
+            @Override
+            public SavedState createFromParcel(Parcel in)
+            {
+                return new SavedState(in);
+            }
+
+            @Override
+            public SavedState[] newArray(int size)
+            {
+                return new SavedState[size];
+            }
+        };
+    }
+}
+
+
+---- EDIT 2 -----------------------------------------------------------------
+
+After I could reproduce the problem I found out that this happens only in Artifact which is signed by my key and proguarded! The debug one doesn't have the problem!
+
+I disabled proguard on artifact and it works like a charm without the exception. But, what proguard do that result in this problem?
+
+I tried adding this to proguard but didn't work:
+
+-keep class toolfa.android.base.ui.PagerSlidingTabStrip { *; }
+-dontwarn toolfa.android.base.ui.PagerSlidingTabStrip
+
+
+this is my current proguard config:
+
+-keep class com.nineoldandroids.** { *; }
+-dontwarn com.nineoldandroids.**
+
+-keep class ir.adad.** { *; }
+-dontwarn ir.adad.**
+
+-keep class android.support.v4.** { *; }
+-dontwarn android.support.v4.**
+
+-keep class toolfa.android.base.ui.PagerSlidingTabStrip { *; }
+-dontwarn toolfa.android.base.ui.PagerSlidingTabStrip
+
+-keep class toolfa.android.sega.ActivityEmulator { *; }
+-keep class toolfa.android.sega.Zip { *; }
+
+    
+===============================================================================================
+51
+A:As we found out in the comments, the exception was the result of ProGuard obfuscating Parcelable classes. The fix is to include this snippet in the ProGuard configuration file:
+
+-keepclassmembers class * implements android.os.Parcelable {
+    static ** CREATOR;
+}
+
+
+I guess the specific problem here was that ProGuard obfuscated the CREATOR member of PagerSlidingTabStrip, but since SavedState is a subclass of View.BaseSavedState, the superclass member was still available (this is why it didn't throw a BadParcelableException), but that uses a different data structure and didn't write the custom attributes into the Parcel output.
+
+There is a recommended configuration for Android applications available in the ProGuard Manual, with detailed explanation about entries. For example, it includes that you should keep all class names used in the manifest or other XML files.
+    

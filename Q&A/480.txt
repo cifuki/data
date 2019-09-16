@@ -1,0 +1,30 @@
+252
+Q:There has been a lot of posting about what these two contexts are.. But I'm still not getting it quite right
+
+As I understand it so far:
+Each is an instance of its class which means that some programmers recommend you to use this.getApplicationContext() as often as possible in order to not "leak" out any memory. This is because the other this (getting the Activity instance context) points to an Activity that is being destroyed each time the user tilts the phone or leave the app etc.. Which apparently the Garbage Collector (GC) doesn't catch and therefore uses too much memory.. 
+
+But can anyone please come up with some really good coding examples where it would be the right thing to use this (getting the context of the current Activity instance) and the application context will be useless/wrong?
+    
+===============================================================================================
+390
+A:getApplicationContext() is almost always wrong. Ms. Hackborn (among others) have been very explicit that you only use getApplicationContext() when you know why you are using getApplicationContext() and only when you need to use getApplicationContext().
+
+To be blunt, "some programmers" use getApplicationContext() (or getBaseContext(), to a lesser extent) because their Java experience is limited. They implement an inner class (e.g., an OnClickListener for a Button in an Activity) and need a Context. Rather than using MyActivity.this to get at the outer class' this, they use getApplicationContext() or getBaseContext() to get a Context object.
+
+You only use getApplicationContext() when you know you need a Context for something that may live longer than any other likely Context you have at your disposal. Scenarios include:
+
+
+Use getApplicationContext() if you need something tied to a Context that itself will have global scope. I use getApplicationContext(), for example, in WakefulIntentService, for the static WakeLock to be used for the service. Since that WakeLock is static, and I need a Context to get at PowerManager to create it, it is safest to use getApplicationContext().
+Use getApplicationContext() when you bind to a Service from an Activity, if you wish to pass the ServiceConnection (i.e., the handle to the binding) between Activity instances via onRetainNonConfigurationInstance(). Android internally tracks bindings via these ServiceConnections and holds references to the Contexts that create the bindings. If you bind from the Activity, then the new Activity instance will have a reference to the ServiceConnection which has an implicit reference to the old Activity, and the old Activity cannot be garbage collected.
+
+
+Some developers use custom subclasses of Application for their own global data, which they retrieve via getApplicationContext(). That's certainly possible. I prefer static data members, if for no other reason than you can only have one custom Application object. I built one app using a custom Application object and found it to be painful. Ms. Hackborn also agrees with this position.
+
+Here are reasons why not to use getApplicationContext() wherever you go:
+
+
+It's not a complete Context, supporting everything that Activity does. Various things you will try to do with this Context will fail, mostly related to the GUI.
+It can create memory leaks, if the Context from getApplicationContext() holds onto something created by your calls on it that you don't clean up. With an Activity, if it holds onto something, once the Activity gets garbage collected, everything else flushes out too. The Application object remains for the lifetime of your process.
+
+    

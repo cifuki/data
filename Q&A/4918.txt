@@ -1,0 +1,128 @@
+49
+Q:When I send multiple push notifications, I need them to be all shown in the notification bar ordered by the time sent desc. I know I should use unique notification - I tried to generate random number but that did not solve my problem since I need them to be ordered. I tried to use AtomicInt and still don't have the desired result.
+
+package com.mypackage.lebadagency;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import android.app.IntentService;
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Color;
+import android.os.Bundle;
+import android.os.SystemClock;
+import android.support.v4.app.NotificationCompat;
+import android.util.Log;
+
+
+
+import android.widget.RemoteViews;
+
+import com.google.android.gms.gcm.GoogleCloudMessaging;
+
+public class GCMNotificationIntentService extends IntentService {
+
+  private AtomicInteger c = new AtomicInteger(0);
+  public int NOTIFICATION_ID = c.incrementAndGet(); 
+
+  private NotificationManager mNotificationManager;
+  NotificationCompat.Builder builder;
+
+  public GCMNotificationIntentService() {
+    super("GcmIntentService");
+  }
+
+  public static final String TAG = "GCMNotificationIntentService";
+
+  @Override
+  protected void onHandleIntent(Intent intent) {
+    Bundle extras = intent.getExtras();
+    GoogleCloudMessaging gcm = GoogleCloudMessaging.getInstance(this);
+
+    String messageType = gcm.getMessageType(intent);
+
+    if (!extras.isEmpty()) {
+      if (GoogleCloudMessaging.MESSAGE_TYPE_SEND_ERROR
+          .equals(messageType)) {
+        sendNotification("Send error: " + extras.toString());
+      } else if (GoogleCloudMessaging.MESSAGE_TYPE_DELETED
+          .equals(messageType)) {
+        sendNotification("Deleted messages on server: "
+            + extras.toString());
+      } else if (GoogleCloudMessaging.MESSAGE_TYPE_MESSAGE
+          .equals(messageType)) {
+
+        for (int i = 0; i < 3; i++) {
+          Log.i(TAG,
+              "Working... " + (i + 1) + "/5 @ "
+                  + SystemClock.elapsedRealtime());
+          try {
+            Thread.sleep(5000);
+          } catch (InterruptedException e) {
+          }
+
+        }
+        Log.i(TAG, "Completed work @ " + SystemClock.elapsedRealtime());
+
+        sendNotification(""
+            + extras.get(Config.MESSAGE_KEY));
+        Log.i(TAG, "Received: " + extras.toString());
+      }
+    }
+    GcmBroadcastReceiver.completeWakefulIntent(intent);
+  }
+
+  private void sendNotification(String msg) {
+
+    Log.d(TAG, "Preparing to send notification...: " + msg);
+    mNotificationManager = (NotificationManager) this
+        .getSystemService(Context.NOTIFICATION_SERVICE);
+    //here start
+    Intent gcmintent = new Intent(this, AppGcmStation.class);
+    gcmintent.putExtra("ntitle", msg);
+    gcmintent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    int requestID = (int) System.currentTimeMillis();
+    //here end
+    PendingIntent contentIntent = PendingIntent.getActivity(this, requestID,
+        gcmintent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+    NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(
+        this).setSmallIcon(R.drawable.ic_launcher)
+        .setContentTitle("my title")
+        .setStyle(new NotificationCompat.BigTextStyle().bigText(msg))
+        .setContentText(msg);
+    mBuilder.setAutoCancel(true);
+    mBuilder.setTicker(msg);
+    mBuilder.setVibrate(new long[] { 1000, 1000, 1000, 1000, 1000 }); 
+    mBuilder.setLights(Color.RED, 3000, 3000);
+    mBuilder.setContentIntent(contentIntent);
+    mBuilder.setDefaults(Notification.DEFAULT_SOUND);
+
+
+
+    mNotificationManager.notify(NOTIFICATION_ID, mBuilder.build());
+    Log.d(TAG, "Notification sent successfully.");
+  }
+}
+
+
+I need the BEST and simplest way to generate an int id which is incremental to assign it as the notification id.
+    
+===============================================================================================
+82
+A:You are using the same notification ID (the value is always 1) for all your notifications. You probably should separate out the notification ID into a separate singleton class:
+
+public class NotificationID {
+    private final static AtomicInteger c = new AtomicInteger(0);
+    public static int getID() {
+        return c.incrementAndGet();
+    }
+}
+
+
+Then use NotificationID.getID() instead of NOTIFICATION_ID in your code.
+
+EDIT: As @racs points out in a comment, the above approach is not enough to ensure proper behavior if your app process happens to be killed. At a minimum, the initial value of the AtomicInteger should be initialized from some activity's saved state rather than starting at 0. If the notification IDs need to be unique across restarts of the app (again, where the app process may be killed off), then the latest value should be saved somewhere (probably to shared prefs) after every increment and restored when the app starts.
+    

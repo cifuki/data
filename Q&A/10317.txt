@@ -1,0 +1,479 @@
+27
+Q:I am trying to access the new Gmail API (announced 25.06.2014) from my Android app in order to return all e-mail messages in a certain users's account. I am developing the app in Eclipse using the ADT plug-in. 
+What I have done so far:
+
+
+I registered the application in the Google Developers Console 
+(link: console.developers.google.com/project).
+I have implemented the Google+ Sign-in button (link: developers.google.com/+/mobile/android/sign-in). 
+The Google+ Sign-In button authenticates the user and manages the OAuth 2.0 flow, which simplifies your integration with the Google APIs.
+I added the additional scope 'https:// www.googleapis.com/auth/gmail.readonly' to the Google+ Authorization, for accessing the Gmail API, as specified in (Link: developers.google.com/gmail/api/v1/reference/users/threads/list).
+
+
+At this point I have an initialized GoogleApiClient object.
+
+The GoogleApiClient object wraps a ServiceConnection (link: developer.android.com/reference/android/content/ServiceConnection.html) to Google Play services. The GoogleApiClient object is used to communicate with the Google+ API and becomes functional after the asynchronous connection has been established with the service, indicating that:
+
+
+Google Play services is running on the device and the app Activity has successfully bound the service connection,
+the user has selected an account that they wish to use with the app, and
+the user's account has granted the permissions that the app is requesting.
+
+
+How do I proceed from here to getting all the messages with this httprequest?  I tried accessing the Gmail API at this point but I recieve Authentication error 401: Login required, even thought the Google+ login was successful, and I successfully returned a list of User's circles.
+
+EDIT: SecondActivity.java
+
+import android.app.Activity;
+import android.os.AsyncTask;
+import android.os.Bundle;
+import android.view.Menu;
+import android.view.MenuItem;
+
+import com.google.android.gms.auth.GoogleAuthException;
+import com.google.android.gms.auth.GoogleAuthUtil;
+import com.google.android.gms.auth.GooglePlayServicesAvailabilityException;
+import com.google.android.gms.auth.UserRecoverableAuthException;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GooglePlayServicesUtil;
+import com.google.android.gms.common.SignInButton;
+import com.google.android.gms.common.api.CommonStatusCodes;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
+import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListener;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.Scope;
+import com.google.android.gms.plus.People;
+import com.google.android.gms.plus.People.LoadPeopleResult;
+import com.google.android.gms.plus.Plus;
+import com.google.android.gms.plus.model.people.Person;
+import com.google.android.gms.plus.model.people.PersonBuffer;
+import com.google.api.services.gmail.Gmail;
+import com.google.api.services.gmail.Gmail.Users;
+import com.google.api.services.gmail.Gmail.Users.Messages.GmailImport;
+import com.google.api.services.gmail.GmailRequest;
+import com.google.api.services.gmail.GmailRequestInitializer;
+import com.google.api.services.gmail.GmailScopes;
+
+import android.app.AlertDialog;
+import android.app.Dialog;
+import android.app.PendingIntent;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.IntentSender.SendIntentException;
+import android.os.Bundle;
+import android.support.v4.app.FragmentActivity;
+import android.support.v7.app.ActionBarActivity;
+import android.util.Log;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.ListView;
+import android.widget.TextView;
+import android.widget.Toast;
+import mk.ukim.feit.recognizer.application.PeopleAdapter;
+import mk.ukim.feit.recognizer.interfaces.GetMessages;
+import mk.ukim.feit.recognizer.tasks.GetMessagesTask;
+import mk.ukim.feit.recognizer.util.MyClass;
+import mk.ukim.feit.recognizer.util.exception.FaceClientException;
+import mk.ukim.feit.recognizer.util.model.Face;
+import mk.ukim.feit.recognizer.util.model.Guess;
+import mk.ukim.feit.recognizer.util.model.Photo;
+import mk.ukim.feit.recognizer.util.response.PhotoResponse;
+import mk.ukim.feit.recognizer.util.response.PhotoResponseImpl;
+
+import java.io.IOException;
+import java.util.ArrayList;
+
+
+public class SecondActivity extends FragmentActivity implements
+    GetMessages, ConnectionCallbacks, OnConnectionFailedListener,
+    ResultCallback<People.LoadPeopleResult>, View.OnClickListener {
+
+  private static final String TAG = "android-plus-quickstart";
+
+  private static final int STATE_DEFAULT = 0;
+  private static final int STATE_SIGN_IN = 1;
+  private static final int STATE_IN_PROGRESS = 2;
+
+  private static final int RC_SIGN_IN = 0;
+  private static final int MY_ACTIVITYS_AUTH_REQUEST_CODE=045;
+
+  private static final int DIALOG_PLAY_SERVICES_ERROR = 0;
+
+  private static final String SAVED_PROGRESS = "sign_in_progress";
+
+  private GoogleApiClient mGoogleApiClient;
+  String name; 
+
+  private PendingIntent mSignInIntent;
+  private int mSignInError;
+  private SignInButton mSignInButton;
+  private Button mSignOutButton;
+  private Button mRevokeButton;
+  private TextView mStatus;
+  private ListView mCirclesListView;
+  private ArrayAdapter<String> mCirclesAdapter;
+  private ArrayList<String> mCirclesList;
+
+  public Scope gmail=new Scope("https://www.googleapis.com/auth/gmail.readonly");
+  String scope="https://www.googleapis.com/auth/gmail.readonly";
+  String email="email@gmail.com";
+
+
+
+@Override
+  public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_second);
+
+    Intent intent = getIntent();
+    name="Team";
+
+    mSignInButton = (SignInButton) findViewById(R.id.sign_in_button);
+    mSignOutButton = (Button) findViewById(R.id.sign_out_button);
+    mRevokeButton = (Button) findViewById(R.id.revoke_access_button);
+    mStatus = (TextView) findViewById(R.id.sign_in_status);
+    mCirclesListView = (ListView) findViewById(R.id.circles_list);
+
+    mSignInButton.setOnClickListener(this);
+    mSignOutButton.setOnClickListener(this);
+    mRevokeButton.setOnClickListener(this);
+
+    mCirclesList = new ArrayList<String>();
+    mCirclesAdapter = new ArrayAdapter<String>(
+        this, R.layout.circle_member, mCirclesList);
+    mCirclesListView.setAdapter(mCirclesAdapter);
+
+    if (savedInstanceState != null) {
+      mSignInProgress = savedInstanceState
+          .getInt(SAVED_PROGRESS, STATE_DEFAULT);
+
+    }
+
+    mGoogleApiClient = buildGoogleApiClient();
+  }
+
+
+
+private GoogleApiClient buildGoogleApiClient() {
+    return new GoogleApiClient.Builder(this)
+        .addConnectionCallbacks(this)
+        .addOnConnectionFailedListener(this)
+        .addApi(Plus.API, Plus.PlusOptions.builder().build())
+        .addScope(Plus.SCOPE_PLUS_LOGIN)
+        .addScope(gmail)
+        .build();
+  }
+
+@Override
+  protected void onStart() {
+    super.onStart();
+    mGoogleApiClient.connect();
+    getAndUseAuthTokenInAsyncTask();
+  }
+
+
+
+@Override
+  protected void onStop() {
+    super.onStop();
+
+    if (mGoogleApiClient.isConnected()) {
+      mGoogleApiClient.disconnect();
+    }
+  }
+
+  @Override
+  protected void onSaveInstanceState(Bundle outState) {
+    super.onSaveInstanceState(outState);
+    outState.putInt(SAVED_PROGRESS, mSignInProgress);
+  }
+
+
+
+@Override
+  public void onClick(View v) {
+    if (!mGoogleApiClient.isConnecting()) {
+          switch (v.getId()) {
+          case R.id.sign_in_button:
+            mStatus.setText(R.string.status_signing_in);
+            resolveSignInError();
+            break;
+          case R.id.sign_out_button:
+            Plus.AccountApi.clearDefaultAccount(mGoogleApiClient);
+            mGoogleApiClient.disconnect();
+            mGoogleApiClient.connect();
+            break;
+          case R.id.revoke_access_button:
+            Plus.AccountApi.clearDefaultAccount(mGoogleApiClient);
+            Plus.AccountApi.revokeAccessAndDisconnect(mGoogleApiClient);
+            mGoogleApiClient = buildGoogleApiClient();
+            mGoogleApiClient.connect();
+            break;
+      }
+    }
+  }
+
+  @Override
+  public void onConnected(Bundle connectionHint) {
+    Log.i(TAG, "onConnected");
+
+    getAndUseAuthTokenInAsyncTask();
+
+    mSignInButton.setEnabled(false);
+    mSignOutButton.setEnabled(true);
+    mRevokeButton.setEnabled(true);
+
+    // Retrieve some profile information. This is OK
+    Person currentUser = Plus.PeopleApi.getCurrentPerson(mGoogleApiClient);
+    String klient=mGoogleApiClient.toString();
+
+
+    mStatus.setText(String.format(
+        getResources().getString(R.string.signed_in_as),
+        currentUser.getDisplayName()));
+
+
+    Plus.PeopleApi.loadVisible(mGoogleApiClient, null)
+        .setResultCallback(this);
+
+    GetMessagesTask task = new GetMessagesTask(
+            SecondActivity.this, name, mGoogleApiClient);
+        task.setDelegate(SecondActivity.this);
+        task.execute();
+
+    // Indicate that the sign in process is complete.
+    mSignInProgress = STATE_DEFAULT;
+
+  }
+
+  @Override
+  public void onConnectionFailed(ConnectionResult result) {
+    // Refer to the javadoc for ConnectionResult to see what error codes might
+    // be returned in onConnectionFailed.
+    Log.i(TAG, "onConnectionFailed: ConnectionResult.getErrorCode() = "
+        + result.getErrorCode());
+
+    if (mSignInProgress != STATE_IN_PROGRESS) {
+      mSignInIntent = result.getResolution();
+      mSignInError = result.getErrorCode();
+
+      if (mSignInProgress == STATE_SIGN_IN) {
+        // STATE_SIGN_IN indicates the user already clicked the sign in button
+        // so we should continue processing errors until the user is signed in
+        // or they click cancel.
+        resolveSignInError();
+      }
+    }
+
+    onSignedOut();
+  }
+
+
+  private void resolveSignInError() {
+    if (mSignInIntent != null) {
+
+      try {
+        mSignInProgress = STATE_IN_PROGRESS;
+        startIntentSenderForResult(mSignInIntent.getIntentSender(),
+            RC_SIGN_IN, null, 0, 0, 0);
+      } catch (SendIntentException e) {
+        Log.i(TAG, "Sign in intent could not be sent: "
+            + e.getLocalizedMessage());
+        // The intent was canceled before it was sent.  Attempt to connect to
+        // get an updated ConnectionResult.
+        mSignInProgress = STATE_SIGN_IN;
+        mGoogleApiClient.connect();
+
+      }
+    } else {
+      // Google Play services wasn't able to provide an intent for some
+      // error types, so we show the default Google Play services error
+      // dialog which may still start an intent if the
+      // user can resolve the issue.
+      showDialog(DIALOG_PLAY_SERVICES_ERROR);
+    }
+  }
+
+
+  @Override
+  public void onResult(LoadPeopleResult peopleData) {
+    if (peopleData.getStatus().getStatusCode() == CommonStatusCodes.SUCCESS) {
+      mCirclesList.clear();
+      PersonBuffer personBuffer = peopleData.getPersonBuffer();
+      try {
+          int count = personBuffer.getCount();
+          for (int i = 0; i < count; i++) {
+              mCirclesList.add(personBuffer.get(i).getDisplayName());
+          }
+      } finally {
+          personBuffer.close();
+      }
+
+      mCirclesAdapter.notifyDataSetChanged();
+    } else {
+      Log.e(TAG, "Error requesting visible circles: " + peopleData.getStatus());
+    }
+  }
+
+  private void onSignedOut() {
+    // Update the UI to reflect that the user is signed out.
+    mSignInButton.setEnabled(true);
+    mSignOutButton.setEnabled(false);
+    mRevokeButton.setEnabled(false);
+
+    mStatus.setText(R.string.status_signed_out);
+
+    mCirclesList.clear();
+    mCirclesAdapter.notifyDataSetChanged();
+  }
+
+  @Override
+  public void onConnectionSuspended(int cause) {
+    // The connection to Google Play services was lost for some reason.
+    // We call connect() to attempt to re-establish the connection or get a
+    // ConnectionResult that we can attempt to resolve.
+    mGoogleApiClient.connect();
+  }
+
+  @Override
+  protected Dialog onCreateDialog(int id) {
+    switch(id) {
+      case DIALOG_PLAY_SERVICES_ERROR:
+        if (GooglePlayServicesUtil.isUserRecoverableError(mSignInError)) {
+          return GooglePlayServicesUtil.getErrorDialog(
+              mSignInError,
+              this,
+              RC_SIGN_IN,
+              new DialogInterface.OnCancelListener() {
+                @Override
+                public void onCancel(DialogInterface dialog) {
+                  Log.e(TAG, "Google Play services resolution cancelled");
+                  mSignInProgress = STATE_DEFAULT;
+                  mStatus.setText(R.string.status_signed_out);
+                }
+              });
+        } else {
+          return new AlertDialog.Builder(this)
+              .setMessage(R.string.play_services_error)
+              .setPositiveButton(R.string.close,
+                  new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                      Log.e(TAG, "Google Play services error could not be "
+                          + "resolved: " + mSignInError);
+                      mSignInProgress = STATE_DEFAULT;
+                      mStatus.setText(R.string.status_signed_out);
+                    }
+                  }).create();
+        }
+      default:
+        return super.onCreateDialog(id);
+    }
+  }
+
+
+
+
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+           if (requestCode == MY_ACTIVITYS_AUTH_REQUEST_CODE) {
+               if (resultCode == RESULT_OK) {
+                   getAndUseAuthTokenInAsyncTask();
+               }
+           }
+       }
+
+
+       public void getAndUseAuthTokenBlocking() throws UserRecoverableAuthException, IOException, GoogleAuthException {
+
+              final String token = GoogleAuthUtil.getToken(this, email, scope);
+              String fff="";
+        }      
+
+
+       public void getAndUseAuthTokenInAsyncTask() {
+
+        AsyncTask<Void, Void, Void> task = new AsyncTask<Void,Void, Void>() {
+
+
+               @Override
+               protected Void doInBackground(Void... params) {
+                   // TODO Auto-generated method stub
+                   try {
+                    getAndUseAuthTokenBlocking();
+                } catch (UserRecoverableAuthException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+                } catch (GoogleAuthException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+                }
+                   return null;
+               }
+           };
+           task.execute((Void)null);
+       }
+
+    }
+
+
+EDIT 2: LogCat
+
+07-16 06:44:27.300: E/AndroidRuntime(11875): FATAL EXCEPTION: AsyncTask #2
+07-16 06:44:27.300: E/AndroidRuntime(11875): java.lang.RuntimeException: An error occured while executing doInBackground()
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at android.os.AsyncTask$3.done(AsyncTask.java:299)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at java.util.concurrent.FutureTask$Sync.innerSetException(FutureTask.java:273)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at java.util.concurrent.FutureTask.setException(FutureTask.java:124)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:307)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at java.util.concurrent.FutureTask.run(FutureTask.java:137)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at android.os.AsyncTask$SerialExecutor$1.run(AsyncTask.java:230)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1076)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:569)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at java.lang.Thread.run(Thread.java:856)
+07-16 06:44:27.300: E/AndroidRuntime(11875): Caused by: java.lang.NoClassDefFoundError: com.google.api.client.googleapis.auth.oauth2.GoogleCredential
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at mk.ukim.feit.recognizer.GmailLinkGrabberService$getAuthToken.doInBackground(GmailLinkGrabberService.java:104)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at mk.ukim.feit.recognizer.GmailLinkGrabberService$getAuthToken.doInBackground(GmailLinkGrabberService.java:1)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at android.os.AsyncTask$2.call(AsyncTask.java:287)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:305)
+07-16 06:44:27.300: E/AndroidRuntime(11875):    ... 5 more
+
+    
+===============================================================================================
+4
+A:(Feb 2017) The Gmail API (v1 launched Jun 2014) is the best way of integrating Gmail functionality into your apps (and preferred over POP/IMAP & SMTP). In order to use this and most other Google APIs from Android, you need to get the Google APIs Client Library for Android (or for more general Java, the Google APIs Client Library for Java).
+
+Now for some working samples: here are the Android quickstart & the more general Java quickstart. Having the Gmail API JavaDocs reference at your side isn't a bad idea either. OAuth2 is now the preferred way to perform auth, meaning you'll need code that looks like this, plus the right scope:
+
+// Sheets RO scope
+private static final String[] SCOPES = {GmailScopes.GMAIL_READONLY};
+    :
+
+// Initialize credentials and service object
+mCredential = GoogleAccountCredential.usingOAuth2(
+        getApplicationContext(), Arrays.asList(SCOPES))
+        .setBackOff(new ExponentialBackOff());
+
+
+Other than this "setup," the OP has most everything needed to get something working:
+
+
+Having a project in the developers console & enabled the Gmail API with the SHA1 hash (as described above in the Android quickstart)
+Implementing OAuth2 with the correct scope(s)
+Making the call to ListThreadsResponse listResponse = mService.users().threads().list(user).execute(); -- the quickstart uses labels() so you can just change to threads()
+
+
+To learn more about the API, below are 3 videos, the first introducing the API when it launched. If you're not "allergic" to Python, I made the other pair with short but more "real-world" examples using the Gmail API (non-mobile though):
+
+
+Introducing the Gmail API
+Revolutionizing Email Access with the Gmail API (code deep dive post)
+Modifying your signature with the Gmail API (code deep dive post)
+
+
+It's not mentioned as part of the title, but the 2nd video above features a code sample that accesses thread and messages with the Gmail API.
+    

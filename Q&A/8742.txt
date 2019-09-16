@@ -1,0 +1,168 @@
+31
+Q:Background
+
+I maintain a library whose core functionality involves sharing programmatically-captured screenshots to external email applications.
+
+I use a FileProvider to accomplish this, which means my library's manifest contains a <provider> tag:
+
+<provider
+    android:name="android.support.v4.content.FileProvider"
+    android:authorities="${applicationId}.bugshaker.fileprovider"
+    android:exported="false"
+    android:grantUriPermissions="true">
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/filepaths" />
+</provider>
+
+
+filepaths.xml is defined as follows:
+
+<paths>
+    <files-path path="bug-reports/" name="bug-reports" />
+</paths>
+
+
+A consumer of my library has an application which itself uses a FileProvider to share files. My expectation was that it should be possible to allow both providers to share files if the consuming application used the following manifest <provider> tag:
+
+<provider
+    android:authorities="${applicationId}.fileprovider;${applicationId}.bugshaker.fileprovider"
+    android:exported="false"
+    android:grantUriPermissions="true"
+    android:name="android.support.v4.content.FileProvider"
+    tools:replace="android:authorities">
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/file_paths"
+        tools:replace="android:resource" />
+</provider>
+
+
+This manifest entry:
+
+
+specifies two Provider authorities, ${applicationId}.fileprovider (for application file sharing) and ${applicationId}.bugshaker.fileprovider (for library file sharing);
+references an updated filepaths.xml, which contains separate directory definitions for application-generated files and library-generated files:
+
+
+<paths>
+    <external-path
+        name="redacted"
+        path="" />
+    <files-path
+        name="bug-reports"
+        path="bug-reports/" />
+</paths>
+
+
+After building the application, we have confirmed that the generated manifest has had the correct nodes replaced with these updated values.
+
+However, when the application using this configuration is assembled (successfully) and run, we see a crash on launch:
+
+E: FATAL EXCEPTION: main
+   Process: com.stkent.bugshakertest, PID: 11636
+   java.lang.RuntimeException: Unable to get provider android.support.v4.content.FileProvider: java.lang.NullPointerException: Attempt to invoke virtual method 'android.content.res.XmlResourceParser android.content.pm.PackageItemInfo.loadXmlMetaData(android.content.pm.PackageManager, java.lang.String)' on a null object reference
+       at android.app.ActivityThread.installProvider(ActivityThread.java:5856)
+       at android.app.ActivityThread.installContentProviders(ActivityThread.java:5445)
+       at android.app.ActivityThread.handleBindApplication(ActivityThread.java:5384)
+       at android.app.ActivityThread.-wrap2(ActivityThread.java)
+       at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1545)
+       at android.os.Handler.dispatchMessage(Handler.java:102)
+       at android.os.Looper.loop(Looper.java:154)
+       at android.app.ActivityThread.main(ActivityThread.java:6119)
+       at java.lang.reflect.Method.invoke(Native Method)
+       at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:886)
+       at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:776)
+    Caused by: java.lang.NullPointerException: Attempt to invoke virtual method 'android.content.res.XmlResourceParser android.content.pm.PackageItemInfo.loadXmlMetaData(android.content.pm.PackageManager, java.lang.String)' on a null object reference
+       at android.support.v4.content.FileProvider.parsePathStrategy(FileProvider.java:583)
+       at android.support.v4.content.FileProvider.getPathStrategy(FileProvider.java:557)
+       at android.support.v4.content.FileProvider.attachInfo(FileProvider.java:375)
+       at android.app.ActivityThread.installProvider(ActivityThread.java:5853)
+       at android.app.ActivityThread.installContentProviders(ActivityThread.java:5445)\xc2\xa0
+       at android.app.ActivityThread.handleBindApplication(ActivityThread.java:5384)\xc2\xa0
+       at android.app.ActivityThread.-wrap2(ActivityThread.java)\xc2\xa0
+       at android.app.ActivityThread$H.handleMessage(ActivityThread.java:1545)\xc2\xa0
+       at android.os.Handler.dispatchMessage(Handler.java:102)\xc2\xa0
+       at android.os.Looper.loop(Looper.java:154)\xc2\xa0
+       at android.app.ActivityThread.main(ActivityThread.java:6119)\xc2\xa0
+       at java.lang.reflect.Method.invoke(Native Method)\xc2\xa0
+       at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:886)\xc2\xa0
+       at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:776)\xc2\xa0
+
+
+Using the debugger, I am able to see that the method FileProvider.parsePathStrategy invokes PackageManager.resolveContentProvider with the authority string "${applicationId}.fileprovider;${applicationId}.bugshaker.fileprovider". resolveContentProvider then returns null, leading to this NPE.
+
+If I manually call resolveContentProvider while paused at this instruction and pass either "${applicationId}.fileprovider" or "${applicationId}.bugshaker.fileprovider", resolveContentProvider instead returns a non-null ProviderInfo instance (which would seem to be the expected result).
+
+This difference confuses me because the <provider> element documentation states that multiple authorities are supported:
+
+
+  A list of one or more URI authorities that identify data offered by the content provider. Multiple authorities are listed by separating their names with a semicolon. To avoid conflicts, authority names should use a Java-style naming convention (such as com.example.provider.cartoonprovider). Typically, it's the name of the ContentProvider subclass that implements the provider
+  
+  There is no default. At least one authority must be specified.
+
+
+Questions
+
+
+Is it possible to have a single application expose a FileProvider with multiple authorities and file paths?
+
+
+If so, what do I need to change to make that work?
+If not, are there other ways to configure file sharing within my library that avoid conflicts such as this one?
+
+
+    
+===============================================================================================
+33
+A:My solution to this problem has actually been to avoid relying on a single FileProvider parsing multiple authorities. While this doesn't directly address the question as stated, I'm posting it for posterity. 
+
+
+
+I updated my library to leverage an empty subclass of FileProvider, so that the library's updated manifest provider entry is now:
+
+<provider
+    android:name=".flow.email.screenshot.BugShakerFileProvider"
+    android:authorities="${applicationId}.bugshaker.fileprovider"
+    android:exported="false"
+    android:grantUriPermissions="true">
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/library_file_paths" />
+</provider>
+
+
+The merged manifest of an application that (1) uses a stock FileProvider and (2) consumes my library will now contain both of the entries shown below (no collision!):
+
+<provider
+    android:name="android.support.v4.content.FileProvider"
+    android:authorities="com.consuming.application.fileprovider"
+    android:exported="false"
+    android:grantUriPermissions="true" >
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/application_file_paths" />
+</provider>
+
+<provider
+    android:name="com.github.stkent.bugshaker.flow.email.screenshot.BugShakerFileProvider"
+    android:authorities="com.consuming.application.bugshaker.fileprovider"
+    android:exported="false"
+    android:grantUriPermissions="true" >
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/library_file_paths" />
+</provider>
+
+
+I didn't realize that this was a potential solution until a coworker pointed it out. My assumption had previously (and incorrectly) been that all FileProviders in the manifest must set
+
+android:name="android.support.v4.content.FileProvider"
+
+
+but a quick check of the documentation revealed my error:
+
+
+  The name of the class that implements the content provider, a subclass of ContentProvider. This should be a fully qualified class name (such as, "com.example.project.TransportationProvider"). [...]
+
+    

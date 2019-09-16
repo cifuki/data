@@ -1,0 +1,82 @@
+450
+Q:I have found many instances of a similar question on SO but no answer unfortunately meets my requirements.
+
+I have different layouts for portrait and landscape and I am using back stack, which both prevents me from using setRetainState() and tricks using configuration change routines.
+
+I show certain information to the user in TextViews, which do not get saved in the default handler. When writing my application solely using Activities, the following worked well:
+
+TextView vstup;
+
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.whatever);
+    vstup = (TextView)findViewById(R.id.whatever);
+    /* (...) */
+}
+
+@Override
+public void onSaveInstanceState(Bundle state) {
+    super.onSaveInstanceState(state);
+    state.putCharSequence(App.VSTUP, vstup.getText());
+}
+
+@Override
+public void onRestoreInstanceState(Bundle state) {
+    super.onRestoreInstanceState(state);
+    vstup.setText(state.getCharSequence(App.VSTUP));
+}
+
+
+With Fragments, this works only in very specific situations. Specifically, what breaks horribly is replacing a fragment, putting it in the back stack and then rotating the screen while the new fragment is shown. From what I understood, the old fragment does not receive a call to onSaveInstanceState() when being replaced but stays somehow linked to the Activity and this method is called later when its View does not exist anymore, so looking for any of my TextViews results into a NullPointerException.
+
+Also, I found that keeping the reference to my TextViews is not a good idea with Fragments, even if it was OK with Activity's. In that case, onSaveInstanceState() actually saves the state but the problem reappears if I rotate the screen twice when the fragment is hidden, as its onCreateView() does not get called in the new instance.
+
+I thought of saving the state in onDestroyView() into some Bundle-type class member element (it's actually more data, not just one TextView) and saving that in onSaveInstanceState() but there are other drawbacks. Primarily, if the fragment is currently shown, the order of calling the two functions is reversed, so I'd need to account for two different situations. There must be a cleaner and correct solution!
+    
+===============================================================================================
+509
+A:To correctly save the instance state of Fragment you should do the following:
+
+1. In the fragment, save instance state by overriding onSaveInstanceState() and restore in onActivityCreated():
+
+@Override
+public void onActivityCreated(Bundle savedInstanceState) {
+    super.onActivityCreated(savedInstanceState);
+    ...
+    if (savedInstanceState != null) {
+        //Restore the fragment's state here
+    }
+}
+...
+@Override
+public void onSaveInstanceState(Bundle outState) {
+    super.onSaveInstanceState(outState);
+
+    //Save the fragment's state here
+}
+
+
+2. And important point, in the activity, you have to save the fragment's instance in onSaveInstanceState() and restore in onCreate().
+
+public void onCreate(Bundle savedInstanceState) {
+    ...
+    if (savedInstanceState != null) {
+        //Restore the fragment's instance
+        mContent = getSupportFragmentManager().getFragment(savedInstanceState, "myFragmentName");
+        ...
+    }
+    ...
+}
+
+@Override
+protected void onSaveInstanceState(Bundle outState) {
+    super.onSaveInstanceState(outState);
+
+    //Save the fragment's instance
+    getSupportFragmentManager().putFragment(outState, "myFragmentName", mContent);
+}
+
+
+Hope this helps.
+    

@@ -1,0 +1,140 @@
+46
+Q:I've downloaded Android source code. Now I want to make it for my own device (LG GT540). I heard that you need to create some 'Device configuration' for that. Although several developers have already created device configurations for my device, but I want to create my own, just for learning.I saw a lot of files like BoardConfig.mk, AndroidProducts.mk, etc. But don't know what they do. Besides they contain a lot of configurations. Over that, there's not a good documentation for that.Can anyone experienced with Android porting and device configurations help me?
+    
+===============================================================================================
+108
+A:Right... So you want to build your own device tree, read on.
+
+Disclaimer: this is by no means complete, and there will be omissions as have explained all this top of my head and copied pasted certain bits that I have here on my own device tree.
+
+The device tree, for example, /device/lg/gt540would consist of the following make files:
+
+
+Android.mk - this will tell the build system to include and to build sources specifically for your device. See below, for an example. This is dependant on the device and hardware, you could have libsensors, liblights, libcamera subdirectories under the example device tree, i.e. /device/lg/gt540/libsensors, /device/lg/gt540/liblights, /device/lg/gt540/libcamera etc.
+AndroidBoard.mk - this is for the kernel, the build system uses that to drop the kernel image in place (more about this in a few minutes)
+AndroidProducts.mk - specifies the appropriate device's make file, to use for building. i.e. /device/lg/gt540/device_gt540.mk, this is specific also.
+device_xxxxx.mk - specifies the properties and extras to copy over into the final output, in this case, it could be for example, device_gt540.mk
+BoardConfig.mk - This is the meat of it all, this is where compiler conditional flags are set, partition layouts, boot addresses, ramdisk size, and so on.
+
+
+Lets peek into each of those to give a glance as to where it all fits in.
+
+Android.mk:
+
+ifeq ($(TARGET_BOOTLOADER_BOARD_NAME),xxxxx)
+    include $(call all-named-subdir-makefiles, recovery libsensors liblights libcamera ....)
+endif
+
+
+This is how the build will use that to build recovery, sensors, lights and camera (of course there will be more), its saying 'Yo Builder, go into each of the directories specified, and build the respective sources plskthxbai'
+
+AndroidBoard.mk:
+
+LOCAL_PATH := device/lg/gt540/
+
+#
+# Boot files
+#
+TARGET_PREBUILT_KERNEL := $(LOCAL_PATH)/kernel
+
+file := $(INSTALLED_KERNEL_TARGET)
+ALL_PREBUILT += $(file)
+$(file): $(TARGET_PREBUILT_KERNEL) | $(ACP)
+    $(transform-prebuilt-to-target)
+
+
+Now this, is telling the build system, to be able to drop this kernel into the out/target/product/lg/gt540 (notice the correlation with the device tree directory?)
+
+AndroidProducts.mk:
+
+PRODUCT_MAKEFILES := \\
+    $(LOCAL_DIR)/device_gt540.mk 
+
+
+Its telling the build as in 'Yo Builder, read that device make file please and process it upon completion of build.'
+
+*device_xxxxx.mk: (for this example, device_gt540.mk) *
+
+PRODUCT_NAME := lg_gt540
+PRODUCT_DEVICE := gt540
+PRODUCT_MODEL := LG GT 540
+
+PRODUCT_COPY_FILES += \\
+    ... specific ...
+
+PRODUCT_PROPERTY_OVERRIDES := \\
+    ro.com.android.dateformat=dd-MM-yyyy \\
+     ... more stuff ...
+
+
+This is where all the specifics for the device such as drivers, proprietary libraries, supporting scripts specifically for the device, gets copied over to out/target/product/lg/gt540/system/ in this case. Notice how the overrides for the properties, these end up in the build.prop found in the root of the /system of the Android ROM.
+
+BoardConfig.mk:
+
+LOCAL_PATH:= $(call my-dir)
+
+TARGET_NO_BOOTLOADER := true
+TARGET_PREBUILT_KERNEL := device/lg/gt540/kernel
+TARGET_PREBUILT_RECOVERY_KERNEL := device/lg/gt540/recovery_kernel
+
+# This will vary from device!
+TARGET_BOARD_PLATFORM := msm7k
+TARGET_ARCH_VARIANT := armv6-vfp
+TARGET_CPU_ABI := armeabi
+TARGET_CPU_ABI := armeabi-v6l
+TARGET_CPU_ABI2 := armeabi
+
+# OpenGL drivers config file path
+BOARD_EGL_CFG := device/lg/gt540/egl.cfg
+
+# Dependant, not to be taken literally!
+BOARD_GLOBAL_CFLAGS += -DHAVE_FM_RADIO
+
+# Dependant, not to be taken literally!
+BOARD_KERNEL_BASE := 0x02600000
+
+# this will be device specific, and by doing cat /proc/mtd will give you the correct sizes
+BOARD_BOOTIMAGE_PARTITION_SIZE     := 0x00480000
+BOARD_RECOVERYIMAGE_PARTITION_SIZE := 0x00480000
+BOARD_SYSTEMIMAGE_PARTITION_SIZE   := 0x0cf80000
+BOARD_USERDATAIMAGE_PARTITION_SIZE := 0x0d020000
+BOARD_FLASH_BLOCK_SIZE := 131072
+
+
+That is an excerpt, notice how we specify kernel's base address, this is how the boot.img gets generated after compilation is done and yet again, gets dropped into out/target/product/lg/gt540/boot.img. Also, more importantly, we're telling the build system to use the target platform for cross-compiling the sources (*TARGET_BOARD_PLATFORM*/*TARGET_CPU_ABI*) There will be more information in there such as conditional flags to pass to the compiler, for an example. we specified the directive HAVE_FM_RADIO to tell it, when it comes to handling the source for the FM radio system, to conditionally compile parts of the source. Again, this is hardware specific and mileage will vary, also this applies to the address for boot. In a nutshell, this is saying 'Yo Builder, read the damn variables and remember them and apply them when cross-compiling those source files!'
+
+Now that the internals of each of those Android build make-files are shown.
+
+Now, onto the vendor/ part of it, in AOSP, simply, once again, correlation and corresponds with the device/ tree, as in continuing with this example, vendor/lg/gt540/ which gets picked up by the lunch. There's more make files in there but the general consensus is there's a directory called proprietary which contains the proprietary libs (due to close-source etc) that gets copied over. The copying over of the libraries gets specified in the file device-vendor-blobs.mk, in this case, gt540-vendor-blobs.mk. 
+
+When the magic happens by doing the following:
+
+. build/envsetup.sh
+
+
+This is reading in the entire entries found in each of the device/ subdirectories and "remembers them", so the build system knows what type of target is used etc.
+
+When the . lunch gets invoked, a menu appears prompting to pick the device that is required to build. Now the last and final step to do the build...
+
+make -j5 > buildlog.log 2>&1
+
+
+I run multitail on another terminal and monitor the buildlog.log file to check and make sure its building.
+
+This last step will depend on how many cores you have (n cores + 1 as a rule) and it takes a while to build, GB build takes 40mins on my laptop running Arch Linux 64bit, ICS build takes about 2hrs 30 mins. So mileage will vary on what type of horsepower your machine has. 
+
+When the build is done, a little bell goes off and at the bottom of the said log file, I see this:
+
+Combining NOTICE files: out/target/product/xxxxx/obj/NOTICE.html
+Target system fs image: out/target/product/xxxxx/obj/PACKAGING/systemimage_intermediates/system.img
+Install system fs image: out/target/product/xxxxx/system.img
+out/target/product/xxxx/system.img+ total size is 108776448
+
+
+As matter of interest JBQ (Jean Baptiste Queru - the 'boss' for managing/distributing the source from Google), his build step is this... 
+
+make -j32 
+
+
+Yup! 32 cores! That..... is pretty powerful.
+    

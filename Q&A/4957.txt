@@ -1,0 +1,178 @@
+49
+Q:I always use LayoutInflater and findViewById for creating new item in thegetView method of an Adapter.
+
+But in many articles people write that findViewById is very very slow and strongly recommend to use the View Holder Pattern.
+
+Can anyone explain why findViewById is so slow? And why the View Holder Pattern is faster? 
+
+And what should I do if needed to add different items to a ListView? Should I create classes for each type?
+
+static class ViewHolderItem1 {
+    TextView textViewItem;
+}
+
+static class ViewHolderItem2 {
+    Button btnViewItem;
+}
+static class ViewHolderItem3 {
+    Button btnViewItem;
+    ImageView imgViewItem;
+}
+
+    
+===============================================================================================
+85
+A:Can anyone explain why findViewById is so slow? And why View Holder
+  Pattern is faster?
+
+
+When you are not using Holder so getView() method will call findViewById() as many times as you row(s) will be out of View. So  if you have 1000 rows in List and 990 rows will be out of View then 990 times will be called findViewById() again.
+
+Holder design pattern is used for View caching - Holder (arbitrary) object holds child widgets of each row and when row is out of View then findViewById() won't be called but View will be recycled and widgets will be obtained from Holder.
+
+if (convertView == null) {
+   convertView = inflater.inflate(layout, null, false);
+   holder = new Holder(convertView);
+   convertView.setTag(holder); // setting Holder as arbitrary object for row
+}
+else { // view recycling
+   // row already contains Holder object
+   holder = (Holder) convertView.getTag();
+}
+
+// set up row data from holder
+titleText.setText(holder.getTitle().getText().toString());
+
+
+Where Holder class can looks like:
+
+public class Holder {
+
+   private View row;
+   private TextView title;
+
+   public Holder(View row) {
+      this.row = row;
+   }
+
+   public TextView getTitle() {
+      if (title == null) {
+         title = (TextView) row.findViewById(R.id.title);
+      }
+      return title;
+   }
+}
+
+
+As @meredrica pointed your if you want to get better performance, you can use public fields (but it destroys encapsulation).
+
+Update:
+
+Here is second approach how to use ViewHolder pattern:
+
+ViewHolder holder;
+// view is creating
+if (convertView == null) {
+   convertView = LayoutInflater.from(mContext).inflate(R.layout.row, parent, false);
+   holder = new ViewHolder();   
+   holder.title = (TextView) convertView.findViewById(R.id.title);
+   holder.icon = (ImageView) convertView.findViewById(R.id.icon);
+   convertView.setTag(holder);
+}
+// view is recycling
+else {
+   holder = (ViewHolder) convertView.getTag();
+}
+
+// set-up row
+final MyItem item = mItems.get(position);
+holder.title.setText(item.getTitle());
+...
+
+private static class ViewHolder {
+
+   public TextView title;
+   public ImageView icon;
+}
+
+
+Update #2:
+
+As everybody know, Google and AppCompat v7 as support library released new ViewGroup called RecyclerView that is designed for rendering any adapter-based views. As @antonioleiva says in post: "It is supossed to be the successor of ListView and GridView". 
+
+To be able to use this element you need basically one the most important thing and it's special kind of Adapter that is wrapped in mentioned ViewGroup - RecyclerView.Adapter where ViewHolder is that thing we are talking about here :) Simply, this new ViewGroup element has its own ViewHolder pattern implemented. All what you need to do is to create custom ViewHolder class that has to extend from RecyclerView.ViewHolder and you don't need to care about checking whether current row in adapter is null or not. 
+
+Adapter will do it for you and you can be sure that row will be inflated only in the case it must be inflated (i would say). Here is simple imlementation:
+
+public static class ViewHolder extends RecyclerView.ViewHolder {
+
+   private TextView title;
+
+   public ViewHolder(View root) {
+      super(root);
+      title = root.findViewById(R.id.title);
+   }
+}
+
+
+Two important things here:
+
+
+You have to call super() constructor in which you need to pass your
+root view of row
+You are able to get specific position of row directly from ViewHolder
+via getPosition() method. This is useful when you want to do some
+action after tapping1 on row widget.
+
+
+And an usage of ViewHolder in Adapter. Adapter has three methods you have to implement:
+
+
+onCreateViewHolder() - where ViewHolder is created
+onBindViewHolder() - where you are updating your row. We can say it's
+piece of code where you are recycling row
+getItemCount() - i would say it's same as typical getCount() method
+in BaseAdapter
+
+
+So a little example:
+
+@Override 
+public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+   View root = LayoutInflater.from(mContext).inflate(myLayout, parent, false);
+   return new ViewHolder(root);
+}
+
+@Override public void onBindViewHolder(ViewHolder holder, int position) {
+   Item item = mItems.get(position);
+   holder.title.setText(item.getTitle());
+}
+
+@Override public int getItemCount() {
+   return mItems != null ? mItems.size() : 0;
+}
+
+
+1 It's good to mention that RecyclerView doesn't provide direct interface to be able to listen item click events. This can be curious for someone but here is nice explanation why it's not so curious as it actually looks.
+
+I solved this by creating my own interface that is used to handle click events on rows (and any kind of widget you want in row):
+
+public interface RecyclerViewCallback<T> {
+
+   public void onItemClick(T item, int position); 
+}
+
+
+I'm binding it into Adapter through constructor and then call that callback in ViewHolder:
+
+root.setOnClickListener(new View.OnClickListener {
+   @Override
+   public void onClick(View v) {
+      int position = getPosition();
+      mCallback.onItemClick(mItems.get(position), position);
+   }
+});
+
+
+This is basic example so don't take it as only one possible way. Possibilities are endless.
+    

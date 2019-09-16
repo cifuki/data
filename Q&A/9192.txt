@@ -1,0 +1,85 @@
+29
+Q:Hi I'm making custom dialer so I create my own input pad.
+
+The problem is how do I disable the EditText but still allow cut/copy/paste? The stock dialer can do this.
+
+I have tried android:focusable="false" but it disables cut/copy (can still paste though).
+
+I also tried to disable the inputType programatically which disables all three commands:
+
+myEditText.setInputType(InputType.TYPE_NULL); //Can't cut/copy/paste
+
+
+Disabling it from manifest also doesn't work:
+
+android:configChanges="orientation|keyboardHidden" //Keyboard still popped up
+
+
+Any solution? Thanks
+    
+===============================================================================================
+51
+A:After hours and hours of research, I finally found a solution that works for all API versions. Hope this saves someone's time.
+
+If you are developing for API >= 11, the solution is simple, either:
+
+1) Add the two properties below in the xml file of EditText
+
+android:inputType="none"
+android:textIsSelectable="true"
+
+
+or
+
+2) Programatically do the below
+
+myEditText.setInputType(InputType.TYPE_NULL);
+myEditText.setTextIsSelectable(true);
+
+
+And you're done.
+
+If you want to cater for API < 11 as well, I found that there is no way to disable to keyboard from popping out if you wanted to select the text for copy paste purpose. Setting focusable to false will disable the keyboard but it doesn't help because it disables your ability to select text too. Any other solutions I found in stackoverflow all either doesn't work or disables text selection at the same time too.
+
+One ugly way to solve this is as such..
+
+First, add this property in the xml file of EditText
+
+android:editable="false"
+
+
+Yes this is deprecated, but necessary for making the EditText not editable in API version < 11.
+
+Next, we will need to hide the keyboard as soon as it shows up, so that we can continue selecting text without the keyboard blocking the way.
+
+Use this code below to detect keyboard showing up (solution obtained from https://stackoverflow.com/a/9108219/1241783), and hide it immediately. 
+
+if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.HONEYCOMB)
+{
+    final View activityRootView = findViewById(R.id.activityRoot);
+    activityRootView.getViewTreeObserver().addOnGlobalLayoutListener(new OnGlobalLayoutListener() {
+    @Override
+        public void onGlobalLayout() {
+            Rect r = new Rect();
+            //r will be populated with the coordinates of your view that area still visible.
+            activityRootView.getWindowVisibleDisplayFrame(r);
+
+            int heightDiff = activityRootView.getRootView().getHeight() - (r.bottom - r.top);
+            if (heightDiff > 100) { // if more than 100 pixels, its probably a keyboard...
+
+            //Hide the keyboard instantly!
+            if (getCurrentFocus() != null) 
+            {
+                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
+            }
+            }
+         }
+        });
+}
+
+
+It works for my case. Though you can see the keyboard showing up in a split second (which is the ugly part) but I can't think of any other way to get this to work at the time of writing. If you have a better solution, please leave a comment!
+
+Let me know too if this saves someone's time :)
+    

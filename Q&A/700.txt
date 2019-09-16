@@ -1,0 +1,73 @@
+196
+Q:This question already has an answer here:
+    
+        
+            Android Gallery on Android 4.4 (KitKat) returns different URI for Intent.ACTION_GET_CONTENT
+                
+                    19 answers
+                
+        
+    
+    
+Before the new gallery access in Android 4.4 (KitKat) I got my real path on the SD card with this method:
+
+public String getPath(Uri uri) {
+   String[] projection = { MediaStore.Images.Media.DATA };
+   Cursor cursor = managedQuery(uri, projection, null, null, null);
+   startManagingCursor(cursor);
+   int column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+   cursor.moveToFirst();
+ return cursor.getString(column_index);
+}
+
+
+Now, the Intent.ACTION_GET_CONTENT return different data:
+
+Before:
+
+content://media/external/images/media/62
+
+
+Now:
+
+content://com.android.providers.media.documents/document/image:62
+
+
+How could I manage to obtain the real path on the SD card?
+    
+===============================================================================================
+117
+A:Note: This answer addresses part of the problem. For a complete solution (in the form of a library), look at Paul Burke's answer.
+
+You could use the URI to obtain document id, and then query either MediaStore.Images.Media.EXTERNAL_CONTENT_URI or MediaStore.Images.Media.INTERNAL_CONTENT_URI (depending on the SD card situation).
+
+To get document id:
+
+// Will return "image:x*"
+String wholeID = DocumentsContract.getDocumentId(uriThatYouCurrentlyHave);
+
+// Split at colon, use second item in the array
+String id = wholeID.split(":")[1];
+
+String[] column = { MediaStore.Images.Media.DATA };     
+
+// where id is equal to             
+String sel = MediaStore.Images.Media._ID + "=?";
+
+Cursor cursor = getContentResolver().
+                          query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, 
+                          column, sel, new String[]{ id }, null);
+
+String filePath = "";
+
+int columnIndex = cursor.getColumnIndex(column[0]);
+
+if (cursor.moveToFirst()) {
+    filePath = cursor.getString(columnIndex);
+}   
+
+cursor.close();
+
+
+Reference: I'm not able to find the post that this solution is taken from. I wanted to ask the original poster to contribute here. Will look some more tonight.
+    

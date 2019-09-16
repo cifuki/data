@@ -1,0 +1,139 @@
+74
+Q:I am using the retrofit efficient networking library, but I am unable to handle Dynamic JSON which contains single prefix  responseMessage which changes to object randomly, the same prefix ( responseMessage) changes to String in some cases (dynamically). 
+
+Json format Object of responseMessage:
+
+{
+   "applicationType":"1",
+   "responseMessage":{
+      "surname":"Jhon",
+      "forename":" taylor",
+      "dob":"17081990",
+      "refNo":"3394909238490F",
+      "result":"Received"
+   }
+
+}
+
+
+responseMessage  Json format dynamically changes to type string:
+
+ {
+       "applicationType":"4",
+       "responseMessage":"Success"          
+ }
+
+
+My problem is since retrofit has built-in JSON parsing, I have to assign single POJO per request! but the REST-API unfortunately, is built on dynamic JSON responses. The prefix will change from string to object randomly in both success(...) and failure(...) methods!  
+
+void doTrackRef(Map<String, String> paramsref2) {
+    RestAdapter restAdapter = new RestAdapter.Builder().setEndpoint("http://192.168.100.44/RestDemo").build();
+
+
+
+    TrackerRefRequest userref = restAdapter.create(TrackerRefRequest.class);
+    userref.login(paramsref2,
+            new Callback<TrackerRefResponse>() {
+                @Override
+                public void success(
+                        TrackerRefResponse trackdetailresponse,
+                        Response response) {
+
+                    Toast.makeText(TrackerActivity.this, "Success",
+                    Toast.LENGTH_SHORT).show();
+
+                }
+
+                @Override
+                public void failure(RetrofitError retrofitError) {
+
+
+                    Toast.makeText(TrackerActivity.this, "No internet",
+                        Toast.LENGTH_SHORT).show();
+                }
+
+
+            });
+}
+
+
+Pojo:
+
+public class TrackerRefResponse {
+
+
+private String applicationType;
+
+    private String responseMessage;          //String type
+
+//private ResponseMessage responseMessage;  //Object of type ResponseMessage
+
+//Setters and Getters
+
+
+}
+
+
+In above code POJO TrackerRefResponse.java  prefix responseMessage is set to string or object of type responseMessage , so we can create the POJO with ref variable with same name (java basics :)   ) so I'm looking for same solution for dynamic JSON in Retrofit.
+I know this is very easy job in normal http clients with async task, but it's not the best practice in the REST-Api JSON parsing! looking at the performance Benchmarks always Volley or Retrofit is the best choice, but I'm failed handle dynamic JSON!  
+
+Possible solution I Know 
+
+
+Use old asyc task with http client parsing. :( 
+Try to convince the RESTapi backend developer.
+Create custom Retrofit client :)
+
+    
+===============================================================================================
+37
+A:Late to the party, but you can use a converter.
+
+RestAdapter restAdapter = new RestAdapter.Builder()
+    .setEndpoint("https://graph.facebook.com")
+    .setConverter(new DynamicJsonConverter()) // set your static class as converter here
+    .build();
+
+api = restAdapter.create(FacebookApi.class);
+
+
+Then you use a static class which implements retrofit's Converter:
+
+static class DynamicJsonConverter implements Converter {
+
+    @Override public Object fromBody(TypedInput typedInput, Type type) throws ConversionException {
+        try {
+            InputStream in = typedInput.in(); // convert the typedInput to String
+            String string = fromStream(in);
+            in.close(); // we are responsible to close the InputStream after use
+
+            if (String.class.equals(type)) {
+                return string;
+            } else {
+                return new Gson().fromJson(string, type); // convert to the supplied type, typically Object, JsonObject or Map<String, Object>
+            }
+        } catch (Exception e) { // a lot may happen here, whatever happens
+            throw new ConversionException(e); // wrap it into ConversionException so retrofit can process it
+        }
+    }
+
+    @Override public TypedOutput toBody(Object object) { // not required
+        return null;
+    }
+
+    private static String fromStream(InputStream in) throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+        StringBuilder out = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            out.append(line);
+            out.append("\\r\
+");
+        }
+        return out.toString();
+    }
+}
+
+
+I have written this sample converter so it returns the Json response either as String, Object, JsonObject or Map< String, Object >. Obviously not all return types will work for every Json, and there is sure room for improvement. But it demonstrates how to use a Converter to convert almost any response to dynamic Json.
+    

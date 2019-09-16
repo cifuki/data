@@ -1,0 +1,86 @@
+30
+Q:Possible Duplicate:
+  Java Synchronization  
+
+
+
+
+I'm reading the book Beginning Android Games.
+
+It uses synchronized() a lot but I don't really understand what it does. I haven't used Java in a long time and I'm not sure if I ever used multithreading.
+
+In the Canvas examples it uses synchronized(this). However in the OpenGL ES example, it creates an Object called stateChanged and then uses synchronized(stateChanged). When the game state changes it calls stateChanged.wait() and then stateChanged.notifyAll();
+
+Some code:
+
+    Object stateChanged = new Object();
+
+    //The onPause() looks like this:
+    public void onPause()
+        {
+            synchronized(stateChanged)
+            {
+                if(isFinishing())
+                    state = GLGameState.Finished;
+                else
+                    state = GLGameState.Paused;
+
+                while(true)
+                {
+                    try
+                    {
+                        stateChanged.wait();
+                        break;
+                    } catch(InterruptedException e)
+                    {
+                    }
+                }
+            }
+        }
+//The onDrawSurface looks like this:
+public void onDrawFrame(GL10 gl)
+    {
+        GLGameState state = null;
+        synchronized(stateChanged)
+        {
+            state = this.state;
+        }
+
+        if(state == GLGameState.Running)
+        {
+
+        }
+
+        if(state == GLGameState.Paused)
+        {
+            synchronized(stateChanged)
+            {
+                this.state = GLGameState.Idle;
+                stateChanged.notifyAll();
+            }
+        }
+
+        if(state == GLGameState.Finished)
+        {
+            synchronized(stateChanged)
+            {
+                this.state = GLGameState.Idle;
+                stateChanged.notifyAll();
+            }
+        }
+    }
+
+//the onResume() looks like this:
+synchronized(stateChanged)
+        {
+            state = GLGameState.Running;
+            startTime = System.nanoTime();
+        }
+
+    
+===============================================================================================
+31
+A:This Java Tutorial can probably help you understand what using synchronized on an object does.
+
+When object.wait() is called it will release the lock held on that object (which happens when you say synchronized(object)), and freeze the thread. The thread then waits until object.notify() or object.notifyAll() is called by a separate thread. Once one of these calls occurs, it will allow any threads that were stopped due to object.wait() to continue. This does not mean that the thread that called object.notify() or object.notifyAll() will freeze and pass control to a waiting thread, it just means these waiting threads are now able to continue, whereas before they were not.
+    

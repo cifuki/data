@@ -1,0 +1,108 @@
+29
+Q:I don't have much experience with Java. I'm not sure if this question is stupid, but I need to get a user name from Firebase realtime database and return this name as a result of this method. So, I figured out how to get this value, but I don't understand how to return it as result of this method. What's the best way to do this?
+
+private String getUserName(String uid) {
+    databaseReference.child(String.format("users/%s/name", uid))
+            .addListenerForSingleValueEvent(new ValueEventListener() {
+        @Override
+        public void onDataChange(DataSnapshot dataSnapshot) {
+            // How to return this value?
+            dataSnapshot.getValue(String.class);
+        }
+
+        @Override
+        public void onCancelled(DatabaseError databaseError) {}
+    });
+}
+
+    
+===============================================================================================
+67
+A:This is a classic issue with asynchronous web APIs. You cannot return something now that hasn't been loaded yet. With other words, you cannot simply create a global variable and use it outside onDataChange() method because it will always be null. This is happening because onDataChange() method is called asynchronous. Depending on your connection speed and the state, it may take from a few hundred milliseconds to a few seconds before that data is available.
+
+But not only Firebase Realtime Database loads data asynchronously, almost all of modern other web APIs do, since it may take some time. So instead of waiting for the data (which can lead to unresponsive application dialogs for your users), your main application code continues while the data is loaded on a secondary thread. Then when the data is available, your onDataChange() method is called and can use the data. With other words, by the time onDataChange() method is called your data is not loaded yet.
+
+Let's take an example, by placing a few log statements in the code, to see more clearly what's going on.
+
+private String getUserName(String uid) {
+    Log.d("TAG", "Before attaching the listener!");
+    databaseReference.child(String.format("users/%s/name", uid)).addListenerForSingleValueEvent(new ValueEventListener() {
+        @Override
+        public void onDataChange(DataSnapshot dataSnapshot) {
+            // How to return this value?
+            dataSnapshot.getValue(String.class);
+            Log.d("TAG", "Inside onDataChange() method!");
+        }
+
+        @Override
+        public void onCancelled(DatabaseError databaseError) {}
+    });
+    Log.d("TAG", "After attaching the listener!");
+}
+
+
+If we run this code will, the output wil be:
+
+
+  Before attaching the listener!
+  
+  After attaching the listener!
+  
+  Inside onDataChange() method!
+
+
+This is probably not what you expected, but it explains precisely why your data is null when returning it.
+
+The initial response for most developers is to try and "fix" this asynchronous behavior, which I personally recommend against this. The web is asynchronous, and the sooner you accept that, the sooner you can learn how to become productive with modern web APIs.
+
+I've found it easiest to reframe problems for this asynchronous paradigm. Instead of saying "First get the data, then log it", I frame the problem as "Start to get data. When the data is loaded, log it". This means that any code that requires the data must be inside onDataChange() method or called from inside there, like this:
+
+databaseReference.child(String.format("users/%s/name", uid)).addListenerForSingleValueEvent(new ValueEventListener() {
+    @Override
+    public void onDataChange(DataSnapshot dataSnapshot) {
+        // How to return this value?
+        if(dataSnapshot != null) {
+            System.out.println(dataSnapshot.getValue(String.class));
+        }
+    }
+
+    @Override
+    public void onCancelled(DatabaseError databaseError) {}
+});
+
+
+If you want to use that outside, there is another approach. You need to create your own callback to wait for Firebase to return you the data. To achieve this, first you need to create an interface like this:
+
+public interface MyCallback {
+    void onCallback(String value);
+}
+
+
+Then you need to create a method that is actually getting the data from the database. This method should look like this:
+
+public void readData(MyCallback myCallback) {
+    databaseReference.child(String.format("users/%s/name", uid)).addListenerForSingleValueEvent(new ValueEventListener() {
+        @Override
+        public void onDataChange(DataSnapshot dataSnapshot) {
+            String value = dataSnapshot.getValue(String.class);
+            myCallback.onCallback(value);
+        }
+
+        @Override
+        public void onCancelled(DatabaseError databaseError) {}
+    });
+}
+
+
+In the end just simply call readData() method and pass an instance of the MyCallback interface as an argument wherever you need it like this:
+
+readData(new MyCallback() {
+    @Override
+    public void onCallback(String value) {
+        Log.d("TAG", value);
+    }
+});
+
+
+This is the only way in which you can use that value outside onDataChange() method. For more information, you can take also a look at this video.
+    

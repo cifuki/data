@@ -1,0 +1,122 @@
+42
+Q:I have an activity that needs to turn screen on(if offed) when it is started.
+So in onCreate, I have:
+
+this.getWindow().setFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                    | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                    | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                    | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                    | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+
+
+Using this with help of wakelock in broadcasr receiver , I am able to cause my activity to display whenever it is started from broadcast receiver.
+
+But problem is very strange, activity lifecycle calls in this manner, onPause() and onResume immediately after starting activity
+
+
+onCreate
+onStart
+onResume
+onPause
+onStop
+onStart
+onResume
+
+
+
+
+So the problem is on start and on resume calling twice, with on stop also calling, I want to implement some logic in onStop() but, with such behavior app will not work correctly. 
+
+Edit
+
+I found problem is only due to flag FLAG_SHOW_WHEN_LOCKED. and when device is locked. and it only happens when device is locked before activity is starting.
+
+P.S I am using alarm manager with broadcast receiver, and then starts activity from broadcast receiver.
+    
+===============================================================================================
+45
+A:Let us understand why the lifecycle methods are called multiple times.
+
+
+Here is an important code comment documented in ActivityThread, which is responsible for executing the activities of the application process.
+
+
+  We accomplish this by going through the normal startup (because
+  activities expect to go through onResume() the first time they run,
+  before their window is displayed), and then pausing it.
+
+
+Right after onResume, the activity window is attached to the window manager and onAttachedtoWindow is invoked. If the screen is on, the activity window will get focus and onWindowFocusChanged is invoked with true parameter. From docs:
+
+
+  Keep in mind that onResume is not the best indicator that your
+  activity is visible to the user; a system window such as the keyguard
+  may be in front. Use onWindowFocusChanged(boolean) to know for certain
+  that your activity is visible to the user
+
+
+In the reported issue, the screen if off. Hence activity window will not get focus, which results in activity's onPause method getting called followed by onStop method, as the activity window is not visible.
+
+Since WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON flag is set on activity window, the window manager service turns on the screen using power manager api. Following is the WindowManagerService code:
+
+public int relayoutWindow(...) {
+    ...
+    toBeDisplayed = !win.isVisibleLw();
+    ...
+    if (toBeDisplayed) {
+        ...
+        if ((win.mAttrs.flags
+            & WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON) != 0) {
+            if (DEBUG_VISIBILITY) Slog.v(TAG,
+                "Relayout window turning screen on: " + win);
+                win.mTurnOnScreen = true;
+            }
+        ...
+        if (mTurnOnScreen) {
+            if (DEBUG_VISIBILITY) Slog.v(TAG, "Turning screen on after layout!");
+            mPowerManager.wakeUp(SystemClock.uptimeMillis());
+            mTurnOnScreen = false;
+        }
+        ...
+}
+
+
+After the screen turns on onStart and onPause are called again.
+
+Hence : onCreate - onStart - onResume - onPause - onStop - onStart - onPause. 
+
+This can be verified by locking the device and starting the activity using adb command or eclipse. 
+
+
+Ideal Solution
+
+
+If you start a task in onCreate you need to stop it in onDestory (if the task is still pending). Similarly for onStart it would be onStop and for onResume it would be onPause. 
+
+
+Workaround 
+
+
+If you can't follow the above protocol, you can check the status of activity window focus using hasWindowFocus in onPause method. Normally the activity window focus status will be true in onPause. In scenarios like screen is off or screen is on with keyguard displayed, the activity window focus will be false in onPause.
+
+boolean mFocusDuringOnPause;
+
+public void onPause() {
+    super.onPause;
+
+    mFocusDuringOnPause = hasWindowFocus();    
+}
+
+public void onStop() {
+    super.onStop();
+
+    if(mFocusDuringOnPause) {
+        // normal scenario
+    } else {
+        // activity was started when screen was off / screen was on with keygaurd displayed
+    }
+}
+
+    

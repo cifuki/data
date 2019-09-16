@@ -1,0 +1,34 @@
+58
+Q:While working with retain Fragments in Android to hold an AsyncTask during configuration changes, which i guess it's the best approach, some doubts appear in my mind about UI Thread's Message Queue invocation order. 
+
+Ex: 
+Imagine this scenario:
+
+
+Configuration Change occurs, user rotates the device. AsyncTask is running.
+Fragment onDetach() is called
+AsyncTask doInBackground() method finishes
+AsyncTask onPostExecute()is called
+Fragment onAttach() is called
+
+
+So can UI Thread Message Queue be like this:
+
+
+  Queue top -> onDetach() | onPostExecute() | onAttach()
+
+
+I know it cannot, the call to onPostExecute() will wait until the configuration change completes,  as far as i know, but how does that work ? Are the calls from Activities, Fragments life-cycles executed consecutively ?
+    
+===============================================================================================
+115
+A:It is not possible for onPostExecute() to be called in between Fragment#onDetach() and Fragment#onAttach() during a configuration change. The reasoning behind this claim is threefold:
+
+
+Configuration changes are handled inside a single message in the main thread's message queue.
+As soon as the doInBackground() method returns, the AsyncTask schedules the onPostExecute() method to be invoked on the main thread by posting a message to the main thread's message queue.
+The configuration change's message will contain the code that will invoke the Activity and Fragment lifecycle methods (such as onDetach() and onAttach()). The AsyncTask's message will contain the code that will invoke the onPostExecute() method. Since the main thread processes messages in its message queue sequentially, it is impossible for the two messages to be executed at the same time, and therefore onPostExecute() can never be invoked in between the calls to onDetach() and onAttach().
+
+
+Read my response to Doug Stevenson in this thread for a more detailed explanation (including links to the source code that prove the claim).
+    

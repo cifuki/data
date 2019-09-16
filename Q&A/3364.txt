@@ -1,0 +1,149 @@
+67
+Q:As per https://developer.android.com/training/material/animations.html
+
+
+  The ViewAnimationUtils.createCircularReveal() method enables you to
+  animate a clipping circle to reveal or hide a view.
+  
+  To reveal a previously invisible view using this effect:
+
+// previously invisible view
+View myView = findViewById(R.id.my_view);
+
+// get the center for the clipping circle
+int cx = (myView.getLeft() + myView.getRight()) / 2;
+int cy = (myView.getTop() + myView.getBottom()) / 2;
+
+// get the final radius for the clipping circle
+int finalRadius = Math.max(myView.getWidth(), myView.getHeight());
+
+// create the animator for this view (the start radius is zero)
+Animator anim =
+    ViewAnimationUtils.createCircularReveal(myView, cx, cy, 0, finalRadius);
+
+// make the view visible and start the animation
+myView.setVisibility(View.VISIBLE);
+anim.start();
+
+
+
+This is meant to reveal a view. How can I use this to circularly reveal an entire activity, without any shared elements?
+
+Specifically, I'd like my searchActivity to circularly reveal from the search action button in the toolbar.
+    
+===============================================================================================
+83
+A:After looking for a solution for half a day without a result, I came up with an own implementation. I'm using a transparent activity with a matching root layout.
+The root layout is a view which can then be revealed with createCircularReveal().
+
+My code looks like this:
+
+Theme Definition in styles.xml
+
+<style name="Theme.Transparent" parent="Theme.AppCompat.Light.NoActionBar">
+    <item name="android:windowIsTranslucent">true</item>
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    <item name="android:windowBackground">@android:color/transparent</item>
+</style>
+
+
+Activity Definition in AndroidManifest.xml
+
+<activity
+        android:name=".ui.CircularRevealActivity"
+        android:theme="@style/Theme.Transparent"
+        android:launchMode="singleTask"
+        />
+
+
+then I declared a layout for my activity (I've chosen DrawerLayout, so that I can have a NavDrawer. Every layout should work here.)
+
+<android.support.v4.widget.DrawerLayout
+    android:id="@+id/drawer_layout"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    >
+
+    <FrameLayout
+        android:id="@+id/root_layout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/honey_melon"
+        >
+
+        <!-- Insert your actual layout here -->
+
+    </FrameLayout>
+
+</android.support.v4.widget.DrawerLayout>
+
+
+Important is the FrameLayout with the id root_layout. This view will be revealed in the activity.
+
+Finally I implemented CircularRevealActivity and overwrote onCreate():
+
+@Override
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    overridePendingTransition(R.anim.do_not_move, R.anim.do_not_move);
+
+    setContentView(R.layout.activity_reveal_circular);
+
+    if (savedInstanceState == null) {
+        rootLayout.setVisibility(View.INVISIBLE);
+
+        ViewTreeObserver viewTreeObserver = rootLayout.getViewTreeObserver();
+        if (viewTreeObserver.isAlive()) {
+            viewTreeObserver.addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+                @Override
+                public void onGlobalLayout() {
+                    circularRevealActivity();
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
+                        rootLayout.getViewTreeObserver().removeGlobalOnLayoutListener(this);
+                    } else {
+                        rootLayout.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                    } 
+                }
+            });
+        }
+    }
+}
+
+
+It was important to put circularRevealActivity() into a OnGlobalLayoutListener, because the view needs to be drawn for the animation.
+
+circularRevealActivity() looks like Ishaan's proposal:
+
+private void circularRevealActivity() {
+
+    int cx = rootLayout.getWidth() / 2;
+    int cy = rootLayout.getHeight() / 2;
+
+    float finalRadius = Math.max(rootLayout.getWidth(), rootLayout.getHeight());
+
+    // create the animator for this view (the start radius is zero)
+    Animator circularReveal = ViewAnimationUtils.createCircularReveal(rootLayout, cx, cy, 0, finalRadius);
+    circularReveal.setDuration(1000);
+
+    // make the view visible and start the animation
+    rootLayout.setVisibility(View.VISIBLE);
+    circularReveal.start();
+}
+
+
+Edit 1
+
+The definition for R.anim.do_not_move was added. However, it should work without that line too, if your design does not specify default transitions for activities. Let me know
+
+R.anim.do_not_move: 
+
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+<translate
+    android:fromYDelta="0"
+    android:toYDelta="0"
+    android:duration="@android:integer/config_mediumAnimTime"
+    />
+</set>
+
+    

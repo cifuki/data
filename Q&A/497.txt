@@ -1,0 +1,82 @@
+248
+Q:I am trying to do POST with HttpURLConnection(I need to use it this way, can't use HttpPost) and I'd like to add parameters to that connection such as
+
+post.setEntity(new UrlEncodedFormEntity(nvp));
+
+
+where
+
+nvp = new ArrayList<NameValuePair>();
+
+
+having some data stored in. I can't find a way how to add this ArrayList to my HttpURLConnection which is here:
+
+HttpsURLConnection https = (HttpsURLConnection) url.openConnection();
+https.setHostnameVerifier(DO_NOT_VERIFY);
+http = https;
+http.setRequestMethod("POST");
+http.setDoInput(true);
+http.setDoOutput(true);
+
+
+The reason for that awkward https and http combination is the need for not verifying the certificate. That is not a problem, though, it posts the server well. But I need it to post with arguments. 
+
+Any ideas?
+
+
+
+Duplicate Disclaimer:
+
+Back in 2012, I had no idea how parameters were inserted into an HTTP POST request. I was hanging on to NameValuePair because it was in a tutorial. This question might seem like a duplicate, however, my 2012 self read that other question and it was NOT using NameValuePair. It did not, in fact, solve my problem.
+    
+===============================================================================================
+352
+A:You can get output stream for the connection and write the parameter query string to it.
+
+URL url = new URL("http://yoururl.com");
+HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+conn.setReadTimeout(10000);
+conn.setConnectTimeout(15000);
+conn.setRequestMethod("POST");
+conn.setDoInput(true);
+conn.setDoOutput(true);
+
+List<NameValuePair> params = new ArrayList<NameValuePair>();
+params.add(new BasicNameValuePair("firstParam", paramValue1));
+params.add(new BasicNameValuePair("secondParam", paramValue2));
+params.add(new BasicNameValuePair("thirdParam", paramValue3));
+
+OutputStream os = conn.getOutputStream();
+BufferedWriter writer = new BufferedWriter(
+        new OutputStreamWriter(os, "UTF-8"));
+writer.write(getQuery(params));
+writer.flush();
+writer.close();
+os.close();
+
+conn.connect();
+
+
+...
+
+private String getQuery(List<NameValuePair> params) throws UnsupportedEncodingException
+{
+    StringBuilder result = new StringBuilder();
+    boolean first = true;
+
+    for (NameValuePair pair : params)
+    {
+        if (first)
+            first = false;
+        else
+            result.append("&");
+
+        result.append(URLEncoder.encode(pair.getName(), "UTF-8"));
+        result.append("=");
+        result.append(URLEncoder.encode(pair.getValue(), "UTF-8"));
+    }
+
+    return result.toString();
+}
+
+    

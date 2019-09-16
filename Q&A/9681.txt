@@ -1,0 +1,110 @@
+28
+Q:So, I'm currently redesigning an Android app of mine to use Dagger.  My app is large and complicated, and I recently came across the following scenario:
+
+Object A requires a special DebugLogger instance which is a perfect candidate for injection.  Instead of passing around the logger I can just inject it through A's constructor.  This looks something like this:
+
+class A
+{
+    private DebugLogger logger;
+
+    @Inject
+    public A(DebugLogger logger)
+    {
+        this.logger = logger;
+    }
+
+    // Additional methods of A follow, etc.
+}
+
+
+So far this makes sense.  However, A needs to be constructed by another class B.  Multiple instances of A must be constructed, so following Dagger's way of doing things, I simple inject a Provider<A> into B:
+
+class B
+{
+    private Provider<A> aFactory;
+
+    @Inject
+    public B(Provider<A> aFactory)
+    {
+        this.aFactory = aFactory;
+    }
+}
+
+
+Ok, good so far.  But wait, suddenly A needs additional inputs, such as an integer called "amount" that is vital to its construction.  Now, my constructor for A needs to look like this:
+
+@Inject
+public A(DebugLogger logger, int amount)
+{
+...
+}
+
+
+Suddenly this new parameter interferes with injection.  Moreover, even if this did work, there would be no way for me to pass in "amount" when retrieving a new instance from the provider, unless I am mistaken.  There's several things I could do here, and my question is which one is the best?
+
+I could refactor A by adding a setAmount() method that is expected to be called after the constructor.  This is ugly, however, because it forces me to delay construction of A until "amount" has been filled in.  If I had two such parameters, "amount" and "frequency", then I would have two setters, which would mean either complicated checking to ensure that construction of A resumes after both setters are called, or I would have to add yet a third method into the mix, like so:
+
+(Somewhere in B):
+
+A inst = aFactory.get();
+inst.setAmount(5);
+inst.setFrequency(7);
+inst.doConstructionThatRequiresAmountAndFrequency();
+
+
+The other alternative is that I don't use constructor-based injection and go with field-based injection.  But now, I have to make my fields public.  This doesn't sit well with me, because now I am obligated to reveal internal data of my classes to other classes.
+
+So far, the only somewhat elegant solution I can think of is to use field-based injection for providers, like so:
+
+class A
+{
+    @Inject
+    public Provider<DebugLogger> loggerProvider;
+    private DebugLogger logger;
+
+    public A(int amount, int frequency)
+    {
+        logger = loggerProvider.get();
+        // Do fancy things with amount and frequency here
+        ...
+    }
+}
+
+
+Even still, I'm unsure about the timing, since I'm not sure if Dagger will inject the provider before my constructor is called.  
+
+Is there a better way?  Am I just missing something about how Dagger works?
+    
+===============================================================================================
+53
+A:What you are talking about is known as assisted injection and is not currently supported by Dagger in any automatic fashion.
+
+You can work around this with the factory pattern:
+
+class AFactory {
+  @Inject DebugLogger debuggLogger;
+
+  public A create(int amount, int frequency) {
+    return new A(debuggLogger, amount);
+  }
+}
+
+
+Now you can inject this factory and use it to create instances of A:
+
+class B {
+  @Inject AFactory aFactory;
+
+  //...
+}
+
+
+and when you need to create an A with your 'amount' and 'frequency' you use the factory.
+
+A a = aFactory.create(amount, frequency);
+
+
+This allows for A to have final instances of the logger, amount, and frequency fields while still using injection to provide the logger instance.
+
+Guice has an assisted injection plugin which essentially automates the creation of these factories for you. There have been discussion on the Dagger mailing list about the appropriate way for them to be added but nothing has been decided upon as of this writing.
+    
